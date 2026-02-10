@@ -1,12 +1,12 @@
 server:
   port: 8080
 
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
 binance:
   futures:
-    # Binance Futures API
-    # 正式環境: https://fapi.binance.com
-    # 測試環境: https://testnet.binancefuture.com
-    base-url: https://testnet.binancefuture.com
     api-key: ${BINANCE_API_KEY:YOUR_API_KEY}
     secret-key: ${BINANCE_SECRET_KEY:YOUR_SECRET_KEY}
 

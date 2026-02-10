@@ -54,7 +54,9 @@ crypto-signal-trader/
 │   └── launch_discord.sh             # 啟動 Discord CDP 模式
 │
 ├── src/main/resources/
-│   └── application.yml                # Spring Boot 設定
+│   ├── application.yml                # Spring Boot 共用設定
+│   ├── application-dev.yml            # Dev 環境 (Binance Testnet)
+│   └── application-prod.yml           # Prod 環境 (Binance 正式)
 ├── .env.example                       # 環境變數範本
 ├── .gitignore
 └── build.gradle
@@ -156,7 +158,7 @@ Python 就是連到 `webSocketDebuggerUrl` 這個 WebSocket，注入 JS 來攔�
 > Discord Desktop 是 Electron App，登入後 session 會保存在本機。
 > `launch_discord.sh` 只是把 Discord 關掉再用 debug 模式重開，**不需要重新登入**。
 
-### 1. 設定 Binance API Key
+### 1. 設定環境變數
 
 複製 `.env.example` 為 `.env` 並填入你的 API Key：
 
@@ -165,20 +167,38 @@ cp .env.example .env
 ```
 
 ```env
+# dev = Binance Testnet (假錢), prod = 正式環境 (真錢)
+SPRING_PROFILES_ACTIVE=dev
+
+# Testnet API Key: https://testnet.binancefuture.com → GitHub 登入 → API Management
 BINANCE_API_KEY=your_api_key_here
 BINANCE_SECRET_KEY=your_secret_key_here
 ```
 
-> **建議先用測試網**: https://testnet.binancefuture.com/ → API Management
-
 ### 2. 啟動 Spring Boot
 
 ```bash
-# 載入環境變數後啟動
+# 載入環境變數後啟動（預設 dev = Testnet）
 source .env && ./gradlew bootRun
 ```
 
-或是直接編輯 `application.yml` 填入 key（不推薦 commit）。
+啟動後 log 會顯示：`The following 1 profile is active: "dev"`
+
+**切換環境**：
+```bash
+# Dev — Binance Testnet (預設)
+source .env && ./gradlew bootRun
+
+# Prod — Binance 正式環境 (真錢交易！)
+SPRING_PROFILES_ACTIVE=prod source .env && ./gradlew bootRun
+```
+
+| Profile | Binance API Base URL | 用途 |
+|---------|---------------------|------|
+| `dev` | `https://demo-fapi.binance.com` | Testnet 測試（假錢） |
+| `prod` | `https://fapi.binance.com` | 正式交易（真錢） |
+
+> ⚠️ **prod 環境會用真金白銀交易！請先在 dev 充分驗證。**
 
 ### 3. 測試 API
 
@@ -245,18 +265,6 @@ binance:
     default-sl-percent: 3.0   # 訊號未設定 SL 時的預設止損 %
     default-tp-percent: 3.0   # 訊號未設定 TP 時的預設止盈 %
 ```
-
-## 切換到正式環境
-
-修改 `application.yml`：
-
-```yaml
-binance:
-  futures:
-    base-url: https://fapi.binance.com   # 正式環境
-```
-
-> ⚠️ **正式環境會用真金白銀交易！請先在測試網充分驗證。**
 
 ## REST API
 

@@ -1,0 +1,13 @@
+# ========================================
+# Dev 環境 — Binance Futures Testnet
+# ========================================
+# Testnet API Key 申請: https://testnet.binancefuture.com (GitHub 登入)
+# API 文件: https://developers.binance.com/docs/derivatives/
+
+binance:
+  futures:
+    base-url: https://testnet.binancefuture.com
+
+logging:
+  level:
+    com.trader: DEBUG

@@ -1,0 +1,13 @@
+# ========================================
+# Prod 環境 — Binance Futures 正式環境
+# ========================================
+# 正式 API Key 申請: https://www.binance.com → API 管理
+# API 文件: https://developers.binance.com/docs/derivatives/
+
+binance:
+  futures:
+    base-url: https://fapi.binance.com
+
+logging:
+  level:
+    com.trader: INFO
