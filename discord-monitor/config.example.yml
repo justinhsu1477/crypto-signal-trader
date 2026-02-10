@@ -1,0 +1,29 @@
+## Discord Signal Monitor 設定
+
+# CDP 連線設定
+cdp:
+  host: "127.0.0.1"
+  port: 9222
+  reconnect_interval: 5        # 重連間隔 (秒)
+  max_reconnect_attempts: 0    # 最大重連次數 (0 = 無限)
+
+# Discord 過濾設定
+discord:
+  channel_ids:
+    - "1325133886509944983"    # 填入你要監聽的頻道 ID
+  guild_ids:
+    - "862188678876233748"     # 填入伺服器 ID (選填)
+  author_ids: []               # 只接收特定人的訊息 (選填, 空 = 所有人)
+
+# Spring Boot API 設定
+api:
+  base_url: "http://localhost:8080"
+  execute_endpoint: "/api/execute-signal"
+  parse_endpoint: "/api/parse-signal"
+  timeout: 10                  # HTTP 逾時 (秒)
+  dry_run: false               # true = 只解析不下單
+
+# Logging 設定
+logging:
+  level: "INFO"                # DEBUG, INFO, WARNING, ERROR
+  file: "discord-monitor.log"  # 留空 = 只輸出到 console

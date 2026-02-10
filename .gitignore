@@ -1,0 +1,34 @@
+# === Secrets ===
+.env
+*.env.local
+
+# === Java / Gradle ===
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+*.jar
+*.war
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# === Discord Monitor runtime ===
+discord-monitor/discord-monitor.log
+discord-monitor/probe_*.py
+discord-monitor/probe_*.js
+
+# === Logs ===
+*.log

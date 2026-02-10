@@ -1,0 +1,19 @@
+{
+  "t": "MESSAGE_CREATE",
+  "s": 42,
+  "op": 0,
+  "d": {
+    "id": "1234567890123456789",
+    "channel_id": "1325133886509944983",
+    "guild_id": "862188678876233748",
+    "author": {
+      "id": "3333333333333333333",
+      "username": "SignalBot",
+      "discriminator": "0000"
+    },
+    "content": "\ud83d\udce2 \u4ea4\u6613\u8a0a\u865f\u767c\u5e03: ETHUSDT\n\u505a\u591a LONG \ud83d\udfe2 (\u9650\u50f9\u55ae)\n\u5165\u5834\u50f9\u683c (Entry)\n2650\n\u6b62\u76c8\u76ee\u6a19 (TP)\n2790\n\u6b62\u640d\u50f9\u683c (SL)\n2580\nStatus\n----------------------------------------------------\n\u7576\u524d\u6301\u5009\u72c0\u614b (Account Positions)\n\u7121 (Empty)",
+    "timestamp": "2025-01-15T10:30:00.000000+00:00",
+    "embeds": [],
+    "attachments": []
+  }
+}

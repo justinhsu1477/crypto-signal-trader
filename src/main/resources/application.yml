@@ -1,0 +1,24 @@
+server:
+  port: 8080
+
+binance:
+  futures:
+    # Binance Futures API
+    # 正式環境: https://fapi.binance.com
+    # 測試環境: https://testnet.binancefuture.com
+    base-url: https://testnet.binancefuture.com
+    api-key: ${BINANCE_API_KEY:YOUR_API_KEY}
+    secret-key: ${BINANCE_SECRET_KEY:YOUR_SECRET_KEY}
+
+  # 風控設定
+  risk:
+    max-position-usdt: 100        # 單筆最大倉位 (USDT)
+    max-leverage: 10              # 最大槓桿
+    max-daily-orders: 10          # 每日最大下單次數
+    default-leverage: 5           # 預設槓桿
+    default-sl-percent: 3.0       # 預設止損百分比 (訊號未設定SL時使用)
+    default-tp-percent: 3.0       # 預設止盈百分比 (訊號未設定TP時使用)
+
+logging:
+  level:
+    com.trader: DEBUG

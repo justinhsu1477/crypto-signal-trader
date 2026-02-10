@@ -1,0 +1,23 @@
+cdp:
+  host: "127.0.0.1"
+  port: 9222
+  reconnect_interval: 5
+  max_reconnect_attempts: 0
+
+discord:
+  channel_ids:
+    - "1325133886509944983"
+  guild_ids:
+    - "862188678876233748"
+  author_ids: []
+
+api:
+  base_url: "http://localhost:8080"
+  execute_endpoint: "/api/execute-signal"
+  parse_endpoint: "/api/parse-signal"
+  timeout: 10
+  dry_run: false
+
+logging:
+  level: "INFO"
+  file: "discord-monitor.log"
