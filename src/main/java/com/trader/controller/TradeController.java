@@ -1,6 +1,7 @@
 package com.trader.controller;
 
 import com.trader.model.OrderResult;
+import com.trader.model.TradeRequest;
 import com.trader.model.TradeSignal;
 import com.trader.service.BinanceFuturesService;
 import com.trader.service.SignalParserService;
@@ -11,7 +12,6 @@ import org.springframework.web.bind.annotation.*;
 
 import com.trader.config.RiskConfig;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -111,30 +111,118 @@ public class TradeController {
             return ResponseEntity.ok(Map.of("action", "INFO", "message", "已記錄，不執行下單"));
         }
 
-        // 補充預設止損 (入場價的 defaultSlPercent%)
-        if (signal.getStopLoss() == 0) {
-            double entry = signal.getEntryPriceLow();
-            double slPercent = riskConfig.getDefaultSlPercent() / 100.0;
-            double defaultSl = signal.getSide() == TradeSignal.Side.LONG
-                    ? entry * (1 - slPercent)   // 做多止損在下方
-                    : entry * (1 + slPercent);   // 做空止損在上方
-            signal.setStopLoss(defaultSl);
-            log.info("未設定止損, 使用預設 {}%: {}", riskConfig.getDefaultSlPercent(), defaultSl);
+        // 白名單檢查
+        if (!signal.getSymbol().equals(riskConfig.getAllowedSymbol())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "僅允許 " + riskConfig.getAllowedSymbol(),
+                    "received", signal.getSymbol()));
         }
 
-        // 補充預設止盈 (入場價的 defaultTpPercent%)
-        if (signal.getTakeProfits() == null || signal.getTakeProfits().isEmpty()) {
-            double entry = signal.getEntryPriceLow();
-            double tpPercent = riskConfig.getDefaultTpPercent() / 100.0;
-            double defaultTp = signal.getSide() == TradeSignal.Side.LONG
-                    ? entry * (1 + tpPercent)   // 做多止盈在上方
-                    : entry * (1 - tpPercent);   // 做空止盈在下方
-            signal.setTakeProfits(new ArrayList<>(List.of(defaultTp)));
-            log.info("未設定止盈, 使用預設 {}%: {}", riskConfig.getDefaultTpPercent(), defaultTp);
+        // 路由到對應操作
+        if (signal.getSignalType() == TradeSignal.SignalType.CLOSE) {
+            List<OrderResult> results = binanceFuturesService.executeClose(signal);
+            return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
+        }
+
+        if (signal.getSignalType() == TradeSignal.SignalType.MOVE_SL) {
+            List<OrderResult> results = binanceFuturesService.executeMoveSL(signal);
+            return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
+        }
+
+        // ENTRY: 止損是必須的，不再自動補充預設值
+        if (signal.getStopLoss() == 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 訊號必須包含 stop_loss"));
         }
 
         List<OrderResult> results = binanceFuturesService.executeSignal(signal);
-        return ResponseEntity.ok(results);
+        return ResponseEntity.ok(Map.of("action", "ENTRY", "results", results));
+    }
+
+    /**
+     * 接收結構化 JSON 並執行交易（給 Python AI 用）
+     * POST /api/execute-trade
+     *
+     * ENTRY: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":95000,"stop_loss":94000}
+     * CLOSE: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5}
+     * MOVE_SL: {"action":"MOVE_SL","symbol":"BTCUSDT","new_stop_loss":95500}
+     */
+    @PostMapping("/execute-trade")
+    public ResponseEntity<?> executeTrade(@RequestBody TradeRequest request) {
+        log.info("收到結構化交易請求: action={} symbol={}", request.getAction(), request.getSymbol());
+
+        // 白名單檢查
+        String symbol = request.getSymbol();
+        if (symbol == null || !symbol.equals(riskConfig.getAllowedSymbol())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "僅允許 " + riskConfig.getAllowedSymbol(),
+                    "received", symbol != null ? symbol : "null"));
+        }
+
+        String action = request.getAction();
+        if (action == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "action 不可為空"));
+        }
+
+        switch (action.toUpperCase()) {
+            case "ENTRY": {
+                // 驗證必要欄位
+                if (request.getSide() == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 需要 side (LONG/SHORT)"));
+                }
+                if (request.getEntryPrice() == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 需要 entry_price"));
+                }
+                if (request.getStopLoss() == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 必須包含 stop_loss"));
+                }
+
+                TradeSignal signal = TradeSignal.builder()
+                        .symbol(symbol)
+                        .side(TradeSignal.Side.valueOf(request.getSide().toUpperCase()))
+                        .entryPriceLow(request.getEntryPrice())
+                        .entryPriceHigh(request.getEntryPrice())
+                        .stopLoss(request.getStopLoss())
+                        .signalType(TradeSignal.SignalType.ENTRY)
+                        .build();
+
+                // 設定 TP（如果有的話）
+                if (request.getTakeProfit() != null) {
+                    signal.setTakeProfits(List.of(request.getTakeProfit()));
+                }
+
+                List<OrderResult> results = binanceFuturesService.executeSignal(signal);
+                return ResponseEntity.ok(Map.of("action", "ENTRY", "results", results));
+            }
+
+            case "CLOSE": {
+                TradeSignal signal = TradeSignal.builder()
+                        .symbol(symbol)
+                        .signalType(TradeSignal.SignalType.CLOSE)
+                        .closeRatio(request.getCloseRatio())
+                        .build();
+
+                List<OrderResult> results = binanceFuturesService.executeClose(signal);
+                return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
+            }
+
+            case "MOVE_SL": {
+                if (request.getNewStopLoss() == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "MOVE_SL 需要 new_stop_loss"));
+                }
+
+                TradeSignal signal = TradeSignal.builder()
+                        .symbol(symbol)
+                        .signalType(TradeSignal.SignalType.MOVE_SL)
+                        .newStopLoss(request.getNewStopLoss())
+                        .build();
+
+                List<OrderResult> results = binanceFuturesService.executeMoveSL(signal);
+                return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
+            }
+
+            default:
+                return ResponseEntity.badRequest().body(Map.of("error", "不支援的 action: " + action));
+        }
     }
 
     /**
