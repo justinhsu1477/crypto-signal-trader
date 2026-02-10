@@ -28,13 +28,17 @@ public class TradeSignal {
     private String rawMessage;       // 原始訊息
     @Builder.Default
     private SignalType signalType = SignalType.ENTRY;  // 訊號類型
+    private Double closeRatio;       // 平倉比例 (0.5=平一半, 1.0=全平, null=全平)
+    private Double newStopLoss;      // MOVE_SL 時的新止損價
 
     public enum Side {
         LONG, SHORT
     }
 
     public enum SignalType {
-        ENTRY,      // 📢 開單訊號
+        ENTRY,      // 開倉
+        CLOSE,      // 平倉（全平或分批）
+        MOVE_SL,    // 移動止損 / 推保本
         CANCEL,     // ⚠️ 取消掛單
         INFO        // 🚀🛑💰 資訊通知
     }
