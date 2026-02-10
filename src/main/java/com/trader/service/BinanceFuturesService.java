@@ -1,6 +1,8 @@
 package com.trader.service;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.trader.config.BinanceConfig;
 import com.trader.config.RiskConfig;
@@ -12,22 +14,12 @@ import okhttp3.*;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Binance Futures API 串接服務
- *
- * 主要功能：
- * 1. 設定槓桿
- * 2. 下限價單 (入場)
- * 3. 設定止損單 (STOP_MARKET)
- * 4. 設定止盈單 (TAKE_PROFIT_MARKET)
- * 5. 查詢帳戶餘額
- * 6. 查詢當前持倉
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -40,35 +32,105 @@ public class BinanceFuturesService {
 
     // ==================== 帳戶相關 ====================
 
-    /**
-     * 查詢 Futures 帳戶餘額
-     */
     public String getAccountBalance() {
         String endpoint = "/fapi/v2/balance";
         return sendSignedGet(endpoint, Map.of());
     }
 
-    /**
-     * 查詢當前持倉
-     */
     public String getPositions() {
         String endpoint = "/fapi/v2/positionRisk";
         return sendSignedGet(endpoint, Map.of());
     }
 
-    /**
-     * 查詢交易對資訊 (價格精度、數量精度等)
-     */
     public String getExchangeInfo() {
         String endpoint = "/fapi/v1/exchangeInfo";
         return sendPublicGet(endpoint);
     }
 
-    // ==================== 交易相關 ====================
+    /**
+     * 取得某交易對的當前持倉數量（絕對值）
+     * 回傳 0 表示無持倉
+     */
+    public double getCurrentPositionAmount(String symbol) {
+        String response = getPositions();
+        try {
+            JsonArray positions = gson.fromJson(response, JsonArray.class);
+            for (JsonElement elem : positions) {
+                JsonObject pos = elem.getAsJsonObject();
+                if (pos.get("symbol").getAsString().equals(symbol)) {
+                    double positionAmt = pos.get("positionAmt").getAsDouble();
+                    if (positionAmt != 0) {
+                        log.info("當前持倉: {} {} BTC", symbol, positionAmt);
+                        return positionAmt;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("解析持倉資訊失敗: {}", e.getMessage());
+        }
+        return 0;
+    }
 
     /**
-     * 設定槓桿倍數
+     * 取得市場價格
      */
+    public double getMarkPrice(String symbol) {
+        String endpoint = "/fapi/v1/ticker/price";
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("symbol", symbol);
+        String response = sendPublicGet(endpoint + "?symbol=" + symbol);
+        try {
+            JsonObject json = gson.fromJson(response, JsonObject.class);
+            return json.get("price").getAsDouble();
+        } catch (Exception e) {
+            log.error("取得市價失敗: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * 取得目前活躍持倉數量（positionAmt != 0 的交易對數量）
+     */
+    public int getActivePositionCount() {
+        String response = getPositions();
+        int count = 0;
+        try {
+            JsonArray positions = gson.fromJson(response, JsonArray.class);
+            for (JsonElement elem : positions) {
+                JsonObject pos = elem.getAsJsonObject();
+                double positionAmt = pos.get("positionAmt").getAsDouble();
+                if (positionAmt != 0) {
+                    count++;
+                }
+            }
+        } catch (Exception e) {
+            log.error("解析持倉數量失敗: {}", e.getMessage());
+        }
+        return count;
+    }
+
+    /**
+     * 檢查是否有未成交的 LIMIT 入場掛單
+     */
+    public boolean hasOpenEntryOrders(String symbol) {
+        String response = getOpenOrders(symbol);
+        try {
+            JsonArray orders = gson.fromJson(response, JsonArray.class);
+            for (JsonElement elem : orders) {
+                JsonObject order = elem.getAsJsonObject();
+                String type = order.get("type").getAsString();
+                if ("LIMIT".equals(type)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            log.error("檢查掛單失敗: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    // ==================== 交易相關 ====================
+
     public String setLeverage(String symbol, int leverage) {
         String endpoint = "/fapi/v1/leverage";
         Map<String, String> params = new LinkedHashMap<>();
@@ -80,10 +142,18 @@ public class BinanceFuturesService {
     }
 
     /**
-     * 設定持倉模式 (單向 or 雙向)
-     * "true" = 雙向持倉 (Hedge Mode)
-     * "false" = 單向持倉 (One-way Mode)
+     * 設定保證金模式 (ISOLATED 逐倉 / CROSSED 全倉)
      */
+    public String setMarginType(String symbol, String marginType) {
+        String endpoint = "/fapi/v1/marginType";
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("symbol", symbol);
+        params.put("marginType", marginType);
+
+        log.info("設定保證金模式: {} {}", symbol, marginType);
+        return sendSignedPost(endpoint, params);
+    }
+
     public String setPositionMode(boolean dualSidePosition) {
         String endpoint = "/fapi/v1/positionSide/dual";
         Map<String, String> params = new LinkedHashMap<>();
@@ -91,15 +161,6 @@ public class BinanceFuturesService {
         return sendSignedPost(endpoint, params);
     }
 
-    /**
-     * 下限價單 (入場單)
-     *
-     * @param symbol   交易對 e.g. "BTCUSDT"
-     * @param side     "BUY" or "SELL"
-     * @param price    限價
-     * @param quantity 數量
-     * @return API 回應
-     */
     public OrderResult placeLimitOrder(String symbol, String side, double price, double quantity) {
         String endpoint = "/fapi/v1/order";
         Map<String, String> params = new LinkedHashMap<>();
@@ -115,9 +176,6 @@ public class BinanceFuturesService {
         return parseOrderResponse(response);
     }
 
-    /**
-     * 下市價單 (立即成交)
-     */
     public OrderResult placeMarketOrder(String symbol, String side, double quantity) {
         String endpoint = "/fapi/v1/order";
         Map<String, String> params = new LinkedHashMap<>();
@@ -131,15 +189,6 @@ public class BinanceFuturesService {
         return parseOrderResponse(response);
     }
 
-    /**
-     * 設定止損單 (STOP_MARKET)
-     * 觸發後以市價平倉
-     *
-     * @param symbol    交易對
-     * @param side      平倉方向: 做空的止損用 "BUY", 做多的止損用 "SELL"
-     * @param stopPrice 觸發價格
-     * @param quantity  數量
-     */
     public OrderResult placeStopLoss(String symbol, String side, double stopPrice, double quantity) {
         String endpoint = "/fapi/v1/order";
         Map<String, String> params = new LinkedHashMap<>();
@@ -155,10 +204,6 @@ public class BinanceFuturesService {
         return parseOrderResponse(response);
     }
 
-    /**
-     * 設定止盈單 (TAKE_PROFIT_MARKET)
-     * 觸發後以市價平倉
-     */
     public OrderResult placeTakeProfit(String symbol, String side, double stopPrice, double quantity) {
         String endpoint = "/fapi/v1/order";
         Map<String, String> params = new LinkedHashMap<>();
@@ -174,9 +219,6 @@ public class BinanceFuturesService {
         return parseOrderResponse(response);
     }
 
-    /**
-     * 取消訂單
-     */
     public String cancelOrder(String symbol, long orderId) {
         String endpoint = "/fapi/v1/order";
         Map<String, String> params = new LinkedHashMap<>();
@@ -185,9 +227,6 @@ public class BinanceFuturesService {
         return sendSignedDelete(endpoint, params);
     }
 
-    /**
-     * 取消某交易對的所有訂單
-     */
     public String cancelAllOrders(String symbol) {
         String endpoint = "/fapi/v1/allOpenOrders";
         Map<String, String> params = new LinkedHashMap<>();
@@ -195,9 +234,6 @@ public class BinanceFuturesService {
         return sendSignedDelete(endpoint, params);
     }
 
-    /**
-     * 查詢未成交訂單
-     */
     public String getOpenOrders(String symbol) {
         String endpoint = "/fapi/v1/openOrders";
         Map<String, String> params = new LinkedHashMap<>();
@@ -205,78 +241,227 @@ public class BinanceFuturesService {
         return sendSignedGet(endpoint, params);
     }
 
-    // ==================== 完整下單流程 ====================
+    // ==================== 新的交易流程（以損定倉） ====================
 
     /**
-     * 根據交易訊號執行完整下單流程:
-     * 1. 設定槓桿
-     * 2. 下限價入場單
-     * 3. 設定止損
-     * 4. 設定止盈 (多個目標)
+     * ENTRY: 以損定倉開倉
+     * 1. 檢查交易對白名單
+     * 2. 檢查持倉限制
+     * 3. 設定逐倉 ISOLATED + 固定槓桿
+     * 4. 以損定倉計算數量
+     * 5. 掛 LIMIT 入場單
+     * 6. 掛 STOP_MARKET 止損單
+     * 7. Fail-Safe: SL 失敗則取消入場單
      */
     public List<OrderResult> executeSignal(TradeSignal signal) {
         String symbol = signal.getSymbol();
-        int leverage = signal.getLeverage() != null
-                ? Math.min(signal.getLeverage(), riskConfig.getMaxLeverage())
-                : riskConfig.getDefaultLeverage();
 
-        // 1. 設定槓桿
+        // 1. 交易對白名單檢查
+        if (!symbol.equals(riskConfig.getAllowedSymbol())) {
+            log.warn("交易對不在白名單: {}, 僅允許 {}", symbol, riskConfig.getAllowedSymbol());
+            return List.of(OrderResult.fail("僅允許 " + riskConfig.getAllowedSymbol()));
+        }
+
+        // 2. 持倉限制檢查：有持倉或有掛單則拒絕
+        double currentPosition = getCurrentPositionAmount(symbol);
+        int maxPositions = riskConfig.getMaxPositions();
+        if (currentPosition != 0 && getActivePositionCount() >= maxPositions) {
+            log.warn("已有持倉 {} BTC，持倉數已達上限 {}，拒絕新開倉", currentPosition, maxPositions);
+            return List.of(OrderResult.fail("持倉數已達上限 " + maxPositions + "，拒絕新開倉"));
+        }
+
+        // 2b. 檢查是否有未成交的入場掛單（LIMIT BUY/SELL），防止重複下單
+        if (hasOpenEntryOrders(symbol)) {
+            log.warn("已有未成交的入場掛單，拒絕重複下單");
+            return List.of(OrderResult.fail("已有未成交的入場掛單，拒絕重複下單"));
+        }
+
+        // 3. 驗證止損
+        if (signal.getStopLoss() == 0) {
+            log.warn("ENTRY 訊號缺少止損");
+            return List.of(OrderResult.fail("ENTRY 訊號必須包含 stop_loss"));
+        }
+
+        // 4. 方向邏輯驗證
+        double entry = signal.getEntryPriceLow();
+        double sl = signal.getStopLoss();
+        if (signal.getSide() == TradeSignal.Side.LONG && sl >= entry) {
+            return List.of(OrderResult.fail("做多止損不應高於入場價"));
+        }
+        if (signal.getSide() == TradeSignal.Side.SHORT && sl <= entry) {
+            return List.of(OrderResult.fail("做空止損不應低於入場價"));
+        }
+
+        // 5. 價格偏離檢查
+        double markPrice = getMarkPrice(symbol);
+        if (markPrice > 0) {
+            double deviation = Math.abs(entry - markPrice) / markPrice;
+            if (deviation > 0.10) {
+                log.warn("入場價 {} 偏離市價 {} 超過 10% ({}%)", entry, markPrice, String.format("%.1f", deviation * 100));
+                return List.of(OrderResult.fail("入場價偏離市價超過 10%"));
+            }
+        }
+
+        int leverage = riskConfig.getFixedLeverage();
+
+        // 6. 設定逐倉 + 槓桿
+        try {
+            setMarginType(symbol, "ISOLATED");
+        } catch (Exception e) {
+            // 如果已經是 ISOLATED 模式，Binance 會報錯，可以忽略
+            log.info("設定保證金模式: {}", e.getMessage());
+        }
         setLeverage(symbol, leverage);
 
-        // 2. 計算下單數量
-        double entryPrice = signal.getEntryPriceLow(); // 用入場價下限
-        double quantity = calculateQuantity(entryPrice, leverage);
+        // 7. 以損定倉計算數量
+        double riskDistance = Math.abs(entry - sl);
+        double quantity = riskConfig.getFixedLossPerTrade() / riskDistance;
 
-        // 入場方向: 做空 → SELL, 做多 → BUY
+        log.info("以損定倉: 固定虧損={}, 風險距離={}, 數量={}", riskConfig.getFixedLossPerTrade(), riskDistance, quantity);
+
+        // 入場方向
         String entrySide = signal.getSide() == TradeSignal.Side.SHORT ? "SELL" : "BUY";
-        // 平倉方向: 反向
         String closeSide = signal.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
 
-        // 3. 下限價入場單
-        OrderResult entryOrder = placeLimitOrder(symbol, entrySide, entryPrice, quantity);
+        // 8. 掛 LIMIT 入場單
+        OrderResult entryOrder = placeLimitOrder(symbol, entrySide, entry, quantity);
         if (!entryOrder.isSuccess()) {
             log.error("入場單失敗: {}", entryOrder.getErrorMessage());
             return List.of(entryOrder);
         }
 
-        // 4. 設定止損
-        OrderResult slOrder = placeStopLoss(symbol, closeSide, signal.getStopLoss(), quantity);
+        // 9. 掛 STOP_MARKET 止損單
+        OrderResult slOrder = placeStopLoss(symbol, closeSide, sl, quantity);
 
-        // 5. 設定止盈 (分批平倉: 均分數量到各個止盈目標)
-        List<Double> tps = signal.getTakeProfits();
-        double tpQuantityEach = quantity / tps.size();
+        // 10. Fail-Safe: SL 掛失敗 → 取消入場單
+        if (!slOrder.isSuccess()) {
+            log.error("止損單失敗! 觸發 Fail-Safe，取消入場單");
+            try {
+                long entryOrderId = Long.parseLong(entryOrder.getOrderId());
+                cancelOrder(symbol, entryOrderId);
+                log.info("Fail-Safe: 已取消入場單 {}", entryOrderId);
+            } catch (Exception e) {
+                log.error("Fail-Safe: 取消入場單失敗，嘗試市價平倉", e);
+                placeMarketOrder(symbol, closeSide, quantity);
+            }
+            return List.of(entryOrder, slOrder);
+        }
 
-        List<OrderResult> tpOrders = tps.stream()
-                .map(tp -> placeTakeProfit(symbol, closeSide, tp, tpQuantityEach))
-                .collect(Collectors.toList());
+        List<OrderResult> results = new ArrayList<>();
+        results.add(entryOrder);
+        results.add(slOrder);
 
-        // 彙整結果
-        List<OrderResult> allResults = new java.util.ArrayList<>();
-        allResults.add(entryOrder);
-        allResults.add(slOrder);
-        allResults.addAll(tpOrders);
+        log.info("ENTRY 完成: {} {} qty={} entry={} SL={} 槓桿={}x ISOLATED",
+                symbol, signal.getSide(), String.format("%.3f", quantity), entry, sl, leverage);
 
-        log.info("訊號執行完成: {} {} 入場@{} 止損@{} 止盈@{}",
-                symbol, signal.getSide(), entryPrice, signal.getStopLoss(), tps);
+        return results;
+    }
 
-        return allResults;
+    /**
+     * CLOSE: 分批平倉
+     * 1. 取得持倉方向和數量
+     * 2. 計算平倉數量
+     * 3. 取消所有掛單
+     * 4. 掛反向 LIMIT 平倉單
+     */
+    public List<OrderResult> executeClose(TradeSignal signal) {
+        String symbol = signal.getSymbol();
+
+        // 1. 取得持倉
+        double positionAmt = getCurrentPositionAmount(symbol);
+        if (positionAmt == 0) {
+            return List.of(OrderResult.fail("無持倉可平"));
+        }
+
+        // 正數=多倉, 負數=空倉
+        boolean isLong = positionAmt > 0;
+        double absPosition = Math.abs(positionAmt);
+
+        // 2. 計算平倉數量
+        double closeRatio = signal.getCloseRatio() != null ? signal.getCloseRatio() : 1.0;
+        double closeQty = absPosition * closeRatio;
+
+        log.info("平倉: {} 持倉={} ratio={} 平倉數量={}", symbol, positionAmt, closeRatio, closeQty);
+
+        // 3. 取消所有掛單
+        cancelAllOrders(symbol);
+
+        // 4. 取得市價作為平倉價格
+        double markPrice = getMarkPrice(symbol);
+        if (markPrice == 0) {
+            return List.of(OrderResult.fail("無法取得市價"));
+        }
+
+        // 平倉方向：多倉用 SELL，空倉用 BUY
+        String closeSide = isLong ? "SELL" : "BUY";
+
+        // 掛反向 LIMIT 平倉單（用市價附近的價格）
+        // 做多平倉: 賣出價略低於市價以確保成交
+        // 做空平倉: 買入價略高於市價以確保成交
+        double closePrice = isLong ? markPrice * 0.999 : markPrice * 1.001;
+
+        OrderResult closeOrder = placeLimitOrder(symbol, closeSide, closePrice, closeQty);
+
+        List<OrderResult> results = new ArrayList<>();
+        results.add(closeOrder);
+
+        // 如果不是全平，需要重新掛 SL（如果有 newStopLoss 的話）
+        if (closeRatio < 1.0 && signal.getNewStopLoss() != null) {
+            double remainingQty = absPosition - closeQty;
+            String slSide = isLong ? "SELL" : "BUY";
+            OrderResult newSl = placeStopLoss(symbol, slSide, signal.getNewStopLoss(), remainingQty);
+            results.add(newSl);
+        }
+
+        return results;
+    }
+
+    /**
+     * MOVE_SL: 移動止損 / 推保本
+     * 1. 取消舊的掛單
+     * 2. 掛新的 STOP_MARKET
+     */
+    public List<OrderResult> executeMoveSL(TradeSignal signal) {
+        String symbol = signal.getSymbol();
+
+        // 1. 取得持倉
+        double positionAmt = getCurrentPositionAmount(symbol);
+        if (positionAmt == 0) {
+            return List.of(OrderResult.fail("無持倉，無法移動止損"));
+        }
+
+        boolean isLong = positionAmt > 0;
+        double absPosition = Math.abs(positionAmt);
+
+        // 2. 取消所有掛單（包含舊的 SL）
+        cancelAllOrders(symbol);
+
+        // 3. 掛新的 STOP_MARKET
+        String slSide = isLong ? "SELL" : "BUY";
+        double newSl = signal.getNewStopLoss();
+
+        log.info("移動止損: {} 新SL={} 持倉={}", symbol, newSl, positionAmt);
+
+        OrderResult slOrder = placeStopLoss(symbol, slSide, newSl, absPosition);
+
+        return List.of(slOrder);
     }
 
     // ==================== 內部方法 ====================
 
     /**
-     * 根據最大倉位和槓桿計算下單數量
+     * 以損定倉計算下單數量
+     * qty = fixedLossPerTrade / |entry - SL|
      */
-    private double calculateQuantity(double price, int leverage) {
-        // 倉位價值 = maxPositionUsdt * leverage
-        // 數量 = 倉位價值 / 價格
-        double positionValue = riskConfig.getMaxPositionUsdt() * leverage;
-        return positionValue / price;
+    public double calculateFixedRiskQuantity(double entryPrice, double stopLoss) {
+        double riskDistance = Math.abs(entryPrice - stopLoss);
+        if (riskDistance == 0) {
+            throw new IllegalArgumentException("入場價與止損價不可相同");
+        }
+        return riskConfig.getFixedLossPerTrade() / riskDistance;
     }
 
     private String formatPrice(double price) {
-        // BTC 通常精度到小數點 1 位, 其他幣種可能不同
-        // TODO: 從 exchangeInfo 動態取得精度
         if (price >= 1000) {
             return String.format("%.1f", price);
         } else if (price >= 1) {
@@ -287,8 +472,6 @@ public class BinanceFuturesService {
     }
 
     private String formatQuantity(String symbol, double quantity) {
-        // BTC 最小數量 0.001
-        // TODO: 從 exchangeInfo 動態取得精度
         if (symbol.startsWith("BTC")) {
             return String.format("%.3f", quantity);
         } else {
@@ -369,10 +552,6 @@ public class BinanceFuturesService {
         return executeRequest(request);
     }
 
-    /**
-     * 組裝帶簽名的查詢字串
-     * Binance 要求: timestamp + signature
-     */
     private String buildSignedQueryString(Map<String, String> params) {
         Map<String, String> allParams = new LinkedHashMap<>(params);
         allParams.put("timestamp", String.valueOf(System.currentTimeMillis()));
