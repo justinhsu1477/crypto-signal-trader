@@ -1,0 +1,381 @@
+================================================================================
+  Crypto Signal Trader — Test Cases
+  風控與交易邏輯驗證
+================================================================================
+
+目錄:
+  A. curl 手動測試指令（Testnet 環境）
+  B. JUnit 單元測試規格
+
+================================================================================
+A. CURL 手動測試指令
+================================================================================
+
+前置條件:
+  1. 啟動 Spring Boot (dev profile = Testnet)
+     cd /Users/justinhsu/Downloads/crypto-signal-trader
+     export $(grep -v '^#' .env | grep -v '^\s*$' | xargs) && ./gradlew bootRun
+
+  2. 確認服務啟動
+     curl http://localhost:8080/api/balance
+
+────────────────────────────────────────
+TC-01: 交易對限制 — 非 BTCUSDT 應被拒絕
+────────────────────────────────────────
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "ETHUSDT",
+    "side": "LONG",
+    "entry_price": 2650,
+    "stop_loss": 2580
+  }'
+
+預期結果: 400 Bad Request
+預期回應: {"error": "僅允許 BTCUSDT"}
+
+────────────────────────────────────────
+TC-02: 以損定倉開倉 — 正常 ENTRY
+────────────────────────────────────────
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "entry_price": 95000,
+    "stop_loss": 94000
+  }'
+
+預期結果: 200 OK
+預期行為:
+  - 設定 ISOLATED + 20x 槓桿
+  - qty = 500 / |95000 - 94000| = 0.500 BTC
+  - 掛 LIMIT BUY 0.500 BTC @ 95000
+  - 掛 STOP_MARKET SELL 0.500 BTC @ 94000
+預期回應: OrderResult[] 包含入場單 + SL 單
+
+確認指令:
+  curl http://localhost:8080/api/open-orders?symbol=BTCUSDT
+  # 應該看到 2 筆掛單: LIMIT + STOP_MARKET
+
+────────────────────────────────────────
+TC-03: 單一持倉限制 — 已有倉位時拒絕新 ENTRY
+────────────────────────────────────────
+
+# 前提: TC-02 已成功掛單（或已有持倉）
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "SHORT",
+    "entry_price": 96000,
+    "stop_loss": 97000
+  }'
+
+預期結果: 400 Bad Request
+預期回應: {"error": "已有持倉，拒絕新開倉"}
+
+────────────────────────────────────────
+TC-04: 分批平倉 — 平 50%
+────────────────────────────────────────
+
+# 前提: 有 BTCUSDT 持倉 (如 0.500 BTC)
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "CLOSE",
+    "symbol": "BTCUSDT",
+    "close_ratio": 0.5
+  }'
+
+預期結果: 200 OK
+預期行為:
+  - 取消所有掛單
+  - 掛反向 LIMIT 單 0.250 BTC
+預期回應: OrderResult 含平倉單資訊
+
+────────────────────────────────────────
+TC-05: 全部平倉
+────────────────────────────────────────
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "CLOSE",
+    "symbol": "BTCUSDT",
+    "close_ratio": 1.0
+  }'
+
+預期結果: 200 OK
+預期行為: 全部平倉
+
+────────────────────────────────────────
+TC-06: 移動止損
+────────────────────────────────────────
+
+# 前提: 有持倉 + 有 STOP_MARKET 掛單
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "MOVE_SL",
+    "symbol": "BTCUSDT",
+    "new_stop_loss": 95500
+  }'
+
+預期結果: 200 OK
+預期行為:
+  - 取消舊 STOP_MARKET
+  - 掛新 STOP_MARKET @ 95500
+
+確認指令:
+  curl http://localhost:8080/api/open-orders?symbol=BTCUSDT
+  # STOP_MARKET 的 stopPrice 應為 95500
+
+────────────────────────────────────────
+TC-07: 推保本（移動 SL 到入場價）
+────────────────────────────────────────
+
+# 前提: 入場價 95000，有持倉
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "MOVE_SL",
+    "symbol": "BTCUSDT",
+    "new_stop_loss": 95000
+  }'
+
+預期結果: 200 OK
+預期行為: SL 移動到入場價 95000（保本）
+
+────────────────────────────────────────
+TC-08: 無止損的 ENTRY 應被拒絕
+────────────────────────────────────────
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "entry_price": 95000
+  }'
+
+預期結果: 400 Bad Request
+預期回應: {"error": "ENTRY 訊號必須包含 stop_loss"}
+
+────────────────────────────────────────
+TC-09: 方向邏輯錯誤 — LONG 但 SL > Entry
+────────────────────────────────────────
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "entry_price": 95000,
+    "stop_loss": 96000
+  }'
+
+預期結果: 400 Bad Request
+預期回應: {"error": "做多止損不應高於入場價"}
+
+────────────────────────────────────────
+TC-10: 方向邏輯錯誤 — SHORT 但 SL < Entry
+────────────────────────────────────────
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "SHORT",
+    "entry_price": 95000,
+    "stop_loss": 94000
+  }'
+
+預期結果: 400 Bad Request
+預期回應: {"error": "做空止損不應低於入場價"}
+
+────────────────────────────────────────
+TC-11: 以損定倉 — 不同風險距離
+────────────────────────────────────────
+
+# 較大的風險距離 → 較小的倉位
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "entry_price": 95000,
+    "stop_loss": 93000
+  }'
+
+預期行為:
+  - qty = 500 / |95000 - 93000| = 500 / 2000 = 0.250 BTC
+  - 保證金 = 0.250 × 95000 / 20 = 1,187.5 USDT
+
+────────────────────────────────────────
+TC-12: 做空開倉
+────────────────────────────────────────
+
+curl -X POST http://localhost:8080/api/execute-trade \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "SHORT",
+    "entry_price": 95000,
+    "stop_loss": 96000
+  }'
+
+預期行為:
+  - qty = 500 / |95000 - 96000| = 0.500 BTC
+  - 掛 LIMIT SELL 0.500 BTC @ 95000
+  - 掛 STOP_MARKET BUY 0.500 BTC @ 96000
+
+────────────────────────────────────────
+清理指令（重置測試狀態）
+────────────────────────────────────────
+
+# 取消所有 BTCUSDT 掛單
+curl -X DELETE "http://localhost:8080/api/orders?symbol=BTCUSDT"
+
+# 確認無掛單
+curl http://localhost:8080/api/open-orders?symbol=BTCUSDT
+
+# 查看餘額
+curl http://localhost:8080/api/balance
+
+# 查看持倉
+curl http://localhost:8080/api/positions
+
+
+================================================================================
+B. JUNIT 單元測試規格
+================================================================================
+
+測試檔案: src/test/java/com/trader/service/BinanceFuturesServiceTest.java
+
+────────────────────────────────────────
+Test 1: testFixedRiskQuantity_normalCase
+────────────────────────────────────────
+描述: 以損定倉計算 — 正常情況
+輸入: entry=95000, SL=94000, fixedLoss=500
+預期: qty = 500 / 1000 = 0.500
+
+────────────────────────────────────────
+Test 2: testFixedRiskQuantity_widerStop
+────────────────────────────────────────
+描述: 以損定倉計算 — 較寬止損
+輸入: entry=95000, SL=93000, fixedLoss=500
+預期: qty = 500 / 2000 = 0.250
+
+────────────────────────────────────────
+Test 3: testFixedRiskQuantity_shortSide
+────────────────────────────────────────
+描述: 以損定倉計算 — 做空
+輸入: entry=95000, SL=96000, fixedLoss=500
+預期: qty = 500 / 1000 = 0.500
+
+────────────────────────────────────────
+Test 4: testAllowedSymbol_rejected
+────────────────────────────────────────
+描述: 非 BTCUSDT 被拒絕
+輸入: symbol=ETHUSDT
+預期: 拋出異常或回傳錯誤
+
+────────────────────────────────────────
+Test 5: testAllowedSymbol_accepted
+────────────────────────────────────────
+描述: BTCUSDT 被接受
+輸入: symbol=BTCUSDT
+預期: 通過檢查
+
+────────────────────────────────────────
+Test 6: testMaxOnePosition_rejected
+────────────────────────────────────────
+描述: 已有持倉時拒絕新 ENTRY
+前提: mock getCurrentPosition() 回傳 qty > 0
+輸入: ENTRY BTCUSDT
+預期: 拋出異常「已有持倉」
+
+────────────────────────────────────────
+Test 7: testMaxOnePosition_accepted
+────────────────────────────────────────
+描述: 無持倉時接受 ENTRY
+前提: mock getCurrentPosition() 回傳 qty = 0
+輸入: ENTRY BTCUSDT
+預期: 正常執行
+
+────────────────────────────────────────
+Test 8: testEntryWithoutStopLoss
+────────────────────────────────────────
+描述: ENTRY 缺少 SL 被拒絕
+輸入: action=ENTRY, stopLoss=null
+預期: 拋出異常「必須包含 stop_loss」
+
+────────────────────────────────────────
+Test 9: testDirectionValidation_longInvalid
+────────────────────────────────────────
+描述: 做多但 SL > Entry
+輸入: side=LONG, entry=95000, SL=96000
+預期: 拋出異常
+
+────────────────────────────────────────
+Test 10: testDirectionValidation_shortInvalid
+────────────────────────────────────────
+描述: 做空但 SL < Entry
+輸入: side=SHORT, entry=95000, SL=94000
+預期: 拋出異常
+
+────────────────────────────────────────
+Test 11: testCloseRatio_half
+────────────────────────────────────────
+描述: 平倉 50%
+前提: 持倉 0.500 BTC
+輸入: closeRatio=0.5
+預期: closeQty = 0.250
+
+────────────────────────────────────────
+Test 12: testCloseRatio_full
+────────────────────────────────────────
+描述: 全部平倉
+前提: 持倉 0.500 BTC
+輸入: closeRatio=1.0
+預期: closeQty = 0.500
+
+────────────────────────────────────────
+Test 13: testCloseRatio_null_defaultFull
+────────────────────────────────────────
+描述: closeRatio=null 預設全平
+前提: 持倉 0.500 BTC
+輸入: closeRatio=null
+預期: closeQty = 0.500
+
+────────────────────────────────────────
+Test 14: testFailSafe_slFailure
+────────────────────────────────────────
+描述: SL 掛失敗觸發 Fail-Safe
+前提: mock placeLimitOrder 成功, mock placeStopLoss 失敗
+預期: cancelOrder(入場單 orderId) 被呼叫
+
+────────────────────────────────────────
+Test 15: testIsolatedMarginAndLeverage
+────────────────────────────────────────
+描述: 開倉前設定逐倉 + 20x
+前提: 正常 ENTRY
+預期: setMarginType("ISOLATED") 和 setLeverage(20) 被呼叫
+
+================================================================================

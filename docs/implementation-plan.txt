@@ -1,0 +1,260 @@
+================================================================================
+  Crypto Signal Trader — 追加需求實作計畫
+  AI 智慧判斷與嚴格風控系統
+================================================================================
+
+一、專案目標
+────────────────────────────────────────
+將現有的跟單系統升級為 AI 驅動的智慧交易系統。
+引入 LLM 解析 Discord 訊息，鎖定 BTCUSDT，
+並透過「以損定倉」與「純 Maker 限價」策略，
+實現專業級的風險管理與執行效率。
+
+二、系統架構
+────────────────────────────────────────
+
+  Discord Desktop (CDP)
+      │
+      ▼
+  Python Monitor（前置過濾 + 冪等性 + AI 解析）
+      │  結構化 JSON
+      ▼
+  Java Spring Boot API（倉位檢查 + 風險計算 + 限價執行）
+      │
+      ▼
+  Binance Futures API（Testnet / 正式環境）
+
+
+三、核心改動項目
+────────────────────────────────────────
+
+  1. 僅限 BTCUSDT 交易
+  2. 以損定倉：固定虧損 500 USDT，qty = 500 / |entry - SL|
+  3. 逐倉 ISOLATED 模式，固定 20x 槓桿
+  4. 單一持倉限制：帳戶最多 1 個持倉，有倉則拒絕新 ENTRY
+  5. 新增操作類型：CLOSE（分批平倉）、MOVE_SL（移動止損/推保本）
+  6. Fail-Safe：SL 掛單失敗 → 自動取消入場單，禁止無止損持倉
+  7. 純 Maker 限價單（ENTRY/CLOSE 都用 LIMIT）
+  8. Python 端漏斗式過濾（關鍵字 → AI），最大化節省 API 成本
+
+
+四、Java 端改動（Phase 1 — 優先實作）
+────────────────────────────────────────
+
+4.1 資料模型
+
+  TradeSignal.java:
+  - SignalType 新增: CLOSE, MOVE_SL
+  - 新增欄位: closeRatio (平倉比例), newStopLoss (新止損價)
+
+  TradeRequest.java (新增):
+  - 接收結構化 JSON 的 DTO
+  - 欄位: action, symbol, side, entryPrice, stopLoss,
+          takeProfit, closeRatio, newStopLoss
+
+4.2 風控設定
+
+  RiskConfig.java 新增:
+  - fixedLossPerTrade = 500.0    (單筆固定虧損)
+  - maxPositions = 1             (最大持倉數)
+  - fixedLeverage = 20           (固定槓桿)
+  - allowedSymbol = "BTCUSDT"    (白名單)
+
+  application.yml 新增:
+  - binance.risk.fixed-loss-per-trade: 500.0
+  - binance.risk.max-positions: 1
+  - binance.risk.fixed-leverage: 20
+  - binance.risk.allowed-symbol: BTCUSDT
+
+4.3 交易邏輯 (BinanceFuturesService.java)
+
+  ENTRY 流程:
+  ┌─────────────────────────────────────────────┐
+  │ 1. 檢查 symbol == BTCUSDT                    │
+  │ 2. 檢查有無持倉 → 有則拒絕                     │
+  │ 3. 設定逐倉 ISOLATED + 20x 槓桿               │
+  │ 4. 以損定倉: qty = 500 / |entry - SL|         │
+  │ 5. 掛 LIMIT 入場單 (GTC)                      │
+  │ 6. 掛 STOP_MARKET 止損單                      │
+  │ 7. SL 失敗 → Fail-Safe: 取消入場單             │
+  │ 8. 不預掛 TP（由 CLOSE 訊號觸發）              │
+  └─────────────────────────────────────────────┘
+
+  CLOSE 流程:
+  ┌─────────────────────────────────────────────┐
+  │ 1. 取得持倉方向和數量                         │
+  │ 2. closeQty = positionQty × closeRatio       │
+  │ 3. 取消所有掛單                               │
+  │ 4. 掛反向 LIMIT 平倉單                        │
+  └─────────────────────────────────────────────┘
+
+  MOVE_SL 流程:
+  ┌─────────────────────────────────────────────┐
+  │ 1. 取消舊的 STOP_MARKET 掛單                  │
+  │ 2. 在 newStopLoss 掛新 STOP_MARKET            │
+  └─────────────────────────────────────────────┘
+
+4.4 API Endpoint
+
+  新增: POST /api/execute-trade
+  接收結構化 JSON，取代原本的原始訊息文字解析。
+
+  ENTRY:
+  {
+    "action": "ENTRY",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "entry_price": 95000,
+    "stop_loss": 94000
+  }
+
+  CLOSE:
+  {
+    "action": "CLOSE",
+    "symbol": "BTCUSDT",
+    "close_ratio": 0.5
+  }
+
+  MOVE_SL:
+  {
+    "action": "MOVE_SL",
+    "symbol": "BTCUSDT",
+    "new_stop_loss": 95500
+  }
+
+
+五、Python 端改動（Phase 2 — 後續實作）
+────────────────────────────────────────
+
+5.1 前置過濾（Cost: 0，不呼叫 AI）
+
+  a. 圖片過濾: 忽略 attachments，僅取文字
+  b. 冪等性: SQLite 存 message_id 去重
+  c. 關鍵字初篩:
+     Step 1: 是否包含 BTC / Bitcoin / 大餅 → 否則丟棄
+     Step 2: 是否包含交易詞彙 (多/空/Long/Short/止損/TP/平倉/保本)
+             → 否則丟棄（閒聊）
+
+5.2 AI 智慧解析（Cost: $$$，僅通過過濾的訊息）
+
+  呼叫 LLM API，輸出結構化 JSON:
+  - action: ENTRY / CLOSE / MOVE_SL
+  - symbol, side, entry_price, stop_loss, take_profit
+  - close_ratio, new_stop_loss
+
+5.3 衛兵檢查（Cost: 0）
+
+  - ENTRY 無 stop_loss → 無效單
+  - LONG: TP > Entry > SL
+  - SHORT: SL > Entry > TP
+  - 價格偏離市價 > 10% → 異常
+
+
+六、以損定倉計算範例
+────────────────────────────────────────
+
+  參數: 固定虧損 = 500 USDT, 槓桿 = 20x ISOLATED
+
+  範例 1:
+    做多 BTC @ 95,000, SL @ 94,000
+    風險距離 = |95,000 - 94,000| = 1,000
+    下單數量 = 500 / 1,000 = 0.500 BTC
+    保證金 = 0.500 × 95,000 / 20 = 2,375 USDT
+
+  範例 2:
+    做空 BTC @ 95,000, SL @ 97,000
+    風險距離 = |95,000 - 97,000| = 2,000
+    下單數量 = 500 / 2,000 = 0.250 BTC
+    保證金 = 0.250 × 95,000 / 20 = 1,187.5 USDT
+
+
+七、安全機制
+────────────────────────────────────────
+
+  1. 交易對白名單: 僅允許 BTCUSDT
+  2. 單一持倉限制: 有持倉即拒絕新 ENTRY
+  3. Fail-Safe: SL 掛失敗 → 取消入場單 or 市價平倉
+  4. 以損定倉: 每筆最大虧損固定 500 USDT
+  5. 逐倉隔離: 風險僅限於該倉位保證金
+  6. 冪等性: message_id 去重，防止重複下單
+  7. 價格偏離檢查: 入場價偏離市價 > 10% 則拒絕
+
+
+八、驗證情境（Testnet 測試）
+────────────────────────────────────────
+
+  TC-01 交易對限制
+    輸入: ENTRY ETHUSDT
+    預期: 拒絕「僅允許 BTCUSDT」
+
+  TC-02 以損定倉開倉
+    輸入: ENTRY BTCUSDT LONG @ 95000, SL 94000
+    預期: qty=0.500, ISOLATED 20x, LIMIT + STOP_MARKET
+
+  TC-03 單一持倉限制
+    條件: 已有 BTCUSDT 持倉
+    輸入: ENTRY BTCUSDT
+    預期: 拒絕「已有持倉」
+
+  TC-04 分批平倉
+    條件: 持倉 0.500 BTC
+    輸入: CLOSE ratio=0.5
+    預期: 平倉 0.250 BTC
+
+  TC-05 全部平倉
+    輸入: CLOSE ratio=1.0 (或 null)
+    預期: 全部平倉
+
+  TC-06 移動止損
+    輸入: MOVE_SL new_stop_loss=95500
+    預期: 取消舊 SL，掛新 SL @ 95500
+
+  TC-07 推保本
+    條件: 入場價 95000
+    輸入: MOVE_SL new_stop_loss=95000
+    預期: SL 移到入場價
+
+  TC-08 Fail-Safe
+    條件: 入場單成功，SL 掛失敗
+    預期: 自動取消入場單
+
+  TC-09 無止損拒絕
+    輸入: ENTRY 無 stop_loss
+    預期: 拒絕「ENTRY 必須包含 stop_loss」
+
+  TC-10 價格偏離
+    條件: 市價 95000
+    輸入: ENTRY @ 105000 (偏離 >10%)
+    預期: 拒絕
+
+  TC-11 方向邏輯
+    輸入: LONG, Entry=95000, SL=96000 (SL > Entry)
+    預期: 拒絕（做多 SL 不應高於入場價）
+
+  TC-12 省錢測試（Python）
+    輸入: "BTC 漲得真兇"
+    預期: 被關鍵字濾網攔截，未呼叫 AI
+
+  TC-13 圖片測試（Python）
+    輸入: 一張 K 線圖
+    預期: 系統無反應
+
+
+九、執行順序
+────────────────────────────────────────
+
+  Phase 1 — Java 端（優先，直接影響資金安全）
+    Step 1: TradeSignal.java + TradeRequest.java（資料模型）
+    Step 2: RiskConfig.java + application.yml（風控參數）
+    Step 3: BinanceFuturesService.java（核心交易邏輯）
+    Step 4: TradeController.java（API 串接）
+    Step 5: JUnit 測試
+
+  Phase 2 — Python 端（後續）
+    Step 1: 圖片過濾 + 冪等性 (SQLite)
+    Step 2: 關鍵字過濾
+    Step 3: AI (LLM) 整合
+    Step 4: 衛兵檢查
+    Step 5: 改 POST 為結構化 JSON (打 /api/execute-trade)
+
+================================================================================
