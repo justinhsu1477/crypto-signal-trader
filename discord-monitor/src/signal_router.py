@@ -17,8 +17,14 @@ SIGNAL_TYPES = {
     "\U0001f4b0": "INFO",      # 💰 盈虧更新
 }
 
+# Keyword-based signal types (no emoji prefix, matched by content)
+KEYWORD_SIGNALS = {
+    "TP-SL 修改": "MODIFY",    # 訂單/TP-SL 修改
+    "TP-SL修改": "MODIFY",     # 無空格變體
+}
+
 # Types that should be forwarded to the API
-ACTIONABLE_TYPES = {"ENTRY", "CANCEL"}
+ACTIONABLE_TYPES = {"ENTRY", "CANCEL", "MODIFY"}
 
 
 class SignalRouter:
@@ -106,10 +112,14 @@ class SignalRouter:
         await self._forward_signal(content)
 
     def _identify_type(self, content: str) -> str:
-        """Identify signal type by emoji prefix."""
+        """Identify signal type by emoji prefix or keyword."""
         stripped = content.strip()
         for emoji, sig_type in SIGNAL_TYPES.items():
             if stripped.startswith(emoji):
+                return sig_type
+        # Fallback: keyword-based matching (no emoji prefix)
+        for keyword, sig_type in KEYWORD_SIGNALS.items():
+            if keyword in stripped:
                 return sig_type
         return "UNKNOWN"
 

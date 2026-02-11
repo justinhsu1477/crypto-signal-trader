@@ -6,6 +6,7 @@ import com.trader.model.OrderResult;
 import com.trader.model.TradeRequest;
 import com.trader.model.TradeSignal;
 import com.trader.service.BinanceFuturesService;
+import com.trader.service.SignalDeduplicationService;
 import com.trader.service.SignalParserService;
 import com.trader.service.TradeRecordService;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class TradeController {
     private final SignalParserService signalParserService;
     private final RiskConfig riskConfig;
     private final TradeRecordService tradeRecordService;
+    private final SignalDeduplicationService deduplicationService;
 
     /**
      * 查詢帳戶餘額
@@ -106,6 +108,9 @@ public class TradeController {
 
         // 處理取消掛單
         if (signal.getSignalType() == TradeSignal.SignalType.CANCEL) {
+            if (deduplicationService.isCancelDuplicate(signal.getSymbol())) {
+                return ResponseEntity.ok(Map.of("action", "CANCEL", "status", "SKIPPED", "reason", "重複取消訊號"));
+            }
             String result = binanceFuturesService.cancelAllOrders(signal.getSymbol());
             try {
                 tradeRecordService.recordCancel(signal.getSymbol());

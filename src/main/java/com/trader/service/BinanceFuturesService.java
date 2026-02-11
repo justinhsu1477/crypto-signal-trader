@@ -27,14 +27,17 @@ public class BinanceFuturesService {
     private final BinanceConfig binanceConfig;
     private final RiskConfig riskConfig;
     private final TradeRecordService tradeRecordService;
+    private final SignalDeduplicationService deduplicationService;
     private final Gson gson = new Gson();
 
     public BinanceFuturesService(OkHttpClient httpClient, BinanceConfig binanceConfig,
-                                  RiskConfig riskConfig, TradeRecordService tradeRecordService) {
+                                  RiskConfig riskConfig, TradeRecordService tradeRecordService,
+                                  SignalDeduplicationService deduplicationService) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
         this.tradeRecordService = tradeRecordService;
+        this.deduplicationService = deduplicationService;
     }
 
     // ==================== 帳戶相關 ====================
@@ -204,7 +207,7 @@ public class BinanceFuturesService {
         params.put("type", "STOP_MARKET");
         params.put("stopPrice", formatPrice(stopPrice));
         params.put("quantity", formatQuantity(symbol, quantity));
-        params.put("closePosition", "false");
+        params.put("closePosition", "true");
 
         log.info("設定止損: {} {} stopPrice={}", symbol, side, stopPrice);
         String response = sendSignedPost(endpoint, params);
@@ -219,7 +222,7 @@ public class BinanceFuturesService {
         params.put("type", "TAKE_PROFIT_MARKET");
         params.put("stopPrice", formatPrice(stopPrice));
         params.put("quantity", formatQuantity(symbol, quantity));
-        params.put("closePosition", "false");
+        params.put("closePosition", "true");
 
         log.info("設定止盈: {} {} stopPrice={}", symbol, side, stopPrice);
         String response = sendSignedPost(endpoint, params);
@@ -283,6 +286,13 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("已有未成交的入場掛單，拒絕重複下單"));
         }
 
+        // 2c. 重複訊號防護（signalHash 時間窗口檢查）
+        if (deduplicationService.isDuplicate(signal)) {
+            log.warn("重複訊號，拒絕執行: {} {} entry={} SL={}",
+                    symbol, signal.getSide(), signal.getEntryPriceLow(), signal.getStopLoss());
+            return List.of(OrderResult.fail("重複訊號，5分鐘內已收到相同訊號"));
+        }
+
         // 3. 驗證止損
         if (signal.getStopLoss() == 0) {
             log.warn("ENTRY 訊號缺少止損");
@@ -340,7 +350,17 @@ public class BinanceFuturesService {
         // 9. 掛 STOP_MARKET 止損單
         OrderResult slOrder = placeStopLoss(symbol, closeSide, sl, quantity);
 
-        // 10. Fail-Safe: SL 掛失敗 → 取消入場單
+        // 10. 掛 TAKE_PROFIT_MARKET 止盈單（如果訊號有給 TP）
+        OrderResult tpOrder = null;
+        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            double tp = signal.getTakeProfits().get(0);
+            tpOrder = placeTakeProfit(symbol, closeSide, tp, quantity);
+            if (!tpOrder.isSuccess()) {
+                log.warn("止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
+            }
+        }
+
+        // 11. Fail-Safe: SL 掛失敗 → 取消入場單
         if (!slOrder.isSuccess()) {
             log.error("止損單失敗! 觸發 Fail-Safe，取消入場單");
             tradeRecordService.recordFailSafe(symbol,
@@ -356,9 +376,11 @@ public class BinanceFuturesService {
             return List.of(entryOrder, slOrder);
         }
 
-        // 11. 記錄交易到資料庫
+        // 11. 記錄交易到資料庫（含 signalHash 用於去重）
         try {
-            tradeRecordService.recordEntry(signal, entryOrder, slOrder, leverage, riskConfig.getFixedLossPerTrade());
+            String signalHash = deduplicationService.generateHash(signal);
+            tradeRecordService.recordEntry(signal, entryOrder, slOrder, leverage,
+                    riskConfig.getFixedLossPerTrade(), signalHash);
         } catch (Exception e) {
             log.error("交易紀錄寫入失敗（不影響交易）: {}", e.getMessage());
         }
@@ -366,9 +388,14 @@ public class BinanceFuturesService {
         List<OrderResult> results = new ArrayList<>();
         results.add(entryOrder);
         results.add(slOrder);
+        if (tpOrder != null) {
+            results.add(tpOrder);
+        }
 
-        log.info("ENTRY 完成: {} {} qty={} entry={} SL={} 槓桿={}x ISOLATED",
-                symbol, signal.getSide(), String.format("%.3f", quantity), entry, sl, leverage);
+        String tpInfo = (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty())
+                ? " TP=" + signal.getTakeProfits().get(0) : "";
+        log.info("ENTRY 完成: {} {} qty={} entry={} SL={}{} 槓桿={}x ISOLATED",
+                symbol, signal.getSide(), String.format("%.3f", quantity), entry, sl, tpInfo, leverage);
 
         return results;
     }
@@ -442,9 +469,10 @@ public class BinanceFuturesService {
     }
 
     /**
-     * MOVE_SL: 移動止損 / 推保本
-     * 1. 取消舊的掛單
-     * 2. 掛新的 STOP_MARKET
+     * MOVE_SL: 移動止損/止盈
+     * 1. 取消所有舊掛單（SL + TP）
+     * 2. 掛新的 STOP_MARKET（如果有新 SL）
+     * 3. 掛新的 TAKE_PROFIT_MARKET（如果有新 TP）
      */
     public List<OrderResult> executeMoveSL(TradeSignal signal) {
         String symbol = signal.getSymbol();
@@ -452,38 +480,59 @@ public class BinanceFuturesService {
         // 1. 取得持倉
         double positionAmt = getCurrentPositionAmount(symbol);
         if (positionAmt == 0) {
-            return List.of(OrderResult.fail("無持倉，無法移動止損"));
+            return List.of(OrderResult.fail("無持倉，無法修改 TP/SL"));
         }
 
         boolean isLong = positionAmt > 0;
         double absPosition = Math.abs(positionAmt);
+        String closeSide = isLong ? "SELL" : "BUY";
 
-        // 2. 取消所有掛單（包含舊的 SL）
+        // 2. 取消所有掛單（包含舊的 SL 和 TP）
         cancelAllOrders(symbol);
-
-        // 3. 掛新的 STOP_MARKET
-        String slSide = isLong ? "SELL" : "BUY";
-        double newSl = signal.getNewStopLoss();
 
         // 取得舊的 SL 價（從 DB 紀錄中）
         double oldSl = tradeRecordService.findOpenTrade(symbol)
                 .map(t -> t.getStopLoss() != null ? t.getStopLoss() : 0.0)
                 .orElse(0.0);
 
-        log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, newSl, positionAmt);
+        List<OrderResult> results = new ArrayList<>();
 
-        OrderResult slOrder = placeStopLoss(symbol, slSide, newSl, absPosition);
+        // 3. 掛新的 STOP_MARKET（如果有新 SL）
+        if (signal.getNewStopLoss() != null && signal.getNewStopLoss() > 0) {
+            double newSl = signal.getNewStopLoss();
+            log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, newSl, positionAmt);
 
-        // 記錄移動止損到資料庫
-        if (slOrder.isSuccess()) {
-            try {
-                tradeRecordService.recordMoveSL(symbol, slOrder, oldSl, newSl);
-            } catch (Exception e) {
-                log.error("移動止損紀錄寫入失敗（不影響交易）: {}", e.getMessage());
+            OrderResult slOrder = placeStopLoss(symbol, closeSide, newSl, absPosition);
+            results.add(slOrder);
+
+            // 記錄移動止損到資料庫
+            if (slOrder.isSuccess()) {
+                try {
+                    tradeRecordService.recordMoveSL(symbol, slOrder, oldSl, newSl);
+                } catch (Exception e) {
+                    log.error("移動止損紀錄寫入失敗（不影響交易）: {}", e.getMessage());
+                }
             }
         }
 
-        return List.of(slOrder);
+        // 4. 掛新的 TAKE_PROFIT_MARKET（如果有新 TP）
+        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            double newTp = signal.getTakeProfits().get(0);
+            log.info("更新止盈: {} 新TP={} 持倉={}", symbol, newTp, positionAmt);
+
+            OrderResult tpOrder = placeTakeProfit(symbol, closeSide, newTp, absPosition);
+            results.add(tpOrder);
+
+            if (!tpOrder.isSuccess()) {
+                log.warn("新止盈單失敗: {}", tpOrder.getErrorMessage());
+            }
+        }
+
+        if (results.isEmpty()) {
+            return List.of(OrderResult.fail("TP-SL 修改訊號缺少新的 TP 或 SL"));
+        }
+
+        return results;
     }
 
     // ==================== 內部方法 ====================

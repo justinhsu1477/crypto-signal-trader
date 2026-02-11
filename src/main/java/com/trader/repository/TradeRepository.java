@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -74,4 +75,9 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      */
     @Query("SELECT COALESCE(SUM(t.commission), 0) FROM Trade t WHERE t.status = 'CLOSED'")
     double sumCommission();
+
+    /**
+     * 檢查指定時間窗口內是否存在相同 signalHash 的交易（用於去重）
+     */
+    boolean existsBySignalHashAndCreatedAtAfter(String signalHash, LocalDateTime after);
 }

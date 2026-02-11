@@ -89,6 +89,23 @@ public class SignalParserService {
             "掛單價格\\s*\\(Price\\)\\s*\\n\\s*(\\d+\\.?\\d*)"
     );
 
+    // ==================== Discord TP-SL 修改格式 ====================
+
+    // 訂單/TP-SL 修改: BTCUSDT  or  TP-SL 修改: BTCUSDT
+    private static final Pattern DISCORD_MODIFY_SYMBOL = Pattern.compile(
+            "(?:訂單/?)?\\s*TP-SL\\s*修改[:：]\\s*([A-Z]+)"
+    );
+
+    // 最新止盈 (New TP)\n69200
+    private static final Pattern DISCORD_NEW_TP = Pattern.compile(
+            "最新止盈\\s*\\(New\\s*TP\\)\\s*\\n\\s*(\\d+\\.?\\d*|未設定)"
+    );
+
+    // 最新止損 (New SL)\n65000
+    private static final Pattern DISCORD_NEW_SL = Pattern.compile(
+            "最新止損\\s*\\(New\\s*SL\\)\\s*\\n\\s*(\\d+\\.?\\d*|未設定)"
+    );
+
     /**
      * 解析交易訊號
      *
@@ -112,6 +129,12 @@ public class SignalParserService {
         Optional<TradeSignal> discordCancel = parseDiscordCancelSignal(message);
         if (discordCancel.isPresent()) {
             return discordCancel;
+        }
+
+        // 嘗試解析 Discord TP-SL 修改
+        Optional<TradeSignal> discordModify = parseDiscordModifySignal(message);
+        if (discordModify.isPresent()) {
+            return discordModify;
         }
 
         // 嘗試解析陳哥策略訊號 (限價單)
@@ -241,6 +264,73 @@ public class SignalParserService {
                 .build();
 
         log.info("解析Discord取消訊號: {} {}", symbol, side);
+
+        return Optional.of(signal);
+    }
+
+    /**
+     * 解析 Discord TP-SL 修改訊號
+     * 格式:
+     * 1. 訂單/TP-SL 修改: BTCUSDT
+     * 做多 LONG Position Update
+     * 入場價格 (Entry)
+     * 67500
+     * 最新止盈 (New TP)
+     * 69200
+     * 最新止損 (New SL)
+     * 65000
+     */
+    private Optional<TradeSignal> parseDiscordModifySignal(String message) {
+        Matcher symbolMatcher = DISCORD_MODIFY_SYMBOL.matcher(message);
+        if (!symbolMatcher.find()) {
+            return Optional.empty();
+        }
+
+        String symbol = symbolMatcher.group(1);
+        if (!symbol.endsWith("USDT")) {
+            symbol = symbol + "USDT";
+        }
+
+        // 解析方向（用已有的 DISCORD_SIDE pattern）
+        Matcher sideMatcher = DISCORD_SIDE.matcher(message);
+        TradeSignal.Side side = TradeSignal.Side.LONG;
+        if (sideMatcher.find()) {
+            side = sideMatcher.group(1).contains("做空")
+                    ? TradeSignal.Side.SHORT
+                    : TradeSignal.Side.LONG;
+        }
+
+        // 解析新 TP
+        List<Double> takeProfits = new ArrayList<>();
+        Matcher tpMatcher = DISCORD_NEW_TP.matcher(message);
+        if (tpMatcher.find() && !"未設定".equals(tpMatcher.group(1))) {
+            takeProfits.add(Double.parseDouble(tpMatcher.group(1)));
+        }
+
+        // 解析新 SL
+        Double newStopLoss = null;
+        Matcher slMatcher = DISCORD_NEW_SL.matcher(message);
+        if (slMatcher.find() && !"未設定".equals(slMatcher.group(1))) {
+            newStopLoss = Double.parseDouble(slMatcher.group(1));
+        }
+
+        // 至少要有 TP 或 SL 之一
+        if (takeProfits.isEmpty() && newStopLoss == null) {
+            log.warn("TP-SL 修改訊號缺少 TP 和 SL: {}", message);
+            return Optional.empty();
+        }
+
+        TradeSignal signal = TradeSignal.builder()
+                .symbol(symbol)
+                .side(side)
+                .signalType(TradeSignal.SignalType.MOVE_SL)
+                .newStopLoss(newStopLoss)
+                .takeProfits(takeProfits)
+                .rawMessage(message)
+                .build();
+
+        log.info("解析Discord TP-SL修改訊號: {} {} 新TP:{} 新SL:{}",
+                symbol, side, takeProfits, newStopLoss);
 
         return Optional.of(signal);
     }

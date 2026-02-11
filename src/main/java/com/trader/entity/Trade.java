@@ -51,6 +51,9 @@ public class Trade {
     private String status;               // OPEN=持倉中, CLOSED=已平倉, CANCELLED=已取消
     private String exitReason;           // 出場原因：STOP_LOSS / SIGNAL_CLOSE / MANUAL_CLOSE / FAIL_SAFE
 
+    // === 去重 ===
+    private String signalHash;           // 訊號去重雜湊 SHA256(symbol|side|entryPrice|stopLoss)
+
     private LocalDateTime createdAt;     // 紀錄建立時間
     private LocalDateTime updatedAt;     // 最後更新時間
 

@@ -43,11 +43,12 @@ public class TradeRecordService {
      * @param slOrder    止損單結果
      * @param leverage   使用的槓桿
      * @param riskAmount 以損定倉的風險金額
+     * @param signalHash 訊號去重雜湊（可為 null）
      * @return tradeId
      */
     @Transactional
     public String recordEntry(TradeSignal signal, OrderResult entryOrder, OrderResult slOrder,
-                              int leverage, double riskAmount) {
+                              int leverage, double riskAmount, String signalHash) {
         String tradeId = UUID.randomUUID().toString();
 
         // 建立 Trade 主紀錄
@@ -62,6 +63,7 @@ public class TradeRecordService {
                 .stopLoss(signal.getStopLoss())
                 .leverage(leverage)
                 .riskAmount(riskAmount)
+                .signalHash(signalHash)
                 .status("OPEN")
                 .build();
 
