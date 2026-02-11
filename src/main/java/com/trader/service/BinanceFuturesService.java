@@ -267,9 +267,9 @@ public class BinanceFuturesService {
         String symbol = signal.getSymbol();
 
         // 1. 交易對白名單檢查
-        if (!symbol.equals(riskConfig.getAllowedSymbol())) {
-            log.warn("交易對不在白名單: {}, 僅允許 {}", symbol, riskConfig.getAllowedSymbol());
-            return List.of(OrderResult.fail("僅允許 " + riskConfig.getAllowedSymbol()));
+        if (!riskConfig.isSymbolAllowed(symbol)) {
+            log.warn("交易對不在白名單: {}, 允許清單: {}", symbol, riskConfig.getAllowedSymbols());
+            return List.of(OrderResult.fail("交易對不在白名單: " + symbol + ", 允許: " + riskConfig.getAllowedSymbols()));
         }
 
         // 2. 持倉限制檢查：有持倉或有掛單則拒絕

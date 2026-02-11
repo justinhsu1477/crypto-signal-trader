@@ -126,9 +126,10 @@ public class TradeController {
         }
 
         // 白名單檢查
-        if (!signal.getSymbol().equals(riskConfig.getAllowedSymbol())) {
+        if (!riskConfig.isSymbolAllowed(signal.getSymbol())) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "僅允許 " + riskConfig.getAllowedSymbol(),
+                    "error", "交易對不在白名單",
+                    "allowed", riskConfig.getAllowedSymbols().toString(),
                     "received", signal.getSymbol()));
         }
 
@@ -166,9 +167,10 @@ public class TradeController {
 
         // 白名單檢查
         String symbol = request.getSymbol();
-        if (symbol == null || !symbol.equals(riskConfig.getAllowedSymbol())) {
+        if (symbol == null || !riskConfig.isSymbolAllowed(symbol)) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "僅允許 " + riskConfig.getAllowedSymbol(),
+                    "error", "交易對不在白名單",
+                    "allowed", riskConfig.getAllowedSymbols().toString(),
                     "received", symbol != null ? symbol : "null"));
         }
 
