@@ -6,6 +6,7 @@ import com.trader.model.OrderResult;
 import com.trader.model.TradeRequest;
 import com.trader.model.TradeSignal;
 import com.trader.service.BinanceFuturesService;
+import com.trader.service.DiscordWebhookService;
 import com.trader.service.SignalDeduplicationService;
 import com.trader.service.SignalParserService;
 import com.trader.service.TradeRecordService;
@@ -36,6 +37,7 @@ public class TradeController {
     private final RiskConfig riskConfig;
     private final TradeRecordService tradeRecordService;
     private final SignalDeduplicationService deduplicationService;
+    private final DiscordWebhookService webhookService;
 
     /**
      * 查詢帳戶餘額
@@ -101,6 +103,10 @@ public class TradeController {
         Optional<TradeSignal> signalOpt = signalParserService.parse(message);
 
         if (signalOpt.isEmpty()) {
+            webhookService.sendNotification(
+                    "❓ 訊號解析失敗",
+                    "無法解析的訊號內容:\n" + (message != null ? message.substring(0, Math.min(message.length(), 200)) : "null"),
+                    DiscordWebhookService.COLOR_RED);
             return ResponseEntity.badRequest().body(Map.of("error", "無法解析訊號"));
         }
 
@@ -109,6 +115,10 @@ public class TradeController {
         // 處理取消掛單
         if (signal.getSignalType() == TradeSignal.SignalType.CANCEL) {
             if (deduplicationService.isCancelDuplicate(signal.getSymbol())) {
+                webhookService.sendNotification(
+                        "⏭️ 重複取消跳過",
+                        signal.getSymbol() + " — 30秒內已收到相同取消訊號",
+                        DiscordWebhookService.COLOR_YELLOW);
                 return ResponseEntity.ok(Map.of("action", "CANCEL", "status", "SKIPPED", "reason", "重複取消訊號"));
             }
             String result = binanceFuturesService.cancelAllOrders(signal.getSymbol());
@@ -117,6 +127,10 @@ public class TradeController {
             } catch (Exception e) {
                 log.error("取消紀錄寫入失敗: {}", e.getMessage());
             }
+            webhookService.sendNotification(
+                    "🚫 CANCEL 取消掛單",
+                    signal.getSymbol() + " — 已取消所有掛單",
+                    DiscordWebhookService.COLOR_BLUE);
             return ResponseEntity.ok(Map.of("action", "CANCEL", "symbol", signal.getSymbol(), "result", result));
         }
 
@@ -127,6 +141,10 @@ public class TradeController {
 
         // 白名單檢查
         if (!riskConfig.isSymbolAllowed(signal.getSymbol())) {
+            webhookService.sendNotification(
+                    "⚠️ 風控攔截 — 交易對不在白名單",
+                    "收到: " + signal.getSymbol() + "\n允許: " + riskConfig.getAllowedSymbols(),
+                    DiscordWebhookService.COLOR_YELLOW);
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "交易對不在白名單",
                     "allowed", riskConfig.getAllowedSymbols().toString(),
@@ -136,20 +154,39 @@ public class TradeController {
         // 路由到對應操作
         if (signal.getSignalType() == TradeSignal.SignalType.CLOSE) {
             List<OrderResult> results = binanceFuturesService.executeClose(signal);
+            boolean allSuccess = results.stream().allMatch(OrderResult::isSuccess);
+            webhookService.sendNotification(
+                    allSuccess ? "💰 CLOSE 平倉成功" : "❌ CLOSE 平倉失敗",
+                    formatCloseResults(signal.getSymbol(), results),
+                    allSuccess ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
             return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
         }
 
         if (signal.getSignalType() == TradeSignal.SignalType.MOVE_SL) {
             List<OrderResult> results = binanceFuturesService.executeMoveSL(signal);
+            boolean allSuccess = results.stream().allMatch(OrderResult::isSuccess);
+            webhookService.sendNotification(
+                    allSuccess ? "🔄 TP/SL 修改成功" : "❌ TP/SL 修改失敗",
+                    formatMoveSLResults(signal, results),
+                    allSuccess ? DiscordWebhookService.COLOR_BLUE : DiscordWebhookService.COLOR_RED);
             return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
         }
 
         // ENTRY: 止損是必須的，不再自動補充預設值
         if (signal.getStopLoss() == 0) {
+            webhookService.sendNotification(
+                    "⚠️ 風控攔截 — 缺少止損",
+                    signal.getSymbol() + " " + signal.getSide() + "\nENTRY 訊號必須包含 stop_loss",
+                    DiscordWebhookService.COLOR_YELLOW);
             return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 訊號必須包含 stop_loss"));
         }
 
         List<OrderResult> results = binanceFuturesService.executeSignal(signal);
+        boolean entrySuccess = results.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+        webhookService.sendNotification(
+                entrySuccess ? "✅ ENTRY 入場成功" : "❌ ENTRY 入場失敗",
+                formatEntryResults(signal, results),
+                entrySuccess ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
         return ResponseEntity.ok(Map.of("action", "ENTRY", "results", results));
     }
 
@@ -207,6 +244,11 @@ public class TradeController {
                 }
 
                 List<OrderResult> results = binanceFuturesService.executeSignal(signal);
+                boolean entryOk = results.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+                webhookService.sendNotification(
+                        entryOk ? "✅ ENTRY 入場成功 (API)" : "❌ ENTRY 入場失敗 (API)",
+                        formatEntryResults(signal, results),
+                        entryOk ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
                 return ResponseEntity.ok(Map.of("action", "ENTRY", "results", results));
             }
 
@@ -218,6 +260,11 @@ public class TradeController {
                         .build();
 
                 List<OrderResult> results = binanceFuturesService.executeClose(signal);
+                boolean closeOk = results.stream().allMatch(OrderResult::isSuccess);
+                webhookService.sendNotification(
+                        closeOk ? "💰 CLOSE 平倉成功 (API)" : "❌ CLOSE 平倉失敗 (API)",
+                        formatCloseResults(symbol, results),
+                        closeOk ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
                 return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
             }
 
@@ -233,6 +280,11 @@ public class TradeController {
                         .build();
 
                 List<OrderResult> results = binanceFuturesService.executeMoveSL(signal);
+                boolean moveOk = results.stream().allMatch(OrderResult::isSuccess);
+                webhookService.sendNotification(
+                        moveOk ? "🔄 TP/SL 修改成功 (API)" : "❌ TP/SL 修改失敗 (API)",
+                        formatMoveSLResults(signal, results),
+                        moveOk ? DiscordWebhookService.COLOR_BLUE : DiscordWebhookService.COLOR_RED);
                 return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
             }
 
@@ -260,6 +312,67 @@ public class TradeController {
     @DeleteMapping("/orders")
     public ResponseEntity<String> cancelAllOrders(@RequestParam String symbol) {
         return ResponseEntity.ok(binanceFuturesService.cancelAllOrders(symbol));
+    }
+
+    // ==================== Webhook 通知格式化 ====================
+
+    private String formatEntryResults(TradeSignal signal, List<OrderResult> results) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(signal.getSymbol()).append(" ").append(signal.getSide()).append("\n");
+        sb.append("入場: ").append(signal.getEntryPriceLow());
+        if (signal.getEntryPriceHigh() != signal.getEntryPriceLow()) {
+            sb.append("~").append(signal.getEntryPriceHigh());
+        }
+        sb.append("\n");
+        sb.append("止損: ").append(signal.getStopLoss());
+        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            sb.append(" | 止盈: ").append(signal.getTakeProfits().get(0));
+        }
+        sb.append("\n");
+
+        for (OrderResult r : results) {
+            if (r.isSuccess() && r.getOrderId() != null) {
+                sb.append("✓ ").append(r.getType() != null ? r.getType() : "ORDER")
+                        .append(" qty=").append(r.getQuantity())
+                        .append(" price=").append(r.getPrice()).append("\n");
+            } else if (!r.isSuccess()) {
+                sb.append("✗ ").append(r.getErrorMessage()).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private String formatCloseResults(String symbol, List<OrderResult> results) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(symbol).append("\n");
+        for (OrderResult r : results) {
+            if (r.isSuccess()) {
+                sb.append("✓ 平倉 qty=").append(r.getQuantity())
+                        .append(" price=").append(r.getPrice()).append("\n");
+            } else {
+                sb.append("✗ ").append(r.getErrorMessage()).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private String formatMoveSLResults(TradeSignal signal, List<OrderResult> results) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(signal.getSymbol()).append("\n");
+        if (signal.getNewStopLoss() != 0) {
+            sb.append("新止損: ").append(signal.getNewStopLoss()).append("\n");
+        }
+        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            sb.append("新止盈: ").append(signal.getTakeProfits().get(0)).append("\n");
+        }
+        for (OrderResult r : results) {
+            if (r.isSuccess()) {
+                sb.append("✓ ").append(r.getType() != null ? r.getType() : "ORDER").append(" OK\n");
+            } else {
+                sb.append("✗ ").append(r.getErrorMessage()).append("\n");
+            }
+        }
+        return sb.toString();
     }
 
     // ==================== 交易紀錄與統計端點 ====================

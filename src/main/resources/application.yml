@@ -34,6 +34,11 @@ binance:
     allowed-symbols:              # 允許的交易對清單（可加多個）
       - BTCUSDT
 
+discord:
+  webhook:
+    url: ${DISCORD_WEBHOOK_URL:}                    # Discord Webhook URL
+    enabled: ${DISCORD_WEBHOOK_ENABLED:false}       # 是否啟用通知
+
 logging:
   level:
     com.trader: DEBUG
