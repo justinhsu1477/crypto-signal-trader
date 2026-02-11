@@ -1,0 +1,14 @@
+.git
+.gradle
+.idea
+.vscode
+.env
+.env.local
+build/
+data/
+discord-monitor/
+*.log
+*.DS_Store
+*.iml
+__pycache__/
+*.pyc

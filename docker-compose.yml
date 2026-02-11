@@ -1,0 +1,22 @@
+services:
+  trading-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-api
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - h2-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/balance"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  h2-data:

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.log
+.DS_Store
+tests/
+probe_*.py
+probe_*.js
+config.yml
+config.example.yml
