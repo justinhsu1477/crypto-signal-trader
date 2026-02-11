@@ -30,5 +30,8 @@ discord-monitor/discord-monitor.log
 discord-monitor/probe_*.py
 discord-monitor/probe_*.js
 
+# === H2 Database ===
+data/
+
 # === Logs ===
 *.log

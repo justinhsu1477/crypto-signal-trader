@@ -8,7 +8,6 @@ import com.trader.config.BinanceConfig;
 import com.trader.config.RiskConfig;
 import com.trader.model.OrderResult;
 import com.trader.model.TradeSignal;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -22,13 +21,21 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BinanceFuturesService {
 
     private final OkHttpClient httpClient;
     private final BinanceConfig binanceConfig;
     private final RiskConfig riskConfig;
+    private final TradeRecordService tradeRecordService;
     private final Gson gson = new Gson();
+
+    public BinanceFuturesService(OkHttpClient httpClient, BinanceConfig binanceConfig,
+                                  RiskConfig riskConfig, TradeRecordService tradeRecordService) {
+        this.httpClient = httpClient;
+        this.binanceConfig = binanceConfig;
+        this.riskConfig = riskConfig;
+        this.tradeRecordService = tradeRecordService;
+    }
 
     // ==================== 帳戶相關 ====================
 
@@ -336,6 +343,8 @@ public class BinanceFuturesService {
         // 10. Fail-Safe: SL 掛失敗 → 取消入場單
         if (!slOrder.isSuccess()) {
             log.error("止損單失敗! 觸發 Fail-Safe，取消入場單");
+            tradeRecordService.recordFailSafe(symbol,
+                    String.format("{\"reason\":\"SL下單失敗\",\"sl_error\":\"%s\"}", slOrder.getErrorMessage()));
             try {
                 long entryOrderId = Long.parseLong(entryOrder.getOrderId());
                 cancelOrder(symbol, entryOrderId);
@@ -345,6 +354,13 @@ public class BinanceFuturesService {
                 placeMarketOrder(symbol, closeSide, quantity);
             }
             return List.of(entryOrder, slOrder);
+        }
+
+        // 11. 記錄交易到資料庫
+        try {
+            tradeRecordService.recordEntry(signal, entryOrder, slOrder, leverage, riskConfig.getFixedLossPerTrade());
+        } catch (Exception e) {
+            log.error("交易紀錄寫入失敗（不影響交易）: {}", e.getMessage());
         }
 
         List<OrderResult> results = new ArrayList<>();
@@ -402,6 +418,15 @@ public class BinanceFuturesService {
 
         OrderResult closeOrder = placeLimitOrder(symbol, closeSide, closePrice, closeQty);
 
+        // 記錄平倉到資料庫
+        if (closeOrder.isSuccess()) {
+            try {
+                tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");
+            } catch (Exception e) {
+                log.error("平倉紀錄寫入失敗（不影響交易）: {}", e.getMessage());
+            }
+        }
+
         List<OrderResult> results = new ArrayList<>();
         results.add(closeOrder);
 
@@ -440,9 +465,23 @@ public class BinanceFuturesService {
         String slSide = isLong ? "SELL" : "BUY";
         double newSl = signal.getNewStopLoss();
 
-        log.info("移動止損: {} 新SL={} 持倉={}", symbol, newSl, positionAmt);
+        // 取得舊的 SL 價（從 DB 紀錄中）
+        double oldSl = tradeRecordService.findOpenTrade(symbol)
+                .map(t -> t.getStopLoss() != null ? t.getStopLoss() : 0.0)
+                .orElse(0.0);
+
+        log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, newSl, positionAmt);
 
         OrderResult slOrder = placeStopLoss(symbol, slSide, newSl, absPosition);
+
+        // 記錄移動止損到資料庫
+        if (slOrder.isSuccess()) {
+            try {
+                tradeRecordService.recordMoveSL(symbol, slOrder, oldSl, newSl);
+            } catch (Exception e) {
+                log.error("移動止損紀錄寫入失敗（不影響交易）: {}", e.getMessage());
+            }
+        }
 
         return List.of(slOrder);
     }

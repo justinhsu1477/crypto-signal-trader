@@ -4,6 +4,15 @@ server:
 spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: jdbc:h2:file:./data/trading
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
 
 binance:
   futures:

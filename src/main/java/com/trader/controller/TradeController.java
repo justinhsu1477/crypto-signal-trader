@@ -1,10 +1,13 @@
 package com.trader.controller;
 
+import com.trader.entity.Trade;
+import com.trader.entity.TradeEvent;
 import com.trader.model.OrderResult;
 import com.trader.model.TradeRequest;
 import com.trader.model.TradeSignal;
 import com.trader.service.BinanceFuturesService;
 import com.trader.service.SignalParserService;
+import com.trader.service.TradeRecordService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +33,7 @@ public class TradeController {
     private final BinanceFuturesService binanceFuturesService;
     private final SignalParserService signalParserService;
     private final RiskConfig riskConfig;
+    private final TradeRecordService tradeRecordService;
 
     /**
      * 查詢帳戶餘額
@@ -103,6 +107,11 @@ public class TradeController {
         // 處理取消掛單
         if (signal.getSignalType() == TradeSignal.SignalType.CANCEL) {
             String result = binanceFuturesService.cancelAllOrders(signal.getSymbol());
+            try {
+                tradeRecordService.recordCancel(signal.getSymbol());
+            } catch (Exception e) {
+                log.error("取消紀錄寫入失敗: {}", e.getMessage());
+            }
             return ResponseEntity.ok(Map.of("action", "CANCEL", "symbol", signal.getSymbol(), "result", result));
         }
 
@@ -244,5 +253,56 @@ public class TradeController {
     @DeleteMapping("/orders")
     public ResponseEntity<String> cancelAllOrders(@RequestParam String symbol) {
         return ResponseEntity.ok(binanceFuturesService.cancelAllOrders(symbol));
+    }
+
+    // ==================== 交易紀錄與統計端點 ====================
+
+    /**
+     * 查詢所有交易紀錄（可選 status 篩選）
+     * GET /api/trades
+     * GET /api/trades?status=OPEN
+     * GET /api/trades?status=CLOSED
+     */
+    @GetMapping("/trades")
+    public ResponseEntity<List<Trade>> getTrades(@RequestParam(required = false) String status) {
+        if (status != null) {
+            return ResponseEntity.ok(tradeRecordService.findByStatus(status.toUpperCase()));
+        }
+        return ResponseEntity.ok(tradeRecordService.findAll());
+    }
+
+    /**
+     * 查詢單筆交易詳情（含 events）
+     * GET /api/trades/{tradeId}
+     */
+    @GetMapping("/trades/{tradeId}")
+    public ResponseEntity<?> getTradeDetail(@PathVariable String tradeId) {
+        Optional<Trade> tradeOpt = tradeRecordService.findById(tradeId);
+        if (tradeOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(tradeOpt.get());
+    }
+
+    /**
+     * 查詢單筆交易的事件日誌
+     * GET /api/trades/{tradeId}/events
+     */
+    @GetMapping("/trades/{tradeId}/events")
+    public ResponseEntity<List<TradeEvent>> getTradeEvents(@PathVariable String tradeId) {
+        return ResponseEntity.ok(tradeRecordService.findEvents(tradeId));
+    }
+
+    /**
+     * 盈虧統計摘要
+     * GET /api/stats/summary
+     *
+     * 回傳: closedTrades, winningTrades, winRate, totalNetProfit,
+     *       grossWins, grossLosses, profitFactor, avgProfitPerTrade,
+     *       totalCommission, openPositions
+     */
+    @GetMapping("/stats/summary")
+    public ResponseEntity<Map<String, Object>> getStatsSummary() {
+        return ResponseEntity.ok(tradeRecordService.getStatsSummary());
     }
 }
