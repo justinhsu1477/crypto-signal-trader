@@ -7,6 +7,8 @@
 binance:
   futures:
     base-url: https://testnet.binancefuture.com
+  risk:
+    dedup-enabled: false    # dev 環境關閉重複訊號防護，方便測試
 
 spring:
   h2:

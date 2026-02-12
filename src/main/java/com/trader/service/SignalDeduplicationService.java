@@ -1,5 +1,6 @@
 package com.trader.service;
 
+import com.trader.config.RiskConfig;
 import com.trader.model.TradeSignal;
 import com.trader.repository.TradeRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SignalDeduplicationService {
 
     private final TradeRepository tradeRepository;
+    private final RiskConfig riskConfig;
 
     /**
      * 內存快取: signalHash → 首次收到的時間戳 (epoch millis)
@@ -44,8 +46,9 @@ public class SignalDeduplicationService {
      */
     private static final int CACHE_CLEANUP_THRESHOLD = 500;
 
-    public SignalDeduplicationService(TradeRepository tradeRepository) {
+    public SignalDeduplicationService(TradeRepository tradeRepository, RiskConfig riskConfig) {
         this.tradeRepository = tradeRepository;
+        this.riskConfig = riskConfig;
     }
 
     /**
@@ -55,6 +58,11 @@ public class SignalDeduplicationService {
      * @return true = 重複（應拒絕）, false = 非重複（可執行）
      */
     public boolean isDuplicate(TradeSignal signal) {
+        if (!riskConfig.isDedupEnabled()) {
+            log.debug("重複訊號防護已關閉 (dedup-enabled=false)");
+            return false;
+        }
+
         String hash = generateHash(signal);
 
         // ===== 第一層：內存快速檢查 =====
@@ -99,6 +107,10 @@ public class SignalDeduplicationService {
      * @return true = 重複（應拒絕）
      */
     public boolean isCancelDuplicate(String symbol) {
+        if (!riskConfig.isDedupEnabled()) {
+            return false;
+        }
+
         String hash = "CANCEL|" + symbol;
         Long previousTime = recentSignals.get(hash);
         long now = System.currentTimeMillis();

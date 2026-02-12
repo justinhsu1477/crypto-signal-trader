@@ -1,36 +1,52 @@
 package com.trader.config;
 
-import lombok.Data;
+import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 import java.util.List;
 
-@Data
-@Configuration
+@Getter
 @ConfigurationProperties(prefix = "binance.risk")
 public class RiskConfig {
 
-    private double maxPositionUsdt = 100;
-    private int maxLeverage = 10;
-    private int maxDailyOrders = 10;
-    private int defaultLeverage = 5;
-    private double defaultSlPercent = 3.0;  // 預設止損百分比
-    private double defaultTpPercent = 3.0;  // 預設止盈百分比
+    private final double maxPositionUsdt;
+    private final int maxLeverage;
+    private final int maxDailyOrders;
+    private final int defaultLeverage;
+    private final double defaultSlPercent;
+    private final double defaultTpPercent;
+    private final boolean dedupEnabled;
+    private final double fixedLossPerTrade;
+    private final int maxPositions;
+    private final int fixedLeverage;
+    private final List<String> allowedSymbols;
 
-    // 以損定倉參數
-    private double fixedLossPerTrade = 500.0;  // 單筆固定虧損金額 (USDT)
-    private int maxPositions = 1;              // 最大同時持倉數
-    private int fixedLeverage = 20;            // 固定槓桿
-
-    /**
-     * 允許的交易對清單（設定檔驅動）
-     * application.yml 範例:
-     *   allowed-symbols:
-     *     - BTCUSDT
-     *     - ETHUSDT
-     */
-    private List<String> allowedSymbols = List.of("BTCUSDT");
+    public RiskConfig(
+            @DefaultValue("100") double maxPositionUsdt,
+            @DefaultValue("10") int maxLeverage,
+            @DefaultValue("10") int maxDailyOrders,
+            @DefaultValue("5") int defaultLeverage,
+            @DefaultValue("3.0") double defaultSlPercent,
+            @DefaultValue("3.0") double defaultTpPercent,
+            @DefaultValue("true") boolean dedupEnabled,
+            @DefaultValue("500.0") double fixedLossPerTrade,
+            @DefaultValue("1") int maxPositions,
+            @DefaultValue("20") int fixedLeverage,
+            @DefaultValue("BTCUSDT") List<String> allowedSymbols
+    ) {
+        this.maxPositionUsdt = maxPositionUsdt;
+        this.maxLeverage = maxLeverage;
+        this.maxDailyOrders = maxDailyOrders;
+        this.defaultLeverage = defaultLeverage;
+        this.defaultSlPercent = defaultSlPercent;
+        this.defaultTpPercent = defaultTpPercent;
+        this.dedupEnabled = dedupEnabled;
+        this.fixedLossPerTrade = fixedLossPerTrade;
+        this.maxPositions = maxPositions;
+        this.fixedLeverage = fixedLeverage;
+        this.allowedSymbols = allowedSymbols != null ? List.copyOf(allowedSymbols) : List.of("BTCUSDT");
+    }
 
     /**
      * 檢查交易對是否在白名單中
