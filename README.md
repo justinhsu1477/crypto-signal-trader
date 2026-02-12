@@ -9,10 +9,12 @@ Discord Desktop (CDP 模式)
     │  Chrome DevTools Protocol
     ▼
 Python Monitor (discord-monitor/)
-    │  過濾頻道 → 識別訊號 → POST to API
+    │  過濾頻道 → Gemini AI 解析成 JSON
+    │              ↓ (AI 失敗時 fallback)
+    │            regex 解析原始文字
     ▼
 Spring Boot API (Docker, port 8080)
-    │  解析訊號 → 風控檢查 → Binance 下單
+    │  風控檢查 → Binance 下單
     │  → Discord Webhook 通知結果
     ▼
 Binance Futures API
@@ -76,14 +78,46 @@ curl -X POST http://localhost:8080/api/parse-signal \
   -d '{"message": "📢 交易訊號發布: BTCUSDT\n做多 LONG 🟢 (限價單)\n入場價格 (Entry)\n95000\n止盈目標 (TP)\n98000\n止損價格 (SL)\n93000"}'
 ```
 
-## 訊號格式
+## AI 訊號解析
 
-| Emoji / 關鍵字 | 類型 | 動作 |
-|----------------|------|------|
-| 📢 交易訊號發布 | ENTRY | 限價單 + TP + SL |
-| ⚠️ 掛單取消 | CANCEL | 取消該幣種掛單 |
-| TP-SL 修改 | MODIFY | 重新掛 TP/SL |
-| 🚀 訊號成交 / 🛑 止損 / 💰 盈虧 | INFO | 僅 log |
+使用 Gemini Flash AI 解析 Discord 訊號，不依賴固定 emoji 或格式。
+
+### 解析策略
+
+```
+AI 開啟時：所有訊息 → Gemini AI 判斷 action → 結構化 JSON → /api/execute-trade
+                        ↓ (AI 失敗)
+              fallback → 原始文字 → /api/execute-signal (regex)
+
+AI 關閉時：emoji/keyword 過濾 → 只有 ACTIONABLE → regex 解析
+```
+
+### AI 辨識的訊號類型
+
+| Action | 觸發條件 | 說明 |
+|--------|---------|------|
+| ENTRY | 出現入場價、做多/做空等交易訊號 | 限價單 + TP + SL |
+| CANCEL | 出現取消掛單相關字詞 | 取消該幣種掛單 |
+| MOVE_SL | 出現 TP-SL 修改、訂單修改 | 重新掛 TP/SL |
+| CLOSE | 出現「平倉」二字 | 全部平倉 |
+| INFO | 成交通知、盈虧更新、閒聊 | 跳過不處理 |
+
+AI 靠語意理解判斷，不綁死特定 emoji 或格式。不同群主的訊號格式都能處理。
+
+### 設定 (`discord-monitor/config.yml`)
+
+```yaml
+ai:
+  enabled: true               # true = AI 解析, false = 純 regex
+  model: "gemini-2.0-flash"   # Gemini 模型
+  api_key_env: "GEMINI_API_KEY"
+  timeout: 15
+```
+
+`.env` 加入：
+```env
+GEMINI_API_KEY=你的key        # https://aistudio.google.com/apikey 取得
+```
 
 ## 設定說明
 
@@ -95,6 +129,7 @@ BINANCE_API_KEY=your_key
 BINANCE_SECRET_KEY=your_secret
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/你的ID/你的TOKEN
 DISCORD_WEBHOOK_ENABLED=true
+GEMINI_API_KEY=your_gemini_key      # AI 訊號解析用
 ```
 
 ### Discord 監聽 (`discord-monitor/config.yml`)
