@@ -135,15 +135,29 @@ class SignalRouter:
         """Forward the signal to the Spring Boot API.
 
         Strategy: AI-first, regex-fallback.
-        1. If AI parser is available, try AI parsing first
+        1. If AI parser is available, try AI parsing first (Agent 1: Signal Parser)
         2. On AI success → send structured JSON to /api/execute-trade
         3. On AI failure → fallback to raw text /api/execute-signal (regex)
+
+        Multi-Agent Extension Point (future):
+        After Agent 1 parses successfully, additional agents can be inserted:
+          - Agent 2 (Risk Assessment): evaluate win probability, news context
+          - Agent 3 (Arbitration): when multiple agents disagree, vote on final decision
+        Example:
+          parsed = await self.ai_parser.parse(content)       # Agent 1
+          risk_ok = await self.risk_agent.evaluate(parsed)   # Agent 2 (future)
+          if not risk_ok: return                              # Rejected by risk agent
+          await self.api_client.send_trade(parsed, ...)      # Execute
         """
-        # === AI parsing (primary) ===
+        # === Agent 1: AI Signal Parser (primary) ===
         if self.ai_parser:
             parsed = await self.ai_parser.parse(content)
             if parsed and parsed.get("action") not in ("INFO", "UNKNOWN"):
                 logger.info("AI parsed → %s %s %s", parsed.get("action"), parsed.get("symbol"), parsed.get("side", ""))
+
+                # TODO: Insert Agent 2 (risk assessment) here in future
+                # TODO: Insert Agent 3 (arbitration) here in future
+
                 result = await self.api_client.send_trade(parsed, dry_run=self.dry_run)
                 if result.success:
                     logger.info("AI trade OK: %s", result.summary[:200])

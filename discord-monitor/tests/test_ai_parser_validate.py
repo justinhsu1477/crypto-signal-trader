@@ -57,14 +57,15 @@ class TestValidateEntry:
         }
         assert AiSignalParser._validate(None, parsed) is False
 
-    def test_entry_missing_stop_loss(self):
+    def test_entry_without_stop_loss_still_valid(self):
+        """陳哥有時不給 SL，ENTRY 只需 side + entry_price。"""
         parsed = {
             "action": "ENTRY",
             "symbol": "BTCUSDT",
             "side": "LONG",
             "entry_price": 95000,
         }
-        assert AiSignalParser._validate(None, parsed) is False
+        assert AiSignalParser._validate(None, parsed) is True
 
     def test_entry_no_take_profit_still_valid(self):
         """ENTRY without TP is valid (Java fills default)."""
@@ -77,17 +78,6 @@ class TestValidateEntry:
         }
         assert AiSignalParser._validate(None, parsed) is True
 
-    def test_entry_zero_stop_loss_is_falsy(self):
-        """stop_loss=0 is falsy → validation should fail."""
-        parsed = {
-            "action": "ENTRY",
-            "symbol": "BTCUSDT",
-            "side": "LONG",
-            "entry_price": 95000,
-            "stop_loss": 0,
-        }
-        assert AiSignalParser._validate(None, parsed) is False
-
     def test_entry_zero_entry_price_is_falsy(self):
         parsed = {
             "action": "ENTRY",
@@ -97,6 +87,16 @@ class TestValidateEntry:
             "stop_loss": 93000,
         }
         assert AiSignalParser._validate(None, parsed) is False
+
+    def test_entry_market_order_without_sl(self):
+        """市價單通常沒 SL，之後單獨給。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 91200,
+        }
+        assert AiSignalParser._validate(None, parsed) is True
 
 
 class TestValidateCancel:
@@ -139,28 +139,20 @@ class TestValidateMoveSl:
         }
         assert AiSignalParser._validate(None, parsed) is True
 
-    def test_move_sl_missing_both(self):
+    def test_move_sl_no_price_still_valid(self):
+        """成本保護不帶具體價格也合法，Java 端處理。"""
         parsed = {"action": "MOVE_SL", "symbol": "BTCUSDT"}
-        assert AiSignalParser._validate(None, parsed) is False
+        assert AiSignalParser._validate(None, parsed) is True
 
-    def test_move_sl_both_null(self):
+    def test_move_sl_with_nulls_still_valid(self):
+        """成本保護場景：AI 回 null 價格。"""
         parsed = {
             "action": "MOVE_SL",
             "symbol": "BTCUSDT",
             "new_stop_loss": None,
             "new_take_profit": None,
         }
-        assert AiSignalParser._validate(None, parsed) is False
-
-    def test_move_sl_zero_values(self):
-        """0 is falsy → should fail."""
-        parsed = {
-            "action": "MOVE_SL",
-            "symbol": "BTCUSDT",
-            "new_stop_loss": 0,
-            "new_take_profit": 0,
-        }
-        assert AiSignalParser._validate(None, parsed) is False
+        assert AiSignalParser._validate(None, parsed) is True
 
 
 class TestValidateClose:
@@ -174,12 +166,50 @@ class TestValidateClose:
         parsed = {"action": "CLOSE", "symbol": "BTCUSDT"}
         assert AiSignalParser._validate(None, parsed) is True
 
+    def test_close_with_valid_ratio(self):
+        parsed = {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5}
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_close_ratio_full(self):
+        parsed = {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 1.0}
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_close_ratio_null_means_full(self):
+        parsed = {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": None}
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_close_ratio_zero_invalid(self):
+        """0 = 不平任何倉位，沒意義。"""
+        parsed = {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0}
+        assert AiSignalParser._validate(None, parsed) is False
+
+    def test_close_ratio_negative_invalid(self):
+        parsed = {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": -0.5}
+        assert AiSignalParser._validate(None, parsed) is False
+
+    def test_close_ratio_over_one_invalid(self):
+        parsed = {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 1.5}
+        assert AiSignalParser._validate(None, parsed) is False
+
+    def test_close_ratio_string_invalid(self):
+        parsed = {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": "half"}
+        assert AiSignalParser._validate(None, parsed) is False
+
 
 class TestValidateInfo:
     """INFO action validation."""
 
-    def test_valid_info(self):
+    def test_valid_info_with_symbol(self):
         parsed = {"action": "INFO", "symbol": "BTCUSDT"}
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_info_without_symbol(self):
+        """閒聊訊息可能沒有 symbol，仍合法。"""
+        parsed = {"action": "INFO"}
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_info_empty_dict_with_action(self):
+        parsed = {"action": "INFO", "symbol": None}
         assert AiSignalParser._validate(None, parsed) is True
 
 
@@ -200,15 +230,16 @@ class TestValidateSymbol:
         parsed = {"symbol": "BTCUSDT"}
         assert AiSignalParser._validate(None, parsed) is False
 
-    def test_missing_symbol(self):
-        parsed = {"action": "ENTRY", "side": "LONG", "entry_price": 95000, "stop_loss": 93000}
+    def test_missing_symbol_non_info(self):
+        """非 INFO 缺少 symbol → False。"""
+        parsed = {"action": "ENTRY", "side": "LONG", "entry_price": 95000}
         assert AiSignalParser._validate(None, parsed) is False
 
     def test_empty_action(self):
         parsed = {"action": "", "symbol": "BTCUSDT"}
         assert AiSignalParser._validate(None, parsed) is False
 
-    def test_empty_symbol(self):
+    def test_empty_symbol_non_info(self):
         parsed = {"action": "ENTRY", "symbol": ""}
         assert AiSignalParser._validate(None, parsed) is False
 

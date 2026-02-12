@@ -23,47 +23,159 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
   "entry_price": 95000.0,
   "stop_loss": 93000.0,
   "take_profit": 98000.0,
+  "close_ratio": null,
   "new_stop_loss": null,
   "new_take_profit": null
 }
 
 ## 規則
-1. symbol 必須以 USDT 結尾（例如 BTC → BTCUSDT, ETH → ETHUSDT）
-2. 做多 = LONG, 做空 = SHORT
-3. 如果有入場價格區間（如 70800-72000），取中間值作為 entry_price
+
+### 基本規則
+1. symbol 必須以 USDT 結尾。中文幣名映射：比特币/BTC → BTCUSDT, 以太坊/ETH → ETHUSDT。symbol 不分大小寫（btc = BTC）
+2. 做多 = LONG, 做空 = SHORT。「做🈳」也是做空（🈳 是空的表情符號替代）
+3. 如果有入場價格區間（如 70800-72000），取中間值作為 entry_price。只有一個價格（"附近"）直接用該價格
 4. 如果 TP 或 SL 寫「未設定」，該欄位設為 null
-5. 📢 交易訊號發布 → action = "ENTRY"
-6. ⚠️ 掛單取消 → action = "CANCEL"（只需 symbol）
-7. TP-SL 修改 / 訂單修改 → action = "MOVE_SL"（需要 symbol + new_stop_loss 和/或 new_take_profit）
-8. 訊息中出現「平倉」二字 → action = "CLOSE"（例如：平倉離場、平倉、Closed）
-9. 🚀 訊號成交 / 🛑 止損出場 / 💰 盈虧更新 → action = "INFO"
-10. 無法辨識的訊息 → action = "INFO"
-11. 只輸出 JSON，不要任何解釋文字
+5. 只輸出 JSON，不要任何解釋文字
+
+### ENTRY（開倉）判斷規則
+6. 出現「附近，做多/做空/做🈳」→ ENTRY
+7. 「市价做多/做空」→ ENTRY，用「实时价格」或「市价」後面的數字當 entry_price
+8. 「换手做多/做空」→ CLOSE（先平原倉，新開倉會是下一條獨立訊息）
+9. 📢 交易訊號發布 → ENTRY
+10. 止盈如有多個用 / 分隔（如 87400/86800），取第一個作為 take_profit
+11. 「半仓」→ 仍是 ENTRY，但在 close_ratio 填 null（半倉是倉位管理不是平倉比例）
+12. 「限价」或「限價單」只是下單類型說明，仍然是 ENTRY
+
+### CLOSE（平倉）判斷規則
+13. 「手动平仓」「止盈出局」「保本出局」→ CLOSE
+14. 「触发止损」「已经触发止损」「触发保本」「触发成本保护」→ CLOSE
+15. 訊息中出現「平倉」或「平仓」→ CLOSE
+16. 「平50%」「止盈50%」→ CLOSE + close_ratio = 0.5
+17. 「全部止盈出局」「全部平仓」→ CLOSE + close_ratio = null（null 表示全平）
+
+### MOVE_SL（移動止損）判斷規則
+18. 「止损设置: <價格>」→ MOVE_SL，new_stop_loss = 該價格
+19. 「止损上移至成本附近」「做成本保护」→ MOVE_SL，new_stop_loss = null（Java 端會處理成本價）
+20. 「上移止损<價格>」「止损修改至<價格>」→ MOVE_SL，new_stop_loss = 該價格
+21. TP-SL 修改 / 訂單修改 → MOVE_SL
+
+### CANCEL（取消）判斷規則
+22. 「限价单取消」「限价挂单取消」「掛單取消」→ CANCEL
+23. ⚠️ 掛單取消 → CANCEL
+
+### INFO（不操作）判斷規則
+24. 盈虧報告（如「这单亏1个risk」「本周合计赚1个risk」）→ INFO
+25. 技術分析/行情分析（如「比特币下一个阻力位64000美元」）→ INFO
+26. 閒聊/心態分享/截圖/日常通知 → INFO
+27. 🚀 訊號成交 / 🛑 止損出場 / 💰 盈虧更新 → INFO
+28. 無法辨識的訊息 → INFO
 
 ## 範例
+
+### ENTRY 範例
+
+輸入: ⚠️⚠️ ⚠️ ⚠️ ⚠️ ⚠️\nETH，2560附近，做空\n止损预计：2610\n止盈预计：2456\n⚠️⚠️ ⚠️ ⚠️ ⚠️ ⚠️
+輸出: {"action":"ENTRY","symbol":"ETHUSDT","side":"SHORT","entry_price":2560,"stop_loss":2610,"take_profit":2456}
+
+輸入: ⚠️⚠️⚠️⚠️⚠️⚠️⚠️\n陈哥合约交易策略\nBTC，88700附近，做空\n止损预计: 90800\n止盈预计: 87400/86800/85600\n⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"SHORT","entry_price":88700,"stop_loss":90800,"take_profit":87400}
+
+輸入: ⚠️⚠️⚠️⚠️⚠️⚠️⚠️\n陈哥合约交易策略\nETH，1596附近，做🈳\n止损预计: 1610\n止盈预计；1550\n⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+輸出: {"action":"ENTRY","symbol":"ETHUSDT","side":"SHORT","entry_price":1596,"stop_loss":1610,"take_profit":1550}
+
+輸入: ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️\nBTC，61800附近，做多\n实时价格: 61850\n止损预计: 60700\n⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":61800,"stop_loss":60700}
+
+輸入: ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️\n比特币，市价做多\nbtc实时价格: 91200\n⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":91200}
+
+輸入: BTC市价88700附近入场做空。
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"SHORT","entry_price":88700}
+
+輸入: BTC市价67400附近，半仓做多做个反弹。
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":67400}
 
 輸入: 📢 交易訊號發布: BTCUSDT\n做多 LONG 🟢 (限價單)\n入場價格 (Entry)\n95000\n止盈目標 (TP)\n98000\n止損價格 (SL)\n93000
 輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":95000,"stop_loss":93000,"take_profit":98000}
 
-輸入: ⚠️ 掛單取消: ETHUSDT\n做空 SHORT 🔴
-輸出: {"action":"CANCEL","symbol":"ETHUSDT","side":"SHORT"}
+### CLOSE 範例
+
+輸入: ✅手动平仓✅\nETH实时价格: 3110
+輸出: {"action":"CLOSE","symbol":"ETHUSDT"}
+
+輸入: ✅止盈出局✅\nbtc实时价格: 104520
+輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+輸入: 成本附近，保本出局！
+輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+輸入: 已经触发止损
+輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+輸入: eth触发止损，等待下一笔交易
+輸出: {"action":"CLOSE","symbol":"ETHUSDT"}
+
+輸入: 已经触发保本
+輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+輸入: BTC目前均价在88600附近，可以平50%
+輸出: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5}
+
+輸入: BTC市价88200附近换手做多。
+輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+### MOVE_SL 範例
+
+輸入: 止损设置: 89400
+輸出: {"action":"MOVE_SL","symbol":"BTCUSDT","new_stop_loss":89400}
+
+輸入: 止损上移至成本附近，做成本保护。
+輸出: {"action":"MOVE_SL","symbol":"BTCUSDT"}
+
+輸入: 做短线收益的可以全部走了，中长线收益剩余仓位上移止损67400
+輸出: {"action":"MOVE_SL","symbol":"BTCUSDT","new_stop_loss":67400}
 
 輸入: 訂單/TP-SL 修改: BTCUSDT\n做多 LONG Position Update\n入場價格 (Entry)\n67500\n最新止盈 (New TP)\n69200\n最新止損 (New SL)\n65000
 輸出: {"action":"MOVE_SL","symbol":"BTCUSDT","side":"LONG","new_stop_loss":65000,"new_take_profit":69200}
 
-輸入: 平倉離場 (Closed): BTCUSDT\n做空 SHORT
-輸出: {"action":"CLOSE","symbol":"BTCUSDT","side":"SHORT"}
+### CANCEL 範例
 
-輸入: BTCUSDT 平倉
-輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+輸入: 66000限价多单取消。
+輸出: {"action":"CANCEL","symbol":"BTCUSDT"}
+
+輸入: 限价单取消。
+輸出: {"action":"CANCEL","symbol":"BTCUSDT"}
+
+輸入: ⚠️ 掛單取消: ETHUSDT\n做空 SHORT 🔴
+輸出: {"action":"CANCEL","symbol":"ETHUSDT","side":"SHORT"}
+
+### INFO 範例
+
+輸入: 这单亏1个risk，本周合计赚1个risk。
+輸出: {"action":"INFO"}
+
+輸入: #btc\n比特币下一个阻力位64000美元！
+輸出: {"action":"INFO","symbol":"BTCUSDT"}
+
+輸入: 大家可以早点休息，晚安😴
+輸出: {"action":"INFO"}
 
 輸入: 🚀 訊號成交: BTCUSDT 已成交
 輸出: {"action":"INFO","symbol":"BTCUSDT"}
+
+輸入: 昨晚的空单交易， 赚了2个risk。
+輸出: {"action":"INFO"}
 """
 
 
 class AiSignalParser:
-    """Parses trading signals using Google Gemini."""
+    """Parses trading signals using Google Gemini.
+
+    Architecture note: This is Agent 1 (Signal Parser) in the pipeline.
+    Future agents can be added in signal_router._forward_signal():
+      - Agent 2: Risk assessment (should we follow this trade?)
+      - Agent 3: Conflict arbitration (when multiple agents disagree)
+    """
 
     def __init__(self, config: AiConfig):
         self.config = config
@@ -123,7 +235,14 @@ class AiSignalParser:
         action = parsed.get("action")
         symbol = parsed.get("symbol")
 
-        if not action or not symbol:
+        if not action:
+            return False
+
+        # INFO without symbol is valid (e.g., pure chat messages)
+        if action == "INFO":
+            return True
+
+        if not symbol:
             return False
 
         # Symbol must end with USDT
@@ -131,23 +250,25 @@ class AiSignalParser:
             parsed["symbol"] = symbol + "USDT"
 
         if action == "ENTRY":
+            # entry_price is required; stop_loss can be missing (陳哥有時不給)
             return all([
                 parsed.get("side") in ("LONG", "SHORT"),
                 parsed.get("entry_price"),
-                parsed.get("stop_loss"),
             ])
 
         if action == "CANCEL":
             return True  # Only symbol needed
 
         if action == "MOVE_SL":
-            # Need at least one of new_stop_loss or new_take_profit
-            return bool(parsed.get("new_stop_loss") or parsed.get("new_take_profit"))
-
-        if action == "CLOSE":
+            # new_stop_loss or new_take_profit; or neither (成本保護 without specific price)
             return True
 
-        if action == "INFO":
+        if action == "CLOSE":
+            # Validate close_ratio if present
+            ratio = parsed.get("close_ratio")
+            if ratio is not None:
+                if not isinstance(ratio, (int, float)) or ratio <= 0 or ratio > 1:
+                    return False
             return True
 
         return False

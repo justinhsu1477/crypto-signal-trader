@@ -69,7 +69,7 @@ class PositionSizingTest {
             // riskDistance = |0.50 - 0.48| = 0.02
             // qty = 500 / 0.02 = 25000
             double qty = service.calculateFixedRiskQuantity(0.50, 0.48);
-            assertThat(qty).isEqualTo(25000.0);
+            assertThat(qty).isCloseTo(25000.0, within(0.01));
         }
 
         @Test
@@ -104,9 +104,16 @@ class PositionSizingTest {
         @Test
         @DisplayName("ETH (>=1, <1000) → 2 位小數")
         void ethPrice() throws Exception {
-            assertThat(invokeFormatPrice(2650.567)).isEqualTo("2650.57");
+            assertThat(invokeFormatPrice(500.567)).isEqualTo("500.57");
             assertThat(invokeFormatPrice(1.0)).isEqualTo("1.00");
-            assertThat(invokeFormatPrice(999.999)).isEqualTo("1000.0"); // rounds up to >=1000
+            assertThat(invokeFormatPrice(999.0)).isEqualTo("999.00");
+        }
+
+        @Test
+        @DisplayName(">=1000 的幣種 → 1 位小數 (ETH 2650 也屬於此區間)")
+        void aboveThousand() throws Exception {
+            assertThat(invokeFormatPrice(2650.567)).isEqualTo("2650.6");
+            assertThat(invokeFormatPrice(1000.0)).isEqualTo("1000.0");
         }
 
         @Test

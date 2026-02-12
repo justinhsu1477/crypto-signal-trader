@@ -319,9 +319,9 @@ class SignalParserServiceTest {
         }
 
         @Test
-        @DisplayName("觸發入場訊號 — 空單")
+        @DisplayName("觸發入場訊號 — 空單（簡體触发入场）")
         void triggerShort() {
-            String msg = "70800空單觸發入場。";
+            String msg = "70800空單触发入场。";
 
             Optional<TradeSignal> result = parser.parse(msg);
 
@@ -332,9 +332,9 @@ class SignalParserServiceTest {
         }
 
         @Test
-        @DisplayName("觸發入場訊號 — 多單")
+        @DisplayName("觸發入場訊號 — 多單（簡體触发入场）")
         void triggerLong() {
-            String msg = "95000多單觸發入場。";
+            String msg = "95000多單触发入场。";
 
             Optional<TradeSignal> result = parser.parse(msg);
 
@@ -342,6 +342,18 @@ class SignalParserServiceTest {
             TradeSignal s = result.get();
             assertThat(s.getSide()).isEqualTo(TradeSignal.Side.LONG);
             assertThat(s.getEntryPriceLow()).isEqualTo(95000.0);
+        }
+
+        @Test
+        @DisplayName("觸發入場訊號 — 繁體觸也可以匹配")
+        void triggerTraditionalPartial() {
+            // regex [触觸]发 → 觸发 也匹配
+            String msg = "70800空單觸发入场。";
+
+            Optional<TradeSignal> result = parser.parse(msg);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().getSide()).isEqualTo(TradeSignal.Side.SHORT);
         }
     }
 
