@@ -385,6 +385,11 @@ public class BinanceFuturesService {
             tpOrder = placeTakeProfit(symbol, closeSide, tp, quantity);
             if (!tpOrder.isSuccess()) {
                 log.warn("止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
+                discordWebhookService.sendNotification(
+                        "⚠️ 止盈單失敗（需手動設定）",
+                        String.format("%s %s\n入場和止損已正常設定\n止盈錯誤: %s\n請手動設定 TP",
+                                symbol, signal.getSide(), tpOrder.getErrorMessage()),
+                        DiscordWebhookService.COLOR_YELLOW);
             }
         }
 
@@ -581,6 +586,11 @@ public class BinanceFuturesService {
 
             if (!tpOrder.isSuccess()) {
                 log.warn("新止盈單失敗: {}", tpOrder.getErrorMessage());
+                discordWebhookService.sendNotification(
+                        "⚠️ 新止盈單失敗（需手動設定）",
+                        String.format("%s\n新TP設定失敗: %s\n請手動設定 TP",
+                                symbol, tpOrder.getErrorMessage()),
+                        DiscordWebhookService.COLOR_YELLOW);
             }
         }
 
@@ -717,6 +727,11 @@ public class BinanceFuturesService {
             return body;
         } catch (IOException e) {
             log.error("HTTP request failed: {}", e.getMessage(), e);
+            discordWebhookService.sendNotification(
+                    "🔴 Binance API 連線中斷",
+                    String.format("API 無法連線，止損單可能無法執行！\n請求: %s %s\n錯誤: %s\n請立即檢查網路連線與 Binance API 狀態",
+                            request.method(), request.url().encodedPath(), e.getMessage()),
+                    DiscordWebhookService.COLOR_RED);
             throw new RuntimeException("Binance API request failed", e);
         }
     }
