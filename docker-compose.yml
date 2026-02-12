@@ -18,5 +18,17 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  discord-monitor:
+    build:
+      context: ./discord-monitor
+      dockerfile: Dockerfile
+    container_name: discord-monitor
+    env_file:
+      - .env
+    depends_on:
+      trading-api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   h2-data:

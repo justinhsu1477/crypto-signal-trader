@@ -170,9 +170,15 @@ class CdpClient:
         target = self._select_discord_target(targets)
 
         ws_url = target["webSocketDebuggerUrl"]
+        # CDP 回傳的 ws URL 可能是 ws://localhost/...，容器裡需替換為實際 host
+        ws_url = ws_url.replace("ws://localhost", f"ws://{self.config.host}:{self.config.port}")
         logger.info("Connecting to CDP target: %s (%s)", target.get("title", ""), ws_url)
 
-        self._ws = await websockets.connect(ws_url, max_size=2**24)
+        self._ws = await websockets.connect(
+            ws_url,
+            max_size=2**24,
+            additional_headers={"Host": "localhost"},  # CDP Host 檢查
+        )
 
         # Clear any stale state from previous connection attempts
         await self._evaluate_js(CLEAR_JS)
@@ -232,7 +238,9 @@ class CdpClient:
         logger.debug("Discovering CDP targets at %s", url)
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            # Host header 必須是 localhost，否則 CDP 會拒絕非本機連線
+            headers = {"Host": "localhost"}
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                 if resp.status != 200:
                     raise ConnectionError(f"CDP discovery failed: HTTP {resp.status}")
                 targets = await resp.json()
