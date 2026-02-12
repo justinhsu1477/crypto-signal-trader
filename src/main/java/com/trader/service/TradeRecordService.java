@@ -255,6 +255,19 @@ public class TradeRecordService {
     }
 
     /**
+     * 查詢今日已實現虧損（回傳負數表示虧損）
+     * 用於每日虧損熔斷機制：當 |todayLoss| >= maxDailyLoss 時拒絕新交易
+     */
+    public double getTodayRealizedLoss() {
+        LocalDateTime startOfToday = LocalDateTime.now().toLocalDate().atStartOfDay();
+        List<Trade> closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
+        return closedToday.stream()
+                .filter(t -> t.getNetProfit() != null && t.getNetProfit() < 0)
+                .mapToDouble(Trade::getNetProfit)
+                .sum();
+    }
+
+    /**
      * 盈虧統計摘要
      */
     public Map<String, Object> getStatsSummary() {

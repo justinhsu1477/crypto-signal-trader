@@ -29,7 +29,7 @@ class PositionSizingTest {
                 1, 20, List.of("BTCUSDT", "ETHUSDT")
         );
         // 只需要 riskConfig，其他依賴傳 null（不會被 calculateFixedRiskQuantity 使用）
-        service = new BinanceFuturesService(null, null, riskConfig, null, null);
+        service = new BinanceFuturesService(null, null, riskConfig, null, null, null);
     }
 
     @Nested

@@ -28,16 +28,19 @@ public class BinanceFuturesService {
     private final RiskConfig riskConfig;
     private final TradeRecordService tradeRecordService;
     private final SignalDeduplicationService deduplicationService;
+    private final DiscordWebhookService discordWebhookService;
     private final Gson gson = new Gson();
 
     public BinanceFuturesService(OkHttpClient httpClient, BinanceConfig binanceConfig,
                                   RiskConfig riskConfig, TradeRecordService tradeRecordService,
-                                  SignalDeduplicationService deduplicationService) {
+                                  SignalDeduplicationService deduplicationService,
+                                  DiscordWebhookService discordWebhookService) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
         this.tradeRecordService = tradeRecordService;
         this.deduplicationService = deduplicationService;
+        this.discordWebhookService = discordWebhookService;
     }
 
     // ==================== 帳戶相關 ====================
@@ -60,6 +63,7 @@ public class BinanceFuturesService {
     /**
      * 取得某交易對的當前持倉數量（絕對值）
      * 回傳 0 表示無持倉
+     * ⚠️ API 失敗時拋出 RuntimeException，避免誤判為「無持倉」而重複開倉
      */
     public double getCurrentPositionAmount(String symbol) {
         String response = getPositions();
@@ -76,30 +80,29 @@ public class BinanceFuturesService {
                 }
             }
         } catch (Exception e) {
-            log.error("解析持倉資訊失敗: {}", e.getMessage());
+            throw new RuntimeException("查詢持倉失敗，拒絕交易: " + e.getMessage(), e);
         }
         return 0;
     }
 
     /**
      * 取得市場價格
+     * ⚠️ API 失敗時拋出 RuntimeException，避免回傳 0 導致偏離檢查失效
      */
     public double getMarkPrice(String symbol) {
         String endpoint = "/fapi/v1/ticker/price";
-        Map<String, String> params = new LinkedHashMap<>();
-        params.put("symbol", symbol);
         String response = sendPublicGet(endpoint + "?symbol=" + symbol);
         try {
             JsonObject json = gson.fromJson(response, JsonObject.class);
             return json.get("price").getAsDouble();
         } catch (Exception e) {
-            log.error("取得市價失敗: {}", e.getMessage());
-            return 0;
+            throw new RuntimeException("取得市價失敗，拒絕交易: " + e.getMessage(), e);
         }
     }
 
     /**
      * 取得目前活躍持倉數量（positionAmt != 0 的交易對數量）
+     * ⚠️ API 失敗時拋出 RuntimeException，避免回傳 0 繞過持倉上限檢查
      */
     public int getActivePositionCount() {
         String response = getPositions();
@@ -114,13 +117,14 @@ public class BinanceFuturesService {
                 }
             }
         } catch (Exception e) {
-            log.error("解析持倉數量失敗: {}", e.getMessage());
+            throw new RuntimeException("查詢持倉數量失敗，拒絕交易: " + e.getMessage(), e);
         }
         return count;
     }
 
     /**
      * 檢查是否有未成交的 LIMIT 入場掛單
+     * ⚠️ API 失敗時拋出 RuntimeException，避免回傳 false 導致重複掛單
      */
     public boolean hasOpenEntryOrders(String symbol) {
         String response = getOpenOrders(symbol);
@@ -134,7 +138,7 @@ public class BinanceFuturesService {
                 }
             }
         } catch (Exception e) {
-            log.error("檢查掛單失敗: {}", e.getMessage());
+            throw new RuntimeException("檢查掛單失敗，拒絕交易: " + e.getMessage(), e);
         }
         return false;
     }
@@ -264,12 +268,35 @@ public class BinanceFuturesService {
      * 7. Fail-Safe: SL 失敗則取消入場單
      */
     public List<OrderResult> executeSignal(TradeSignal signal) {
+      try {
+        return executeSignalInternal(signal);
+      } catch (RuntimeException e) {
+        log.error("交易前置檢查失敗，拒絕執行: {}", e.getMessage());
+        return List.of(OrderResult.fail("前置檢查失敗: " + e.getMessage()));
+      }
+    }
+
+    /**
+     * executeSignal 內部實作，被外層 try-catch 保護。
+     * API 查詢失敗會拋出 RuntimeException，由外層攔截並拒絕交易。
+     */
+    private List<OrderResult> executeSignalInternal(TradeSignal signal) {
         String symbol = signal.getSymbol();
 
         // 1. 交易對白名單檢查
         if (!riskConfig.isSymbolAllowed(symbol)) {
             log.warn("交易對不在白名單: {}, 允許清單: {}", symbol, riskConfig.getAllowedSymbols());
             return List.of(OrderResult.fail("交易對不在白名單: " + symbol + ", 允許: " + riskConfig.getAllowedSymbols()));
+        }
+
+        // 1b. 每日虧損熔斷檢查
+        double todayLoss = tradeRecordService.getTodayRealizedLoss();
+        double maxDailyLoss = riskConfig.getFixedLossPerTrade() * riskConfig.getMaxDailyOrders();
+        if (Math.abs(todayLoss) >= maxDailyLoss) {
+            String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT", todayLoss, maxDailyLoss);
+            log.error(msg);
+            discordWebhookService.sendNotification("🚨 每日虧損熔斷", msg, DiscordWebhookService.COLOR_RED);
+            return List.of(OrderResult.fail("每日虧損已達上限，暫停交易"));
         }
 
         // 2. 持倉限制檢查：有持倉或有掛單則拒絕
@@ -309,14 +336,15 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("做空止損不應低於入場價"));
         }
 
-        // 5. 價格偏離檢查
+        // 5. 價格偏離檢查（markPrice 失敗會拋異常，由外層 catch）
         double markPrice = getMarkPrice(symbol);
-        if (markPrice > 0) {
-            double deviation = Math.abs(entry - markPrice) / markPrice;
-            if (deviation > 0.10) {
-                log.warn("入場價 {} 偏離市價 {} 超過 10% ({}%)", entry, markPrice, String.format("%.1f", deviation * 100));
-                return List.of(OrderResult.fail("入場價偏離市價超過 10%"));
-            }
+        if (markPrice <= 0) {
+            return List.of(OrderResult.fail("無法取得市價，拒絕交易"));
+        }
+        double deviation = Math.abs(entry - markPrice) / markPrice;
+        if (deviation > 0.10) {
+            log.warn("入場價 {} 偏離市價 {} 超過 10% ({}%)", entry, markPrice, String.format("%.1f", deviation * 100));
+            return List.of(OrderResult.fail("入場價偏離市價超過 10%"));
         }
 
         int leverage = riskConfig.getFixedLeverage();
@@ -371,7 +399,17 @@ public class BinanceFuturesService {
                 log.info("Fail-Safe: 已取消入場單 {}", entryOrderId);
             } catch (Exception e) {
                 log.error("Fail-Safe: 取消入場單失敗，嘗試市價平倉", e);
-                placeMarketOrder(symbol, closeSide, quantity);
+                OrderResult marketClose = placeMarketOrder(symbol, closeSide, quantity);
+                if (!marketClose.isSuccess()) {
+                    // 最後防線失敗 — 必須人工介入
+                    String alert = String.format("CRITICAL: %s 止損單+取消單+市價平倉全部失敗! 請立即手動處理! 數量=%s",
+                            symbol, formatQuantity(symbol, quantity));
+                    log.error(alert);
+                    discordWebhookService.sendNotification("🚨 Fail-Safe 全部失敗",
+                            alert, DiscordWebhookService.COLOR_RED);
+                    tradeRecordService.recordFailSafe(symbol,
+                            "{\"reason\":\"所有自動保護措施失敗\",\"market_close_error\":\"" + marketClose.getErrorMessage() + "\"}");
+                }
             }
             return List.of(entryOrder, slOrder);
         }
@@ -410,8 +448,14 @@ public class BinanceFuturesService {
     public List<OrderResult> executeClose(TradeSignal signal) {
         String symbol = signal.getSymbol();
 
-        // 1. 取得持倉
-        double positionAmt = getCurrentPositionAmount(symbol);
+        // 1. 取得持倉（API 失敗會拋異常）
+        double positionAmt;
+        try {
+            positionAmt = getCurrentPositionAmount(symbol);
+        } catch (RuntimeException e) {
+            log.error("平倉前查詢持倉失敗: {}", e.getMessage());
+            return List.of(OrderResult.fail("查詢持倉失敗: " + e.getMessage()));
+        }
         if (positionAmt == 0) {
             return List.of(OrderResult.fail("無持倉可平"));
         }
@@ -429,9 +473,15 @@ public class BinanceFuturesService {
         // 3. 取消所有掛單
         cancelAllOrders(symbol);
 
-        // 4. 取得市價作為平倉價格
-        double markPrice = getMarkPrice(symbol);
-        if (markPrice == 0) {
+        // 4. 取得市價作為平倉價格（API 失敗會拋異常）
+        double markPrice;
+        try {
+            markPrice = getMarkPrice(symbol);
+        } catch (RuntimeException e) {
+            log.error("平倉前取得市價失敗: {}", e.getMessage());
+            return List.of(OrderResult.fail("取得市價失敗: " + e.getMessage()));
+        }
+        if (markPrice <= 0) {
             return List.of(OrderResult.fail("無法取得市價"));
         }
 
@@ -477,8 +527,14 @@ public class BinanceFuturesService {
     public List<OrderResult> executeMoveSL(TradeSignal signal) {
         String symbol = signal.getSymbol();
 
-        // 1. 取得持倉
-        double positionAmt = getCurrentPositionAmount(symbol);
+        // 1. 取得持倉（API 失敗會拋異常）
+        double positionAmt;
+        try {
+            positionAmt = getCurrentPositionAmount(symbol);
+        } catch (RuntimeException e) {
+            log.error("修改 TP/SL 前查詢持倉失敗: {}", e.getMessage());
+            return List.of(OrderResult.fail("查詢持倉失敗: " + e.getMessage()));
+        }
         if (positionAmt == 0) {
             return List.of(OrderResult.fail("無持倉，無法修改 TP/SL"));
         }

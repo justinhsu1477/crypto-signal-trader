@@ -3,6 +3,7 @@ package com.trader.repository;
 import com.trader.entity.Trade;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -80,4 +81,10 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      * 檢查指定時間窗口內是否存在相同 signalHash 的交易（用於去重）
      */
     boolean existsBySignalHashAndCreatedAtAfter(String signalHash, LocalDateTime after);
+
+    /**
+     * 查詢指定時間後已平倉的交易（用於每日虧損熔斷）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :since")
+    List<Trade> findClosedTradesAfter(@Param("since") LocalDateTime since);
 }
