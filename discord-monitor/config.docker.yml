@@ -5,10 +5,8 @@ cdp:
   max_reconnect_attempts: 0
 
 discord:
-  channel_ids:
-    - "1325133886509944983"
-  guild_ids:
-    - "862188678876233748"
+  channel_ids: []              # 用環境變數 DISCORD_CHANNEL_IDS 設定
+  guild_ids: []                # 用環境變數 DISCORD_GUILD_IDS 設定
   author_ids: []
 
 api:

@@ -10,9 +10,9 @@ cdp:
 # Discord 過濾設定
 discord:
   channel_ids:
-    - "1325133886509944983"    # 填入你要監聽的頻道 ID
+    - "YOUR_CHANNEL_ID"       # 填入頻道 ID，或用環境變數 DISCORD_CHANNEL_IDS
   guild_ids:
-    - "862188678876233748"     # 填入伺服器 ID (選填)
+    - "YOUR_GUILD_ID"         # 填入伺服器 ID，或用環境變數 DISCORD_GUILD_IDS (選填)
   author_ids: []               # 只接收特定人的訊息 (選填, 空 = 所有人)
 
 # Spring Boot API 設定

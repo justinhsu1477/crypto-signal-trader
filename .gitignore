@@ -1,6 +1,7 @@
 # === Secrets ===
 .env
 *.env.local
+discord-monitor/config.yml
 
 # === Java / Gradle ===
 .gradle/

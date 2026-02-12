@@ -1,6 +1,7 @@
 """Configuration loader — reads config.yml into typed dataclasses."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,6 +55,14 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
+def _env_list(env_var: str, default: list[str]) -> list[str]:
+    """Read a comma-separated env var, fallback to YAML default."""
+    val = os.environ.get(env_var, "")
+    if val.strip():
+        return [v.strip() for v in val.split(",") if v.strip()]
+    return default
+
+
 def load_config(path: str) -> AppConfig:
     """Load configuration from a YAML file."""
     config_path = Path(path)
@@ -77,9 +86,9 @@ def load_config(path: str) -> AppConfig:
             max_reconnect_attempts=cdp_raw.get("max_reconnect_attempts", 0),
         ),
         discord=DiscordConfig(
-            channel_ids=discord_raw.get("channel_ids", []),
-            guild_ids=discord_raw.get("guild_ids", []),
-            author_ids=discord_raw.get("author_ids", []),
+            channel_ids=_env_list("DISCORD_CHANNEL_IDS", discord_raw.get("channel_ids", [])),
+            guild_ids=_env_list("DISCORD_GUILD_IDS", discord_raw.get("guild_ids", [])),
+            author_ids=_env_list("DISCORD_AUTHOR_IDS", discord_raw.get("author_ids", [])),
         ),
         api=ApiConfig(
             base_url=api_raw.get("base_url", "http://localhost:8080"),
