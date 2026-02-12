@@ -209,4 +209,75 @@ class AlertNotificationTest {
         }
     }
 
+    @Nested
+    @DisplayName("SL/TP Idempotent Retry")
+    class IdempotentRetry {
+
+        @Test
+        @DisplayName("SL 第一次 IOException → 重試成功 → 不走 Fail-Safe")
+        void slRetrySucceedsOnSecondAttempt() throws Exception {
+            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
+            OkHttpClient mockHttpClient = mock(OkHttpClient.class);
+            Call mockCall1 = mock(Call.class);
+            Call mockCall2 = mock(Call.class);
+
+            // 第一次 IOException，第二次成功
+            when(mockHttpClient.newCall(any(Request.class)))
+                    .thenReturn(mockCall1)
+                    .thenReturn(mockCall2);
+            when(mockCall1.execute()).thenThrow(new IOException("Connection reset"));
+
+            Response successResponse = new Response.Builder()
+                    .request(new Request.Builder().url("https://fapi.binance.com/fapi/v1/order").build())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(ResponseBody.create(
+                            "{\"orderId\":999,\"symbol\":\"BTCUSDT\",\"side\":\"SELL\",\"type\":\"STOP_MARKET\",\"price\":\"0\",\"origQty\":\"0.250\"}",
+                            MediaType.get("application/json")))
+                    .build();
+            when(mockCall2.execute()).thenReturn(successResponse);
+
+            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", "testkey", "testsecret");
+            BinanceFuturesService service = new BinanceFuturesService(
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook);
+
+            OrderResult result = service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25);
+
+            // 重試後成功
+            assertThat(result.isSuccess()).isTrue();
+            assertThat(result.getOrderId()).isEqualTo("999");
+
+            // 不應觸發「全部失敗」的告警
+            verify(mockWebhook, never()).sendNotification(
+                    contains("全部失敗"), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("SL 全部重試失敗 → 拋異常 + Discord 告警")
+        void slRetryAllFailsThrowsAndAlerts() throws Exception {
+            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
+            OkHttpClient mockHttpClient = mock(OkHttpClient.class);
+            Call mockCall = mock(Call.class);
+
+            // 每次都 IOException
+            when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
+            when(mockCall.execute()).thenThrow(new IOException("Connection refused"));
+
+            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", "testkey", "testsecret");
+            BinanceFuturesService service = new BinanceFuturesService(
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook);
+
+            // 全部重試失敗 → 拋 RuntimeException
+            assertThatThrownBy(() -> service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("failed after");
+
+            // 應觸發 Discord 紅色告警
+            verify(mockWebhook).sendNotification(
+                    contains("重試全部失敗"),
+                    contains("Connection refused"),
+                    eq(DiscordWebhookService.COLOR_RED));
+        }
+    }
 }

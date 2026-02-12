@@ -31,6 +31,10 @@ public class BinanceFuturesService {
     private final DiscordWebhookService discordWebhookService;
     private final Gson gson = new Gson();
 
+    // SL/TP 下單重試配置
+    private static final int ORDER_MAX_RETRIES = 2;
+    private static final long[] ORDER_RETRY_DELAYS_MS = {1000, 3000};
+
     public BinanceFuturesService(OkHttpClient httpClient, BinanceConfig binanceConfig,
                                   RiskConfig riskConfig, TradeRecordService tradeRecordService,
                                   SignalDeduplicationService deduplicationService,
@@ -212,9 +216,10 @@ public class BinanceFuturesService {
         params.put("stopPrice", formatPrice(stopPrice));
         params.put("quantity", formatQuantity(symbol, quantity));
         params.put("closePosition", "true");
+        params.put("newClientOrderId", generateClientOrderId("SL"));
 
         log.info("設定止損: {} {} stopPrice={}", symbol, side, stopPrice);
-        String response = sendSignedPost(endpoint, params);
+        String response = sendSignedPostWithRetry(endpoint, params);
         return parseOrderResponse(response);
     }
 
@@ -227,9 +232,10 @@ public class BinanceFuturesService {
         params.put("stopPrice", formatPrice(stopPrice));
         params.put("quantity", formatQuantity(symbol, quantity));
         params.put("closePosition", "true");
+        params.put("newClientOrderId", generateClientOrderId("TP"));
 
         log.info("設定止盈: {} {} stopPrice={}", symbol, side, stopPrice);
-        String response = sendSignedPost(endpoint, params);
+        String response = sendSignedPostWithRetry(endpoint, params);
         return parseOrderResponse(response);
     }
 
@@ -716,6 +722,71 @@ public class BinanceFuturesService {
 
         String signature = BinanceSignatureUtil.sign(queryString, binanceConfig.getSecretKey());
         return queryString + "&signature=" + signature;
+    }
+
+    /**
+     * 帶 idempotent key 的下單重試（僅用於 SL/TP）
+     * 用 newClientOrderId 確保 Binance 不會重複成交
+     * 只有 IOException（網路斷線/timeout）才重試，收到 HTTP 回應（含 4xx/5xx）不重試
+     */
+    private String sendSignedPostWithRetry(String endpoint, Map<String, String> params) {
+        String clientOrderId = params.get("newClientOrderId");
+        IOException lastException = null;
+
+        for (int attempt = 0; attempt <= ORDER_MAX_RETRIES; attempt++) {
+            try {
+                String queryString = buildSignedQueryString(params);
+                String url = binanceConfig.getBaseUrl() + endpoint;
+                RequestBody body = RequestBody.create(
+                        queryString, MediaType.parse("application/x-www-form-urlencoded"));
+                Request request = new Request.Builder()
+                        .url(url).post(body)
+                        .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                        .build();
+
+                try (Response response = httpClient.newCall(request).execute()) {
+                    String responseBody = response.body() != null ? response.body().string() : "";
+                    if (!response.isSuccessful()) {
+                        log.error("Binance API error: {} - {}", response.code(), responseBody);
+                    }
+                    return responseBody;
+                }
+            } catch (IOException e) {
+                lastException = e;
+                log.warn("下單網路失敗 (attempt {}/{}): clientOrderId={}, error={}",
+                        attempt + 1, ORDER_MAX_RETRIES + 1, clientOrderId, e.getMessage());
+                if (attempt < ORDER_MAX_RETRIES) {
+                    try {
+                        Thread.sleep(ORDER_RETRY_DELAYS_MS[attempt]);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 全部重試用完
+        discordWebhookService.sendNotification(
+                "🔴 Binance 下單重試全部失敗",
+                String.format("下單重試 %d 次全部失敗！\nclientOrderId: %s\n錯誤: %s\n請立即檢查網路連線",
+                        ORDER_MAX_RETRIES + 1, clientOrderId,
+                        lastException != null ? lastException.getMessage() : "unknown"),
+                DiscordWebhookService.COLOR_RED);
+        throw new RuntimeException("Binance order request failed after " + (ORDER_MAX_RETRIES + 1) + " retries",
+                lastException);
+    }
+
+    /**
+     * 產生 Binance newClientOrderId（冪等性 key）
+     * 格式: {prefix}-{timestamp}-{random4hex}
+     * 例如: SL-1707123456789-a3f2
+     * Binance 限制: 最多 36 字元, [a-zA-Z0-9_-]
+     */
+    private String generateClientOrderId(String prefix) {
+        String ts = String.valueOf(System.currentTimeMillis());
+        String rand = Integer.toHexString((int) (Math.random() * 0xFFFF));
+        return String.format("%s-%s-%s", prefix, ts, rand);
     }
 
     private String executeRequest(Request request) {
