@@ -82,6 +82,54 @@ class ApiClient:
                 error=f"HTTP request failed: {e}",
             )
 
+    async def send_trade(self, trade_request: dict, dry_run: bool = False) -> ExecutionResult:
+        """POST structured JSON to /api/execute-trade.
+
+        Args:
+            trade_request: Dict matching TradeRequest schema (action, symbol, side, etc.)
+            dry_run: If True, log only without executing.
+        """
+        if dry_run:
+            logger.info("[DRY RUN] Would send trade: %s", trade_request)
+            return ExecutionResult(
+                success=True,
+                status_code=200,
+                summary=f"[DRY RUN] {trade_request}",
+            )
+
+        url = f"{self.config.base_url}/api/execute-trade"
+
+        try:
+            async with self._session.post(url, json=trade_request) as resp:
+                try:
+                    body = await resp.json()
+                except Exception:
+                    body = await resp.text()
+
+                if resp.status == 200:
+                    return ExecutionResult(
+                        success=True,
+                        status_code=200,
+                        summary=str(body)[:300],
+                        raw_response=body,
+                    )
+                else:
+                    error_msg = body.get("error", str(body)) if isinstance(body, dict) else str(body)
+                    return ExecutionResult(
+                        success=False,
+                        status_code=resp.status,
+                        summary="",
+                        error=error_msg,
+                        raw_response=body,
+                    )
+        except Exception as e:
+            return ExecutionResult(
+                success=False,
+                status_code=0,
+                summary="",
+                error=f"HTTP request failed: {e}",
+            )
+
     async def check_health(self) -> bool:
         """Check if the Spring Boot API is reachable."""
         try:

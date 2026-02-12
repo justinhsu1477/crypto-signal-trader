@@ -32,6 +32,14 @@ class ApiConfig:
 
 
 @dataclass
+class AiConfig:
+    enabled: bool = False
+    model: str = "gemini-2.0-flash"
+    api_key_env: str = "GEMINI_API_KEY"
+    timeout: int = 15
+
+
+@dataclass
 class LoggingConfig:
     level: str = "INFO"
     file: str | None = None
@@ -42,6 +50,7 @@ class AppConfig:
     cdp: CdpConfig = field(default_factory=CdpConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
+    ai: AiConfig = field(default_factory=AiConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
@@ -57,6 +66,7 @@ def load_config(path: str) -> AppConfig:
     cdp_raw = raw.get("cdp", {})
     discord_raw = raw.get("discord", {})
     api_raw = raw.get("api", {})
+    ai_raw = raw.get("ai", {})
     logging_raw = raw.get("logging", {})
 
     return AppConfig(
@@ -77,6 +87,12 @@ def load_config(path: str) -> AppConfig:
             parse_endpoint=api_raw.get("parse_endpoint", "/api/parse-signal"),
             timeout=api_raw.get("timeout", 10),
             dry_run=api_raw.get("dry_run", False),
+        ),
+        ai=AiConfig(
+            enabled=ai_raw.get("enabled", False),
+            model=ai_raw.get("model", "gemini-2.0-flash"),
+            api_key_env=ai_raw.get("api_key_env", "GEMINI_API_KEY"),
+            timeout=ai_raw.get("timeout", 15),
         ),
         logging=LoggingConfig(
             level=logging_raw.get("level", "INFO"),

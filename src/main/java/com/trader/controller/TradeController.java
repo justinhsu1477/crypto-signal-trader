@@ -103,11 +103,10 @@ public class TradeController {
         Optional<TradeSignal> signalOpt = signalParserService.parse(message);
 
         if (signalOpt.isEmpty()) {
-            webhookService.sendNotification(
-                    "❓ 訊號解析失敗",
-                    "無法解析的訊號內容:\n" + (message != null ? message.substring(0, Math.min(message.length(), 200)) : "null"),
-                    DiscordWebhookService.COLOR_RED);
-            return ResponseEntity.badRequest().body(Map.of("error", "無法解析訊號"));
+            log.debug("訊號解析失敗，非交易訊號: {}", message != null ? message.substring(0, Math.min(message.length(), 100)) : "null");
+            return ResponseEntity.ok(Map.of(
+                    "action", "IGNORED",
+                    "reason", "非交易訊號，無法解析"));
         }
 
         TradeSignal signal = signalOpt.get();
@@ -286,6 +285,27 @@ public class TradeController {
                         formatMoveSLResults(signal, results),
                         moveOk ? DiscordWebhookService.COLOR_BLUE : DiscordWebhookService.COLOR_RED);
                 return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
+            }
+
+            case "CANCEL": {
+                if (deduplicationService.isCancelDuplicate(symbol)) {
+                    webhookService.sendNotification(
+                            "⏭️ 重複取消跳過 (API)",
+                            symbol + " — 30秒內已收到相同取消訊號",
+                            DiscordWebhookService.COLOR_YELLOW);
+                    return ResponseEntity.ok(Map.of("action", "CANCEL", "status", "SKIPPED", "reason", "重複取消訊號"));
+                }
+                String cancelResult = binanceFuturesService.cancelAllOrders(symbol);
+                try {
+                    tradeRecordService.recordCancel(symbol);
+                } catch (Exception e) {
+                    log.error("取消紀錄寫入失敗: {}", e.getMessage());
+                }
+                webhookService.sendNotification(
+                        "🚫 CANCEL 取消掛單 (API)",
+                        symbol + " — 已取消所有掛單",
+                        DiscordWebhookService.COLOR_BLUE);
+                return ResponseEntity.ok(Map.of("action", "CANCEL", "symbol", symbol, "result", cancelResult));
             }
 
             default:

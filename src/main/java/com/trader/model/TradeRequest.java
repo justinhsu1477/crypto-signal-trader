@@ -10,7 +10,7 @@ import lombok.Data;
 @Data
 public class TradeRequest {
 
-    private String action;      // ENTRY, CLOSE, MOVE_SL
+    private String action;      // ENTRY, CLOSE, MOVE_SL, CANCEL
 
     private String symbol;      // BTCUSDT
 

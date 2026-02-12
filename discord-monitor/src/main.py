@@ -66,8 +66,17 @@ async def main() -> None:
             config.api.base_url,
         )
 
+    # AI parser (optional)
+    ai_parser = None
+    if config.ai.enabled:
+        from .ai_parser import AiSignalParser
+        ai_parser = AiSignalParser(config.ai)
+        logger.info("AI signal parser enabled (model: %s)", config.ai.model)
+    else:
+        logger.info("AI parser disabled — using regex-only mode")
+
     # Build components
-    router = SignalRouter(config.discord, api_client, dry_run=dry_run)
+    router = SignalRouter(config.discord, api_client, dry_run=dry_run, ai_parser=ai_parser)
     cdp_client = CdpClient(config.cdp)
 
     # Main loop with reconnection
