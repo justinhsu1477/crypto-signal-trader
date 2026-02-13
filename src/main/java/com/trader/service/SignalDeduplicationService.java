@@ -65,15 +65,20 @@ public class SignalDeduplicationService {
 
         String hash = generateHash(signal);
 
-        // ===== 第一層：內存快速檢查 =====
-        Long previousTime = recentSignals.get(hash);
+        // ===== 第一層：內存快速檢查（原子操作，防 race condition）=====
         long now = System.currentTimeMillis();
+        Long previousTime = recentSignals.putIfAbsent(hash, now);
 
         if (previousTime != null && (now - previousTime) < DEDUP_WINDOW_MS) {
             long elapsedSec = (now - previousTime) / 1000;
             log.warn("🔁 重複訊號攔截（內存）: hash={} 距上次 {}秒, 窗口={}秒",
                     hash.substring(0, 12), elapsedSec, DEDUP_WINDOW_MS / 1000);
             return true;
+        }
+
+        // putIfAbsent 返回 non-null 但已過期 → 更新時間戳
+        if (previousTime != null) {
+            recentSignals.put(hash, now);
         }
 
         // ===== 第二層：DB 持久化檢查 =====
@@ -84,13 +89,10 @@ public class SignalDeduplicationService {
         if (existsInDb) {
             log.warn("🔁 重複訊號攔截（DB）: hash={} 在最近 {}分鐘內已有交易紀錄",
                     hash.substring(0, 12), DEDUP_WINDOW_MS / 1000 / 60);
-            // 同步到內存快取
             recentSignals.put(hash, now);
             return true;
         }
 
-        // ===== 非重複：登記到內存快取 =====
-        recentSignals.put(hash, now);
         cleanupIfNeeded();
 
         log.info("✅ 訊號去重通過: hash={} {} {} entry={} SL={}",
@@ -112,18 +114,22 @@ public class SignalDeduplicationService {
         }
 
         String hash = "CANCEL|" + symbol;
-        Long previousTime = recentSignals.get(hash);
         long now = System.currentTimeMillis();
 
-        // CANCEL 用較短的窗口: 30 秒
+        // CANCEL 用較短的窗口: 30 秒（原子操作防 race condition）
         long cancelWindow = 30 * 1000;
+        Long previousTime = recentSignals.putIfAbsent(hash, now);
+
         if (previousTime != null && (now - previousTime) < cancelWindow) {
             log.warn("🔁 重複取消攔截: {} 距上次 {}秒",
                     symbol, (now - previousTime) / 1000);
             return true;
         }
 
-        recentSignals.put(hash, now);
+        // putIfAbsent 返回 non-null 但已過期 → 更新時間戳
+        if (previousTime != null) {
+            recentSignals.put(hash, now);
+        }
         return false;
     }
 

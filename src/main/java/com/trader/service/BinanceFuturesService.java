@@ -17,6 +17,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -30,6 +32,12 @@ public class BinanceFuturesService {
     private final SignalDeduplicationService deduplicationService;
     private final DiscordWebhookService discordWebhookService;
     private final Gson gson = new Gson();
+
+    /**
+     * Per-symbol 互斥鎖 — 防止同一幣種的並發操作
+     * 同一個 symbol 的 ENTRY / CLOSE / MOVE_SL 一次只能有一個 thread 執行
+     */
+    private final ConcurrentHashMap<String, ReentrantLock> symbolLocks = new ConcurrentHashMap<>();
 
     // SL/TP 下單重試配置
     private static final int ORDER_MAX_RETRIES = 2;
@@ -296,11 +304,15 @@ public class BinanceFuturesService {
      * 7. Fail-Safe: SL 失敗則取消入場單
      */
     public List<OrderResult> executeSignal(TradeSignal signal) {
+      ReentrantLock lock = symbolLocks.computeIfAbsent(signal.getSymbol(), k -> new ReentrantLock());
+      lock.lock();
       try {
         return executeSignalInternal(signal);
       } catch (RuntimeException e) {
         log.error("交易前置檢查失敗，拒絕執行: {}", e.getMessage());
         return List.of(OrderResult.fail("前置檢查失敗: " + e.getMessage()));
+      } finally {
+        lock.unlock();
       }
     }
 
@@ -520,6 +532,20 @@ public class BinanceFuturesService {
      */
     public List<OrderResult> executeClose(TradeSignal signal) {
         String symbol = signal.getSymbol();
+        ReentrantLock lock = symbolLocks.computeIfAbsent(symbol, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            return executeCloseInternal(signal);
+        } catch (RuntimeException e) {
+            log.error("平倉前置檢查失敗: {}", e.getMessage());
+            return List.of(OrderResult.fail("平倉失敗: " + e.getMessage()));
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private List<OrderResult> executeCloseInternal(TradeSignal signal) {
+        String symbol = signal.getSymbol();
 
         // 1. 取得持倉（API 失敗會拋異常）
         double positionAmt;
@@ -598,6 +624,20 @@ public class BinanceFuturesService {
      * 3. 掛新的 TAKE_PROFIT_MARKET（如果有新 TP）
      */
     public List<OrderResult> executeMoveSL(TradeSignal signal) {
+        String symbol = signal.getSymbol();
+        ReentrantLock lock = symbolLocks.computeIfAbsent(symbol, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            return executeMoveSLInternal(signal);
+        } catch (RuntimeException e) {
+            log.error("修改 TP/SL 失敗: {}", e.getMessage());
+            return List.of(OrderResult.fail("修改 TP/SL 失敗: " + e.getMessage()));
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private List<OrderResult> executeMoveSLInternal(TradeSignal signal) {
         String symbol = signal.getSymbol();
 
         // 1. 取得持倉（API 失敗會拋異常）
