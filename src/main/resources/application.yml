@@ -21,14 +21,10 @@ binance:
 
   # 風控設定
   risk:
-    max-position-usdt: 100        # 單筆最大倉位 (USDT)
-    max-leverage: 10              # 最大槓桿
-    max-daily-orders: 10          # 每日最大下單次數
-    default-leverage: 5           # 預設槓桿
-    default-sl-percent: 3.0       # 預設止損百分比 (訊號未設定SL時使用)
-    default-tp-percent: 3.0       # 預設止盈百分比 (訊號未設定TP時使用)
-    # 以損定倉參數
-    fixed-loss-per-trade: 500.0   # 單筆固定虧損金額 (USDT)
+    max-position-usdt: 50000      # 單筆最大名目價值 (USDT) — 防止窄止損產生超大倉位
+    max-daily-loss-usdt: 2000     # 每日虧損熔斷上限 (USDT) — 固定值，不隨餘額浮動
+    # 動態以損定倉: 1R = 帳戶餘額 × risk-percent
+    risk-percent: 0.20            # 單筆風險比例 (20% = 0.20)
     max-positions: 1              # 最大同時持倉數
     fixed-leverage: 20            # 固定槓桿 (逐倉 ISOLATED)
     allowed-symbols:              # 允許的交易對清單（可加多個）

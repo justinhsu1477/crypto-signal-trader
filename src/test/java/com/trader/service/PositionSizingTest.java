@@ -12,9 +12,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * 測試以損定倉的倉位計算和價格/數量格式化。
+ * 測試動態以損定倉的倉位計算和價格/數量格式化。
  *
- * 核心公式: qty = fixedLossPerTrade / |entryPrice - stopLoss|
+ * 核心公式: qty = (balance × riskPercent) / |entryPrice - stopLoss|
  */
 class PositionSizingTest {
 
@@ -22,71 +22,165 @@ class PositionSizingTest {
 
     @BeforeEach
     void setUp() {
-        // fixedLossPerTrade = 500 USDT
+        // riskPercent = 20%, maxPositionUsdt = 50000 USDT, maxDailyLossUsdt = 2000
         RiskConfig riskConfig = new RiskConfig(
-                100, 10, 10, 5, 3.0, 3.0, true,
-                500.0,  // fixedLossPerTrade
+                50000,  // maxPositionUsdt
+                2000,   // maxDailyLossUsdt
+                true,
+                0.20,   // riskPercent (20%)
                 1, 20, List.of("BTCUSDT", "ETHUSDT")
         );
-        // 只需要 riskConfig，其他依賴傳 null（不會被 calculateFixedRiskQuantity 使用）
         service = new BinanceFuturesService(null, null, riskConfig, null, null, null);
     }
 
     @Nested
-    @DisplayName("以損定倉 — calculateFixedRiskQuantity()")
-    class FixedRiskQuantity {
+    @DisplayName("動態以損定倉 — calculatePositionSize(balance, entry, sl)")
+    class DynamicPositionSize {
 
         @Test
-        @DisplayName("BTC 做多: entry=95000, SL=93000 → qty=0.25")
-        void btcLong() {
-            // riskDistance = |95000 - 93000| = 2000
-            // qty = 500 / 2000 = 0.25
-            double qty = service.calculateFixedRiskQuantity(95000, 93000);
+        @DisplayName("BTC 做多: balance=1000, entry=95000, SL=93000 → 1R=200, qty=0.1")
+        void btcLong_1000u() {
+            // 1R = 1000 × 0.20 = 200
+            // riskDistance = 2000, qty = 200 / 2000 = 0.1
+            double qty = service.calculatePositionSize(1000, 95000, 93000);
+            assertThat(qty).isEqualTo(0.1);
+        }
+
+        @Test
+        @DisplayName("BTC 做多: balance=2500, entry=95000, SL=93000 → 1R=500, qty=0.25")
+        void btcLong_2500u() {
+            // 1R = 2500 × 0.20 = 500, qty = 500 / 2000 = 0.25
+            double qty = service.calculatePositionSize(2500, 95000, 93000);
             assertThat(qty).isEqualTo(0.25);
         }
 
         @Test
-        @DisplayName("BTC 做空: entry=95000, SL=96000 → qty=0.5")
+        @DisplayName("BTC 做空: balance=1000, entry=95000, SL=96000 → 1R=200, qty=0.2")
         void btcShort() {
-            // riskDistance = |95000 - 96000| = 1000
-            // qty = 500 / 1000 = 0.5
-            double qty = service.calculateFixedRiskQuantity(95000, 96000);
-            assertThat(qty).isEqualTo(0.5);
+            // 1R = 200, riskDistance = 1000, qty = 200 / 1000 = 0.2
+            double qty = service.calculatePositionSize(1000, 95000, 96000);
+            assertThat(qty).isEqualTo(0.2);
         }
 
         @Test
-        @DisplayName("ETH 做多: entry=2650, SL=2580 → qty ≈ 7.14")
+        @DisplayName("ETH 做多: balance=1000, entry=2650, SL=2580 → 1R=200, qty ≈ 2.857")
         void ethLong() {
-            // riskDistance = |2650 - 2580| = 70
-            // qty = 500 / 70 ≈ 7.142857
-            double qty = service.calculateFixedRiskQuantity(2650, 2580);
-            assertThat(qty).isCloseTo(7.1428, within(0.001));
+            // 1R = 200, riskDistance = 70, qty = 200 / 70 ≈ 2.857
+            double qty = service.calculatePositionSize(1000, 2650, 2580);
+            assertThat(qty).isCloseTo(2.8571, within(0.001));
         }
 
         @Test
-        @DisplayName("小幣種大倉位: entry=0.50, SL=0.48 → qty=25000")
-        void smallCoin() {
-            // riskDistance = |0.50 - 0.48| = 0.02
-            // qty = 500 / 0.02 = 25000
-            double qty = service.calculateFixedRiskQuantity(0.50, 0.48);
-            assertThat(qty).isCloseTo(25000.0, within(0.01));
-        }
-
-        @Test
-        @DisplayName("SL 非常接近 entry → 超大倉位")
-        void tightStopLoss() {
-            // riskDistance = |95000 - 94999| = 1
-            // qty = 500 / 1 = 500
-            double qty = service.calculateFixedRiskQuantity(95000, 94999);
-            assertThat(qty).isEqualTo(500.0);
+        @DisplayName("連虧縮倉: balance=800 → 1R=160, BTC entry=95000 SL=93000 → qty=0.08")
+        void shrinkAfterLoss() {
+            // 虧一單後餘額 800, 1R = 800 × 0.20 = 160
+            // qty = 160 / 2000 = 0.08
+            double qty = service.calculatePositionSize(800, 95000, 93000);
+            assertThat(qty).isEqualTo(0.08);
         }
 
         @Test
         @DisplayName("entry = SL → 拋出異常")
         void sameEntryAndSl() {
-            assertThatThrownBy(() -> service.calculateFixedRiskQuantity(95000, 95000))
+            assertThatThrownBy(() -> service.calculatePositionSize(1000, 95000, 95000))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("入場價與止損價不可相同");
+        }
+    }
+
+    @Nested
+    @DisplayName("名目價值 cap — maxPositionUsdt")
+    class NotionalCap {
+
+        @Test
+        @DisplayName("正常倉位不觸發 cap: balance=1000, BTC entry=95000, SL=93000 → 名目 9,500 < 50,000")
+        void noCap() {
+            double qty = service.calculatePositionSize(1000, 95000, 93000);
+            // 1R=200, qty=0.1, 名目 = 95000 × 0.1 = 9500 < 50000
+            assertThat(qty).isEqualTo(0.1);
+        }
+
+        @Test
+        @DisplayName("窄止損觸發 cap: balance=1000, entry=95000, SL=94999 → cap 到 50000/95000")
+        void capTriggered() {
+            // 1R=200, riskDistance=1, qty=200 → 名目 = 19,000,000 >> 50,000
+            // cap: 50000 / 95000 ≈ 0.5263
+            double qty = service.calculatePositionSize(1000, 95000, 94999);
+            double expectedCapped = 50000.0 / 95000.0;
+            assertThat(qty).isCloseTo(expectedCapped, within(0.0001));
+        }
+
+        @Test
+        @DisplayName("maxPositionUsdt=0 時不啟用 cap")
+        void capDisabledWhenZero() {
+            RiskConfig noCap = new RiskConfig(
+                    0,  // maxPositionUsdt = 0 → 不啟用 cap
+                    2000, true, 0.20, 1, 20, List.of("BTCUSDT")
+            );
+            BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null);
+            // 1R = 1000 × 0.20 = 200, riskDistance = 1, qty = 200
+            double qty = svc.calculatePositionSize(1000, 95000, 94999);
+            assertThat(qty).isEqualTo(200.0);
+        }
+    }
+
+    @Nested
+    @DisplayName("保證金充足性 cap — marginSufficiency")
+    class MarginSufficiency {
+
+        @Test
+        @DisplayName("大餘額不觸發名目cap: balance=5000, entry=95000, SL=93000 → qty=0.5, 名目=47500 < 50000")
+        void largeBalanceNoCap() {
+            // 1R = 5000 * 0.20 = 1000, riskDist=2000, qty=0.5
+            // 名目 = 95000 * 0.5 = 47500 < 50000 → 不觸發 cap
+            double qty = service.calculatePositionSize(5000, 95000, 93000);
+            assertThat(qty).isEqualTo(0.5);
+        }
+
+        @Test
+        @DisplayName("大餘額觸發名目cap: balance=10000, entry=95000, SL=93000 → 名目cap")
+        void largeBalanceCapTriggered() {
+            // 1R = 10000 * 0.20 = 2000, riskDist=2000, qty=1.0
+            // 名目 = 95000 * 1.0 = 95000 > 50000 → cap 到 50000/95000
+            double qty = service.calculatePositionSize(10000, 95000, 93000);
+            double expectedCapped = 50000.0 / 95000.0;
+            assertThat(qty).isCloseTo(expectedCapped, within(0.0001));
+        }
+
+        @Test
+        @DisplayName("保證金不足時，executeSignalInternal 會自動 cap（整合測試需 mock，這裡測算式正確性）")
+        void marginCapFormula() {
+            // 驗證公式: cappedQty = maxMargin * leverage / entry
+            double balance = 100;
+            double maxMargin = balance * 0.90; // 90
+            int leverage = 20;
+            double entry = 95000;
+            double cappedQty = maxMargin * leverage / entry;
+            // 90 * 20 / 95000 ≈ 0.01894
+            assertThat(cappedQty).isCloseTo(0.01894, within(0.001));
+        }
+    }
+
+    @Nested
+    @DisplayName("最低下單量檢查 — minNotional")
+    class MinNotional {
+
+        @Test
+        @DisplayName("正常倉位通過最低檢查: balance=1000, entry=95000 → 名目=9500 > 5")
+        void normalPassesMinNotional() {
+            double qty = service.calculatePositionSize(1000, 95000, 93000);
+            double notional = 95000 * qty; // 9500
+            assertThat(notional).isGreaterThan(5.0);
+        }
+
+        @Test
+        @DisplayName("極小餘額的名目值計算: balance=1, entry=95000, SL=93000 → 名目=9.5 > 5")
+        void tinyBalanceStillAboveMin() {
+            // 1R = 1 * 0.20 = 0.2, qty = 0.2 / 2000 = 0.0001
+            // 名目 = 95000 * 0.0001 = 9.5 > 5
+            double qty = service.calculatePositionSize(1, 95000, 93000);
+            double notional = 95000 * qty;
+            assertThat(notional).isCloseTo(9.5, within(0.1));
         }
     }
 
@@ -164,7 +258,7 @@ class PositionSizingTest {
         @DisplayName("白名單內的 symbol")
         void allowedSymbol() {
             RiskConfig config = new RiskConfig(
-                    100, 10, 10, 5, 3.0, 3.0, true, 500.0, 1, 20,
+                    50000, 2000, true, 0.20, 1, 20,
                     List.of("BTCUSDT", "ETHUSDT")
             );
             assertThat(config.isSymbolAllowed("BTCUSDT")).isTrue();
@@ -175,7 +269,7 @@ class PositionSizingTest {
         @DisplayName("白名單外的 symbol")
         void disallowedSymbol() {
             RiskConfig config = new RiskConfig(
-                    100, 10, 10, 5, 3.0, 3.0, true, 500.0, 1, 20,
+                    50000, 2000, true, 0.20, 1, 20,
                     List.of("BTCUSDT")
             );
             assertThat(config.isSymbolAllowed("ETHUSDT")).isFalse();

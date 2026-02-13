@@ -54,6 +54,28 @@ public class BinanceFuturesService {
         return sendSignedGet(endpoint, Map.of());
     }
 
+    /**
+     * 取得 USDT 可用餘額
+     * ⚠️ API 失敗時拋出 RuntimeException，避免用 0 餘額算出 0 倉位
+     */
+    public double getAvailableBalance() {
+        String response = getAccountBalance();
+        try {
+            JsonArray balances = gson.fromJson(response, JsonArray.class);
+            for (JsonElement elem : balances) {
+                JsonObject bal = elem.getAsJsonObject();
+                if ("USDT".equals(bal.get("asset").getAsString())) {
+                    return bal.get("availableBalance").getAsDouble();
+                }
+            }
+            throw new RuntimeException("找不到 USDT 餘額");
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("查詢帳戶餘額失敗: " + e.getMessage(), e);
+        }
+    }
+
     public String getPositions() {
         String endpoint = "/fapi/v2/positionRisk";
         return sendSignedGet(endpoint, Map.of());
@@ -295,11 +317,17 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("交易對不在白名單: " + symbol + ", 允許: " + riskConfig.getAllowedSymbols()));
         }
 
-        // 1b. 每日虧損熔斷檢查
+        // 1b. 查帳戶餘額（後續熔斷 + 倉位計算都會用）
+        double balance = getAvailableBalance();
+        double riskAmount = balance * riskConfig.getRiskPercent();
+        log.info("帳戶餘額: {} USDT, 1R = {} USDT ({}%)", balance, riskAmount, riskConfig.getRiskPercent() * 100);
+
+        // 1c. 每日虧損熔斷（固定上限，不隨餘額縮水而變鬆）
         double todayLoss = tradeRecordService.getTodayRealizedLoss();
-        double maxDailyLoss = riskConfig.getFixedLossPerTrade() * riskConfig.getMaxDailyOrders();
-        if (Math.abs(todayLoss) >= maxDailyLoss) {
-            String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT", todayLoss, maxDailyLoss);
+        double maxDailyLoss = riskConfig.getMaxDailyLossUsdt();
+        if (maxDailyLoss > 0 && Math.abs(todayLoss) >= maxDailyLoss) {
+            String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT",
+                    todayLoss, maxDailyLoss);
             log.error(msg);
             discordWebhookService.sendNotification("🚨 每日虧損熔斷", msg, DiscordWebhookService.COLOR_RED);
             return List.of(OrderResult.fail("每日虧損已達上限，暫停交易"));
@@ -364,11 +392,42 @@ public class BinanceFuturesService {
         }
         setLeverage(symbol, leverage);
 
-        // 7. 以損定倉計算數量
+        // 7. 動態以損定倉: 1R = 帳戶餘額 × riskPercent
         double riskDistance = Math.abs(entry - sl);
-        double quantity = riskConfig.getFixedLossPerTrade() / riskDistance;
+        double quantity = riskAmount / riskDistance;
 
-        log.info("以損定倉: 固定虧損={}, 風險距離={}, 數量={}", riskConfig.getFixedLossPerTrade(), riskDistance, quantity);
+        // 7b. 名目價值上限 cap — 防止窄止損產生超大倉位
+        double notional = entry * quantity;
+        double maxNotional = riskConfig.getMaxPositionUsdt();
+        if (maxNotional > 0 && notional > maxNotional) {
+            double cappedQty = maxNotional / entry;
+            log.warn("倉位 cap 觸發: 原始數量={} (名目 {} USDT), 上限數量={} (名目 {} USDT)",
+                    quantity, notional, cappedQty, maxNotional);
+            quantity = cappedQty;
+        }
+
+        // 7c. 保證金充足性檢查 — 確保不超過可用餘額的 90%
+        double requiredMargin = entry * quantity / leverage;
+        double maxMargin = balance * 0.90;
+        if (requiredMargin > maxMargin) {
+            double marginCappedQty = maxMargin * leverage / entry;
+            log.warn("保證金不足 cap: 需要 {} USDT，可用 {} USDT (90%), 數量 {} → {}",
+                    requiredMargin, maxMargin, quantity, marginCappedQty);
+            quantity = marginCappedQty;
+        }
+
+        // 7d. 最低下單量檢查 — Binance BTC 最小 0.001, 其他幣種最小 notional 5 USDT
+        double minNotional = 5.0;
+        if (entry * quantity < minNotional) {
+            String msg = String.format("倉位太小: 名目 %.2f USDT < 最低 %.0f USDT (餘額 %.2f, 1R=%.2f)",
+                    entry * quantity, minNotional, balance, riskAmount);
+            log.warn(msg);
+            return List.of(OrderResult.fail("餘額不足，計算出的倉位低於最低下單量"));
+        }
+
+        log.info("以損定倉: 餘額={}, 1R={}({}%), 風險距離={}, 數量={}, 名目={} USDT, 保證金={} USDT",
+                balance, riskAmount, riskConfig.getRiskPercent() * 100,
+                riskDistance, quantity, entry * quantity, entry * quantity / leverage);
 
         // 入場方向
         String entrySide = signal.getSide() == TradeSignal.Side.SHORT ? "SELL" : "BUY";
@@ -380,6 +439,9 @@ public class BinanceFuturesService {
             log.error("入場單失敗: {}", entryOrder.getErrorMessage());
             return List.of(entryOrder);
         }
+        // 附加風控摘要到入場單（供 Discord 通知使用）
+        entryOrder.setRiskSummary(String.format("餘額: %.2f | 1R: %.2f (%.0f%%) | 保證金: %.2f",
+                balance, riskAmount, riskConfig.getRiskPercent() * 100, entry * quantity / leverage));
 
         // 9. 掛 STOP_MARKET 止損單
         OrderResult slOrder = placeStopLoss(symbol, closeSide, sl, quantity);
@@ -429,7 +491,7 @@ public class BinanceFuturesService {
         try {
             String signalHash = deduplicationService.generateHash(signal);
             tradeRecordService.recordEntry(signal, entryOrder, slOrder, leverage,
-                    riskConfig.getFixedLossPerTrade(), signalHash);
+                    riskAmount, signalHash);
         } catch (Exception e) {
             log.error("交易紀錄寫入失敗（不影響交易）: {}", e.getMessage());
         }
@@ -610,15 +672,28 @@ public class BinanceFuturesService {
     // ==================== 內部方法 ====================
 
     /**
-     * 以損定倉計算下單數量
-     * qty = fixedLossPerTrade / |entry - SL|
+     * 以損定倉計算下單數量（含名目價值 cap）
+     * qty = min( riskAmount / |entry - SL|,  maxPositionUsdt / entryPrice )
+     *
+     * @param balance    帳戶可用餘額 (USDT)
+     * @param entryPrice 入場價
+     * @param stopLoss   止損價
      */
-    public double calculateFixedRiskQuantity(double entryPrice, double stopLoss) {
+    public double calculatePositionSize(double balance, double entryPrice, double stopLoss) {
         double riskDistance = Math.abs(entryPrice - stopLoss);
         if (riskDistance == 0) {
             throw new IllegalArgumentException("入場價與止損價不可相同");
         }
-        return riskConfig.getFixedLossPerTrade() / riskDistance;
+        double riskAmount = balance * riskConfig.getRiskPercent();
+        double quantity = riskAmount / riskDistance;
+
+        // 名目價值 cap
+        double maxNotional = riskConfig.getMaxPositionUsdt();
+        if (maxNotional > 0) {
+            double cappedQty = maxNotional / entryPrice;
+            quantity = Math.min(quantity, cappedQty);
+        }
+        return quantity;
     }
 
     private String formatPrice(double price) {

@@ -15,7 +15,8 @@ import static org.assertj.core.api.Assertions.within;
  *
  * 公式:
  *   grossProfit = (exitPrice - entryPrice) × qty × direction (LONG=+1, SHORT=-1)
- *   commission  = (entryPrice × qty × 0.0002) + (exitPrice × qty × 0.0002)
+ *   commission  = (entryPrice × qty × 0.0002) + (exitPrice × qty × 0.0004)
+ *                 入場 maker 0.02% + 出場 taker 0.04% (保守估算)
  *   netProfit   = grossProfit - commission
  */
 class ProfitCalculationTest {
@@ -53,12 +54,12 @@ class ProfitCalculationTest {
             // grossProfit = (98000 - 95000) × 0.5 × 1 = 1500
             assertThat(trade.getGrossProfit()).isEqualTo(1500.0);
 
-            // commission = (95000 × 0.5 × 0.0002) + (98000 × 0.5 × 0.0002)
-            //            = 9.5 + 9.8 = 19.3
-            assertThat(trade.getCommission()).isEqualTo(19.3);
+            // commission = (95000 × 0.5 × 0.0002) + (98000 × 0.5 × 0.0004)
+            //            = 9.5 + 19.6 = 29.1
+            assertThat(trade.getCommission()).isEqualTo(29.1);
 
-            // netProfit = 1500 - 19.3 = 1480.7
-            assertThat(trade.getNetProfit()).isEqualTo(1480.7);
+            // netProfit = 1500 - 29.1 = 1470.9
+            assertThat(trade.getNetProfit()).isEqualTo(1470.9);
         }
 
         @Test
@@ -76,12 +77,12 @@ class ProfitCalculationTest {
             // grossProfit = (93000 - 95000) × 0.5 × 1 = -1000
             assertThat(trade.getGrossProfit()).isEqualTo(-1000.0);
 
-            // commission = (95000 × 0.5 × 0.0002) + (93000 × 0.5 × 0.0002)
-            //            = 9.5 + 9.3 = 18.8
-            assertThat(trade.getCommission()).isEqualTo(18.8);
+            // commission = (95000 × 0.5 × 0.0002) + (93000 × 0.5 × 0.0004)
+            //            = 9.5 + 18.6 = 28.1
+            assertThat(trade.getCommission()).isEqualTo(28.1);
 
-            // netProfit = -1000 - 18.8 = -1018.8
-            assertThat(trade.getNetProfit()).isEqualTo(-1018.8);
+            // netProfit = -1000 - 28.1 = -1028.1
+            assertThat(trade.getNetProfit()).isEqualTo(-1028.1);
         }
     }
 
@@ -104,12 +105,12 @@ class ProfitCalculationTest {
             // grossProfit = (95000 - 98000) × 0.2 × (-1) = 600
             assertThat(trade.getGrossProfit()).isEqualTo(600.0);
 
-            // commission = (98000 × 0.2 × 0.0002) + (95000 × 0.2 × 0.0002)
-            //            = 3.92 + 3.8 = 7.72
-            assertThat(trade.getCommission()).isEqualTo(7.72);
+            // commission = (98000 × 0.2 × 0.0002) + (95000 × 0.2 × 0.0004)
+            //            = 3.92 + 7.6 = 11.52
+            assertThat(trade.getCommission()).isEqualTo(11.52);
 
-            // netProfit = 600 - 7.72 = 592.28
-            assertThat(trade.getNetProfit()).isEqualTo(592.28);
+            // netProfit = 600 - 11.52 = 588.48
+            assertThat(trade.getNetProfit()).isEqualTo(588.48);
         }
 
         @Test
@@ -127,12 +128,12 @@ class ProfitCalculationTest {
             // grossProfit = (2750 - 2650) × 10 × (-1) = -1000
             assertThat(trade.getGrossProfit()).isEqualTo(-1000.0);
 
-            // commission = (2650 × 10 × 0.0002) + (2750 × 10 × 0.0002)
-            //            = 5.3 + 5.5 = 10.8
-            assertThat(trade.getCommission()).isEqualTo(10.8);
+            // commission = (2650 × 10 × 0.0002) + (2750 × 10 × 0.0004)
+            //            = 5.3 + 11.0 = 16.3
+            assertThat(trade.getCommission()).isEqualTo(16.3);
 
-            // netProfit = -1000 - 10.8 = -1010.8
-            assertThat(trade.getNetProfit()).isEqualTo(-1010.8);
+            // netProfit = -1000 - 16.3 = -1016.3
+            assertThat(trade.getNetProfit()).isEqualTo(-1016.3);
         }
     }
 
@@ -153,9 +154,10 @@ class ProfitCalculationTest {
             invokeCalculateProfit(createService(), trade);
 
             assertThat(trade.getGrossProfit()).isEqualTo(0.0);
-            // commission = 95000 × 0.1 × 0.0002 × 2 = 3.8
-            assertThat(trade.getCommission()).isEqualTo(3.8);
-            assertThat(trade.getNetProfit()).isEqualTo(-3.8);
+            // commission = (95000 × 0.1 × 0.0002) + (95000 × 0.1 × 0.0004)
+            //            = 1.9 + 3.8 = 5.7
+            assertThat(trade.getCommission()).isEqualTo(5.7);
+            assertThat(trade.getNetProfit()).isEqualTo(-5.7);
         }
 
         @Test
@@ -222,11 +224,11 @@ class ProfitCalculationTest {
             // grossProfit = (2100-2000) × 1000 × 1 = 100,000
             assertThat(trade.getGrossProfit()).isEqualTo(100000.0);
 
-            // commission = (2000×1000×0.0002) + (2100×1000×0.0002) = 400 + 420 = 820
-            assertThat(trade.getCommission()).isEqualTo(820.0);
+            // commission = (2000×1000×0.0002) + (2100×1000×0.0004) = 400 + 840 = 1240
+            assertThat(trade.getCommission()).isEqualTo(1240.0);
 
-            // netProfit = 100000 - 820 = 99180
-            assertThat(trade.getNetProfit()).isEqualTo(99180.0);
+            // netProfit = 100000 - 1240 = 98760
+            assertThat(trade.getNetProfit()).isEqualTo(98760.0);
         }
     }
 }

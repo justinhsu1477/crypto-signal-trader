@@ -40,12 +40,13 @@ public class Trade {
     // === 風控參數 ===
     private Double stopLoss;             // 設定的止損價
     private Integer leverage;            // 使用的槓桿倍數
-    private Double riskAmount;           // 計畫風險金額（fixedLossPerTrade，例如 500 USDT）
+    private Double riskAmount;           // 計畫風險金額 (1R = balance × riskPercent)
 
     // === 盈虧 ===
     private Double grossProfit;          // 毛利 = (exitPrice - entryPrice) × qty × 方向
-    private Double commission;           // 手續費（USDT）
-    private Double netProfit;            // 淨利 = 毛利 - 手續費
+    private Double entryCommission;      // 入場手續費 (USDT) — 開倉時即計算
+    private Double commission;           // 總手續費 = 入場 + 出場 (USDT) — 平倉時更新
+    private Double netProfit;            // 淨利 = 毛利 - 總手續費
 
     // === 狀態 ===
     private String status;               // OPEN=持倉中, CLOSED=已平倉, CANCELLED=已取消

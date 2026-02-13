@@ -51,6 +51,9 @@ public class TradeRecordService {
                               int leverage, double riskAmount, String signalHash) {
         String tradeId = UUID.randomUUID().toString();
 
+        // 入場手續費：Binance maker 0.02%
+        double entryCommission = round2(entryOrder.getPrice() * entryOrder.getQuantity() * 0.0002);
+
         // 建立 Trade 主紀錄
         Trade trade = Trade.builder()
                 .tradeId(tradeId)
@@ -63,6 +66,7 @@ public class TradeRecordService {
                 .stopLoss(signal.getStopLoss())
                 .leverage(leverage)
                 .riskAmount(riskAmount)
+                .entryCommission(entryCommission)
                 .signalHash(signalHash)
                 .status("OPEN")
                 .build();
@@ -77,9 +81,9 @@ public class TradeRecordService {
             saveEvent(tradeId, "SL_PLACED", slOrder);
         }
 
-        log.info("交易紀錄建立: tradeId={} {} {} entry={} qty={} SL={}",
+        log.info("交易紀錄建立: tradeId={} {} {} entry={} qty={} SL={} 入場手續費={} USDT",
                 tradeId, signal.getSymbol(), signal.getSide(),
-                entryOrder.getPrice(), entryOrder.getQuantity(), signal.getStopLoss());
+                entryOrder.getPrice(), entryOrder.getQuantity(), signal.getStopLoss(), entryCommission);
 
         return tradeId;
     }
@@ -324,14 +328,17 @@ public class TradeRecordService {
         int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
         double grossProfit = (exit - entry) * qty * direction;
 
-        // 手續費估算：Binance taker 費率 0.04%，maker 0.02%
-        // 入場 LIMIT (maker) + 出場 LIMIT (maker) ≈ 0.02% × 2 = 0.04%
-        double commission = (entry * qty * 0.0002) + (exit * qty * 0.0002);
+        // 手續費：入場 (已記錄) + 出場 (此處計算)
+        // 止損出場走 STOP_MARKET (taker 0.04%), 止盈或手動出場走 maker 0.02%
+        // 保守以 taker 計算出場手續費
+        double entryCom = trade.getEntryCommission() != null ? trade.getEntryCommission() : (entry * qty * 0.0002);
+        double exitCom = round2(exit * qty * 0.0004);
+        double commission = entryCom + exitCom;
 
         double netProfit = grossProfit - commission;
 
-        trade.setGrossProfit(round2(grossProfit));
         trade.setCommission(round2(commission));
+        trade.setGrossProfit(round2(grossProfit));
         trade.setNetProfit(round2(netProfit));
     }
 

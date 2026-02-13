@@ -33,10 +33,10 @@ class SafetyCheckTest {
 
     @BeforeEach
     void setUp() {
-        // fixedLossPerTrade=500, maxDailyOrders=10 → 每日虧損上限 5000 USDT
+        // riskPercent=20%, maxDailyLossUsdt=2000
         riskConfig = new RiskConfig(
-                100, 10, 10, 5, 3.0, 3.0, true,
-                500.0,  // fixedLossPerTrade
+                50000, 2000, true,
+                0.20,   // riskPercent (20%)
                 1, 20, List.of("BTCUSDT", "ETHUSDT")
         );
     }
@@ -109,6 +109,8 @@ class SafetyCheckTest {
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook));
 
+            doReturn(1000.0).when(service).getAvailableBalance();
+
             // getCurrentPositionAmount 拋異常
             doThrow(new RuntimeException("查詢持倉失敗，拒絕交易: network error"))
                     .when(service).getCurrentPositionAmount(anyString());
@@ -140,12 +142,15 @@ class SafetyCheckTest {
             SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
             DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
 
-            // 今日虧損 -5000 USDT（達到上限 500 * 10 = 5000）
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-5000.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook));
+
+            // maxDailyLossUsdt = 2000 (固定值)
+            // 今日虧損 5000 >= 2000 → 熔斷
+            doReturn(1000.0).when(service).getAvailableBalance();
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -172,12 +177,16 @@ class SafetyCheckTest {
             SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
             DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
 
-            // 今日虧損 -1000 USDT（未達上限 5000）
+            // 今日虧損 -1000 USDT
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-1000.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook));
+
+            // maxDailyLossUsdt = 2000 (固定值)
+            // 今日虧損 1000 < 2000 → 不觸發熔斷
+            doReturn(1000.0).when(service).getAvailableBalance();
 
             // 讓持倉查詢回傳 0（無持倉）
             doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
@@ -220,9 +229,83 @@ class SafetyCheckTest {
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook));
 
-            // 驗證 0 虧損不會觸發熔斷
-            double maxDailyLoss = riskConfig.getFixedLossPerTrade() * riskConfig.getMaxDailyOrders();
-            assertThat(Math.abs(0.0)).isLessThan(maxDailyLoss);
+            // 驗證 0 虧損不會觸發熔斷 (maxDailyLossUsdt > 0, |0| < 2000)
+            assertThat(riskConfig.getRiskPercent()).isGreaterThan(0);
+            assertThat(riskConfig.getMaxDailyLossUsdt()).isGreaterThan(0);
+        }
+
+        @Test
+        @DisplayName("固定熔斷上限：不隨餘額縮水而變鬆")
+        void fixedCircuitBreakerDoesNotShrinkWithBalance() {
+            TradeRecordService mockTradeRecord = mock(TradeRecordService.class);
+            SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
+            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
+
+            // 今日虧損 -1999 USDT（接近上限但未超過）
+            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-1999.0);
+            when(mockDedup.isDuplicate(any())).thenReturn(false);
+
+            BinanceFuturesService service = spy(new BinanceFuturesService(
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook));
+
+            // 餘額大幅縮水到 200 USDT，但熔斷上限仍然是固定 2000
+            // 舊邏輯（動態）: maxDailyLoss = 200 * 0.20 * 10 = 400，|-1999| >= 400 → 會觸發熔斷
+            // 新邏輯（固定）: maxDailyLossUsdt = 2000，|-1999| < 2000 → 不觸發熔斷
+            doReturn(200.0).when(service).getAvailableBalance();
+            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn(0).when(service).getActivePositionCount();
+            doReturn(false).when(service).hasOpenEntryOrders(anyString());
+            doReturn(95000.0).when(service).getMarkPrice(anyString());
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000)
+                    .stopLoss(93000)
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .build();
+
+            List<OrderResult> results = service.executeSignal(signal);
+
+            // 不應被熔斷攔截（會在後續 API 呼叫時因 httpClient=null 失敗）
+            if (!results.isEmpty()) {
+                assertThat(results.get(0).getErrorMessage())
+                        .doesNotContain("每日虧損已達上限");
+            }
+
+            // 不應發送熔斷告警
+            verify(mockWebhook, never()).sendNotification(contains("熔斷"), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("今日虧損剛好等於上限 → 觸發熔斷")
+        void rejectWhenExactlyAtLimit() {
+            TradeRecordService mockTradeRecord = mock(TradeRecordService.class);
+            SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
+            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
+
+            // 剛好等於 2000
+            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-2000.0);
+            when(mockDedup.isDuplicate(any())).thenReturn(false);
+
+            BinanceFuturesService service = spy(new BinanceFuturesService(
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook));
+
+            doReturn(5000.0).when(service).getAvailableBalance();
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000)
+                    .stopLoss(93000)
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .build();
+
+            List<OrderResult> results = service.executeSignal(signal);
+
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).isSuccess()).isFalse();
+            assertThat(results.get(0).getErrorMessage()).contains("每日虧損已達上限");
         }
     }
 

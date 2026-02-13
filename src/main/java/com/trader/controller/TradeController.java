@@ -355,6 +355,10 @@ public class TradeController {
                 sb.append("✓ ").append(r.getType() != null ? r.getType() : "ORDER")
                         .append(" qty=").append(r.getQuantity())
                         .append(" price=").append(r.getPrice()).append("\n");
+                // 風控摘要（只有入場單有）
+                if (r.getRiskSummary() != null) {
+                    sb.append(r.getRiskSummary()).append("\n");
+                }
             } else if (!r.isSuccess()) {
                 sb.append("✗ ").append(r.getErrorMessage()).append("\n");
             }

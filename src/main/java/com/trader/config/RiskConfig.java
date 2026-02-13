@@ -11,38 +11,26 @@ import java.util.List;
 public class RiskConfig {
 
     private final double maxPositionUsdt;
-    private final int maxLeverage;
-    private final int maxDailyOrders;
-    private final int defaultLeverage;
-    private final double defaultSlPercent;
-    private final double defaultTpPercent;
+    private final double maxDailyLossUsdt;
     private final boolean dedupEnabled;
-    private final double fixedLossPerTrade;
+    private final double riskPercent;
     private final int maxPositions;
     private final int fixedLeverage;
     private final List<String> allowedSymbols;
 
     public RiskConfig(
-            @DefaultValue("100") double maxPositionUsdt,
-            @DefaultValue("10") int maxLeverage,
-            @DefaultValue("10") int maxDailyOrders,
-            @DefaultValue("5") int defaultLeverage,
-            @DefaultValue("3.0") double defaultSlPercent,
-            @DefaultValue("3.0") double defaultTpPercent,
+            @DefaultValue("50000") double maxPositionUsdt,
+            @DefaultValue("2000") double maxDailyLossUsdt,
             @DefaultValue("true") boolean dedupEnabled,
-            @DefaultValue("500.0") double fixedLossPerTrade,
+            @DefaultValue("0.20") double riskPercent,
             @DefaultValue("1") int maxPositions,
             @DefaultValue("20") int fixedLeverage,
             @DefaultValue("BTCUSDT") List<String> allowedSymbols
     ) {
         this.maxPositionUsdt = maxPositionUsdt;
-        this.maxLeverage = maxLeverage;
-        this.maxDailyOrders = maxDailyOrders;
-        this.defaultLeverage = defaultLeverage;
-        this.defaultSlPercent = defaultSlPercent;
-        this.defaultTpPercent = defaultTpPercent;
+        this.maxDailyLossUsdt = maxDailyLossUsdt;
         this.dedupEnabled = dedupEnabled;
-        this.fixedLossPerTrade = fixedLossPerTrade;
+        this.riskPercent = riskPercent;
         this.maxPositions = maxPositions;
         this.fixedLeverage = fixedLeverage;
         this.allowedSymbols = allowedSymbols != null ? List.copyOf(allowedSymbols) : List.of("BTCUSDT");

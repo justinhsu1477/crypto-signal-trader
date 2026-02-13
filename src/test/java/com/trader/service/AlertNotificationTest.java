@@ -28,8 +28,8 @@ class AlertNotificationTest {
     @BeforeEach
     void setUp() {
         riskConfig = new RiskConfig(
-                100, 10, 10, 5, 3.0, 3.0, true,
-                500.0, 1, 20, List.of("BTCUSDT", "ETHUSDT")
+                50000, 2000, true,
+                0.20, 1, 20, List.of("BTCUSDT", "ETHUSDT")
         );
     }
 
@@ -51,7 +51,8 @@ class AlertNotificationTest {
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook));
 
-            // 所有前置檢查通過
+            // 餘額查詢 + 所有前置檢查通過
+            doReturn(1000.0).when(service).getAvailableBalance();
             doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
             doReturn(0).when(service).getActivePositionCount();
             doReturn(false).when(service).hasOpenEntryOrders(anyString());

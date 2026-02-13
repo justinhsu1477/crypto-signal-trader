@@ -16,6 +16,7 @@ public class OrderResult {
     private double quantity;
     private String errorMessage;
     private String rawResponse;
+    private String riskSummary;  // 風控摘要（入場時填入：餘額、1R、保證金等）
 
     public static OrderResult fail(String errorMessage) {
         return OrderResult.builder()
