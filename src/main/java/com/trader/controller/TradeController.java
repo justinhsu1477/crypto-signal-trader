@@ -7,6 +7,7 @@ import com.trader.model.TradeRequest;
 import com.trader.model.TradeSignal;
 import com.trader.service.BinanceFuturesService;
 import com.trader.service.DiscordWebhookService;
+import com.trader.service.MonitorHeartbeatService;
 import com.trader.service.SignalDeduplicationService;
 import com.trader.service.SignalParserService;
 import com.trader.service.TradeRecordService;
@@ -38,6 +39,7 @@ public class TradeController {
     private final TradeRecordService tradeRecordService;
     private final SignalDeduplicationService deduplicationService;
     private final DiscordWebhookService webhookService;
+    private final MonitorHeartbeatService heartbeatService;
 
     /**
      * 查詢帳戶餘額
@@ -332,6 +334,30 @@ public class TradeController {
     @DeleteMapping("/orders")
     public ResponseEntity<String> cancelAllOrders(@RequestParam String symbol) {
         return ResponseEntity.ok(binanceFuturesService.cancelAllOrders(symbol));
+    }
+
+    // ==================== Monitor 心跳 ====================
+
+    /**
+     * Discord Monitor 心跳端點
+     * POST /api/heartbeat
+     * Body: { "status": "connected" }
+     *
+     * Python monitor 每 30 秒呼叫一次，Java 端超過 90 秒沒收到就告警
+     */
+    @PostMapping("/heartbeat")
+    public ResponseEntity<Map<String, Object>> heartbeat(@RequestBody(required = false) Map<String, String> body) {
+        String status = (body != null && body.containsKey("status")) ? body.get("status") : "unknown";
+        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status));
+    }
+
+    /**
+     * 查詢 Monitor 連線狀態
+     * GET /api/monitor-status
+     */
+    @GetMapping("/monitor-status")
+    public ResponseEntity<Map<String, Object>> getMonitorStatus() {
+        return ResponseEntity.ok(heartbeatService.getStatus());
     }
 
     // ==================== Webhook 通知格式化 ====================

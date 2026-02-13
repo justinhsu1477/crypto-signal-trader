@@ -17,6 +17,9 @@ from .signal_router import SignalRouter
 
 logger = logging.getLogger("discord_monitor")
 
+# 心跳間隔（秒）
+HEARTBEAT_INTERVAL = 30
+
 
 def setup_logging(level: str, log_file: str | None = None) -> None:
     """Configure logging to console and optionally to file."""
@@ -79,20 +82,46 @@ async def main() -> None:
     router = SignalRouter(config.discord, api_client, dry_run=dry_run, ai_parser=ai_parser)
     cdp_client = CdpClient(config.cdp)
 
+    # Heartbeat background task
+    heartbeat_task: asyncio.Task | None = None
+
+    async def heartbeat_loop(status_fn):
+        """Send heartbeat to Spring Boot API every HEARTBEAT_INTERVAL seconds."""
+        while True:
+            try:
+                await api_client.send_heartbeat(status_fn())
+            except Exception as e:
+                logger.debug("Heartbeat error (non-fatal): %s", e)
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+
+    # Track current connection status for heartbeat
+    connection_status = "starting"
+
+    def get_status() -> str:
+        return connection_status
+
     # Main loop with reconnection
     attempt = 0
     while True:
         try:
             logger.info("Connecting to Discord CDP at %s:%d...", config.cdp.host, config.cdp.port)
+            connection_status = "connecting"
             await cdp_client.connect()
             logger.info("Connected! Listening for trading signals...")
             attempt = 0
+            connection_status = "connected"
+
+            # Start heartbeat if not running
+            if heartbeat_task is None or heartbeat_task.done():
+                heartbeat_task = asyncio.create_task(heartbeat_loop(get_status))
+
             await cdp_client.listen(router.handle_message)
         except KeyboardInterrupt:
             logger.info("Shutting down...")
             break
         except Exception as e:
             attempt += 1
+            connection_status = "reconnecting"
             max_attempts = config.cdp.max_reconnect_attempts
             if max_attempts and attempt > max_attempts:
                 logger.error("Max reconnect attempts (%d) reached. Exiting.", max_attempts)
@@ -106,6 +135,14 @@ async def main() -> None:
             await asyncio.sleep(wait)
         finally:
             await cdp_client.disconnect()
+
+    # Cleanup
+    if heartbeat_task and not heartbeat_task.done():
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
 
     await api_client.close()
     logger.info("Discord Monitor stopped.")
