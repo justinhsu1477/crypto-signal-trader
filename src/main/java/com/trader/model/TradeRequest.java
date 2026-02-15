@@ -30,4 +30,6 @@ public class TradeRequest {
 
     @JsonProperty("new_stop_loss")
     private Double newStopLoss; // MOVE_SL 用
+
+    private SignalSource source; // 訊號來源 (可選)
 }

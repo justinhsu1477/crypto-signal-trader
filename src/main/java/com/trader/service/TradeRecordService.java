@@ -3,6 +3,7 @@ package com.trader.service;
 import com.trader.entity.Trade;
 import com.trader.entity.TradeEvent;
 import com.trader.model.OrderResult;
+import com.trader.model.SignalSource;
 import com.trader.model.TradeSignal;
 import com.trader.repository.TradeEventRepository;
 import com.trader.repository.TradeRepository;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 
 /**
@@ -29,6 +31,8 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class TradeRecordService {
+
+    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
 
     private final TradeRepository tradeRepository;
     private final TradeEventRepository tradeEventRepository;
@@ -61,7 +65,7 @@ public class TradeRecordService {
                 .side(signal.getSide().name())
                 .entryPrice(entryOrder.getPrice())
                 .entryQuantity(entryOrder.getQuantity())
-                .entryTime(LocalDateTime.now())
+                .entryTime(LocalDateTime.now(TAIPEI_ZONE))
                 .entryOrderId(entryOrder.getOrderId())
                 .stopLoss(signal.getStopLoss())
                 .leverage(leverage)
@@ -70,6 +74,16 @@ public class TradeRecordService {
                 .signalHash(signalHash)
                 .status("OPEN")
                 .build();
+
+        // 寫入訊號來源（如果有的話）
+        if (signal.getSource() != null) {
+            SignalSource src = signal.getSource();
+            trade.setSourcePlatform(src.getPlatform());
+            trade.setSourceChannelId(src.getChannelId());
+            trade.setSourceGuildId(src.getGuildId());
+            trade.setSourceAuthorName(src.getAuthorName());
+            trade.setSourceMessageId(src.getMessageId());
+        }
 
         tradeRepository.save(trade);
 
@@ -108,7 +122,7 @@ public class TradeRecordService {
         // 更新平倉資訊
         trade.setExitPrice(closeOrder.getPrice());
         trade.setExitQuantity(closeOrder.getQuantity());
-        trade.setExitTime(LocalDateTime.now());
+        trade.setExitTime(LocalDateTime.now(TAIPEI_ZONE));
         trade.setExitOrderId(closeOrder.getOrderId());
         trade.setExitReason(exitReason);
         trade.setStatus("CLOSED");
@@ -263,7 +277,7 @@ public class TradeRecordService {
      * 用於每日虧損熔斷機制：當 |todayLoss| >= maxDailyLoss 時拒絕新交易
      */
     public double getTodayRealizedLoss() {
-        LocalDateTime startOfToday = LocalDateTime.now().toLocalDate().atStartOfDay();
+        LocalDateTime startOfToday = LocalDateTime.now(TAIPEI_ZONE).toLocalDate().atStartOfDay();
         List<Trade> closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
         return closedToday.stream()
                 .filter(t -> t.getNetProfit() != null && t.getNetProfit() < 0)

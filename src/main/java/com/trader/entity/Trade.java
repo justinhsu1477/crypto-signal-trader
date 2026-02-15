@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 /**
  * 交易主表 — 一筆「開倉→平倉」= 一筆紀錄
@@ -55,19 +56,28 @@ public class Trade {
     // === 去重 ===
     private String signalHash;           // 訊號去重雜湊 SHA256(symbol|side|entryPrice|stopLoss)
 
+    // === 訊號來源 ===
+    private String sourcePlatform;       // 來源平台: DISCORD, TELEGRAM, MANUAL, etc.
+    private String sourceChannelId;      // 頻道 ID
+    private String sourceGuildId;        // 伺服器 ID (Discord guild)
+    private String sourceAuthorName;     // 訊號發送者
+    private String sourceMessageId;      // 原始訊息 ID
+
     private LocalDateTime createdAt;     // 紀錄建立時間
     private LocalDateTime updatedAt;     // 最後更新時間
 
     // 事件查詢請使用 TradeEventRepository.findByTradeIdOrderByTimestampAsc(tradeId)
 
+    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
+
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+        createdAt = LocalDateTime.now(TAIPEI_ZONE);
+        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
     }
 }

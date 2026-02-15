@@ -95,6 +95,15 @@ class SignalRouter:
         self._processed_ids.add(message_id)
         self._trim_dedup_set()
 
+        # 建構訊號來源元資料
+        source = {
+            "platform": "DISCORD",
+            "channel_id": channel_id,
+            "guild_id": guild_id,
+            "author_name": author_name,
+            "message_id": message_id,
+        }
+
         if self.ai_parser:
             # AI 模式：所有訊息都丟 AI 判斷，由 AI 決定 action
             logger.info(
@@ -103,7 +112,7 @@ class SignalRouter:
                 author_name,
                 content[:120].replace("\n", " | "),
             )
-            await self._forward_signal(content)
+            await self._forward_signal(content, source=source)
         else:
             # Regex fallback 模式：保留 emoji/keyword 過濾，避免閒聊打 API
             signal_type = self._identify_type(content)
@@ -117,7 +126,7 @@ class SignalRouter:
             if signal_type not in ACTIONABLE_TYPES:
                 logger.debug("Signal type %s is info-only, skipping API call", signal_type)
                 return
-            await self._forward_signal(content)
+            await self._forward_signal(content, source=source)
 
     def _identify_type(self, content: str) -> str:
         """Identify signal type by emoji prefix or keyword."""
@@ -131,7 +140,7 @@ class SignalRouter:
                 return sig_type
         return "UNKNOWN"
 
-    async def _forward_signal(self, content: str) -> None:
+    async def _forward_signal(self, content: str, source: dict | None = None) -> None:
         """Forward the signal to the Spring Boot API.
 
         Strategy: AI-first, regex-fallback.
@@ -158,7 +167,7 @@ class SignalRouter:
                 # TODO: Insert Agent 2 (risk assessment) here in future
                 # TODO: Insert Agent 3 (arbitration) here in future
 
-                result = await self.api_client.send_trade(parsed, dry_run=self.dry_run)
+                result = await self.api_client.send_trade(parsed, dry_run=self.dry_run, source=source)
                 if result.success:
                     logger.info("AI trade OK: %s", result.summary[:200])
                 else:
@@ -171,7 +180,7 @@ class SignalRouter:
                 logger.warning("AI parsing failed, falling back to regex")
 
         # === Regex parsing (fallback) ===
-        result = await self.api_client.send_signal(content, dry_run=self.dry_run)
+        result = await self.api_client.send_signal(content, dry_run=self.dry_run, source=source)
 
         if result.success:
             logger.info("Regex API response OK: %s", result.summary[:200])

@@ -99,27 +99,35 @@ class ApiClient:
             error=f"All {MAX_RETRIES} retries failed: {last_error}",
         )
 
-    async def send_signal(self, message: str, dry_run: bool = False) -> ExecutionResult:
+    async def send_signal(
+        self, message: str, dry_run: bool = False, source: dict | None = None,
+    ) -> ExecutionResult:
         """POST {"message": "..."} to the Spring Boot API.
 
         Args:
             message: Raw signal text from Discord.
             dry_run: If True, POST to parse endpoint (no trading).
+            source: Optional signal source metadata (platform, channel_id, etc.)
         """
         if dry_run:
             url = f"{self.config.base_url}{self.config.parse_endpoint}"
         else:
             url = f"{self.config.base_url}{self.config.execute_endpoint}"
 
-        payload = {"message": message}
+        payload: dict = {"message": message}
+        if source:
+            payload["source"] = source
         return await self._post_with_retry(url, payload)
 
-    async def send_trade(self, trade_request: dict, dry_run: bool = False) -> ExecutionResult:
+    async def send_trade(
+        self, trade_request: dict, dry_run: bool = False, source: dict | None = None,
+    ) -> ExecutionResult:
         """POST structured JSON to /api/execute-trade.
 
         Args:
             trade_request: Dict matching TradeRequest schema (action, symbol, side, etc.)
             dry_run: If True, log only without executing.
+            source: Optional signal source metadata (platform, channel_id, etc.)
         """
         if dry_run:
             logger.info("[DRY RUN] Would send trade: %s", trade_request)
@@ -130,7 +138,10 @@ class ApiClient:
             )
 
         url = f"{self.config.base_url}/api/execute-trade"
-        return await self._post_with_retry(url, trade_request)
+        payload = dict(trade_request)
+        if source:
+            payload["source"] = source
+        return await self._post_with_retry(url, payload)
 
     async def check_health(self) -> bool:
         """Check if the Spring Boot API is reachable."""

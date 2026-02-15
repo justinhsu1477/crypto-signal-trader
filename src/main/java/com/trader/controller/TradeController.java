@@ -3,6 +3,7 @@ package com.trader.controller;
 import com.trader.entity.Trade;
 import com.trader.entity.TradeEvent;
 import com.trader.model.OrderResult;
+import com.trader.model.SignalSource;
 import com.trader.model.TradeRequest;
 import com.trader.model.TradeSignal;
 import com.trader.service.BinanceFuturesService;
@@ -100,8 +101,8 @@ public class TradeController {
      * Body: { "message": "..." }
      */
     @PostMapping("/execute-signal")
-    public ResponseEntity<?> executeSignal(@RequestBody Map<String, String> body) {
-        String message = body.get("message");
+    public ResponseEntity<?> executeSignal(@RequestBody Map<String, Object> body) {
+        String message = (String) body.get("message");
         Optional<TradeSignal> signalOpt = signalParserService.parse(message);
 
         if (signalOpt.isEmpty()) {
@@ -112,6 +113,12 @@ public class TradeController {
         }
 
         TradeSignal signal = signalOpt.get();
+
+        // 設定訊號來源（如果有的話）
+        SignalSource source = extractSource(body);
+        if (source != null) {
+            signal.setSource(source);
+        }
 
         // 處理取消掛單
         if (signal.getSignalType() == TradeSignal.SignalType.CANCEL) {
@@ -237,6 +244,7 @@ public class TradeController {
                         .entryPriceHigh(request.getEntryPrice())
                         .stopLoss(request.getStopLoss())
                         .signalType(TradeSignal.SignalType.ENTRY)
+                        .source(request.getSource())
                         .build();
 
                 // 設定 TP（如果有的話）
@@ -361,6 +369,28 @@ public class TradeController {
         return ResponseEntity.ok(heartbeatService.getStatus());
     }
 
+    // ==================== 訊號來源提取 ====================
+
+    /**
+     * 從 request body 中提取訊號來源元資料
+     */
+    @SuppressWarnings("unchecked")
+    private SignalSource extractSource(Map<String, Object> body) {
+        Object sourceObj = body.get("source");
+        if (sourceObj instanceof Map) {
+            Map<String, String> src = (Map<String, String>) sourceObj;
+            return SignalSource.builder()
+                    .platform(src.get("platform"))
+                    .channelId(src.get("channel_id"))
+                    .channelName(src.get("channel_name"))
+                    .guildId(src.get("guild_id"))
+                    .authorName(src.get("author_name"))
+                    .messageId(src.get("message_id"))
+                    .build();
+        }
+        return null;
+    }
+
     // ==================== Webhook 通知格式化 ====================
 
     private String formatEntryResults(TradeSignal signal, List<OrderResult> results) {
@@ -390,6 +420,17 @@ public class TradeController {
                 sb.append("✗ ").append(r.getErrorMessage()).append("\n");
             }
         }
+
+        // 顯示訊號來源
+        if (signal.getSource() != null) {
+            SignalSource src = signal.getSource();
+            sb.append("來源: ").append(src.getPlatform());
+            if (src.getAuthorName() != null) {
+                sb.append(" @").append(src.getAuthorName());
+            }
+            sb.append("\n");
+        }
+
         return sb.toString();
     }
 

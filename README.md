@@ -12,70 +12,103 @@ Python Monitor (discord-monitor/)
     │  過濾頻道 → Gemini AI 解析成 JSON
     │              ↓ (AI 失敗時 fallback)
     │            regex 解析原始文字
+    │  心跳回報 → Java API (每 30 秒)
     ▼
 Spring Boot API (Docker, port 8080)
     │  風控檢查 → Binance 下單
     │  → Discord Webhook 通知結果
+    │  → 訊號來源追蹤 (平台/頻道/作者)
     ▼
 Binance Futures API
 ```
 
 ## 快速開始
 
-### 1. 設定環境變數
+### Step 1: 設定環境變數
 
 ```bash
 cp .env.example .env
-# 編輯 .env 填入 Binance API Key 和 Discord Webhook URL
+# 編輯 .env 填入必要設定
 ```
 
-### 2. 啟動 Java API（Docker）
+### Step 2: 啟動 Discord（帶 CDP）
 
 ```bash
-# 建置 + 啟動
-docker-compose up --build -d
-
-# 查看 log
-docker logs -f trading-api
-
-# 停止
-docker-compose down
-
-# 改完程式碼後重建
-docker-compose up --build -d
-```
-
-### 3. 啟動 Discord 監聽
-
-```bash
-# 用 CDP 模式啟動 Discord（會先關閉現有 Discord 再重開）
 cd discord-monitor
 chmod +x launch_discord.sh
 ./launch_discord.sh
 
 # 等 Discord 完全載入後，確認 CDP 可連
 curl http://127.0.0.1:9222/json
-
-# 安裝 Python 依賴（首次）
-pip install -r requirements.txt
-
-# 啟動監聽（dry-run 不下單，測試用）
-python3 -m src.main --config config.yml --dry-run
-
-# 正式跟單
-python3 -m src.main --config config.yml
 ```
 
-### 4. 測試 API
+### Step 3: 一鍵啟動（Docker Compose）
 
 ```bash
-# 查詢餘額
+docker compose up --build -d
+```
+
+這會同時啟動兩個服務：
+- **trading-api** — Java Spring Boot 交易引擎（port 8080）
+- **discord-monitor** — Python CDP 監聽 + AI 解析
+
+### 常用 Docker 指令
+
+| 指令 | 說明 |
+|------|------|
+| `docker compose up --build -d` | 建置 + 背景啟動 |
+| `docker compose logs -f` | 查看所有服務 log |
+| `docker logs -f trading-api` | 只看 Java API log |
+| `docker logs -f discord-monitor` | 只看 Python monitor log |
+| `docker compose restart trading-api` | 重啟 Java API |
+| `docker compose restart discord-monitor` | 重啟 Python monitor |
+| `docker compose down` | 停止所有服務 |
+| `docker compose ps` | 查看服務狀態 |
+
+### 健康檢查 / 驗證
+
+```bash
+# 確認 Java API 正常
 curl http://localhost:8080/api/balance
+
+# 確認 Monitor 心跳正常
+curl http://localhost:8080/api/monitor-status
 
 # 測試解析訊號（不下單）
 curl -X POST http://localhost:8080/api/parse-signal \
   -H "Content-Type: application/json" \
   -d '{"message": "📢 交易訊號發布: BTCUSDT\n做多 LONG 🟢 (限價單)\n入場價格 (Entry)\n95000\n止盈目標 (TP)\n98000\n止損價格 (SL)\n93000"}'
+```
+
+---
+
+## 監控系統
+
+### 心跳機制
+
+Python monitor 每 30 秒向 Java API 回報心跳，Java 端偵測兩種異常：
+
+| 異常類型 | 偵測方式 | 告警 |
+|---------|---------|------|
+| Python 掛了 | 心跳停止超過 90 秒 | Discord 紅色告警 |
+| Discord 斷了但 Python 還活著 | 心跳帶 `status=reconnecting` | Discord 紅色告警 |
+| 恢復正常 | 心跳恢復 `status=connected` | Discord 綠色恢復通知 |
+
+### AI Agent 狀態監控
+
+Python monitor 同時回報 AI parser 狀態（`aiStatus`）：
+
+| 狀態 | 說明 | 告警 |
+|------|------|------|
+| `active` | Gemini AI 正常運作 | 無（正常） |
+| `disabled` | AI 未啟用（API key 缺失或無效） | Discord 黃色告警，提示使用 regex fallback |
+| 恢復 `active` | AI 重新連線成功 | Discord 綠色恢復通知 |
+
+### 查詢監控狀態
+
+```bash
+curl http://localhost:8080/api/monitor-status
+# 回傳: lastHeartbeat, elapsedSeconds, online, monitorStatus, aiStatus, alertSent
 ```
 
 ---
@@ -162,6 +195,20 @@ SL 下單失敗
 
 盈虧公式：`淨利 = 毛利 - (入場手續費 + 出場手續費)`
 
+### 訊號來源追蹤
+
+每筆交易自動記錄訊號來源：
+
+| 欄位 | 說明 | 範例 |
+|------|------|------|
+| `sourcePlatform` | 來源平台 | DISCORD, TELEGRAM, MANUAL |
+| `sourceChannelId` | 頻道 ID | 1325133886509944983 |
+| `sourceGuildId` | 伺服器 ID | 862188678876233748 |
+| `sourceAuthorName` | 訊號發送者 | 陳哥 |
+| `sourceMessageId` | 原始訊息 ID | 用於追溯原始訊號 |
+
+通用設計，未來支援 Telegram 等其他平台不需改架構。
+
 ### Discord 通知
 
 每次操作結果即時推送到你的 Discord 頻道：
@@ -178,9 +225,12 @@ SL 下單失敗
 | TP 失敗告警 | ⚠️ | 黃色 |
 | 每日熔斷 | 🚨 | 紅色 |
 | Fail-Safe 失敗 | 🚨 | 紅色 |
-| API 連線中斷 | 🔴 | 紅色 |
+| Discord 連線中斷 | 🚨 | 紅色 |
+| Discord Monitor 離線 | 🚨 | 紅色 |
+| AI Agent 未啟用 | ⚠️ | 黃色 |
+| 連線/AI 恢復 | ✅ | 綠色 |
 
-入場通知會顯示風控摘要：`餘額 | 1R | 保證金需求`
+入場通知會顯示風控摘要：`餘額 | 1R | 保證金需求`，以及訊號來源資訊。
 
 ---
 
@@ -305,22 +355,29 @@ AI 靠語意理解判斷，不綁死特定 emoji 或格式。不同群主的訊�
 | `/api/leverage` | POST | 手動設定槓桿 |
 | `/api/orders?symbol=BTCUSDT` | DELETE | 取消所有訂單 |
 
+### 監控
+
+| 端點 | 方法 | 說明 |
+|------|------|------|
+| `/api/heartbeat` | POST | Python monitor 心跳回報 |
+| `/api/monitor-status` | GET | 查詢 monitor 連線與 AI 狀態 |
+
 ### 交易紀錄與統計
 
 | 端點 | 方法 | 說明 |
 |------|------|------|
 | `/api/trades` | GET | 交易紀錄（可選 `?status=OPEN/CLOSED`） |
-| `/api/trades/{id}` | GET | 單筆詳情 |
+| `/api/trades/{id}` | GET | 單筆詳情（含訊號來源） |
 | `/api/trades/{id}/events` | GET | 事件日誌 |
 | `/api/stats/summary` | GET | 盈虧統計摘要 |
 
 ### execute-trade JSON 格式
 
 ```bash
-# ENTRY 開倉
+# ENTRY 開倉（含訊號來源）
 curl -X POST http://localhost:8080/api/execute-trade \
   -H "Content-Type: application/json" \
-  -d '{"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":95000,"stop_loss":93000,"take_profit":98000}'
+  -d '{"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":95000,"stop_loss":93000,"take_profit":98000,"source":{"platform":"DISCORD","channel_id":"123","author_name":"陳哥"}}'
 
 # CLOSE 平倉（全部）
 curl -X POST http://localhost:8080/api/execute-trade \
@@ -370,7 +427,7 @@ curl -X POST http://localhost:8080/api/execute-trade \
 - **Python 3** — Discord CDP 監聽 + Gemini AI 解析
 - **H2 Database** — 交易紀錄持久化
 - **OkHttp** — Binance API 通訊
-- **Docker Compose** — 容器化部署
+- **Docker Compose** — 容器化部署（一鍵啟動）
 - **Gradle 8.13** — 建置工具
 
 ### SL/TP 下單重試機制
@@ -386,5 +443,9 @@ curl -X POST http://localhost:8080/api/execute-trade \
 交易紀錄存在 `./data/trading` 檔案中（H2 嵌入式資料庫）。
 
 兩張表：
-- **trade** — 交易主紀錄（入場、出場、盈虧、手續費）
+- **trade** — 交易主紀錄（入場、出場、盈虧、手續費、訊號來源）
 - **trade_event** — 事件日誌（每個動作的詳細記錄）
+
+### 時區
+
+所有時間戳記（交易紀錄、事件日誌、Discord 通知）統一使用 **Asia/Taipei (UTC+8)** 時區。
