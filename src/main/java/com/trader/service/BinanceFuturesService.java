@@ -606,12 +606,22 @@ public class BinanceFuturesService {
         List<OrderResult> results = new ArrayList<>();
         results.add(closeOrder);
 
-        // 如果不是全平，需要重新掛 SL（如果有 newStopLoss 的話）
-        if (closeRatio < 1.0 && signal.getNewStopLoss() != null) {
+        // 如果不是全平，需要重新掛 SL 和 TP（避免剩餘倉位裸奔）
+        if (closeRatio < 1.0) {
             double remainingQty = absPosition - closeQty;
             String slSide = isLong ? "SELL" : "BUY";
-            OrderResult newSl = placeStopLoss(symbol, slSide, signal.getNewStopLoss(), remainingQty);
-            results.add(newSl);
+
+            // 重掛 SL（如果有新止損價）
+            if (signal.getNewStopLoss() != null) {
+                OrderResult newSl = placeStopLoss(symbol, slSide, signal.getNewStopLoss(), remainingQty);
+                results.add(newSl);
+            }
+
+            // 重掛 TP（如果有新止盈價）
+            if (signal.getNewTakeProfit() != null && signal.getNewTakeProfit() > 0) {
+                OrderResult newTp = placeTakeProfit(symbol, slSide, signal.getNewTakeProfit(), remainingQty);
+                results.add(newTp);
+            }
         }
 
         return results;
@@ -685,8 +695,13 @@ public class BinanceFuturesService {
         }
 
         // 4. 掛新的 TAKE_PROFIT_MARKET（如果有新 TP）
-        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
-            double newTp = signal.getTakeProfits().get(0);
+        // 優先使用 newTakeProfit（MOVE_SL 專用），fallback 到 takeProfits（相容舊路徑）
+        Double tpValue = signal.getNewTakeProfit();
+        if (tpValue == null && signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            tpValue = signal.getTakeProfits().get(0);
+        }
+        if (tpValue != null && tpValue > 0) {
+            double newTp = tpValue;
             log.info("更新止盈: {} 新TP={} 持倉={}", symbol, newTp, positionAmt);
 
             OrderResult tpOrder = placeTakeProfit(symbol, closeSide, newTp, absPosition);

@@ -266,6 +266,8 @@ public class TradeController {
                         .symbol(symbol)
                         .signalType(TradeSignal.SignalType.CLOSE)
                         .closeRatio(request.getCloseRatio())
+                        .newStopLoss(request.getNewStopLoss())
+                        .newTakeProfit(request.getNewTakeProfit())
                         .build();
 
                 List<OrderResult> results = binanceFuturesService.executeClose(signal);
@@ -278,14 +280,15 @@ public class TradeController {
             }
 
             case "MOVE_SL": {
-                if (request.getNewStopLoss() == null) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "MOVE_SL 需要 new_stop_loss"));
+                if (request.getNewStopLoss() == null && request.getNewTakeProfit() == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "MOVE_SL 需要 new_stop_loss 或 new_take_profit（至少一個）"));
                 }
 
                 TradeSignal signal = TradeSignal.builder()
                         .symbol(symbol)
                         .signalType(TradeSignal.SignalType.MOVE_SL)
                         .newStopLoss(request.getNewStopLoss())
+                        .newTakeProfit(request.getNewTakeProfit())
                         .build();
 
                 List<OrderResult> results = binanceFuturesService.executeMoveSL(signal);
