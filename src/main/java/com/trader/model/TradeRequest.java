@@ -29,7 +29,10 @@ public class TradeRequest {
     private Double closeRatio;  // CLOSE 用 (0.5=平一半, null=全平)
 
     @JsonProperty("new_stop_loss")
-    private Double newStopLoss; // MOVE_SL 用
+    private Double newStopLoss; // MOVE_SL / CLOSE 部分平倉用
+
+    @JsonProperty("new_take_profit")
+    private Double newTakeProfit; // MOVE_SL / CLOSE 部分平倉用
 
     private SignalSource source; // 訊號來源 (可選)
 }

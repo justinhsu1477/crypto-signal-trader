@@ -52,6 +52,9 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 15. 訊息中出現「平倉」或「平仓」→ CLOSE
 16. 「平50%」「止盈50%」→ CLOSE + close_ratio = 0.5
 17. 「全部止盈出局」「全部平仓」→ CLOSE + close_ratio = null（null 表示全平）
+17b. 部分平倉 + 止損移動（如「平一半，止損拉到成本/入場價/XX價格」）→ CLOSE + close_ratio + new_stop_loss
+17c. 部分平倉 + 止盈修改 → CLOSE + close_ratio + new_take_profit
+17d. 部分平倉時如果訊號同時提到新的 SL 和/或 TP，務必一起帶上，避免剩餘倉位失去保護
 
 ### MOVE_SL（移動止損）判斷規則
 18. 「止损设置: <價格>」→ MOVE_SL，new_stop_loss = 該價格
@@ -120,6 +123,12 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 
 輸入: BTC目前均价在88600附近，可以平50%
 輸出: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5}
+
+輸入: BTC先平一半，止损拉到开仓价95000保本
+輸出: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":95000}
+
+輸入: 平倉50%，止損移動至開倉價，止盈改79000
+輸出: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":null,"new_take_profit":79000}
 
 輸入: BTC市价88200附近换手做多。
 輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
