@@ -36,6 +36,12 @@ public class MonitorHeartbeatService {
     /** 是否已經發過斷線告警（避免重複發送） */
     private volatile boolean alertSent = false;
 
+    /** 是否已經發過 AI 離線告警（只發一次） */
+    private volatile boolean aiAlertSent = false;
+
+    /** 最後收到的 AI 狀態 */
+    private volatile String lastAiStatus = "unknown";
+
     /** 心跳逾時秒數：超過此時間沒收到心跳就告警 */
     private static final long HEARTBEAT_TIMEOUT_SECONDS = 90;
 
@@ -46,14 +52,20 @@ public class MonitorHeartbeatService {
     /**
      * 接收 Python monitor 的心跳
      *
-     * @param status Python 端傳來的狀態（connected / reconnecting / connecting）
+     * @param status   Python 端傳來的狀態（connected / reconnecting / connecting）
+     * @param aiStatus AI parser 狀態（active / disabled）
      * @return 回應資訊
      */
-    public Map<String, Object> receiveHeartbeat(String status) {
+    public Map<String, Object> receiveHeartbeat(String status, String aiStatus) {
         Instant now = Instant.now();
         Instant previous = lastHeartbeat.getAndSet(now);
         String previousStatus = lastStatus;
         lastStatus = status;
+
+        // 更新 AI 狀態
+        if (aiStatus != null) {
+            lastAiStatus = aiStatus;
+        }
 
         // ===== 情況 1: Discord 斷了，Python 在重連 =====
         if ("reconnecting".equals(status) && !alertSent) {
@@ -79,7 +91,32 @@ public class MonitorHeartbeatService {
                     DiscordWebhookService.COLOR_GREEN);
         }
 
-        log.debug("收到心跳: status={}", status);
+        // ===== 情況 3: AI parser 未啟用 =====
+        if ("disabled".equals(aiStatus) && !aiAlertSent) {
+            aiAlertSent = true;
+            log.warn("AI Signal Parser 未啟用! 將使用 regex fallback");
+            webhookService.sendNotification(
+                    "⚠️ AI Agent 未啟用",
+                    "Python monitor 回報 AI Signal Parser 無法連線\n"
+                    + "可能原因:\n"
+                    + "• GEMINI_API_KEY 環境變數未設定\n"
+                    + "• API Key 無效或過期\n\n"
+                    + "目前使用 regex fallback 模式解析訊號\n"
+                    + "部分非標準格式的訊號可能無法辨識",
+                    DiscordWebhookService.COLOR_YELLOW);
+        }
+
+        // ===== 情況 4: AI parser 恢復了 =====
+        if ("active".equals(aiStatus) && aiAlertSent) {
+            aiAlertSent = false;
+            log.info("AI Signal Parser 已恢復啟用");
+            webhookService.sendNotification(
+                    "✅ AI Agent 已啟用",
+                    "AI Signal Parser 已成功連線\n訊號解析已切換回 AI 模式",
+                    DiscordWebhookService.COLOR_GREEN);
+        }
+
+        log.debug("收到心跳: status={}, aiStatus={}", status, aiStatus);
         return Map.of(
                 "received", true,
                 "timestamp", now.toString(),
@@ -134,6 +171,7 @@ public class MonitorHeartbeatService {
                 "elapsedSeconds", elapsed,
                 "online", isOnline,
                 "monitorStatus", lastStatus,
+                "aiStatus", lastAiStatus,
                 "alertSent", alertSent
         );
     }

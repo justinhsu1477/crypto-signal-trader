@@ -348,7 +348,8 @@ public class TradeController {
     @PostMapping("/heartbeat")
     public ResponseEntity<Map<String, Object>> heartbeat(@RequestBody(required = false) Map<String, String> body) {
         String status = (body != null && body.containsKey("status")) ? body.get("status") : "unknown";
-        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status));
+        String aiStatus = (body != null) ? body.get("aiStatus") : null;
+        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus));
     }
 
     /**

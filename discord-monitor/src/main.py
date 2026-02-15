@@ -85,11 +85,17 @@ async def main() -> None:
     # Heartbeat background task
     heartbeat_task: asyncio.Task | None = None
 
+    # AI parser 狀態：有初始化成功就是 active，否則 disabled
+    ai_active = ai_parser is not None and ai_parser.client is not None
+
     async def heartbeat_loop(status_fn):
         """Send heartbeat to Spring Boot API every HEARTBEAT_INTERVAL seconds."""
         while True:
             try:
-                await api_client.send_heartbeat(status_fn())
+                await api_client.send_heartbeat(
+                    status_fn(),
+                    ai_status="active" if ai_active else "disabled",
+                )
             except Exception as e:
                 logger.debug("Heartbeat error (non-fatal): %s", e)
             await asyncio.sleep(HEARTBEAT_INTERVAL)

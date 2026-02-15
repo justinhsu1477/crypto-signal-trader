@@ -310,6 +310,63 @@ class SignalParserServiceTest {
         }
 
         @Test
+        @DisplayName("單價格 + 附近 — BTC，69000附近，做多")
+        void singlePriceNearby() {
+            String msg = "陈哥合约交易策略【限价】\n"
+                    + "BTC，69000附近，做多\n"
+                    + "止损预计: 66900\n"
+                    + "止盈预计: 72000";
+
+            Optional<TradeSignal> result = parser.parse(msg);
+
+            assertThat(result).isPresent();
+            TradeSignal s = result.get();
+            assertThat(s.getSymbol()).isEqualTo("BTCUSDT");
+            assertThat(s.getSide()).isEqualTo(TradeSignal.Side.LONG);
+            assertThat(s.getEntryPriceLow()).isEqualTo(69000.0);
+            assertThat(s.getEntryPriceHigh()).isEqualTo(69000.0);
+            assertThat(s.getStopLoss()).isEqualTo(66900.0);
+            assertThat(s.getTakeProfits()).containsExactly(72000.0);
+        }
+
+        @Test
+        @DisplayName("單價格帶多餘橫線 — BTC，69000-附近，做多")
+        void singlePriceDashNearby() {
+            String msg = "陈哥合约交易策略【限价】\n"
+                    + "BTC，69000-附近，做多\n"
+                    + "止损预计: 66900\n"
+                    + "止盈预计: 72000";
+
+            Optional<TradeSignal> result = parser.parse(msg);
+
+            assertThat(result).isPresent();
+            TradeSignal s = result.get();
+            assertThat(s.getSymbol()).isEqualTo("BTCUSDT");
+            assertThat(s.getSide()).isEqualTo(TradeSignal.Side.LONG);
+            assertThat(s.getEntryPriceLow()).isEqualTo(69000.0);
+            assertThat(s.getEntryPriceHigh()).isEqualTo(69000.0);
+            assertThat(s.getStopLoss()).isEqualTo(66900.0);
+            assertThat(s.getTakeProfits()).containsExactly(72000.0);
+        }
+
+        @Test
+        @DisplayName("單價格做空 — ETH，2560附近，做空")
+        void singlePriceShort() {
+            String msg = "ETH，2560附近，做空\n"
+                    + "止损预计: 2650\n"
+                    + "止盈预计: 2400";
+
+            Optional<TradeSignal> result = parser.parse(msg);
+
+            assertThat(result).isPresent();
+            TradeSignal s = result.get();
+            assertThat(s.getSymbol()).isEqualTo("ETHUSDT");
+            assertThat(s.getSide()).isEqualTo(TradeSignal.Side.SHORT);
+            assertThat(s.getEntryPriceLow()).isEqualTo(2560.0);
+            assertThat(s.getEntryPriceHigh()).isEqualTo(2560.0);
+        }
+
+        @Test
         @DisplayName("缺少止損 — 解析失敗")
         void missingStopLoss() {
             String msg = "BTC，70800-72000附近，做空\n"

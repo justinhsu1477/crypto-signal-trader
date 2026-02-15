@@ -31,9 +31,11 @@ public class SignalParserService {
     // ==================== 陳哥格式 ====================
 
     // 匹配策略訊號 (限價單)
-    // 格式: BTC，70800-72000附近，做空/做多
+    // 格式: BTC，70800-72000附近，做空/做多  (雙價格)
+    //   or: BTC，69000附近，做多             (單價格)
+    //   or: BTC，69000-附近，做多            (單價格帶多餘 -)
     private static final Pattern SIGNAL_PATTERN = Pattern.compile(
-            "([A-Z]+)[，,]\\s*(\\d+(?:\\.\\d+)?)\\s*[-–~]\\s*(\\d+(?:\\.\\d+)?)\\s*附近[，,]\\s*(做空|做多)"
+            "([A-Z]+)[，,]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:[-–~]\\s*(\\d+(?:\\.\\d+)?)\\s*)?[-–~]?\\s*附近[，,]\\s*(做空|做多)"
     );
 
     // 匹配止損
@@ -348,7 +350,10 @@ public class SignalParserService {
 
         String coin = signalMatcher.group(1);                // BTC
         double priceLow = Double.parseDouble(signalMatcher.group(2));  // 70800
-        double priceHigh = Double.parseDouble(signalMatcher.group(3)); // 72000
+        // group(3) 只在雙價格時有值 (如 70800-72000)，單價格 (如 69000附近) 為 null
+        double priceHigh = signalMatcher.group(3) != null
+                ? Double.parseDouble(signalMatcher.group(3))   // 72000
+                : priceLow;                                     // 單價格時 high == low
         String direction = signalMatcher.group(4);            // 做空 or 做多
 
         TradeSignal.Side side = "做空".equals(direction)

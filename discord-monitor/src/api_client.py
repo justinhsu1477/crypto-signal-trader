@@ -141,18 +141,19 @@ class ApiClient:
         except Exception:
             return False
 
-    async def send_heartbeat(self, status: str = "connected") -> bool:
+    async def send_heartbeat(self, status: str = "connected", ai_status: str = "active") -> bool:
         """Send heartbeat to Spring Boot API.
 
         Args:
             status: Current monitor status (connected / reconnecting).
+            ai_status: AI parser status (active / disabled).
 
         Returns:
             True if heartbeat was acknowledged, False otherwise.
         """
         try:
             url = f"{self.config.base_url}/api/heartbeat"
-            payload = {"status": status}
+            payload = {"status": status, "aiStatus": ai_status}
             async with self._session.post(
                 url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
             ) as resp:
