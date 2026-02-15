@@ -286,6 +286,42 @@ public class TradeRecordService {
     }
 
     /**
+     * 取得今日交易統計（台灣時間 00:00 起算）
+     * 供每日摘要排程使用
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getTodayStats() {
+        LocalDateTime startOfToday = LocalDateTime.now(TAIPEI_ZONE).toLocalDate().atStartOfDay();
+        List<Trade> closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
+
+        long totalCount = closedToday.size();
+        long winCount = closedToday.stream()
+                .filter(t -> t.getNetProfit() != null && t.getNetProfit() > 0)
+                .count();
+        long loseCount = totalCount - winCount;
+        double todayNetProfit = closedToday.stream()
+                .filter(t -> t.getNetProfit() != null)
+                .mapToDouble(Trade::getNetProfit)
+                .sum();
+        double todayCommission = closedToday.stream()
+                .filter(t -> t.getCommission() != null)
+                .mapToDouble(Trade::getCommission)
+                .sum();
+
+        // 當前持倉
+        List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
+
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("todayTrades", totalCount);
+        stats.put("todayWins", winCount);
+        stats.put("todayLosses", loseCount);
+        stats.put("todayNetProfit", round2(todayNetProfit));
+        stats.put("todayCommission", round2(todayCommission));
+        stats.put("openTrades", openTrades);
+        return stats;
+    }
+
+    /**
      * 盈虧統計摘要
      */
     public Map<String, Object> getStatsSummary() {
