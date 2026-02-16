@@ -226,26 +226,46 @@ public class TradeController {
 
         switch (action.toUpperCase()) {
             case "ENTRY": {
-                // 驗證必要欄位
-                if (request.getSide() == null) {
+                boolean isDca = request.getIsDca() != null && request.getIsDca();
+
+                // DCA 時 side 可以為空（從現有持倉推斷），非 DCA 必須提供
+                if (!isDca && request.getSide() == null) {
                     return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 需要 side (LONG/SHORT)"));
                 }
                 if (request.getEntryPrice() == null) {
                     return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 需要 entry_price"));
                 }
-                if (request.getStopLoss() == null) {
+                if (request.getStopLoss() == null && !isDca) {
                     return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 必須包含 stop_loss"));
                 }
+                // DCA 必須帶 new_stop_loss（補倉後的新止損）
+                if (isDca && request.getNewStopLoss() == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "DCA 補倉必須包含 new_stop_loss"));
+                }
 
-                TradeSignal signal = TradeSignal.builder()
+                TradeSignal.TradeSignalBuilder builder = TradeSignal.builder()
                         .symbol(symbol)
-                        .side(TradeSignal.Side.valueOf(request.getSide().toUpperCase()))
                         .entryPriceLow(request.getEntryPrice())
                         .entryPriceHigh(request.getEntryPrice())
-                        .stopLoss(request.getStopLoss())
                         .signalType(TradeSignal.SignalType.ENTRY)
-                        .source(request.getSource())
-                        .build();
+                        .isDca(isDca)
+                        .newStopLoss(request.getNewStopLoss())
+                        .newTakeProfit(request.getNewTakeProfit())
+                        .source(request.getSource());
+
+                // side: DCA 可以為空（BinanceFuturesService 會從持倉推斷）
+                if (request.getSide() != null) {
+                    builder.side(TradeSignal.Side.valueOf(request.getSide().toUpperCase()));
+                }
+
+                // stopLoss: DCA 用 new_stop_loss，非 DCA 用 stop_loss
+                if (isDca) {
+                    builder.stopLoss(request.getNewStopLoss());
+                } else {
+                    builder.stopLoss(request.getStopLoss());
+                }
+
+                TradeSignal signal = builder.build();
 
                 // 設定 TP（如果有的話）
                 if (request.getTakeProfit() != null) {
@@ -254,11 +274,14 @@ public class TradeController {
 
                 List<OrderResult> results = binanceFuturesService.executeSignal(signal);
                 boolean entryOk = results.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+                String title = isDca
+                        ? (entryOk ? "📈 DCA 補倉成功 (API)" : "❌ DCA 補倉失敗 (API)")
+                        : (entryOk ? "✅ ENTRY 入場成功 (API)" : "❌ ENTRY 入場失敗 (API)");
                 webhookService.sendNotification(
-                        entryOk ? "✅ ENTRY 入場成功 (API)" : "❌ ENTRY 入場失敗 (API)",
+                        title,
                         formatEntryResults(signal, results),
                         entryOk ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
-                return ResponseEntity.ok(Map.of("action", "ENTRY", "results", results));
+                return ResponseEntity.ok(Map.of("action", isDca ? "DCA" : "ENTRY", "results", results));
             }
 
             case "CLOSE": {

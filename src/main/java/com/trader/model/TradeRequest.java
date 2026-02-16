@@ -34,5 +34,8 @@ public class TradeRequest {
     @JsonProperty("new_take_profit")
     private Double newTakeProfit; // MOVE_SL / CLOSE 部分平倉用
 
+    @JsonProperty("is_dca")
+    private Boolean isDca;       // 是否為補倉訊號（DCA）
+
     private SignalSource source; // 訊號來源 (可選)
 }

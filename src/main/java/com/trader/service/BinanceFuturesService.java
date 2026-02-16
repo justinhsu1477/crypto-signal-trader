@@ -284,6 +284,29 @@ public class BinanceFuturesService {
         return sendSignedDelete(endpoint, params);
     }
 
+    /**
+     * 只取消 STOP_MARKET 和 TAKE_PROFIT_MARKET 訂單，保留 LIMIT 入場單
+     * 用於 DCA 補倉時：需要更新 SL/TP 但不能取消已掛的入場單
+     */
+    public void cancelSLTPOrders(String symbol) {
+        String response = getOpenOrders(symbol);
+        try {
+            JsonArray orders = gson.fromJson(response, JsonArray.class);
+            for (JsonElement elem : orders) {
+                JsonObject order = elem.getAsJsonObject();
+                String type = order.get("type").getAsString();
+                if ("STOP_MARKET".equals(type) || "TAKE_PROFIT_MARKET".equals(type)) {
+                    long orderId = order.get("orderId").getAsLong();
+                    log.info("DCA: 取消舊的 {} 訂單 {}", type, orderId);
+                    cancelOrder(symbol, orderId);
+                }
+            }
+        } catch (Exception e) {
+            log.error("取消 SL/TP 訂單失敗: {}", e.getMessage());
+            throw new RuntimeException("取消 SL/TP 訂單失敗: " + e.getMessage(), e);
+        }
+    }
+
     public String getOpenOrders(String symbol) {
         String endpoint = "/fapi/v1/openOrders";
         Map<String, String> params = new LinkedHashMap<>();
@@ -345,16 +368,41 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("每日虧損已達上限，暫停交易"));
         }
 
-        // 2. 持倉限制檢查：有持倉或有掛單則拒絕
+        // 2. 持倉限制檢查 + DCA 補倉邏輯
         double currentPosition = getCurrentPositionAmount(symbol);
-        int maxPositions = riskConfig.getMaxPositions();
-        if (currentPosition != 0 && getActivePositionCount() >= maxPositions) {
-            log.warn("已有持倉 {} BTC，持倉數已達上限 {}，拒絕新開倉", currentPosition, maxPositions);
-            return List.of(OrderResult.fail("持倉數已達上限 " + maxPositions + "，拒絕新開倉"));
+        if (currentPosition != 0) {
+            if (signal.isDca()) {
+                // DCA 模式：檢查補倉次數是否已達上限
+                int dcaCount = tradeRecordService.getDcaCount(symbol);
+                int maxDca = riskConfig.getMaxDcaPerSymbol();
+                if (dcaCount >= maxDca - 1) {  // maxDca 包含首次入場，dcaCount 從 0 開始
+                    log.warn("DCA 已達上限: {} 已補倉 {} 次，上限 {} 層", symbol, dcaCount, maxDca);
+                    return List.of(OrderResult.fail("DCA 已達上限: " + symbol + " 已 " + (dcaCount + 1) + "/" + maxDca + " 層"));
+                }
+
+                // DCA 方向檢查：必須與現有持倉同方向
+                boolean isCurrentLong = currentPosition > 0;
+                // 如果訊號沒帶 side，從持倉推斷
+                if (signal.getSide() == null) {
+                    signal.setSide(isCurrentLong ? TradeSignal.Side.LONG : TradeSignal.Side.SHORT);
+                    log.info("DCA 自動推斷方向: {} (持倉 {} BTC)", signal.getSide(), currentPosition);
+                }
+                boolean isSignalLong = signal.getSide() == TradeSignal.Side.LONG;
+                if (isCurrentLong != isSignalLong) {
+                    log.warn("DCA 方向不一致: 持倉={}, 訊號={}", isCurrentLong ? "LONG" : "SHORT", signal.getSide());
+                    return List.of(OrderResult.fail("DCA 補倉方向與現有持倉不一致"));
+                }
+
+                log.info("DCA 補倉允許: {} 目前第 {} 層，上限 {} 層", symbol, dcaCount + 1, maxDca);
+            } else {
+                // 非 DCA：已有持倉時拒絕新開倉
+                log.warn("已有持倉 {} BTC，拒絕新開倉（如需補倉請使用 DCA）", currentPosition);
+                return List.of(OrderResult.fail("已有持倉，拒絕新開倉（如需補倉請使用 is_dca=true）"));
+            }
         }
 
-        // 2b. 檢查是否有未成交的入場掛單（LIMIT BUY/SELL），防止重複下單
-        if (hasOpenEntryOrders(symbol)) {
+        // 2b. 檢查未成交入場掛單（DCA 時跳過，允許多張 LIMIT 同時存在）
+        if (!signal.isDca() && hasOpenEntryOrders(symbol)) {
             log.warn("已有未成交的入場掛單，拒絕重複下單");
             return List.of(OrderResult.fail("已有未成交的入場掛單，拒絕重複下單"));
         }
@@ -404,9 +452,14 @@ public class BinanceFuturesService {
         }
         setLeverage(symbol, leverage);
 
-        // 7. 動態以損定倉: 1R = 帳戶餘額 × riskPercent
+        // 7. 動態以損定倉: 1R = 帳戶餘額 × riskPercent, DCA 用 2R
+        double riskMultiplier = signal.isDca() ? riskConfig.getDcaRiskMultiplier() : 1.0;
+        double effectiveRiskAmount = riskAmount * riskMultiplier;
         double riskDistance = Math.abs(entry - sl);
-        double quantity = riskAmount / riskDistance;
+        double quantity = effectiveRiskAmount / riskDistance;
+        if (signal.isDca()) {
+            log.info("DCA 倉位計算: {}R = {} × {} = {} USDT", riskMultiplier, riskAmount, riskMultiplier, effectiveRiskAmount);
+        }
 
         // 7b. 名目價值上限 cap — 防止窄止損產生超大倉位
         double notional = entry * quantity;
@@ -437,8 +490,8 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("餘額不足，計算出的倉位低於最低下單量"));
         }
 
-        log.info("以損定倉: 餘額={}, 1R={}({}%), 風險距離={}, 數量={}, 名目={} USDT, 保證金={} USDT",
-                balance, riskAmount, riskConfig.getRiskPercent() * 100,
+        log.info("以損定倉: 餘額={}, 1R={}, 實際風險={}(×{}), 風險距離={}, 數量={}, 名目={} USDT, 保證金={} USDT",
+                balance, riskAmount, effectiveRiskAmount, riskMultiplier,
                 riskDistance, quantity, entry * quantity, entry * quantity / leverage);
 
         // 入場方向
@@ -452,24 +505,50 @@ public class BinanceFuturesService {
             return List.of(entryOrder);
         }
         // 附加風控摘要到入場單（供 Discord 通知使用）
-        entryOrder.setRiskSummary(String.format("餘額: %.2f | 1R: %.2f (%.0f%%) | 保證金: %.2f",
-                balance, riskAmount, riskConfig.getRiskPercent() * 100, entry * quantity / leverage));
+        entryOrder.setRiskSummary(String.format("餘額: %.2f | %s: %.2f (%.0f%%×%.0f) | 保證金: %.2f",
+                balance, signal.isDca() ? "DCA風險" : "1R",
+                effectiveRiskAmount, riskConfig.getRiskPercent() * 100, riskMultiplier,
+                entry * quantity / leverage));
 
-        // 9. 掛 STOP_MARKET 止損單
-        OrderResult slOrder = placeStopLoss(symbol, closeSide, sl, quantity);
-
-        // 10. 掛 TAKE_PROFIT_MARKET 止盈單（如果訊號有給 TP）
+        // === DCA 補倉 SL/TP 處理（與首次入場不同） ===
+        OrderResult slOrder;
         OrderResult tpOrder = null;
-        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
-            double tp = signal.getTakeProfits().get(0);
-            tpOrder = placeTakeProfit(symbol, closeSide, tp, quantity);
-            if (!tpOrder.isSuccess()) {
-                log.warn("止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
-                discordWebhookService.sendNotification(
-                        "⚠️ 止盈單失敗（需手動設定）",
-                        String.format("%s %s\n入場和止損已正常設定\n止盈錯誤: %s\n請手動設定 TP",
-                                symbol, signal.getSide(), tpOrder.getErrorMessage()),
-                        DiscordWebhookService.COLOR_YELLOW);
+
+        if (signal.isDca()) {
+            // DCA: 取消舊的 SL/TP（保留 LIMIT 入場單），重掛覆蓋全部持倉的 SL/TP
+            cancelSLTPOrders(symbol);
+
+            double totalQty = Math.abs(currentPosition) + quantity;
+            log.info("DCA SL/TP 重掛: 舊持倉={}, 新掛單={}, 總數量={}", Math.abs(currentPosition), quantity, totalQty);
+
+            // 掛新 SL（DCA 必帶 new_stop_loss）
+            slOrder = placeStopLoss(symbol, closeSide, signal.getNewStopLoss(), totalQty);
+
+            // 掛新 TP（如果有）
+            if (signal.getNewTakeProfit() != null && signal.getNewTakeProfit() > 0) {
+                tpOrder = placeTakeProfit(symbol, closeSide, signal.getNewTakeProfit(), totalQty);
+                if (!tpOrder.isSuccess()) {
+                    log.warn("DCA 止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
+                }
+            }
+        } else {
+            // 正常入場: SL/TP 按入場數量掛
+
+            // 9. 掛 STOP_MARKET 止損單
+            slOrder = placeStopLoss(symbol, closeSide, sl, quantity);
+
+            // 10. 掛 TAKE_PROFIT_MARKET 止盈單（如果訊號有給 TP）
+            if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+                double tp = signal.getTakeProfits().get(0);
+                tpOrder = placeTakeProfit(symbol, closeSide, tp, quantity);
+                if (!tpOrder.isSuccess()) {
+                    log.warn("止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
+                    discordWebhookService.sendNotification(
+                            "⚠️ 止盈單失敗（需手動設定）",
+                            String.format("%s %s\n入場和止損已正常設定\n止盈錯誤: %s\n請手動設定 TP",
+                                    symbol, signal.getSide(), tpOrder.getErrorMessage()),
+                            DiscordWebhookService.COLOR_YELLOW);
+                }
             }
         }
 
@@ -499,11 +578,17 @@ public class BinanceFuturesService {
             return List.of(entryOrder, slOrder);
         }
 
-        // 11. 記錄交易到資料庫（含 signalHash 用於去重）
+        // 12. 記錄交易到資料庫
         try {
-            String signalHash = deduplicationService.generateHash(signal);
-            tradeRecordService.recordEntry(signal, entryOrder, slOrder, leverage,
-                    riskAmount, signalHash);
+            if (signal.isDca()) {
+                // DCA: 更新現有 Trade 的均價/數量/SL
+                tradeRecordService.recordDcaEntry(symbol, signal, entryOrder, effectiveRiskAmount);
+            } else {
+                // 首次入場: 建立新 Trade（含 signalHash 用於去重）
+                String signalHash = deduplicationService.generateHash(signal);
+                tradeRecordService.recordEntry(signal, entryOrder, slOrder, leverage,
+                        effectiveRiskAmount, signalHash);
+            }
         } catch (Exception e) {
             log.error("交易紀錄寫入失敗（不影響交易）: {}", e.getMessage());
         }
