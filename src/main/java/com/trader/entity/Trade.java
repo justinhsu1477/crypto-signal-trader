@@ -53,6 +53,9 @@ public class Trade {
     private String status;               // OPEN=持倉中, CLOSED=已平倉, CANCELLED=已取消
     private String exitReason;           // 出場原因：STOP_LOSS / SIGNAL_CLOSE / MANUAL_CLOSE / FAIL_SAFE
 
+    // === DCA 補倉 ===
+    private Integer dcaCount;            // 補倉次數（0=首次入場，1=第一次補倉，2=第二次...）
+
     // === 去重 ===
     private String signalHash;           // 訊號去重雜湊 SHA256(symbol|side|entryPrice|stopLoss)
 

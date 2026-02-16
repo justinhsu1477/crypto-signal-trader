@@ -28,7 +28,7 @@ class PositionSizingTest {
                 2000,   // maxDailyLossUsdt
                 true,
                 0.20,   // riskPercent (20%)
-                1, 20, List.of("BTCUSDT", "ETHUSDT")
+                3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT")
         );
         service = new BinanceFuturesService(null, null, riskConfig, null, null, null);
     }
@@ -115,7 +115,7 @@ class PositionSizingTest {
         void capDisabledWhenZero() {
             RiskConfig noCap = new RiskConfig(
                     0,  // maxPositionUsdt = 0 → 不啟用 cap
-                    2000, true, 0.20, 1, 20, List.of("BTCUSDT")
+                    2000, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT")
             );
             BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null);
             // 1R = 1000 × 0.20 = 200, riskDistance = 1, qty = 200
@@ -258,7 +258,7 @@ class PositionSizingTest {
         @DisplayName("白名單內的 symbol")
         void allowedSymbol() {
             RiskConfig config = new RiskConfig(
-                    50000, 2000, true, 0.20, 1, 20,
+                    50000, 2000, true, 0.20, 3, 2.0, 20,
                     List.of("BTCUSDT", "ETHUSDT")
             );
             assertThat(config.isSymbolAllowed("BTCUSDT")).isTrue();
@@ -269,7 +269,7 @@ class PositionSizingTest {
         @DisplayName("白名單外的 symbol")
         void disallowedSymbol() {
             RiskConfig config = new RiskConfig(
-                    50000, 2000, true, 0.20, 1, 20,
+                    50000, 2000, true, 0.20, 3, 2.0, 20,
                     List.of("BTCUSDT")
             );
             assertThat(config.isSymbolAllowed("ETHUSDT")).isFalse();

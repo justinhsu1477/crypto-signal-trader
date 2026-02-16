@@ -29,7 +29,7 @@ class AlertNotificationTest {
     void setUp() {
         riskConfig = new RiskConfig(
                 50000, 2000, true,
-                0.20, 1, 20, List.of("BTCUSDT", "ETHUSDT")
+                0.20, 3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT")
         );
     }
 

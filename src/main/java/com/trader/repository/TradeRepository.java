@@ -78,6 +78,12 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     double sumCommission();
 
     /**
+     * 查詢某幣種 OPEN 交易的 DCA 補倉次數
+     */
+    @Query("SELECT COALESCE(t.dcaCount, 0) FROM Trade t WHERE t.symbol = :symbol AND t.status = 'OPEN'")
+    Optional<Integer> findDcaCountBySymbol(@Param("symbol") String symbol);
+
+    /**
      * 檢查指定時間窗口內是否存在相同 signalHash 的交易（用於去重）
      */
     boolean existsBySignalHashAndCreatedAtAfter(String signalHash, LocalDateTime after);

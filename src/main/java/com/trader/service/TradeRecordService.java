@@ -103,6 +103,65 @@ public class TradeRecordService {
     }
 
     /**
+     * DCA 補倉：更新現有 Trade 的加權平均入場價、總數量、SL、風險金額、dcaCount
+     *
+     * @param symbol     交易對
+     * @param signal     DCA 訊號
+     * @param dcaOrder   補倉掛單結果
+     * @param riskAmount 本次 DCA 的風險金額（2R）
+     */
+    @Transactional
+    public void recordDcaEntry(String symbol, TradeSignal signal, OrderResult dcaOrder, double riskAmount) {
+        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        if (openTradeOpt.isEmpty()) {
+            log.warn("DCA 找不到 OPEN 交易: {}, 改為建立新紀錄", symbol);
+            return;
+        }
+
+        Trade trade = openTradeOpt.get();
+
+        // 計算加權平均入場價
+        double oldQty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
+        double oldPrice = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
+        double newQty = dcaOrder.getQuantity();
+        double newPrice = dcaOrder.getPrice();
+        double totalQty = oldQty + newQty;
+        double avgPrice = totalQty > 0 ? (oldPrice * oldQty + newPrice * newQty) / totalQty : newPrice;
+
+        // 更新 Trade
+        trade.setEntryPrice(round2(avgPrice));
+        trade.setEntryQuantity(totalQty);
+        trade.setDcaCount((trade.getDcaCount() != null ? trade.getDcaCount() : 0) + 1);
+        trade.setRiskAmount(round2((trade.getRiskAmount() != null ? trade.getRiskAmount() : 0) + riskAmount));
+
+        // 更新 SL（DCA 訊號帶的新止損）
+        if (signal.getNewStopLoss() != null) {
+            trade.setStopLoss(signal.getNewStopLoss());
+        }
+
+        // 入場手續費累加
+        double dcaCommission = round2(newPrice * newQty * 0.0002);
+        double oldCommission = trade.getEntryCommission() != null ? trade.getEntryCommission() : 0;
+        trade.setEntryCommission(round2(oldCommission + dcaCommission));
+
+        tradeRepository.save(trade);
+
+        // 寫入 DCA_ENTRY 事件
+        saveEvent(trade.getTradeId(), "DCA_ENTRY", dcaOrder);
+
+        log.info("DCA 紀錄更新: tradeId={} {} 均價: {} → {}, 數量: {} → {}, DCA第{}次, 新SL={}",
+                trade.getTradeId(), symbol, oldPrice, avgPrice, oldQty, totalQty,
+                trade.getDcaCount(), trade.getStopLoss());
+    }
+
+    /**
+     * 查詢某幣種目前的 DCA 補倉次數
+     */
+    public int getDcaCount(String symbol) {
+        return tradeRepository.findDcaCountBySymbol(symbol).orElse(0);
+    }
+
+    /**
      * CLOSE：更新 Trade 為 CLOSED，計算盈虧
      *
      * @param symbol     交易對

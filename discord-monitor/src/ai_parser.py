@@ -25,7 +25,8 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
   "take_profit": 98000.0,
   "close_ratio": null,
   "new_stop_loss": null,
-  "new_take_profit": null
+  "new_take_profit": null,
+  "is_dca": false
 }
 
 ## 規則
@@ -65,6 +66,14 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 ### CANCEL（取消）判斷規則
 22. 「限价单取消」「限价挂单取消」「掛單取消」→ CANCEL
 23. ⚠️ 掛單取消 → CANCEL
+
+### DCA / 補倉判斷規則（仍然是 ENTRY，加上 is_dca=true）
+29. 出現「補倉」「加倉」「DCA」「增倉」「掛XX補倉」→ action=ENTRY, is_dca=true
+30. 補倉訊號的入場價用「掛 70000」「在 70000 補倉」中的價格作為 entry_price
+31. 如果補倉訊號同時提到止損修改（如「SL改到67000」「止損修改到67000」），用 new_stop_loss=67000
+32. 如果補倉訊號同時提到止盈修改（如「TP改到79000」「止盈改79000」），用 new_take_profit=79000
+33. 補倉不一定帶 stop_loss 欄位（用 new_stop_loss 代替），但仍需要 entry_price
+34. 補倉時 side 可以省略（系統會從現有持倉推斷），但如果訊號有明確說方向就帶上
 
 ### INFO（不操作）判斷規則
 24. 盈虧報告（如「这单亏1个risk」「本周合计赚1个risk」）→ INFO
@@ -157,6 +166,17 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 
 輸入: ⚠️ 掛單取消: ETHUSDT\n做空 SHORT 🔴
 輸出: {"action":"CANCEL","symbol":"ETHUSDT","side":"SHORT"}
+
+### DCA 補倉範例
+
+輸入: BTC掛70000補倉，SL修改到67000
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","entry_price":70000,"is_dca":true,"new_stop_loss":67000}
+
+輸入: ETH在2400加倉，止損改到2300，止盈改到2800
+輸出: {"action":"ENTRY","symbol":"ETHUSDT","entry_price":2400,"is_dca":true,"new_stop_loss":2300,"new_take_profit":2800}
+
+輸入: BTC 68000附近可以补一点仓位，止损不变
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","entry_price":68000,"is_dca":true}
 
 ### INFO 範例
 
@@ -259,7 +279,10 @@ class AiSignalParser:
             parsed["symbol"] = symbol + "USDT"
 
         if action == "ENTRY":
-            # entry_price is required; stop_loss can be missing (陳哥有時不給)
+            # DCA: side 可選（系統從持倉推斷），但 entry_price 必須有
+            if parsed.get("is_dca"):
+                return bool(parsed.get("entry_price"))
+            # 正常 ENTRY: side + entry_price 必須有
             return all([
                 parsed.get("side") in ("LONG", "SHORT"),
                 parsed.get("entry_price"),

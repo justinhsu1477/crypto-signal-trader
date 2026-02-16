@@ -37,7 +37,7 @@ class SafetyCheckTest {
         riskConfig = new RiskConfig(
                 50000, 2000, true,
                 0.20,   // riskPercent (20%)
-                1, 20, List.of("BTCUSDT", "ETHUSDT")
+                3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT")
         );
     }
 
