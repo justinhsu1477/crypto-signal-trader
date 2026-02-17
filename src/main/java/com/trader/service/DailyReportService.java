@@ -6,6 +6,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -13,15 +14,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 每日交易摘要排程服務
+ * 每日排程服務
  *
- * 每天台灣時間 08:00（= UTC 00:00，幣安日線切換時間）自動發送
- * Discord 通知，彙整當日交易績效和累計統計。
+ * 排程任務：
+ * 1. 07:55 — 殭屍 Trade 清理（比對幣安實際持倉）
+ * 2. 08:00 — 昨日交易摘要（Discord 通知）
  *
  * 特性：
  * - 獨立排程線程，不影響 HTTP 請求處理
  * - 全包 try-catch，任何失敗只 log 不拋出
- * - 唯讀操作（只讀 DB + 發 Webhook），不影響交易邏輯
+ * - 清理在報告之前跑，確保報告中的持倉數是乾淨的
  */
 @Slf4j
 @Service
@@ -32,40 +34,85 @@ public class DailyReportService {
 
     private final TradeRecordService tradeRecordService;
     private final DiscordWebhookService webhookService;
+    private final BinanceFuturesService binanceFuturesService;
 
-    public DailyReportService(TradeRecordService tradeRecordService, DiscordWebhookService webhookService) {
+    public DailyReportService(TradeRecordService tradeRecordService,
+                              DiscordWebhookService webhookService,
+                              BinanceFuturesService binanceFuturesService) {
         this.tradeRecordService = tradeRecordService;
         this.webhookService = webhookService;
+        this.binanceFuturesService = binanceFuturesService;
     }
 
+    // ==================== 排程 1: 殭屍 Trade 清理 ====================
+
     /**
-     * 每日 08:00 台灣時間自動發送交易摘要
+     * 每日 07:55 台灣時間自動清理殭屍 OPEN 紀錄
+     *
+     * 在每日報告（08:00）前 5 分鐘執行，確保報告中的持倉數是乾淨的。
+     * 比對 DB 中 OPEN 的 Trade 與幣安實際持倉，無持倉的標記為 CANCELLED。
+     */
+    @Scheduled(cron = "0 55 7 * * *", zone = "Asia/Taipei")
+    public void scheduledCleanup() {
+        try {
+            log.info("排程殭屍 Trade 清理開始...");
+            Map<String, Object> result = tradeRecordService.cleanupStaleTrades(
+                    symbol -> binanceFuturesService.getCurrentPositionAmount(symbol));
+
+            int cleaned = (int) result.get("cleaned");
+            int skipped = (int) result.get("skipped");
+            log.info("排程清理完成: 清理 {} 筆, 跳過 {} 筆", cleaned, skipped);
+
+            if (cleaned > 0) {
+                webhookService.sendNotification(
+                        "🧹 殭屍 Trade 自動清理",
+                        String.format("清理: %d 筆 | 跳過: %d 筆\n來源: 每日排程 (07:55)", cleaned, skipped),
+                        DiscordWebhookService.COLOR_BLUE);
+            }
+        } catch (Exception e) {
+            log.error("排程清理失敗: {}", e.getMessage(), e);
+            // 不拋出 — 不影響後續的每日報告排程
+        }
+    }
+
+    // ==================== 排程 2: 昨日交易摘要 ====================
+
+    /**
+     * 每日 08:00 台灣時間自動發送「昨日」交易摘要
      *
      * cron = "0 0 8 * * *" → 每天 08:00:00
      * zone = "Asia/Taipei" → 台灣時區
+     *
+     * 時間範圍：昨天 00:00:00 ~ 今天 00:00:00（台灣時間）
      */
     @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Taipei")
     public void sendDailyReport() {
         try {
             log.info("開始產生每日交易摘要...");
 
-            // 1. 取得今日統計
-            Map<String, Object> todayStats = tradeRecordService.getTodayStats();
+            // 1. 計算昨天的時間範圍
+            LocalDate today = LocalDate.now(TAIPEI_ZONE);
+            LocalDate yesterday = today.minusDays(1);
+            LocalDateTime startOfYesterday = yesterday.atStartOfDay();
+            LocalDateTime startOfToday = today.atStartOfDay();
 
-            // 2. 取得累計統計
+            // 2. 取得昨日統計
+            Map<String, Object> yesterdayStats = tradeRecordService.getStatsForDateRange(startOfYesterday, startOfToday);
+
+            // 3. 取得累計統計
             Map<String, Object> overallStats = tradeRecordService.getStatsSummary();
 
-            // 3. 組裝訊息
-            String dateStr = ZonedDateTime.now(TAIPEI_ZONE).format(DATE_FMT);
-            String message = buildDailyMessage(dateStr, todayStats, overallStats);
+            // 4. 組裝訊息（標題顯示昨天日期）
+            String dateStr = yesterday.format(DATE_FMT);
+            String message = buildDailyMessage(dateStr, yesterdayStats, overallStats);
 
-            // 4. 發送 Discord
+            // 5. 發送 Discord
             webhookService.sendNotification(
-                    "📊 每日交易摘要 — " + dateStr,
+                    "📊 每日交易摘要 — " + dateStr + "（昨日）",
                     message,
                     DiscordWebhookService.COLOR_BLUE);
 
-            log.info("每日交易摘要已發送");
+            log.info("每日交易摘要已發送（{}）", dateStr);
 
         } catch (Exception e) {
             log.error("每日摘要發送失敗: {}", e.getMessage(), e);
@@ -77,23 +124,23 @@ public class DailyReportService {
      * 組裝每日摘要訊息
      */
     @SuppressWarnings("unchecked")
-    private String buildDailyMessage(String dateStr, Map<String, Object> todayStats, Map<String, Object> overallStats) {
+    private String buildDailyMessage(String dateStr, Map<String, Object> dayStats, Map<String, Object> overallStats) {
         StringBuilder sb = new StringBuilder();
 
-        long todayTrades = (long) todayStats.get("todayTrades");
-        long todayWins = (long) todayStats.get("todayWins");
-        long todayLosses = (long) todayStats.get("todayLosses");
-        double todayNetProfit = (double) todayStats.get("todayNetProfit");
-        double todayCommission = (double) todayStats.get("todayCommission");
-        List<Trade> openTrades = (List<Trade>) todayStats.get("openTrades");
+        long trades = (long) dayStats.get("trades");
+        long wins = (long) dayStats.get("wins");
+        long losses = (long) dayStats.get("losses");
+        double netProfit = (double) dayStats.get("netProfit");
+        double commission = (double) dayStats.get("commission");
+        List<Trade> openTrades = (List<Trade>) dayStats.get("openTrades");
 
-        // === 今日交易 ===
-        if (todayTrades == 0) {
-            sb.append("今日無已平倉交易\n");
+        // === 昨日交易 ===
+        if (trades == 0) {
+            sb.append("昨日無已平倉交易\n");
         } else {
-            sb.append(String.format("今日交易: %d 筆 (%d 勝 %d 負)\n", todayTrades, todayWins, todayLosses));
-            sb.append(String.format("今日淨利: %s USDT\n", formatProfit(todayNetProfit)));
-            sb.append(String.format("今日手續費: %.2f USDT\n", todayCommission));
+            sb.append(String.format("昨日交易: %d 筆 (%d 勝 %d 負)\n", trades, wins, losses));
+            sb.append(String.format("昨日淨利: %s USDT\n", formatProfit(netProfit)));
+            sb.append(String.format("昨日手續費: %.2f USDT\n", commission));
         }
 
         // === 當前持倉 ===
