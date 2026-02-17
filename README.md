@@ -20,6 +20,11 @@ Spring Boot API (Docker, port 8080)
     │  → 訊號來源追蹤 (平台/頻道/作者)
     ▼
 Binance Futures API
+    │
+    ▼
+WebSocket User Data Stream（即時回報）
+    → SL/TP 觸發 → 真實數據寫入 DB
+    → SL/TP 被取消 → Discord 告警
 ```
 
 ## 快速開始
@@ -34,9 +39,11 @@ cp .env.example .env
 ### Step 2: 啟動 Discord（帶 CDP）
 
 ```bash
-cd discord-monitor
-chmod +x launch_discord.sh
-./launch_discord.sh
+# 先關閉現有 Discord
+killall Discord 2>/dev/null
+
+# 用 CDP 模式重新啟動
+/Applications/Discord.app/Contents/MacOS/Discord --remote-debugging-port=9222
 
 # 等 Discord 完全載入後，確認 CDP 可連
 curl http://127.0.0.1:9222/json
@@ -109,6 +116,37 @@ Python monitor 同時回報 AI parser 狀態（`aiStatus`）：
 ```bash
 curl http://localhost:8080/api/monitor-status
 # 回傳: lastHeartbeat, elapsedSeconds, online, monitorStatus, aiStatus, alertSent
+```
+
+### WebSocket User Data Stream
+
+透過幣安 WebSocket 即時監聽帳戶事件，解決 SL/TP 自動觸發後 DB 不同步的問題。
+
+| 事件 | 處理方式 | 告警 |
+|------|---------|------|
+| SL 觸發 (STOP_MARKET FILLED) | 用真實出場價 + 手續費更新 DB | Discord 紅色通知 |
+| TP 觸發 (TAKE_PROFIT_MARKET FILLED) | 用真實出場價 + 手續費更新 DB | Discord 綠色通知 |
+| SL 被取消 (CANCELED/EXPIRED) | 記錄 SL_LOST 事件 | 🚨 紅色告警（持倉裸奔） |
+| TP 被取消 (CANCELED/EXPIRED) | 記錄 TP_LOST 事件 | ⚠️ 黃色告警 |
+| listenKey 過期 | 自動重建連線 | — |
+| WebSocket 斷線 | 指數退避重連 (1s→2s→4s→...→60s) | 🚨 紅色告警 |
+
+```bash
+# 查詢 WebSocket 連線狀態
+curl http://localhost:8080/api/stream-status
+# 回傳: connected, listenKeyActive, lastMessageTime, reconnectAttempts
+```
+
+### 每日自動排程
+
+| 時間 (台灣) | 排程 | 說明 |
+|------------|------|------|
+| 07:55 | 殭屍清理 | 比對幣安持倉，清理 DB 中無對應持倉的 OPEN 紀錄 |
+| 08:00 | 每日報告 | 推送昨日交易統計（筆數、勝率、盈虧）到 Discord |
+
+```bash
+# 手動觸發殭屍清理
+curl -X POST http://localhost:8080/api/admin/cleanup-trades
 ```
 
 ---
