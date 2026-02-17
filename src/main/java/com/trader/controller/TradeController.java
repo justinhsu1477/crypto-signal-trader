@@ -305,9 +305,8 @@ public class TradeController {
             }
 
             case "MOVE_SL": {
-                if (request.getNewStopLoss() == null && request.getNewTakeProfit() == null) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "MOVE_SL 需要 new_stop_loss 或 new_take_profit（至少一個）"));
-                }
+                // 允許 newStopLoss=null（成本保護：「做保本處理」「止損上移至成本附近」）
+                // BinanceFuturesService 會查 DB 開倉價當作 SL
 
                 TradeSignal signal = TradeSignal.builder()
                         .symbol(symbol)

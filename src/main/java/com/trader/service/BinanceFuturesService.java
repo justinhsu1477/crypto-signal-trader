@@ -844,11 +844,30 @@ public class BinanceFuturesService {
 
         List<OrderResult> results = new ArrayList<>();
 
-        // 3. 掛新的 STOP_MARKET（如果有新 SL）
-        if (signal.getNewStopLoss() != null && signal.getNewStopLoss() > 0) {
-            double newSl = signal.getNewStopLoss();
-            log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, newSl, positionAmt);
+        // 3. 掛新的 STOP_MARKET
+        // 支援成本保護：newStopLoss=null 時查 DB 開倉價當作 SL
+        Double slValue = signal.getNewStopLoss();
+        if (slValue != null && slValue > 0) {
+            // 訊號明確帶了 SL 價格
+            log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
+        } else {
+            // 成本保護：「做保本處理」「止損上移至成本附近」→ 用開倉價
+            Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+            if (entryPrice != null && entryPrice > 0) {
+                slValue = entryPrice;
+                log.info("成本保護: {} 舊SL={} 用開倉價做SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
+            } else {
+                log.warn("成本保護但無法取得開倉價: {} 舊SL={}", symbol, oldSl);
+                // fallback: 用舊 SL 重掛，至少不裸奔
+                if (oldSl > 0) {
+                    slValue = oldSl;
+                    log.info("成本保護 fallback: 用舊 SL={} 重掛", slValue);
+                }
+            }
+        }
 
+        if (slValue != null && slValue > 0) {
+            double newSl = slValue;
             OrderResult slOrder = placeStopLoss(symbol, closeSide, newSl, absPosition);
             results.add(slOrder);
 
