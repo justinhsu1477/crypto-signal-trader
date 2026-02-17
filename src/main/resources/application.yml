@@ -28,6 +28,7 @@ binance:
     max-dca-per-symbol: 3         # 同幣種最多 3 層（首次入場 + 2 次補倉）
     dca-risk-multiplier: 2.0      # 補倉風險倍數（2R = 首倉的 2 倍風險金額）
     fixed-leverage: 20            # 固定槓桿 (逐倉 ISOLATED)
+    default-symbol: BTCUSDT        # 訊號無幣種時的預設交易對（Java 端會 fallback 查 OPEN trade）
     allowed-symbols:              # 允許的交易對清單（可加多個）
       - BTCUSDT
 

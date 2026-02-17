@@ -359,6 +359,15 @@ public class TradeRecordService {
     }
 
     /**
+     * 查詢所有 OPEN 交易（不限幣種）
+     * 用於 CLOSE/MOVE_SL 訊號的 symbol fallback：
+     * 如果指定 symbol 無持倉，嘗試找其他 OPEN trade
+     */
+    public List<Trade> findAllOpenTrades() {
+        return tradeRepository.findAllOpenTrades();
+    }
+
+    /**
      * 依狀態查詢交易
      */
     public List<Trade> findByStatus(String status) {
@@ -513,35 +522,83 @@ public class TradeRecordService {
 
         Trade trade = openTradeOpt.get();
 
+        // === 判斷全平 vs 部分平倉 ===
+        // 有效持倉量 = remainingQuantity（部分平倉過）或 entryQuantity（從未部分平倉）
+        double effectiveQty = trade.getRemainingQuantity() != null
+                ? trade.getRemainingQuantity()
+                : (trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0);
+
+        // 容差 0.1%：Binance 數量可能有精度差異
+        boolean isPartialClose = effectiveQty > 0 && exitQuantity < effectiveQty * 0.999;
+
         // 用真實數據更新
         trade.setExitPrice(exitPrice);
         trade.setExitQuantity(exitQuantity);
         trade.setExitTime(LocalDateTime.ofInstant(
                 Instant.ofEpochMilli(transactionTime), TAIPEI_ZONE));
         trade.setExitOrderId(orderId);
-        trade.setExitReason(exitReason);
-        trade.setStatus("CLOSED");
 
         // 手續費 = 入場手續費（已記錄） + 出場手續費（WebSocket 真實值）
         double entryCommission = trade.getEntryCommission() != null ? trade.getEntryCommission() : 0;
-        trade.setCommission(round2(entryCommission + commission));
 
-        // 毛利自己算（跟既有 calculateProfit 一致）
-        double entry = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
-        double qty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
-        int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
-        double grossProfit = (exitPrice - entry) * qty * direction;
-        trade.setGrossProfit(round2(grossProfit));
+        if (isPartialClose) {
+            // === 部分平倉：維持 OPEN，追蹤已平/剩餘數量 ===
+            trade.setExitReason(exitReason + "_PARTIAL");
+            // 不設 CLOSED，維持 OPEN
 
-        // 淨利 = 毛利 - 總手續費
-        trade.setNetProfit(round2(grossProfit - trade.getCommission()));
+            // 累加已平倉數量
+            double prevClosed = trade.getTotalClosedQuantity() != null ? trade.getTotalClosedQuantity() : 0;
+            trade.setTotalClosedQuantity(prevClosed + exitQuantity);
+            trade.setRemainingQuantity(effectiveQty - exitQuantity);
 
-        tradeRepository.save(trade);
+            // 部分平倉暫不計算最終盈虧（等全平或後續平倉再算）
+            // 但記錄出場手續費的累加
+            trade.setCommission(round2(entryCommission + commission));
 
-        // 寫入 STREAM_CLOSE 事件（區別於 CLOSE_PLACED）
+            tradeRepository.save(trade);
+
+            saveEvent(trade.getTradeId(), "STREAM_PARTIAL_CLOSE",
+                    exitPrice, exitQuantity, orderId, exitReason, commission, realizedProfit);
+
+            log.info("WebSocket 部分平倉: tradeId={} {} exitPrice={} exitQty={} remaining={} reason={}",
+                    trade.getTradeId(), symbol, exitPrice, exitQuantity,
+                    trade.getRemainingQuantity(), exitReason);
+        } else {
+            // === 全平倉：標 CLOSED，計算盈虧 ===
+            trade.setExitReason(exitReason);
+            trade.setStatus("CLOSED");
+            trade.setCommission(round2(entryCommission + commission));
+
+            // 毛利用實際出場數量（不是 entryQuantity）
+            double entry = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
+            int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
+            double grossProfit = (exitPrice - entry) * exitQuantity * direction;
+            trade.setGrossProfit(round2(grossProfit));
+
+            // 淨利 = 毛利 - 總手續費
+            trade.setNetProfit(round2(grossProfit - trade.getCommission()));
+
+            tradeRepository.save(trade);
+
+            saveEvent(trade.getTradeId(), "STREAM_CLOSE",
+                    exitPrice, exitQuantity, orderId, exitReason, commission, realizedProfit);
+
+            log.info("WebSocket 全平倉: tradeId={} {} exitPrice={} exitQty={} commission={} netProfit={} reason={}",
+                    trade.getTradeId(), symbol, exitPrice, exitQuantity,
+                    trade.getCommission(), trade.getNetProfit(), exitReason);
+        }
+    }
+
+    /**
+     * 寫入 WebSocket stream 平倉事件（全平/部分平倉通用）
+     */
+    private void saveEvent(String tradeId, String eventType,
+                           double exitPrice, double exitQuantity,
+                           String orderId, String exitReason,
+                           double commission, double realizedProfit) {
         TradeEvent event = TradeEvent.builder()
-                .tradeId(trade.getTradeId())
-                .eventType("STREAM_CLOSE")
+                .tradeId(tradeId)
+                .eventType(eventType)
                 .binanceOrderId(orderId)
                 .price(exitPrice)
                 .quantity(exitQuantity)
@@ -551,9 +608,6 @@ public class TradeRecordService {
                         exitReason, commission, realizedProfit))
                 .build();
         tradeEventRepository.save(event);
-
-        log.info("WebSocket 平倉紀錄: tradeId={} {} exitPrice={} commission={} netProfit={} reason={}",
-                trade.getTradeId(), symbol, exitPrice, trade.getCommission(), trade.getNetProfit(), exitReason);
     }
 
     // ==================== SL/TP 保護消失偵測 ====================

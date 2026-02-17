@@ -52,7 +52,7 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 14. 「触发止损」「已经触发止损」「触发保本」「触发成本保护」→ CLOSE
 15. 訊息中出現「平倉」或「平仓」→ CLOSE（包括「現價平倉」「市价平仓」「先平倉」等）
 15b. ⚠️ 優先級規則：如果訊息同時包含掛單說明和「平倉/平仓」，以平倉為主。平倉指令優先於掛單描述
-15c. 如果平倉訊息沒有明確提到幣種（BTC/ETH 等），預設為 BTCUSDT
+15c. 如果平倉訊息沒有明確提到幣種（BTC/ETH 等），預設為 BTCUSDT（Java 端會自動 fallback 查 DB 中唯一 OPEN trade 修正幣種）
 16. 「平50%」「止盈50%」→ CLOSE + close_ratio = 0.5
 17. 「全部止盈出局」「全部平仓」→ CLOSE + close_ratio = null（null 表示全平）
 17b. 部分平倉 + 止損移動（如「平一半，止損拉到成本/入場價/XX價格」）→ CLOSE + close_ratio + new_stop_loss

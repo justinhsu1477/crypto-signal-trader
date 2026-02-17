@@ -1,11 +1,13 @@
 package com.trader.service;
 
+import com.trader.config.RiskConfig;
 import com.trader.model.TradeSignal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,7 +18,8 @@ class SignalParserServiceTest {
 
     @BeforeEach
     void setUp() {
-        parser = new SignalParserService();
+        RiskConfig riskConfig = new RiskConfig(50000, 2000, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT");
+        parser = new SignalParserService(riskConfig);
     }
 
     // ==================== Discord ENTRY 格式 ====================

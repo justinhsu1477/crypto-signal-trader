@@ -665,8 +665,29 @@ public class BinanceFuturesService {
             log.error("平倉前查詢持倉失敗: {}", e.getMessage());
             return List.of(OrderResult.fail("查詢持倉失敗: " + e.getMessage()));
         }
+
+        // 1b. Symbol fallback：該幣無持倉 → 查 DB 有沒有其他 OPEN trade
         if (positionAmt == 0) {
-            return List.of(OrderResult.fail("無持倉可平"));
+            String resolved = resolveSymbolFallback(symbol);
+            if (resolved != null) {
+                log.info("平倉 symbol fallback: {} 無持倉，改用 DB OPEN trade: {}", symbol, resolved);
+                signal = TradeSignal.builder()
+                        .symbol(resolved)
+                        .signalType(signal.getSignalType())
+                        .closeRatio(signal.getCloseRatio())
+                        .newStopLoss(signal.getNewStopLoss())
+                        .newTakeProfit(signal.getNewTakeProfit())
+                        .build();
+                symbol = resolved;
+                try {
+                    positionAmt = getCurrentPositionAmount(symbol);
+                } catch (RuntimeException e) {
+                    return List.of(OrderResult.fail("查詢持倉失敗: " + e.getMessage()));
+                }
+            }
+            if (positionAmt == 0) {
+                return List.of(OrderResult.fail("無持倉可平"));
+            }
         }
 
         // 正數=多倉, 負數=空倉
@@ -826,8 +847,28 @@ public class BinanceFuturesService {
             log.error("修改 TP/SL 前查詢持倉失敗: {}", e.getMessage());
             return List.of(OrderResult.fail("查詢持倉失敗: " + e.getMessage()));
         }
+
+        // 1b. Symbol fallback：該幣無持倉 → 查 DB 有沒有其他 OPEN trade
         if (positionAmt == 0) {
-            return List.of(OrderResult.fail("無持倉，無法修改 TP/SL"));
+            String resolved = resolveSymbolFallback(symbol);
+            if (resolved != null) {
+                log.info("MOVE_SL symbol fallback: {} 無持倉，改用 DB OPEN trade: {}", symbol, resolved);
+                signal = TradeSignal.builder()
+                        .symbol(resolved)
+                        .signalType(signal.getSignalType())
+                        .newStopLoss(signal.getNewStopLoss())
+                        .newTakeProfit(signal.getNewTakeProfit())
+                        .build();
+                symbol = resolved;
+                try {
+                    positionAmt = getCurrentPositionAmount(symbol);
+                } catch (RuntimeException e) {
+                    return List.of(OrderResult.fail("查詢持倉失敗: " + e.getMessage()));
+                }
+            }
+            if (positionAmt == 0) {
+                return List.of(OrderResult.fail("無持倉，無法修改 TP/SL"));
+            }
         }
 
         boolean isLong = positionAmt > 0;
@@ -912,6 +953,37 @@ public class BinanceFuturesService {
     }
 
     // ==================== 內部方法 ====================
+
+    /**
+     * Symbol fallback：當訊號指定的 symbol 無持倉時，查 DB 找其他 OPEN trade
+     * 場景：陳哥發「止盈50%做成本保護」沒提幣名 → AI 預設 BTCUSDT → 但實際持有 ETH
+     *
+     * @param originalSymbol 訊號解析出的 symbol
+     * @return 替代的 symbol（如果 DB 剛好只有一筆 OPEN），或 null（無法自動判斷）
+     */
+    private String resolveSymbolFallback(String originalSymbol) {
+        try {
+            var openTrades = tradeRecordService.findAllOpenTrades();
+            if (openTrades.size() == 1) {
+                String dbSymbol = openTrades.get(0).getSymbol();
+                if (!dbSymbol.equals(originalSymbol)) {
+                    log.info("Symbol fallback: 訊號={} 但 DB 唯一 OPEN trade={}", originalSymbol, dbSymbol);
+                    discordWebhookService.sendNotification(
+                            "🔄 Symbol 自動修正",
+                            String.format("訊號幣種: %s（無持倉）\n自動修正為: %s（DB 中唯一 OPEN trade）",
+                                    originalSymbol, dbSymbol),
+                            DiscordWebhookService.COLOR_BLUE);
+                    return dbSymbol;
+                }
+            } else if (openTrades.size() > 1) {
+                log.warn("Symbol fallback: {} 無持倉，但 DB 有 {} 筆 OPEN trade，無法自動判斷",
+                        originalSymbol, openTrades.size());
+            }
+        } catch (Exception e) {
+            log.warn("Symbol fallback 查詢失敗: {}", e.getMessage());
+        }
+        return null;
+    }
 
     /**
      * 以損定倉計算下單數量（含名目價值 cap）
