@@ -18,6 +18,7 @@ public class RiskConfig {
     private final double dcaRiskMultiplier;
     private final int fixedLeverage;
     private final List<String> allowedSymbols;
+    private final String defaultSymbol;
 
     public RiskConfig(
             @DefaultValue("50000") double maxPositionUsdt,
@@ -27,7 +28,8 @@ public class RiskConfig {
             @DefaultValue("3") int maxDcaPerSymbol,
             @DefaultValue("2.0") double dcaRiskMultiplier,
             @DefaultValue("20") int fixedLeverage,
-            @DefaultValue("BTCUSDT") List<String> allowedSymbols
+            @DefaultValue("BTCUSDT") List<String> allowedSymbols,
+            @DefaultValue("BTCUSDT") String defaultSymbol
     ) {
         this.maxPositionUsdt = maxPositionUsdt;
         this.maxDailyLossUsdt = maxDailyLossUsdt;
@@ -37,6 +39,7 @@ public class RiskConfig {
         this.dcaRiskMultiplier = dcaRiskMultiplier;
         this.fixedLeverage = fixedLeverage;
         this.allowedSymbols = allowedSymbols != null ? List.copyOf(allowedSymbols) : List.of("BTCUSDT");
+        this.defaultSymbol = defaultSymbol != null ? defaultSymbol : "BTCUSDT";
     }
 
     /**

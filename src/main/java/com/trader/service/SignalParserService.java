@@ -1,6 +1,7 @@
 package com.trader.service;
 
 import com.trader.model.TradeSignal;
+import com.trader.config.RiskConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,12 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class SignalParserService {
+
+    private final RiskConfig riskConfig;
+
+    public SignalParserService(RiskConfig riskConfig) {
+        this.riskConfig = riskConfig;
+    }
 
     // ==================== 陳哥格式 ====================
 
@@ -421,7 +428,7 @@ public class SignalParserService {
 
         // 觸發訊息通常沒有完整的止損止盈, 需要參考之前的策略訊號
         TradeSignal signal = TradeSignal.builder()
-                .symbol("BTCUSDT") // 預設 BTC, 因為觸發訊息可能不帶幣種
+                .symbol(riskConfig.getDefaultSymbol()) // 從設定檔讀取預設幣種
                 .side(side)
                 .entryPriceLow(triggerPrice)
                 .entryPriceHigh(triggerPrice)

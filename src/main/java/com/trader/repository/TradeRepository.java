@@ -32,6 +32,12 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     }
 
     /**
+     * 查詢所有 OPEN 的交易（用於無幣種訊號的 fallback）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.status = 'OPEN' ORDER BY t.updatedAt DESC")
+    List<Trade> findAllOpenTrades();
+
+    /**
      * 依狀態查詢，依建立時間倒序
      */
     List<Trade> findByStatusOrderByCreatedAtDesc(String status);

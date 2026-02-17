@@ -28,7 +28,7 @@ class PositionSizingTest {
                 2000,   // maxDailyLossUsdt
                 true,
                 0.20,   // riskPercent (20%)
-                3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT")
+                3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
         service = new BinanceFuturesService(null, null, riskConfig, null, null, null);
     }
@@ -115,7 +115,7 @@ class PositionSizingTest {
         void capDisabledWhenZero() {
             RiskConfig noCap = new RiskConfig(
                     0,  // maxPositionUsdt = 0 → 不啟用 cap
-                    2000, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT")
+                    2000, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT"), "BTCUSDT"
             );
             BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null);
             // 1R = 1000 × 0.20 = 200, riskDistance = 1, qty = 200
@@ -259,7 +259,7 @@ class PositionSizingTest {
         void allowedSymbol() {
             RiskConfig config = new RiskConfig(
                     50000, 2000, true, 0.20, 3, 2.0, 20,
-                    List.of("BTCUSDT", "ETHUSDT")
+                    List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
             );
             assertThat(config.isSymbolAllowed("BTCUSDT")).isTrue();
             assertThat(config.isSymbolAllowed("ETHUSDT")).isTrue();
@@ -270,7 +270,7 @@ class PositionSizingTest {
         void disallowedSymbol() {
             RiskConfig config = new RiskConfig(
                     50000, 2000, true, 0.20, 3, 2.0, 20,
-                    List.of("BTCUSDT")
+                    List.of("BTCUSDT"), "BTCUSDT"
             );
             assertThat(config.isSymbolAllowed("ETHUSDT")).isFalse();
             assertThat(config.isSymbolAllowed("SOLUSDT")).isFalse();
