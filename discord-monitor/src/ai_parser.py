@@ -50,7 +50,9 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 ### CLOSE（平倉）判斷規則
 13. 「手动平仓」「止盈出局」「保本出局」→ CLOSE
 14. 「触发止损」「已经触发止损」「触发保本」「触发成本保护」→ CLOSE
-15. 訊息中出現「平倉」或「平仓」→ CLOSE
+15. 訊息中出現「平倉」或「平仓」→ CLOSE（包括「現價平倉」「市价平仓」「先平倉」等）
+15b. ⚠️ 優先級規則：如果訊息同時包含掛單說明和「平倉/平仓」，以平倉為主。平倉指令優先於掛單描述
+15c. 如果平倉訊息沒有明確提到幣種（BTC/ETH 等），預設為 BTCUSDT
 16. 「平50%」「止盈50%」→ CLOSE + close_ratio = 0.5
 17. 「全部止盈出局」「全部平仓」→ CLOSE + close_ratio = null（null 表示全平）
 17b. 部分平倉 + 止損移動（如「平一半，止損拉到成本/入場價/XX價格」）→ CLOSE + close_ratio + new_stop_loss
@@ -140,6 +142,12 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 輸出: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":null,"new_take_profit":79000}
 
 輸入: BTC市价88200附近换手做多。
+輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+輸入: 最高挂70000，最低挂单69600附近 限价交易不要取整数，上下几十点浮动 現價平倉
+輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+輸入: 先市价平仓，等新的信号
 輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
 
 ### MOVE_SL 範例
