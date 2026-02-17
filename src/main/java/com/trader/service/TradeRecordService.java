@@ -502,6 +502,38 @@ public class TradeRecordService {
                 trade.getTradeId(), symbol, exitPrice, trade.getCommission(), trade.getNetProfit(), exitReason);
     }
 
+    // ==================== SL/TP 保護消失偵測 ====================
+
+    /**
+     * WebSocket 偵測到 SL 或 TP 被取消/過期時記錄事件
+     * 持倉仍在但失去止損/止盈保護，需要使用者注意
+     *
+     * @param symbol    交易對
+     * @param orderType 被取消的訂單類型 (STOP_MARKET / TAKE_PROFIT_MARKET)
+     * @param orderId   Binance 訂單號
+     * @param reason    取消原因 (CANCELED / EXPIRED)
+     */
+    @Transactional
+    public void recordProtectionLost(String symbol, String orderType, String orderId, String reason) {
+        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
+
+        String eventType = "STOP_MARKET".equals(orderType) ? "SL_LOST" : "TP_LOST";
+
+        TradeEvent event = TradeEvent.builder()
+                .tradeId(tradeId)
+                .eventType(eventType)
+                .binanceOrderId(orderId)
+                .orderType(orderType)
+                .success(false)
+                .detail(String.format("{\"reason\":\"%s\",\"order_type\":\"%s\"}", reason, orderType))
+                .build();
+        tradeEventRepository.save(event);
+
+        log.warn("保護消失: tradeId={} {} {} orderId={} reason={}",
+                tradeId, symbol, eventType, orderId, reason);
+    }
+
     // ==================== 內部方法 ====================
 
     /**

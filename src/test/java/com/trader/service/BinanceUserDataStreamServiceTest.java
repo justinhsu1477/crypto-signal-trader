@@ -177,11 +177,99 @@ class BinanceUserDataStreamServiceTest {
         }
     }
 
-    // ==================== 重連機制 ====================
+    // ==================== SL/TP 保護消失偵測 ====================
 
     @Nested
-    @DisplayName("重連邏輯")
-    class ReconnectLogic {
+    @DisplayName("SL/TP 被取消或過期")
+    class ProtectionLost {
+
+        @Test
+        @DisplayName("STOP_MARKET CANCELED → 紅色告警 + recordProtectionLost")
+        void slCanceledTriggersRedAlert() {
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "CANCELED", "SELL",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 555666777L, 1700000000000L);
+
+            service.handleOrderTradeUpdate(event);
+
+            // 不應觸發平倉記錄
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+
+            // 應記錄保護消失事件
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("555666777"), eq("CANCELED"));
+
+            // SL 被取消 → 紅色告警（高危）
+            verify(discordWebhookService).sendNotification(
+                    contains("止損單被取消"),
+                    contains("持倉已失去止損保護"),
+                    eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("TAKE_PROFIT_MARKET CANCELED → 黃色告警 + recordProtectionLost")
+        void tpCanceledTriggersYellowAlert() {
+            JsonObject event = buildOrderTradeUpdate(
+                    "ETHUSDT", "TAKE_PROFIT_MARKET", "CANCELED", "BUY",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 888999000L, 1700000000000L);
+
+            service.handleOrderTradeUpdate(event);
+
+            // 應記錄保護消失事件
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("888999000"), eq("CANCELED"));
+
+            // TP 被取消 → 黃色告警（較不緊急）
+            verify(discordWebhookService).sendNotification(
+                    contains("止盈單被取消"),
+                    contains("止損仍有效"),
+                    eq(DiscordWebhookService.COLOR_YELLOW));
+        }
+
+        @Test
+        @DisplayName("STOP_MARKET EXPIRED → 紅色告警（與 CANCELED 同等處理）")
+        void slExpiredTriggersRedAlert() {
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "EXPIRED", "SELL",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 111222333L, 1700000000000L);
+
+            service.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("111222333"), eq("EXPIRED"));
+
+            verify(discordWebhookService).sendNotification(
+                    contains("止損單被取消"),
+                    contains("持倉已失去止損保護"),
+                    eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("LIMIT CANCELED → 不觸發保護消失告警（入場單取消是正常操作）")
+        void limitCanceledIgnored() {
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "LIMIT", "CANCELED", "BUY",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 444555666L, 1700000000000L);
+
+            service.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService, never()).recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString());
+
+            // 不應有任何 Discord 通知
+            verify(discordWebhookService, never()).sendNotification(
+                    anyString(), anyString(), anyInt());
+        }
+    }
+
+    // ==================== 錯誤處理 ====================
+
+    @Nested
+    @DisplayName("錯誤處理")
+    class ErrorHandling {
 
         @Test
         @DisplayName("recordCloseFromStream 失敗時發送黃色 Discord 告警")
