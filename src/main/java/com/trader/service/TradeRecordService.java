@@ -200,6 +200,60 @@ public class TradeRecordService {
     }
 
     /**
+     * PARTIAL CLOSE：部分平倉，Trade 維持 OPEN 狀態
+     * 記錄已平數量，但不結束交易，讓後續 MOVE_SL / CLOSE 訊號能繼續操作
+     *
+     * @param symbol     交易對
+     * @param closeOrder 平倉單結果
+     * @param closeRatio 平倉比例 (0.5=平一半)
+     * @param exitReason 出場原因
+     */
+    @Transactional
+    public void recordPartialClose(String symbol, OrderResult closeOrder, double closeRatio, String exitReason) {
+        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        if (openTradeOpt.isEmpty()) {
+            log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
+            return;
+        }
+
+        Trade trade = openTradeOpt.get();
+
+        // 累加已平倉數量
+        double closedQty = closeOrder.getQuantity();
+        double prevClosed = trade.getTotalClosedQuantity() != null ? trade.getTotalClosedQuantity() : 0;
+        trade.setTotalClosedQuantity(prevClosed + closedQty);
+
+        // 計算剩餘數量
+        double entryQty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
+        trade.setRemainingQuantity(entryQty - (prevClosed + closedQty));
+
+        // 記錄最近一次部分平倉的價格（不設 status=CLOSED）
+        trade.setExitPrice(closeOrder.getPrice());
+        trade.setExitQuantity(closedQty);
+        trade.setExitOrderId(closeOrder.getOrderId());
+        trade.setExitReason(exitReason + "_PARTIAL");
+        // ⚠️ 關鍵：維持 OPEN，不設 CLOSED
+        trade.setUpdatedAt(LocalDateTime.now(TAIPEI_ZONE));
+
+        tradeRepository.save(trade);
+
+        // 寫入 PARTIAL_CLOSE 事件
+        saveEvent(trade.getTradeId(), "PARTIAL_CLOSE", closeOrder);
+
+        log.info("部分平倉紀錄: tradeId={} {} ratio={} closedQty={} remaining={} 原因={}",
+                trade.getTradeId(), symbol, closeRatio, closedQty,
+                trade.getRemainingQuantity(), exitReason);
+    }
+
+    /**
+     * 查詢某交易對 OPEN 中的開倉價（用於成本保護時當作 SL）
+     */
+    public Double getEntryPrice(String symbol) {
+        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        return openTradeOpt.map(Trade::getEntryPrice).orElse(null);
+    }
+
+    /**
      * MOVE_SL：記錄止損移動事件
      *
      * @param symbol   交易對

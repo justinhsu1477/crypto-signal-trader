@@ -52,6 +52,8 @@ public class Trade {
     // === 狀態 ===
     private String status;               // OPEN=持倉中, CLOSED=已平倉, CANCELLED=已取消
     private String exitReason;           // 出場原因：STOP_LOSS / SIGNAL_CLOSE / MANUAL_CLOSE / FAIL_SAFE
+    private Double remainingQuantity;    // 部分平倉後的剩餘數量（null=未部分平倉）
+    private Double totalClosedQuantity;  // 累計已平倉數量（含多次部分平倉）
 
     // === DCA 補倉 ===
     private Integer dcaCount;            // 補倉次數（0=首次入場，1=第一次補倉，2=第二次...）

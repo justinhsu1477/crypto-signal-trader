@@ -58,6 +58,8 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 17b. 部分平倉 + 止損移動（如「平一半，止損拉到成本/入場價/XX價格」）→ CLOSE + close_ratio + new_stop_loss
 17c. 部分平倉 + 止盈修改 → CLOSE + close_ratio + new_take_profit
 17d. 部分平倉時如果訊號同時提到新的 SL 和/或 TP，務必一起帶上，避免剩餘倉位失去保護
+17e. ⚠️ 「止盈50%做成本保護」「止盈50%並做成本保護繼續持有」→ CLOSE + close_ratio=0.5 + new_stop_loss=null（null 表示移至開倉價，Java 端會查詢）
+17f. 如果止盈50%同時給了具體止損價（如「止損修改111900」「止損放在112300」），new_stop_loss 用該具體價格
 
 ### MOVE_SL（移動止損）判斷規則
 18. 「止损设置: <價格>」→ MOVE_SL，new_stop_loss = 該價格
@@ -149,6 +151,15 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 
 輸入: 先市价平仓，等新的信号
 輸出: {"action":"CLOSE","symbol":"BTCUSDT"}
+
+輸入: 中长线止盈50%做成本保护继续持有
+輸出: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":null}
+
+輸入: BTC止盈50%，止损修改111900
+輸出: {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":111900}
+
+輸入: ETH先止盈50%做成本保护，剩余仓位继续拿
+輸出: {"action":"CLOSE","symbol":"ETHUSDT","close_ratio":0.5,"new_stop_loss":null}
 
 ### MOVE_SL 範例
 
