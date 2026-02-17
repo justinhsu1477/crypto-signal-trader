@@ -307,6 +307,31 @@ public class BinanceFuturesService {
         }
     }
 
+    /**
+     * 查詢當前掛單中的 SL/TP 價格
+     * @return double[2]: [0]=STOP_MARKET stopPrice, [1]=TAKE_PROFIT_MARKET stopPrice; 0 表示不存在
+     */
+    public double[] getCurrentSLTPPrices(String symbol) {
+        double slPrice = 0;
+        double tpPrice = 0;
+        try {
+            String response = getOpenOrders(symbol);
+            JsonArray orders = gson.fromJson(response, JsonArray.class);
+            for (JsonElement elem : orders) {
+                JsonObject order = elem.getAsJsonObject();
+                String type = order.get("type").getAsString();
+                if ("STOP_MARKET".equals(type)) {
+                    slPrice = order.get("stopPrice").getAsDouble();
+                } else if ("TAKE_PROFIT_MARKET".equals(type)) {
+                    tpPrice = order.get("stopPrice").getAsDouble();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("查詢 SL/TP 價格失敗: {}", e.getMessage());
+        }
+        return new double[]{slPrice, tpPrice};
+    }
+
     public String getOpenOrders(String symbol) {
         String endpoint = "/fapi/v1/openOrders";
         Map<String, String> params = new LinkedHashMap<>();
@@ -651,13 +676,25 @@ public class BinanceFuturesService {
         // 2. 計算平倉數量
         double closeRatio = signal.getCloseRatio() != null ? signal.getCloseRatio() : 1.0;
         double closeQty = absPosition * closeRatio;
+        boolean isPartialClose = closeRatio < 1.0;
 
-        log.info("平倉: {} 持倉={} ratio={} 平倉數量={}", symbol, positionAmt, closeRatio, closeQty);
+        log.info("平倉: {} 持倉={} ratio={} 平倉數量={} partial={}",
+                symbol, positionAmt, closeRatio, closeQty, isPartialClose);
 
-        // 3. 取消所有掛單
+        // 3. 部分平倉前：先查詢現有 SL/TP 價格（取消前保存）
+        double oldSlPrice = 0;
+        double oldTpPrice = 0;
+        if (isPartialClose) {
+            double[] prices = getCurrentSLTPPrices(symbol);
+            oldSlPrice = prices[0];
+            oldTpPrice = prices[1];
+            log.info("部分平倉: 保存舊 SL={} TP={} 用於重掛", oldSlPrice, oldTpPrice);
+        }
+
+        // 4. 取消所有掛單
         cancelAllOrders(symbol);
 
-        // 4. 取得市價作為平倉價格（API 失敗會拋異常）
+        // 5. 取得市價作為平倉價格（API 失敗會拋異常）
         double markPrice;
         try {
             markPrice = getMarkPrice(symbol);
@@ -673,8 +710,6 @@ public class BinanceFuturesService {
         String closeSide = isLong ? "SELL" : "BUY";
 
         // 掛反向 LIMIT 平倉單（用市價附近的價格）
-        // 做多平倉: 賣出價略低於市價以確保成交
-        // 做空平倉: 買入價略高於市價以確保成交
         double closePrice = isLong ? markPrice * 0.999 : markPrice * 1.001;
 
         OrderResult closeOrder = placeLimitOrder(symbol, closeSide, closePrice, closeQty);
@@ -682,7 +717,11 @@ public class BinanceFuturesService {
         // 記錄平倉到資料庫
         if (closeOrder.isSuccess()) {
             try {
-                tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");
+                if (isPartialClose) {
+                    tradeRecordService.recordPartialClose(symbol, closeOrder, closeRatio, "SIGNAL_CLOSE");
+                } else {
+                    tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");
+                }
             } catch (Exception e) {
                 log.error("平倉紀錄寫入失敗（不影響交易）: {}", e.getMessage());
             }
@@ -691,20 +730,64 @@ public class BinanceFuturesService {
         List<OrderResult> results = new ArrayList<>();
         results.add(closeOrder);
 
-        // 如果不是全平，需要重新掛 SL 和 TP（避免剩餘倉位裸奔）
-        if (closeRatio < 1.0) {
+        // 6. 部分平倉：一定要重掛 SL（保護剩餘倉位）
+        if (isPartialClose) {
             double remainingQty = absPosition - closeQty;
             String slSide = isLong ? "SELL" : "BUY";
 
-            // 重掛 SL（如果有新止損價）
-            if (signal.getNewStopLoss() != null) {
-                OrderResult newSl = placeStopLoss(symbol, slSide, signal.getNewStopLoss(), remainingQty);
-                results.add(newSl);
+            // === SL 重掛邏輯 ===
+            // 優先級：signal 帶的新 SL > DB 開倉價（成本保護）> 舊 SL
+            double slToUse;
+            if (signal.getNewStopLoss() != null && signal.getNewStopLoss() > 0) {
+                // 訊號明確帶了新 SL 價格
+                slToUse = signal.getNewStopLoss();
+                log.info("部分平倉: 使用訊號指定 SL={}", slToUse);
+            } else if (signal.getNewStopLoss() == null && signal.getNewTakeProfit() == null
+                    && oldSlPrice == 0) {
+                // 什麼都沒有（沒新SL、沒新TP、沒舊SL）→ 嘗試用開倉價做成本保護
+                Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+                if (entryPrice != null && entryPrice > 0) {
+                    slToUse = entryPrice;
+                    log.info("部分平倉: 無 SL 資訊，使用開倉價做成本保護 SL={}", slToUse);
+                } else {
+                    slToUse = 0;
+                    log.warn("部分平倉: ⚠️ 無法取得 SL 價格，剩餘倉位無止損保護！");
+                }
+            } else if (oldSlPrice > 0) {
+                // 用取消前的舊 SL
+                slToUse = oldSlPrice;
+                log.info("部分平倉: 使用原有 SL={}", slToUse);
+            } else {
+                // newStopLoss 是 null 但不是 0（成本保護場景：null 表示用開倉價）
+                Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+                if (entryPrice != null && entryPrice > 0) {
+                    slToUse = entryPrice;
+                    log.info("部分平倉: 成本保護，SL 移至開倉價={}", slToUse);
+                } else {
+                    slToUse = oldSlPrice;
+                    log.warn("部分平倉: 成本保護但無開倉價，用舊 SL={}", slToUse);
+                }
             }
 
-            // 重掛 TP（如果有新止盈價）
+            if (slToUse > 0) {
+                OrderResult newSl = placeStopLoss(symbol, slSide, slToUse, remainingQty);
+                results.add(newSl);
+            } else {
+                log.error("⚠️ 部分平倉後未能重掛 SL！{} 剩餘 {} 裸奔中", symbol, remainingQty);
+                results.add(OrderResult.fail("部分平倉後無法重掛 SL — 剩餘倉位無保護"));
+            }
+
+            // === TP 重掛邏輯 ===
+            double tpToUse = 0;
             if (signal.getNewTakeProfit() != null && signal.getNewTakeProfit() > 0) {
-                OrderResult newTp = placeTakeProfit(symbol, slSide, signal.getNewTakeProfit(), remainingQty);
+                tpToUse = signal.getNewTakeProfit();
+            } else if (oldTpPrice > 0) {
+                tpToUse = oldTpPrice;
+                log.info("部分平倉: 使用原有 TP={}", tpToUse);
+            }
+
+            if (tpToUse > 0) {
+                OrderResult newTp = placeTakeProfit(symbol, slSide, tpToUse, remainingQty);
                 results.add(newTp);
             }
         }
