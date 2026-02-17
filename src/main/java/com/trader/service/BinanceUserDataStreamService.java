@@ -21,9 +21,10 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Binance Futures User Data Stream 服務
  *
- * 透過 WebSocket 監聽帳戶事件，即時偵測 SL/TP 觸發：
+ * 透過 WebSocket 監聽帳戶事件：
  * - STOP_MARKET FILLED → recordCloseFromStream("SL_TRIGGERED")
  * - TAKE_PROFIT_MARKET FILLED → recordCloseFromStream("TP_TRIGGERED")
+ * - STOP_MARKET/TAKE_PROFIT_MARKET CANCELED/EXPIRED → 告警保護消失
  *
  * 生命週期：
  * - @PostConstruct → 建立 listenKey + 連線 WebSocket
@@ -266,7 +267,8 @@ public class BinanceUserDataStreamService {
 
     /**
      * 處理 ORDER_TRADE_UPDATE 事件
-     * 只關心 FILLED 狀態的 STOP_MARKET / TAKE_PROFIT_MARKET（SL/TP 觸發）
+     * - FILLED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 記錄平倉
+     * - CANCELED / EXPIRED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 告警保護消失
      */
     void handleOrderTradeUpdate(JsonObject event) {
         JsonObject order = event.getAsJsonObject("o");
@@ -284,7 +286,14 @@ public class BinanceUserDataStreamService {
         log.info("ORDER_TRADE_UPDATE: {} {} {} status={} orderId={}",
                 symbol, side, orderType, orderStatus, orderId);
 
-        // 只處理完全成交的訂單
+        // SL/TP 被取消或過期 → 持倉失去保護，緊急告警
+        if (("CANCELED".equals(orderStatus) || "EXPIRED".equals(orderStatus))
+                && ("STOP_MARKET".equals(orderType) || "TAKE_PROFIT_MARKET".equals(orderType))) {
+            handleProtectionLost(symbol, orderType, orderId, orderStatus);
+            return;
+        }
+
+        // 非 FILLED 的其他狀態（NEW, PARTIALLY_FILLED 等）→ 忽略
         if (!"FILLED".equals(orderStatus)) {
             log.debug("訂單未完全成交 ({}), 忽略", orderStatus);
             return;
@@ -329,6 +338,39 @@ public class BinanceUserDataStreamService {
             default:
                 log.debug("非關注訂單類型: {} {}", orderType, symbol);
         }
+    }
+
+    /**
+     * SL/TP 被取消或過期 — 持倉失去保護
+     * 可能原因：手動在幣安取消、掛單過期、系統 MOVE_SL 過程中
+     *
+     * 系統自己的 MOVE_SL / DCA 會先取消再重掛，所以這裡不需要自動重掛，
+     * 只做告警 + 記錄，由使用者判斷是否需要手動處理。
+     */
+    private void handleProtectionLost(String symbol, String orderType, String orderId, String reason) {
+        boolean isSL = "STOP_MARKET".equals(orderType);
+        String label = isSL ? "止損" : "止盈";
+
+        log.warn("⚠️ {} 被{}: {} orderId={}", label, reason, symbol, orderId);
+
+        // 記錄到 DB
+        try {
+            tradeRecordService.recordProtectionLost(symbol, orderType, orderId, reason);
+        } catch (Exception e) {
+            log.error("記錄保護消失事件失敗: {}", e.getMessage());
+        }
+
+        // SL 被取消是高危事件（持倉裸奔），用紅色告警
+        // TP 被取消影響較小，用黃色告警
+        int color = isSL ? DiscordWebhookService.COLOR_RED : DiscordWebhookService.COLOR_YELLOW;
+        String urgency = isSL ? "🚨" : "⚠️";
+
+        discordWebhookService.sendNotification(
+                urgency + " " + label + "單被取消",
+                String.format("%s\n訂單號: %s\n原因: %s\n%s",
+                        symbol, orderId, reason,
+                        isSL ? "⚠️ 持倉已失去止損保護！請立即檢查" : "止盈保護已消失，止損仍有效"),
+                color);
     }
 
     /**
