@@ -11,6 +11,7 @@ import com.trader.service.DiscordWebhookService;
 import com.trader.service.MonitorHeartbeatService;
 import com.trader.service.SignalDeduplicationService;
 import com.trader.service.SignalParserService;
+import com.trader.service.BinanceUserDataStreamService;
 import com.trader.service.TradeRecordService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class TradeController {
     private final SignalDeduplicationService deduplicationService;
     private final DiscordWebhookService webhookService;
     private final MonitorHeartbeatService heartbeatService;
+    private final BinanceUserDataStreamService userDataStreamService;
 
     /**
      * 查詢帳戶餘額
@@ -393,6 +395,39 @@ public class TradeController {
     @GetMapping("/monitor-status")
     public ResponseEntity<Map<String, Object>> getMonitorStatus() {
         return ResponseEntity.ok(heartbeatService.getStatus());
+    }
+
+    /**
+     * 查詢 User Data Stream WebSocket 連線狀態
+     * GET /api/stream-status
+     */
+    @GetMapping("/stream-status")
+    public ResponseEntity<Map<String, Object>> getStreamStatus() {
+        return ResponseEntity.ok(userDataStreamService.getStatus());
+    }
+
+    // ==================== Admin ====================
+
+    /**
+     * 清理殭屍 OPEN 紀錄
+     * POST /api/admin/cleanup-trades
+     *
+     * 比對 DB 中 OPEN 的 Trade 與幣安實際持倉，
+     * 無持倉的標記為 CANCELLED (STALE_CLEANUP)
+     */
+    @PostMapping("/admin/cleanup-trades")
+    public ResponseEntity<Map<String, Object>> cleanupTrades() {
+        log.info("手動觸發殭屍 Trade 清理");
+        Map<String, Object> result = tradeRecordService.cleanupStaleTrades(
+                symbol -> binanceFuturesService.getCurrentPositionAmount(symbol));
+        int cleaned = (int) result.get("cleaned");
+        if (cleaned > 0) {
+            webhookService.sendNotification(
+                    "🧹 殭屍 Trade 清理完成",
+                    String.format("清理: %d 筆 | 跳過: %d 筆\n來源: 手動 API", cleaned, result.get("skipped")),
+                    DiscordWebhookService.COLOR_BLUE);
+        }
+        return ResponseEntity.ok(result);
     }
 
     // ==================== 訊號來源提取 ====================

@@ -64,7 +64,7 @@ class SafetyCheckTest {
             // httpClient=null → sendPublicGet → executeRequest 拋 NullPointerException
             // 這驗證了當 API 不可用時，getMarkPrice 不會靜默回傳 0
             BinanceFuturesService service = new BinanceFuturesService(
-                    null, new com.trader.config.BinanceConfig("https://fake.test", "", ""),
+                    null, new com.trader.config.BinanceConfig("https://fake.test", null, "", ""),
                     riskConfig, null, null, null);
 
             assertThatThrownBy(() -> service.getMarkPrice("BTCUSDT"))

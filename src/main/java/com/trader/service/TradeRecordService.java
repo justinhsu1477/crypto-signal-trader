@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
@@ -346,23 +347,35 @@ public class TradeRecordService {
 
     /**
      * 取得今日交易統計（台灣時間 00:00 起算）
-     * 供每日摘要排程使用
+     * 供每日虧損熔斷等即時查詢使用
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getTodayStats() {
         LocalDateTime startOfToday = LocalDateTime.now(TAIPEI_ZONE).toLocalDate().atStartOfDay();
-        List<Trade> closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
+        LocalDateTime now = LocalDateTime.now(TAIPEI_ZONE);
+        return getStatsForDateRange(startOfToday, now);
+    }
 
-        long totalCount = closedToday.size();
-        long winCount = closedToday.stream()
+    /**
+     * 取得指定時間範圍的交易統計
+     * 供每日摘要排程（昨日統計）和即時查詢使用
+     *
+     * @param from 起始時間（含）
+     * @param to   結束時間（不含）
+     */
+    public Map<String, Object> getStatsForDateRange(LocalDateTime from, LocalDateTime to) {
+        List<Trade> closedTrades = tradeRepository.findClosedTradesBetween(from, to);
+
+        long totalCount = closedTrades.size();
+        long winCount = closedTrades.stream()
                 .filter(t -> t.getNetProfit() != null && t.getNetProfit() > 0)
                 .count();
         long loseCount = totalCount - winCount;
-        double todayNetProfit = closedToday.stream()
+        double netProfit = closedTrades.stream()
                 .filter(t -> t.getNetProfit() != null)
                 .mapToDouble(Trade::getNetProfit)
                 .sum();
-        double todayCommission = closedToday.stream()
+        double commission = closedTrades.stream()
                 .filter(t -> t.getCommission() != null)
                 .mapToDouble(Trade::getCommission)
                 .sum();
@@ -371,11 +384,11 @@ public class TradeRecordService {
         List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
 
         Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("todayTrades", totalCount);
-        stats.put("todayWins", winCount);
-        stats.put("todayLosses", loseCount);
-        stats.put("todayNetProfit", round2(todayNetProfit));
-        stats.put("todayCommission", round2(todayCommission));
+        stats.put("trades", totalCount);
+        stats.put("wins", winCount);
+        stats.put("losses", loseCount);
+        stats.put("netProfit", round2(netProfit));
+        stats.put("commission", round2(commission));
         stats.put("openTrades", openTrades);
         return stats;
     }
@@ -417,6 +430,76 @@ public class TradeRecordService {
         stats.put("openPositions", openCount);                   // 目前持倉數
 
         return stats;
+    }
+
+    // ==================== WebSocket User Data Stream ====================
+
+    /**
+     * WebSocket User Data Stream 觸發的平倉記錄
+     * 使用 Binance 回傳的真實數據（出場價、手續費），非估算值
+     *
+     * @param symbol          交易對 (e.g. BTCUSDT)
+     * @param exitPrice       實際出場均價 (o.ap)
+     * @param exitQuantity    實際出場數量 (o.z)
+     * @param commission      實際出場手續費 (o.n), USDT
+     * @param realizedProfit  幣安回報的已實現損益 (o.rp)，僅供 log 參考
+     * @param orderId         Binance 訂單號 (o.i)
+     * @param exitReason      出場原因: "SL_TRIGGERED" or "TP_TRIGGERED"
+     * @param transactionTime 交易時間 (o.T) milliseconds
+     */
+    @Transactional
+    public void recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
+                                       double commission, double realizedProfit,
+                                       String orderId, String exitReason, long transactionTime) {
+        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        if (openTradeOpt.isEmpty()) {
+            log.warn("WebSocket 平倉事件但找不到 OPEN 交易: {} orderId={}", symbol, orderId);
+            return;
+        }
+
+        Trade trade = openTradeOpt.get();
+
+        // 用真實數據更新
+        trade.setExitPrice(exitPrice);
+        trade.setExitQuantity(exitQuantity);
+        trade.setExitTime(LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(transactionTime), TAIPEI_ZONE));
+        trade.setExitOrderId(orderId);
+        trade.setExitReason(exitReason);
+        trade.setStatus("CLOSED");
+
+        // 手續費 = 入場手續費（已記錄） + 出場手續費（WebSocket 真實值）
+        double entryCommission = trade.getEntryCommission() != null ? trade.getEntryCommission() : 0;
+        trade.setCommission(round2(entryCommission + commission));
+
+        // 毛利自己算（跟既有 calculateProfit 一致）
+        double entry = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
+        double qty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
+        int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
+        double grossProfit = (exitPrice - entry) * qty * direction;
+        trade.setGrossProfit(round2(grossProfit));
+
+        // 淨利 = 毛利 - 總手續費
+        trade.setNetProfit(round2(grossProfit - trade.getCommission()));
+
+        tradeRepository.save(trade);
+
+        // 寫入 STREAM_CLOSE 事件（區別於 CLOSE_PLACED）
+        TradeEvent event = TradeEvent.builder()
+                .tradeId(trade.getTradeId())
+                .eventType("STREAM_CLOSE")
+                .binanceOrderId(orderId)
+                .price(exitPrice)
+                .quantity(exitQuantity)
+                .success(true)
+                .detail(String.format(
+                        "{\"exit_reason\":\"%s\",\"commission\":%.4f,\"realized_profit\":%.4f}",
+                        exitReason, commission, realizedProfit))
+                .build();
+        tradeEventRepository.save(event);
+
+        log.info("WebSocket 平倉紀錄: tradeId={} {} exitPrice={} commission={} netProfit={} reason={}",
+                trade.getTradeId(), symbol, exitPrice, trade.getCommission(), trade.getNetProfit(), exitReason);
     }
 
     // ==================== 內部方法 ====================
@@ -468,6 +551,57 @@ public class TradeRecordService {
                 .build();
 
         tradeEventRepository.save(event);
+    }
+
+    /**
+     * 清理殭屍 OPEN 紀錄
+     *
+     * 比對 DB 中 status=OPEN 的 Trade 與幣安實際持倉，
+     * 如果幣安上已無該幣種的持倉，將 DB 紀錄標記為 CANCELLED。
+     *
+     * @param positionChecker 查詢幣安持倉量的 function（symbol → positionAmt）
+     * @return 清理結果：cleaned（清理筆數）、skipped（仍有持倉跳過）、details（明細）
+     */
+    @Transactional
+    public Map<String, Object> cleanupStaleTrades(java.util.function.Function<String, Double> positionChecker) {
+        List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
+        int cleaned = 0;
+        int skipped = 0;
+        List<String> details = new ArrayList<>();
+
+        for (Trade trade : openTrades) {
+            try {
+                double positionAmt = positionChecker.apply(trade.getSymbol());
+                if (positionAmt == 0) {
+                    // 幣安無持倉 → 殭屍紀錄，標記為 CANCELLED
+                    trade.setStatus("CANCELLED");
+                    trade.setExitReason("STALE_CLEANUP");
+                    trade.setExitTime(LocalDateTime.now(TAIPEI_ZONE));
+                    tradeRepository.save(trade);
+                    cleaned++;
+                    details.add(String.format("✓ %s %s %s @ %s → CANCELLED",
+                            trade.getTradeId(), trade.getSymbol(), trade.getSide(),
+                            trade.getEntryPrice()));
+                    log.info("清理殭屍 Trade: {} {} {}", trade.getTradeId(), trade.getSymbol(), trade.getSide());
+                } else {
+                    skipped++;
+                    details.add(String.format("⏭ %s %s 仍有持倉 %.4f → 跳過",
+                            trade.getTradeId(), trade.getSymbol(), positionAmt));
+                }
+            } catch (Exception e) {
+                skipped++;
+                details.add(String.format("⚠ %s %s 查詢失敗: %s → 跳過",
+                        trade.getTradeId(), trade.getSymbol(), e.getMessage()));
+                log.warn("清理時查詢持倉失敗: {} {}", trade.getSymbol(), e.getMessage());
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("totalOpen", openTrades.size());
+        result.put("cleaned", cleaned);
+        result.put("skipped", skipped);
+        result.put("details", details);
+        return result;
     }
 
     /**

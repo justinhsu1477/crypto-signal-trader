@@ -162,7 +162,7 @@ class AlertNotificationTest {
             when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
             when(mockCall.execute()).thenThrow(new IOException("Connection refused"));
 
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", "key", "secret");
+            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook);
 
@@ -197,7 +197,7 @@ class AlertNotificationTest {
             when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
             when(mockCall.execute()).thenReturn(mockResponse);
 
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", "key", "secret");
+            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook);
 
@@ -239,7 +239,7 @@ class AlertNotificationTest {
                     .build();
             when(mockCall2.execute()).thenReturn(successResponse);
 
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", "testkey", "testsecret");
+            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook);
 
@@ -265,7 +265,7 @@ class AlertNotificationTest {
             when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
             when(mockCall.execute()).thenThrow(new IOException("Connection refused"));
 
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", "testkey", "testsecret");
+            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook);
 
