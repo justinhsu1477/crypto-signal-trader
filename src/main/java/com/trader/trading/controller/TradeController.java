@@ -300,11 +300,21 @@ public class TradeController {
                         .build();
 
                 List<OrderResult> results = binanceFuturesService.executeClose(signal);
-                boolean closeOk = results.stream().allMatch(OrderResult::isSuccess);
-                webhookService.sendNotification(
-                        closeOk ? "💰 CLOSE 平倉成功 (API)" : "❌ CLOSE 平倉失敗 (API)",
-                        formatCloseResults(symbol, results),
-                        closeOk ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
+                boolean closeOk = !results.isEmpty() && results.get(0).isSuccess(); // 平倉單本身是否成功
+                boolean allOk = results.stream().allMatch(OrderResult::isSuccess);   // 含 SL/TP 重掛
+                String closeTitle;
+                int closeColor;
+                if (!closeOk) {
+                    closeTitle = "❌ CLOSE 平倉失敗 (API)";
+                    closeColor = DiscordWebhookService.COLOR_RED;
+                } else if (!allOk) {
+                    closeTitle = "⚠️ CLOSE 平倉成功，但 SL/TP 重掛異常 (API)";
+                    closeColor = DiscordWebhookService.COLOR_YELLOW;
+                } else {
+                    closeTitle = "💰 CLOSE 平倉成功 (API)";
+                    closeColor = DiscordWebhookService.COLOR_GREEN;
+                }
+                webhookService.sendNotification(closeTitle, formatCloseResults(symbol, results), closeColor);
                 return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
             }
 

@@ -607,6 +607,12 @@ public class BinanceFuturesService {
                 long entryOrderId = Long.parseLong(entryOrder.getOrderId());
                 cancelOrder(symbol, entryOrderId);
                 log.info("Fail-Safe: 已取消入場單 {}", entryOrderId);
+                discordWebhookService.sendNotification("🛑 Fail-Safe: 止損失敗，入場單已取消",
+                        String.format("%s %s\n止損掛單失敗: %s\n入場單 %s 已自動取消\n⚠️ 此筆交易未成立",
+                                symbol, signal.getSide(),
+                                slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown",
+                                entryOrderId),
+                        DiscordWebhookService.COLOR_RED);
             } catch (Exception e) {
                 log.error("Fail-Safe: 取消入場單失敗，嘗試市價平倉", e);
                 OrderResult marketClose = placeMarketOrder(symbol, closeSide, quantity);
@@ -619,8 +625,18 @@ public class BinanceFuturesService {
                             alert, DiscordWebhookService.COLOR_RED);
                     tradeRecordService.recordFailSafe(symbol,
                             toJson(Map.of("reason", "所有自動保護措施失敗", "market_close_error", marketClose.getErrorMessage() != null ? marketClose.getErrorMessage() : "")));
+                } else {
+                    discordWebhookService.sendNotification("🛑 Fail-Safe: 止損失敗，已市價平倉",
+                            String.format("%s %s\n止損掛單失敗: %s\n取消入場單也失敗，已市價平倉 %s\n⚠️ 請確認帳戶狀態",
+                                    symbol, signal.getSide(),
+                                    slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown",
+                                    formatQuantity(symbol, quantity)),
+                            DiscordWebhookService.COLOR_RED);
                 }
             }
+            // 標記 entryOrder 為失敗，避免 Controller 層誤判為「成功」
+            entryOrder.setSuccess(false);
+            entryOrder.setErrorMessage("Fail-Safe 觸發: 止損掛單失敗，入場單已取消");
             return List.of(entryOrder, slOrder);
         }
 
