@@ -1,3 +1,6 @@
+app:
+  timezone: Asia/Taipei
+
 server:
   port: 8080
 
@@ -47,7 +50,7 @@ jwt:
   refresh-expiration-ms: 604800000  # 7 days
 
 encryption:
-  aes-key: ${AES_ENCRYPTION_KEY:default-aes-key-change-prod32}
+  aes-key: ${AES_ENCRYPTION_KEY:default-aes-key-change-in-prod!!}
 
 logging:
   level:

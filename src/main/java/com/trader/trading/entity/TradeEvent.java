@@ -6,8 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 /**
  * 事件日誌表 — 每個操作（下單、止損、平倉等）記錄一筆
@@ -52,12 +53,10 @@ public class TradeEvent {
     @Column(length = 2000)
     private String detail;               // JSON 補充資料，例如 {"old_sl":68000,"new_sl":68300}
 
-    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
-
     @PrePersist
     protected void onCreate() {
         if (timestamp == null) {
-            timestamp = LocalDateTime.now(TAIPEI_ZONE);
+            timestamp = LocalDateTime.now(AppConstants.ZONE_ID);
         }
     }
 }
