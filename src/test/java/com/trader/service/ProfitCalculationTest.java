@@ -33,7 +33,7 @@ class ProfitCalculationTest {
 
     private TradeRecordService createService() {
         // calculateProfit() 不依賴 repository，傳 null 即可
-        return new TradeRecordService(null, null);
+        return new TradeRecordService(null, null, null);
     }
 
     @Nested

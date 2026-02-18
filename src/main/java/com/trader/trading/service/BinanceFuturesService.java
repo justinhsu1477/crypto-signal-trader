@@ -1,5 +1,7 @@
 package com.trader.trading.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -33,6 +35,7 @@ public class BinanceFuturesService {
     private final TradeRecordService tradeRecordService;
     private final SignalDeduplicationService deduplicationService;
     private final DiscordWebhookService discordWebhookService;
+    private final ObjectMapper objectMapper;
     private final Gson gson = new Gson();
 
     /**
@@ -48,13 +51,15 @@ public class BinanceFuturesService {
     public BinanceFuturesService(OkHttpClient httpClient, BinanceConfig binanceConfig,
                                   RiskConfig riskConfig, TradeRecordService tradeRecordService,
                                   SignalDeduplicationService deduplicationService,
-                                  DiscordWebhookService discordWebhookService) {
+                                  DiscordWebhookService discordWebhookService,
+                                  ObjectMapper objectMapper) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
         this.tradeRecordService = tradeRecordService;
         this.deduplicationService = deduplicationService;
         this.discordWebhookService = discordWebhookService;
+        this.objectMapper = objectMapper;
     }
 
     // ==================== 帳戶相關 ====================
@@ -583,7 +588,7 @@ public class BinanceFuturesService {
         if (!slOrder.isSuccess()) {
             log.error("止損單失敗! 觸發 Fail-Safe，取消入場單");
             tradeRecordService.recordFailSafe(symbol,
-                    String.format("{\"reason\":\"SL下單失敗\",\"sl_error\":\"%s\"}", slOrder.getErrorMessage()));
+                    toJson(Map.of("reason", "SL下單失敗", "sl_error", slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "")));
             try {
                 long entryOrderId = Long.parseLong(entryOrder.getOrderId());
                 cancelOrder(symbol, entryOrderId);
@@ -599,7 +604,7 @@ public class BinanceFuturesService {
                     discordWebhookService.sendNotification("🚨 Fail-Safe 全部失敗",
                             alert, DiscordWebhookService.COLOR_RED);
                     tradeRecordService.recordFailSafe(symbol,
-                            "{\"reason\":\"所有自動保護措施失敗\",\"market_close_error\":\"" + marketClose.getErrorMessage() + "\"}");
+                            toJson(Map.of("reason", "所有自動保護措施失敗", "market_close_error", marketClose.getErrorMessage() != null ? marketClose.getErrorMessage() : "")));
                 }
             }
             return List.of(entryOrder, slOrder);
@@ -1195,6 +1200,18 @@ public class BinanceFuturesService {
                             request.method(), request.url().encodedPath(), e.getMessage()),
                     DiscordWebhookService.COLOR_RED);
             throw new RuntimeException("Binance API request failed", e);
+        }
+    }
+
+    /**
+     * 安全地將 Map 轉為 JSON 字串（自動處理特殊字元，避免 JSON 注入）
+     */
+    private String toJson(Map<String, Object> map) {
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
+            log.warn("JSON 序列化失敗: {}", e.getMessage());
+            return "{}";
         }
     }
 }

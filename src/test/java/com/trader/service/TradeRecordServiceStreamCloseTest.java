@@ -1,5 +1,6 @@
 package com.trader.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.entity.TradeEvent;
 import com.trader.trading.repository.TradeEventRepository;
@@ -28,7 +29,7 @@ class TradeRecordServiceStreamCloseTest {
     void setUp() {
         tradeRepository = mock(TradeRepository.class);
         tradeEventRepository = mock(TradeEventRepository.class);
-        service = new TradeRecordService(tradeRepository, tradeEventRepository);
+        service = new TradeRecordService(tradeRepository, tradeEventRepository, new ObjectMapper());
     }
 
     @Nested
