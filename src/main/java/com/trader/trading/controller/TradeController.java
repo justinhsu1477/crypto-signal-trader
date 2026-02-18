@@ -264,9 +264,9 @@ public class TradeController {
                     builder.side(TradeSignal.Side.valueOf(request.getSide().toUpperCase()));
                 }
 
-                // stopLoss: DCA 用 new_stop_loss，非 DCA 用 stop_loss
+                // stopLoss: DCA 用 new_stop_loss（可能為 null，表示不改 SL → 用 0 代表），非 DCA 用 stop_loss
                 if (isDca) {
-                    builder.stopLoss(request.getNewStopLoss());
+                    builder.stopLoss(request.getNewStopLoss() != null ? request.getNewStopLoss() : 0);
                 } else {
                     builder.stopLoss(request.getStopLoss());
                 }
@@ -525,7 +525,7 @@ public class TradeController {
     private String formatMoveSLResults(TradeSignal signal, List<OrderResult> results) {
         StringBuilder sb = new StringBuilder();
         sb.append(signal.getSymbol()).append("\n");
-        if (signal.getNewStopLoss() != 0) {
+        if (signal.getNewStopLoss() != null && signal.getNewStopLoss() != 0) {
             sb.append("新止損: ").append(signal.getNewStopLoss()).append("\n");
         }
         if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {

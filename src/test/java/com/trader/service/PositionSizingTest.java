@@ -2,6 +2,7 @@ package com.trader.service;
 
 import com.trader.shared.config.RiskConfig;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.SymbolLockRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -31,7 +32,8 @@ class PositionSizingTest {
                 0.20,   // riskPercent (20%)
                 3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
-        service = new BinanceFuturesService(null, null, riskConfig, null, null, null, null);
+        service = new BinanceFuturesService(null, null, riskConfig, null, null, null, null,
+                new SymbolLockRegistry());
     }
 
     @Nested
@@ -118,7 +120,8 @@ class PositionSizingTest {
                     0,  // maxPositionUsdt = 0 → 不啟用 cap
                     2000, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT"), "BTCUSDT"
             );
-            BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null, null);
+            BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null, null,
+                    new SymbolLockRegistry());
             // 1R = 1000 × 0.20 = 200, riskDistance = 1, qty = 200
             double qty = svc.calculatePositionSize(1000, 95000, 94999);
             assertThat(qty).isEqualTo(200.0);

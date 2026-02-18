@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
@@ -37,13 +36,8 @@ public class BinanceFuturesService {
     private final SignalDeduplicationService deduplicationService;
     private final DiscordWebhookService discordWebhookService;
     private final ObjectMapper objectMapper;
+    private final SymbolLockRegistry symbolLockRegistry;
     private final Gson gson = new Gson();
-
-    /**
-     * Per-symbol 互斥鎖 — 防止同一幣種的並發操作
-     * 同一個 symbol 的 ENTRY / CLOSE / MOVE_SL 一次只能有一個 thread 執行
-     */
-    private final ConcurrentHashMap<String, ReentrantLock> symbolLocks = new ConcurrentHashMap<>();
 
     // SL/TP 下單重試配置
     private static final int ORDER_MAX_RETRIES = 2;
@@ -53,7 +47,8 @@ public class BinanceFuturesService {
                                   RiskConfig riskConfig, TradeRecordService tradeRecordService,
                                   SignalDeduplicationService deduplicationService,
                                   DiscordWebhookService discordWebhookService,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  SymbolLockRegistry symbolLockRegistry) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
@@ -61,6 +56,7 @@ public class BinanceFuturesService {
         this.deduplicationService = deduplicationService;
         this.discordWebhookService = discordWebhookService;
         this.objectMapper = objectMapper;
+        this.symbolLockRegistry = symbolLockRegistry;
     }
 
     // ==================== 帳戶相關 ====================
@@ -360,7 +356,7 @@ public class BinanceFuturesService {
      * 7. Fail-Safe: SL 失敗則取消入場單
      */
     public List<OrderResult> executeSignal(TradeSignal signal) {
-      ReentrantLock lock = symbolLocks.computeIfAbsent(signal.getSymbol(), k -> new ReentrantLock());
+      ReentrantLock lock = symbolLockRegistry.getLock(signal.getSymbol());
       lock.lock();
       try {
         return executeSignalInternal(signal);
@@ -432,6 +428,10 @@ public class BinanceFuturesService {
                 log.warn("已有持倉 {} BTC，拒絕新開倉（如需補倉請使用 DCA）", currentPosition);
                 return List.of(OrderResult.fail("已有持倉，拒絕新開倉（如需補倉請使用 is_dca=true）"));
             }
+        } else if (signal.isDca()) {
+            // DCA 但沒有任何持倉 → 不合理，應拒絕
+            log.warn("DCA 補倉但 {} 沒有持倉，拒絕執行", symbol);
+            return List.of(OrderResult.fail("DCA 補倉失敗: " + symbol + " 目前沒有持倉，無法補倉"));
         }
 
         // 2b. 檢查未成交入場掛單（DCA 時跳過，允許多張 LIMIT 同時存在）
@@ -679,7 +679,7 @@ public class BinanceFuturesService {
      */
     public List<OrderResult> executeClose(TradeSignal signal) {
         String symbol = signal.getSymbol();
-        ReentrantLock lock = symbolLocks.computeIfAbsent(symbol, k -> new ReentrantLock());
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         lock.lock();
         try {
             return executeCloseInternal(signal);
@@ -874,7 +874,7 @@ public class BinanceFuturesService {
      */
     public List<OrderResult> executeMoveSL(TradeSignal signal) {
         String symbol = signal.getSymbol();
-        ReentrantLock lock = symbolLocks.computeIfAbsent(symbol, k -> new ReentrantLock());
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         lock.lock();
         try {
             return executeMoveSLInternal(signal);

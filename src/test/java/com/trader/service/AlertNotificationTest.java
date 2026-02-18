@@ -7,6 +7,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.SignalDeduplicationService;
+import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
 import okhttp3.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,7 +54,8 @@ class AlertNotificationTest {
             when(mockDedup.generateHash(any())).thenReturn("testhash");
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null));
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    new SymbolLockRegistry()));
 
             // 餘額查詢 + 所有前置檢查通過
             doReturn(1000.0).when(service).getAvailableBalance();
@@ -110,7 +112,8 @@ class AlertNotificationTest {
             DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, null, mockWebhook, null));
+                    null, null, riskConfig, mockTradeRecord, null, mockWebhook, null,
+                    new SymbolLockRegistry()));
 
             // 有持倉
             doReturn(0.25).when(service).getCurrentPositionAmount(anyString());
@@ -168,7 +171,8 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null);
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    new SymbolLockRegistry());
 
             // getExchangeInfo 會呼叫 executeRequest → IOException
             assertThatThrownBy(() -> service.getExchangeInfo())
@@ -203,7 +207,8 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null);
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    new SymbolLockRegistry());
 
             // 呼叫不應拋異常（HTTP 回應正常接收，只是非 200）
             String result = service.getExchangeInfo();
@@ -245,7 +250,8 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null);
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    new SymbolLockRegistry());
 
             OrderResult result = service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25);
 
@@ -271,7 +277,8 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null);
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    new SymbolLockRegistry());
 
             // 全部重試失敗 → 拋 RuntimeException
             assertThatThrownBy(() -> service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25))

@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.service.BinanceUserDataStreamService;
+import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.*;
@@ -43,7 +44,8 @@ class BinanceUserDataStreamServiceTest {
         when(mockBuilder.build()).thenReturn(mockWsClient);
 
         service = new BinanceUserDataStreamService(
-                httpClient, binanceConfig, tradeRecordService, discordWebhookService);
+                httpClient, binanceConfig, tradeRecordService, discordWebhookService,
+                new SymbolLockRegistry());
     }
 
     // ==================== 事件處理 ====================
