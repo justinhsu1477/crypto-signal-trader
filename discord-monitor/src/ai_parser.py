@@ -1,6 +1,7 @@
 """AI Signal Parser — uses Gemini to parse Discord trading signals into structured JSON."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -242,44 +243,78 @@ class AiSignalParser:
     async def parse(self, content: str) -> dict | None:
         """Parse a Discord signal message into a structured trade request.
 
+        Retry strategy:
+          - 429 / RESOURCE_EXHAUSTED → retry with exponential backoff
+          - JSON decode error → no retry (AI returned garbage)
+          - Other exceptions → no retry (fallback to regex)
+
         Returns:
             dict matching TradeRequest schema, or None on failure.
         """
         if not self.client:
             return None
 
-        try:
-            response = await self.client.aio.models.generate_content(
-                model=self.config.model,
-                contents=content,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                    temperature=0.0,
-                ),
-            )
+        last_error = None
+        for attempt in range(self.config.max_retries):
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=self.config.model,
+                    contents=content,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        temperature=0.0,
+                    ),
+                )
 
-            text = response.text.strip()
-            parsed = json.loads(text)
+                text = response.text.strip()
+                parsed = json.loads(text)
 
-            if not self._validate(parsed):
-                logger.warning("AI parser: validation failed for: %s", text[:200])
+                if not self._validate(parsed):
+                    logger.warning("AI parser: validation failed for: %s", text[:200])
+                    return None
+
+                logger.info(
+                    "AI parsed: action=%s symbol=%s side=%s",
+                    parsed.get("action"),
+                    parsed.get("symbol"),
+                    parsed.get("side"),
+                )
+                return parsed
+
+            except json.JSONDecodeError as e:
+                # JSON 格式錯 → 不重試（AI 回垃圾，重試也一樣）
+                logger.warning("AI parser: invalid JSON response: %s", e)
                 return None
 
-            logger.info(
-                "AI parsed: action=%s symbol=%s side=%s",
-                parsed.get("action"),
-                parsed.get("symbol"),
-                parsed.get("side"),
-            )
-            return parsed
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
 
-        except json.JSONDecodeError as e:
-            logger.warning("AI parser: invalid JSON response: %s", e)
-            return None
-        except Exception as e:
-            logger.warning("AI parser: request failed: %s", e)
-            return None
+                if is_rate_limit and attempt < self.config.max_retries - 1:
+                    delay = self.config.retry_delays[
+                        min(attempt, len(self.config.retry_delays) - 1)
+                    ]
+                    logger.warning(
+                        "AI parser: rate limited (429), retry %d/%d after %ds",
+                        attempt + 1,
+                        self.config.max_retries,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                # 非 429 錯誤 or 最後一次重試 → 放棄
+                logger.warning("AI parser: request failed: %s", e)
+                return None
+
+        logger.error(
+            "AI parser: all %d retries exhausted: %s",
+            self.config.max_retries,
+            last_error,
+        )
+        return None
 
     def _validate(self, parsed: dict) -> bool:
         """Validate parsed result has required fields based on action type."""

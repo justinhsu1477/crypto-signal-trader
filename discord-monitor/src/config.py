@@ -38,6 +38,8 @@ class AiConfig:
     model: str = "gemini-2.0-flash"
     api_key_env: str = "GEMINI_API_KEY"
     timeout: int = 15
+    max_retries: int = 3
+    retry_delays: list[int] = field(default_factory=lambda: [2, 5, 10])
 
 
 @dataclass
@@ -102,6 +104,8 @@ def load_config(path: str) -> AppConfig:
             model=ai_raw.get("model", "gemini-2.0-flash"),
             api_key_env=ai_raw.get("api_key_env", "GEMINI_API_KEY"),
             timeout=ai_raw.get("timeout", 15),
+            max_retries=ai_raw.get("max_retries", 3),
+            retry_delays=ai_raw.get("retry_delays", [2, 5, 10]),
         ),
         logging=LoggingConfig(
             level=logging_raw.get("level", "INFO"),
