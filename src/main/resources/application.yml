@@ -43,7 +43,11 @@ stripe:
 
 jwt:
   secret: ${JWT_SECRET:default-dev-secret-change-in-production-must-be-at-least-256-bits-long}
-  expiration-ms: 86400000  # 24h
+  expiration-ms: 86400000         # 24h
+  refresh-expiration-ms: 604800000  # 7 days
+
+encryption:
+  aes-key: ${AES_ENCRYPTION_KEY:default-aes-key-change-prod32}
 
 logging:
   level:

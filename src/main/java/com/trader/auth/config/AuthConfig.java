@@ -15,10 +15,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 /**
  * Spring Security 設定
  *
- * 目前階段：全部放行（permitAll），不影響既有功能。
- * SaaS 實作時再收緊為：
- * - /api/auth/** → 公開
- * - /api/** → 需要 JWT 認證
+ * 路徑規則：
+ * - /api/auth/** → 公開（登入、註冊、刷新 token）
+ * - /api/user/**, /api/dashboard/**, /api/subscription/** → 需要 JWT
+ * - trading 端點 → 公開（Python monitor 不帶 JWT）
  */
 @Configuration
 @EnableWebSecurity
@@ -31,12 +31,33 @@ public class AuthConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.sameOrigin()))  // H2 console
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // TODO: SaaS 實作時改為：
-                        // .requestMatchers("/api/auth/**").permitAll()
-                        // .requestMatchers("/api/**").authenticated()
+                        // 公開：認證端點
+                        .requestMatchers("/api/auth/**").permitAll()
+                        // 公開：Stripe webhook（server-to-server）
+                        .requestMatchers("/api/subscription/webhook").permitAll()
+                        // 公開：trading 端點（Python monitor 使用，不帶 JWT）
+                        .requestMatchers(
+                                "/api/balance", "/api/positions",
+                                "/api/exchange-info", "/api/open-orders",
+                                "/api/execute-signal", "/api/execute-trade",
+                                "/api/parse-signal", "/api/heartbeat",
+                                "/api/monitor-status", "/api/stream-status",
+                                "/api/leverage", "/api/orders",
+                                "/api/trades/**", "/api/stats/**",
+                                "/api/admin/**"
+                        ).permitAll()
+                        // 公開：H2 console（dev 環境）
+                        .requestMatchers("/h2-console/**").permitAll()
+                        // 受保護：SaaS 端點需要 JWT
+                        .requestMatchers("/api/user/**").authenticated()
+                        .requestMatchers("/api/dashboard/**").authenticated()
+                        .requestMatchers("/api/subscription/**").authenticated()
+                        // 其他：開發階段放行
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(jwtAuthenticationFilter,

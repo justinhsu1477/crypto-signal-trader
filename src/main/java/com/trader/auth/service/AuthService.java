@@ -17,8 +17,6 @@ import java.util.UUID;
  * 認證服務
  *
  * 負責用戶註冊、登入、Token 刷新。
- *
- * TODO: 實作完整邏輯
  */
 @Slf4j
 @Service
@@ -37,9 +35,6 @@ public class AuthService {
      */
     @Transactional
     public User register(RegisterRequest request) {
-        // TODO: 檢查 email 是否已存在
-        // TODO: hash password
-        // TODO: 建立 User entity 並存入 DB
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new IllegalArgumentException("Email 已被註冊: " + request.getEmail());
         }
@@ -51,28 +46,75 @@ public class AuthService {
                 .name(request.getName())
                 .build();
 
+        log.info("用戶註冊成功: email={}", user.getEmail());
         return userRepository.save(user);
     }
 
     /**
      * 用戶登入
      *
+     * 錯誤訊息統一「帳號或密碼錯誤」，防止 email 列舉攻擊。
+     *
      * @param request 登入請求 (email, password)
-     * @return LoginResponse (含 JWT token)
+     * @return LoginResponse (含 JWT + refresh token)
      */
     public LoginResponse login(LoginRequest request) {
-        // TODO: 查詢用戶 → 驗證密碼 → 生成 JWT
-        throw new UnsupportedOperationException("login 尚未實作");
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new IllegalArgumentException("帳號或密碼錯誤"));
+
+        if (!user.isEnabled()) {
+            throw new IllegalArgumentException("帳號已停用");
+        }
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new IllegalArgumentException("帳號或密碼錯誤");
+        }
+
+        String token = jwtService.generateToken(user.getUserId());
+        String refreshToken = jwtService.generateRefreshToken(user.getUserId());
+
+        log.info("用戶登入成功: email={}", user.getEmail());
+
+        return LoginResponse.builder()
+                .token(token)
+                .refreshToken(refreshToken)
+                .expiresIn(jwtService.getExpirationMs() / 1000)
+                .userId(user.getUserId())
+                .email(user.getEmail())
+                .build();
     }
 
     /**
-     * 刷新 Token
+     * 刷新 Token（Token Rotation — 每次刷新發新的 refresh token）
      *
      * @param refreshToken 舊的 refresh token
-     * @return 新的 LoginResponse
+     * @return 新的 LoginResponse（含新 JWT + 新 refresh token）
      */
     public LoginResponse refreshToken(String refreshToken) {
-        // TODO: 驗證 refreshToken → 生成新 JWT
-        throw new UnsupportedOperationException("refreshToken 尚未實作");
+        if (!jwtService.validateToken(refreshToken)) {
+            throw new IllegalArgumentException("Refresh Token 無效或已過期");
+        }
+
+        String userId = jwtService.extractUserId(refreshToken);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("用戶不存在"));
+
+        if (!user.isEnabled()) {
+            throw new IllegalArgumentException("帳號已停用");
+        }
+
+        String newToken = jwtService.generateToken(userId);
+        String newRefreshToken = jwtService.generateRefreshToken(userId);
+
+        log.info("Token 刷新成功: userId={}", userId);
+
+        return LoginResponse.builder()
+                .token(newToken)
+                .refreshToken(newRefreshToken)
+                .expiresIn(jwtService.getExpirationMs() / 1000)
+                .userId(user.getUserId())
+                .email(user.getEmail())
+                .build();
     }
 }

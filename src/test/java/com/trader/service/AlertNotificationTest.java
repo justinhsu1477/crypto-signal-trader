@@ -1,9 +1,13 @@
 package com.trader.service;
 
-import com.trader.config.BinanceConfig;
-import com.trader.config.RiskConfig;
-import com.trader.model.OrderResult;
-import com.trader.model.TradeSignal;
+import com.trader.shared.config.BinanceConfig;
+import com.trader.shared.config.RiskConfig;
+import com.trader.shared.model.OrderResult;
+import com.trader.shared.model.TradeSignal;
+import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.SignalDeduplicationService;
+import com.trader.trading.service.TradeRecordService;
 import okhttp3.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

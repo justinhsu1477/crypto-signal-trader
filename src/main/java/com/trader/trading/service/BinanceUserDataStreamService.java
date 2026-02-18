@@ -271,7 +271,7 @@ public class BinanceUserDataStreamService {
      * - FILLED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 記錄平倉
      * - CANCELED / EXPIRED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 告警保護消失
      */
-    void handleOrderTradeUpdate(JsonObject event) {
+    public void handleOrderTradeUpdate(JsonObject event) {
         JsonObject order = event.getAsJsonObject("o");
         if (order == null) {
             log.warn("ORDER_TRADE_UPDATE missing 'o' field");

@@ -1,6 +1,7 @@
 package com.trader.service;
 
-import com.trader.entity.Trade;
+import com.trader.trading.entity.Trade;
+import com.trader.trading.service.TradeRecordService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,7 @@
 package com.trader.service;
 
-import com.trader.config.RiskConfig;
+import com.trader.shared.config.RiskConfig;
+import com.trader.trading.service.BinanceFuturesService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
