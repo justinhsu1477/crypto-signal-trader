@@ -10,6 +10,7 @@ import com.trader.shared.config.BinanceConfig;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
+import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.util.BinanceSignatureUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -553,8 +554,21 @@ public class BinanceFuturesService {
             double totalQty = Math.abs(currentPosition) + quantity;
             log.info("DCA SL/TP 重掛: 舊持倉={}, 新掛單={}, 總數量={}", Math.abs(currentPosition), quantity, totalQty);
 
-            // 掛新 SL（DCA 必帶 new_stop_loss）
-            slOrder = placeStopLoss(symbol, closeSide, signal.getNewStopLoss(), totalQty);
+            // 掛新 SL（DCA 優先用 new_stop_loss，null 時保留現有 SL）
+            if (signal.getNewStopLoss() != null) {
+                slOrder = placeStopLoss(symbol, closeSide, signal.getNewStopLoss(), totalQty);
+            } else {
+                // 止損不變 — 取消舊 SL 後用原本的 SL 價格重掛（數量更新為 totalQty）
+                Double existingSl = tradeRecordService.findOpenTrade(symbol)
+                        .map(Trade::getStopLoss).orElse(null);
+                if (existingSl != null) {
+                    slOrder = placeStopLoss(symbol, closeSide, existingSl, totalQty);
+                    log.info("DCA 止損不變，用現有 SL {} 重掛（數量更新為 {}）", existingSl, totalQty);
+                } else {
+                    log.warn("DCA 無法找到現有 SL，跳過 SL 掛單");
+                    slOrder = OrderResult.fail("DCA 無現有 SL 可用");
+                }
+            }
 
             // 掛新 TP（如果有）
             if (signal.getNewTakeProfit() != null && signal.getNewTakeProfit() > 0) {

@@ -240,9 +240,13 @@ public class TradeController {
                 if (request.getStopLoss() == null && !isDca) {
                     return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 必須包含 stop_loss"));
                 }
-                // DCA 必須帶 new_stop_loss（補倉後的新止損）
+                // DCA 止損容錯：AI 可能把止損放在 stop_loss 而非 new_stop_loss → 自動修正
                 if (isDca && request.getNewStopLoss() == null) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "DCA 補倉必須包含 new_stop_loss"));
+                    if (request.getStopLoss() != null) {
+                        request.setNewStopLoss(request.getStopLoss());
+                        log.info("DCA fallback: stop_loss {} 自動轉為 new_stop_loss", request.getStopLoss());
+                    }
+                    // 兩者都為 null 時（止損不變），讓 BinanceFuturesService 用現有 SL
                 }
 
                 TradeSignal.TradeSignalBuilder builder = TradeSignal.builder()
