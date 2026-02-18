@@ -1,5 +1,7 @@
 # === Secrets ===
 .env
+.env.dev
+.env.prod
 *.env.local
 discord-monitor/config.yml
 
