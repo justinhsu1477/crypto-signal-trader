@@ -1,5 +1,8 @@
 package com.trader.trading.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trader.shared.config.AppConstants;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.entity.TradeEvent;
 import com.trader.shared.model.OrderResult;
@@ -14,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.*;
 
 /**
@@ -33,10 +35,9 @@ import java.util.*;
 @RequiredArgsConstructor
 public class TradeRecordService {
 
-    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
-
     private final TradeRepository tradeRepository;
     private final TradeEventRepository tradeEventRepository;
+    private final ObjectMapper objectMapper;
 
     // ==================== 寫入操作 ====================
 
@@ -66,7 +67,7 @@ public class TradeRecordService {
                 .side(signal.getSide().name())
                 .entryPrice(entryOrder.getPrice())
                 .entryQuantity(entryOrder.getQuantity())
-                .entryTime(LocalDateTime.now(TAIPEI_ZONE))
+                .entryTime(LocalDateTime.now(AppConstants.ZONE_ID))
                 .entryOrderId(entryOrder.getOrderId())
                 .stopLoss(signal.getStopLoss())
                 .leverage(leverage)
@@ -182,7 +183,7 @@ public class TradeRecordService {
         // 更新平倉資訊
         trade.setExitPrice(closeOrder.getPrice());
         trade.setExitQuantity(closeOrder.getQuantity());
-        trade.setExitTime(LocalDateTime.now(TAIPEI_ZONE));
+        trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
         trade.setExitOrderId(closeOrder.getOrderId());
         trade.setExitReason(exitReason);
         trade.setStatus("CLOSED");
@@ -233,7 +234,7 @@ public class TradeRecordService {
         trade.setExitOrderId(closeOrder.getOrderId());
         trade.setExitReason(exitReason + "_PARTIAL");
         // ⚠️ 關鍵：維持 OPEN，不設 CLOSED
-        trade.setUpdatedAt(LocalDateTime.now(TAIPEI_ZONE));
+        trade.setUpdatedAt(LocalDateTime.now(AppConstants.ZONE_ID));
 
         tradeRepository.save(trade);
 
@@ -286,7 +287,7 @@ public class TradeRecordService {
                 .quantity(slOrder.getQuantity())
                 .success(slOrder.isSuccess())
                 .errorMessage(slOrder.isSuccess() ? null : slOrder.getErrorMessage())
-                .detail(String.format("{\"old_sl\":%.1f,\"new_sl\":%.1f}", oldSl, newSl))
+                .detail(toJson(Map.of("old_sl", oldSl, "new_sl", newSl)))
                 .build();
 
         tradeEventRepository.save(event);
@@ -318,7 +319,7 @@ public class TradeRecordService {
                 .tradeId(trade.getTradeId())
                 .eventType("CANCEL")
                 .success(true)
-                .detail("{\"reason\":\"掛單取消\"}")
+                .detail(toJson(Map.of("reason", "掛單取消")))
                 .build();
 
         tradeEventRepository.save(event);
@@ -400,7 +401,7 @@ public class TradeRecordService {
      * 用於每日虧損熔斷機制：當 |todayLoss| >= maxDailyLoss 時拒絕新交易
      */
     public double getTodayRealizedLoss() {
-        LocalDateTime startOfToday = LocalDateTime.now(TAIPEI_ZONE).toLocalDate().atStartOfDay();
+        LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
         List<Trade> closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
         return closedToday.stream()
                 .filter(t -> t.getNetProfit() != null && t.getNetProfit() < 0)
@@ -414,8 +415,8 @@ public class TradeRecordService {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getTodayStats() {
-        LocalDateTime startOfToday = LocalDateTime.now(TAIPEI_ZONE).toLocalDate().atStartOfDay();
-        LocalDateTime now = LocalDateTime.now(TAIPEI_ZONE);
+        LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
+        LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
         return getStatsForDateRange(startOfToday, now);
     }
 
@@ -535,7 +536,7 @@ public class TradeRecordService {
         trade.setExitPrice(exitPrice);
         trade.setExitQuantity(exitQuantity);
         trade.setExitTime(LocalDateTime.ofInstant(
-                Instant.ofEpochMilli(transactionTime), TAIPEI_ZONE));
+                Instant.ofEpochMilli(transactionTime), AppConstants.ZONE_ID));
         trade.setExitOrderId(orderId);
 
         // 手續費 = 入場手續費（已記錄） + 出場手續費（WebSocket 真實值）
@@ -603,9 +604,7 @@ public class TradeRecordService {
                 .price(exitPrice)
                 .quantity(exitQuantity)
                 .success(true)
-                .detail(String.format(
-                        "{\"exit_reason\":\"%s\",\"commission\":%.4f,\"realized_profit\":%.4f}",
-                        exitReason, commission, realizedProfit))
+                .detail(toJson(Map.of("exit_reason", exitReason, "commission", commission, "realized_profit", realizedProfit)))
                 .build();
         tradeEventRepository.save(event);
     }
@@ -634,7 +633,7 @@ public class TradeRecordService {
                 .binanceOrderId(orderId)
                 .orderType(orderType)
                 .success(false)
-                .detail(String.format("{\"reason\":\"%s\",\"order_type\":\"%s\"}", reason, orderType))
+                .detail(toJson(Map.of("reason", reason, "order_type", orderType)))
                 .build();
         tradeEventRepository.save(event);
 
@@ -716,7 +715,7 @@ public class TradeRecordService {
                     // 幣安無持倉 → 殭屍紀錄，標記為 CANCELLED
                     trade.setStatus("CANCELLED");
                     trade.setExitReason("STALE_CLEANUP");
-                    trade.setExitTime(LocalDateTime.now(TAIPEI_ZONE));
+                    trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
                     tradeRepository.save(trade);
                     cleaned++;
                     details.add(String.format("✓ %s %s %s @ %s → CANCELLED",
@@ -749,5 +748,17 @@ public class TradeRecordService {
      */
     private double round2(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    /**
+     * 安全地將 Map 轉為 JSON 字串（自動處理特殊字元）
+     */
+    private String toJson(Map<String, Object> map) {
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
+            log.warn("JSON 序列化失敗: {}", e.getMessage());
+            return "{}";
+        }
     }
 }
