@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,10 +42,8 @@ public class BinanceUserDataStreamService {
     private final BinanceConfig binanceConfig;
     private final TradeRecordService tradeRecordService;
     private final DiscordWebhookService discordWebhookService;
+    private final SymbolLockRegistry symbolLockRegistry;
     private final Gson gson = new Gson();
-
-    // Per-symbol locks（防止 WS 事件與信號平倉並發衝突）
-    private final ConcurrentHashMap<String, ReentrantLock> symbolLocks = new ConcurrentHashMap<>();
 
     // 連線狀態
     private volatile String listenKey;
@@ -65,11 +62,13 @@ public class BinanceUserDataStreamService {
     public BinanceUserDataStreamService(OkHttpClient httpClient,
                                          BinanceConfig binanceConfig,
                                          TradeRecordService tradeRecordService,
-                                         DiscordWebhookService discordWebhookService) {
+                                         DiscordWebhookService discordWebhookService,
+                                         SymbolLockRegistry symbolLockRegistry) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.tradeRecordService = tradeRecordService;
         this.discordWebhookService = discordWebhookService;
+        this.symbolLockRegistry = symbolLockRegistry;
 
         // WebSocket 專用 client：無 read timeout + 每 20 秒 ping
         this.wsClient = httpClient.newBuilder()
@@ -380,7 +379,7 @@ public class BinanceUserDataStreamService {
     private void processStreamClose(String symbol, double exitPrice, double exitQty,
                                      double commission, double realizedProfit,
                                      String orderId, String exitReason, long transactionTime) {
-        ReentrantLock lock = symbolLocks.computeIfAbsent(symbol, k -> new ReentrantLock());
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         lock.lock();
         try {
             tradeRecordService.recordCloseFromStream(

@@ -139,9 +139,11 @@ public class SignalDeduplicationService {
      * 使用核心交易參數: symbol + side + entryPriceLow + stopLoss
      */
     public String generateHash(TradeSignal signal) {
+        // DCA 時 side 可能為 null（由 BinanceFuturesService 從持倉推斷），用 "DCA" 代替
+        String sideStr = signal.getSide() != null ? signal.getSide().name() : "DCA";
         String raw = String.join("|",
                 signal.getSymbol(),
-                signal.getSide().name(),
+                sideStr,
                 String.valueOf(signal.getEntryPriceLow()),
                 String.valueOf(signal.getStopLoss())
         );
