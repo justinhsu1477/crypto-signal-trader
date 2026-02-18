@@ -24,5 +24,14 @@ services:
     env_file:
       - .env.dev
 
+  web-dashboard:
+    container_name: web-dashboard-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://trading-api:8080
+    env_file:
+      - .env.dev
+
 volumes:
   pg-data-dev:

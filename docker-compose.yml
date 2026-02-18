@@ -47,5 +47,19 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  web-dashboard:
+    build:
+      context: ./web-dashboard
+      dockerfile: Dockerfile
+    container_name: web-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://trading-api:8080
+    depends_on:
+      trading-api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pg-data:
