@@ -1,6 +1,8 @@
 package com.trader.subscription.controller;
 
+import com.trader.shared.dto.ErrorResponse;
 import com.trader.subscription.dto.CreateCheckoutRequest;
+import com.trader.subscription.dto.MessageResponse;
 import com.trader.subscription.dto.SubscriptionStatusResponse;
 import com.trader.subscription.service.SubscriptionService;
 import jakarta.validation.Valid;
@@ -22,37 +24,45 @@ public class SubscriptionController {
     /**
      * 查詢可用方案
      * GET /api/subscription/plans
+     *
+     * @return {@link MessageResponse}（TODO：改為 PlansResponse）
      */
     @GetMapping("/plans")
-    public ResponseEntity<?> getPlans() {
+    public ResponseEntity<MessageResponse> getPlans() {
         // TODO: 回傳方案列表（從設定檔或 DB 讀取）
-        return ResponseEntity.ok(Map.of("status", "TODO", "message", "plans 尚未實作"));
+        return ResponseEntity.ok(MessageResponse.builder()
+                .status("TODO")
+                .message("plans 尚未實作")
+                .build());
     }
 
     /**
      * 建立 Stripe Checkout Session（導向付款頁）
      * POST /api/subscription/checkout
-     * Body: { "planId": "pro" }
+     * Body: {@link CreateCheckoutRequest}
      *
-     * TODO: 從 SecurityContext 取得 userId
+     * @return {@link MessageResponse}（TODO：改為含 checkoutUrl 的 DTO）
      */
     @PostMapping("/checkout")
-    public ResponseEntity<?> createCheckout(@Valid @RequestBody CreateCheckoutRequest request) {
-        // TODO: String userId = 從 JWT 取得;
+    public ResponseEntity<MessageResponse> createCheckout(
+            @Valid @RequestBody CreateCheckoutRequest request) {
+        // TODO: String userId = SecurityUtil.getCurrentUserId();
         // String checkoutUrl = subscriptionService.createCheckoutSession(userId, request.getPlanId());
-        // return ResponseEntity.ok(Map.of("checkoutUrl", checkoutUrl));
-        return ResponseEntity.ok(Map.of("status", "TODO", "message", "checkout 尚未實作"));
+        return ResponseEntity.ok(MessageResponse.builder()
+                .status("TODO")
+                .message("checkout 尚未實作")
+                .build());
     }
 
     /**
      * 查詢當前訂閱狀態
      * GET /api/subscription/status
      *
-     * TODO: 從 SecurityContext 取得 userId
+     * @return {@link SubscriptionStatusResponse}
      */
     @GetMapping("/status")
     public ResponseEntity<SubscriptionStatusResponse> getStatus() {
-        // TODO: String userId = 從 JWT 取得;
+        // TODO: String userId = SecurityUtil.getCurrentUserId();
         // return ResponseEntity.ok(subscriptionService.getStatus(userId));
         return ResponseEntity.ok(SubscriptionStatusResponse.builder()
                 .status("TODO")
@@ -64,13 +74,16 @@ public class SubscriptionController {
      * 取消訂閱
      * POST /api/subscription/cancel
      *
-     * TODO: 從 SecurityContext 取得 userId
+     * @return {@link MessageResponse}
      */
     @PostMapping("/cancel")
-    public ResponseEntity<?> cancel() {
-        // TODO: String userId = 從 JWT 取得;
+    public ResponseEntity<MessageResponse> cancel() {
+        // TODO: String userId = SecurityUtil.getCurrentUserId();
         // subscriptionService.cancel(userId);
-        return ResponseEntity.ok(Map.of("status", "TODO", "message", "cancel 尚未實作"));
+        return ResponseEntity.ok(MessageResponse.builder()
+                .status("TODO")
+                .message("cancel 尚未實作")
+                .build());
     }
 
     /**
@@ -86,7 +99,11 @@ public class SubscriptionController {
             return ResponseEntity.ok(Map.of("received", true));
         } catch (Exception e) {
             log.error("Stripe Webhook 處理失敗: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder()
+                            .error("Webhook 處理失敗")
+                            .message(e.getMessage())
+                            .build());
         }
     }
 }
