@@ -29,6 +29,8 @@ ai:
   model: "gemini-2.0-flash"     # Gemini 模型
   api_key_env: "GEMINI_API_KEY" # 環境變數名稱
   timeout: 15                   # AI 回應逾時 (秒)
+  max_retries: 3                # Gemini 429 限流重試次數
+  retry_delays: [2, 5, 10]     # 每次重試等待秒數（指數退避）
 
 # Logging 設定
 logging:
