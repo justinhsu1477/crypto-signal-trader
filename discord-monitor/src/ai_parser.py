@@ -74,7 +74,7 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 ### DCA / 補倉判斷規則（仍然是 ENTRY，加上 is_dca=true）
 29. 出現「補倉」「加倉」「DCA」「增倉」「掛XX補倉」→ action=ENTRY, is_dca=true
 30. 補倉訊號的入場價用「掛 70000」「在 70000 補倉」中的價格作為 entry_price
-31. 如果補倉訊號同時提到止損修改（如「SL改到67000」「止損修改到67000」），用 new_stop_loss=67000
+31. 如果補倉訊號同時提到止損修改（如「SL改到67000」「止損修改到67000」「止損統一修改XX」），**必須用 new_stop_loss（不是 stop_loss）**。DCA 模式下 stop_loss 欄位留空
 32. 如果補倉訊號同時提到止盈修改（如「TP改到79000」「止盈改79000」），用 new_take_profit=79000
 33. 補倉不一定帶 stop_loss 欄位（用 new_stop_loss 代替），但仍需要 entry_price
 34. 補倉時 side 可以省略（系統會從現有持倉推斷），但如果訊號有明確說方向就帶上
@@ -196,6 +196,9 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 
 輸入: BTC 68000附近可以补一点仓位，止损不变
 輸出: {"action":"ENTRY","symbol":"BTCUSDT","entry_price":68000,"is_dca":true}
+
+輸入: BTC，70900附近，做空，做一个限价补仓，止损统一修改71700
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"SHORT","entry_price":70900,"is_dca":true,"new_stop_loss":71700}
 
 ### INFO 範例
 
