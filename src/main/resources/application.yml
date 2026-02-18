@@ -37,6 +37,10 @@ discord:
     url: ${DISCORD_WEBHOOK_URL:}                    # Discord Webhook URL
     enabled: ${DISCORD_WEBHOOK_ENABLED:false}       # 是否啟用通知
 
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder}
+
 jwt:
   secret: ${JWT_SECRET:default-dev-secret-change-in-production-must-be-at-least-256-bits-long}
   expiration-ms: 86400000  # 24h
