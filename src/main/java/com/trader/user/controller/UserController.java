@@ -1,15 +1,20 @@
 package com.trader.user.controller;
 
+import com.trader.shared.dto.ErrorResponse;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.user.dto.ApiKeyMetadata;
+import com.trader.user.dto.SaveApiKeyRequest;
+import com.trader.user.dto.SaveApiKeyResponse;
+import com.trader.user.dto.UserProfileResponse;
 import com.trader.user.entity.UserApiKey;
 import com.trader.user.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @RestController
@@ -23,65 +28,62 @@ public class UserController {
      * 取得當前登入用戶資訊
      * GET /api/user/me
      *
-     * 回傳用戶基本資訊（不含密碼）
+     * @return {@link UserProfileResponse}（不含密碼）
      */
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser() {
         String userId = SecurityUtil.getCurrentUserId();
         return userService.findById(userId)
-                .map(user -> ResponseEntity.ok(Map.of(
-                        "userId", user.getUserId(),
-                        "email", user.getEmail(),
-                        "name", user.getName() != null ? user.getName() : "",
-                        "role", user.getRole().name(),
-                        "createdAt", user.getCreatedAt().toString()
-                )))
+                .map(user -> ResponseEntity.ok(UserProfileResponse.builder()
+                        .userId(user.getUserId())
+                        .email(user.getEmail())
+                        .name(user.getName() != null ? user.getName() : "")
+                        .role(user.getRole().name())
+                        .createdAt(user.getCreatedAt().toString())
+                        .build()))
                 .orElse(ResponseEntity.notFound().build());
     }
 
     /**
      * 儲存交易所 API Key（AES 加密存儲）
      * PUT /api/user/api-keys
-     * Body: { "exchange": "BINANCE", "apiKey": "...", "secretKey": "..." }
+     * Body: {@link SaveApiKeyRequest}
+     *
+     * @return {@link SaveApiKeyResponse}
      */
     @PutMapping("/api-keys")
-    public ResponseEntity<?> saveApiKeys(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> saveApiKeys(@Valid @RequestBody SaveApiKeyRequest request) {
         String userId = SecurityUtil.getCurrentUserId();
-        String exchange = body.getOrDefault("exchange", "BINANCE");
-        String apiKey = body.get("apiKey");
-        String secretKey = body.get("secretKey");
 
-        if (apiKey == null || apiKey.isBlank() || secretKey == null || secretKey.isBlank()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "apiKey 和 secretKey 不可為空"));
-        }
+        UserApiKey saved = userService.saveApiKey(
+                userId, request.getExchange(),
+                request.getApiKey(), request.getSecretKey());
 
-        UserApiKey saved = userService.saveApiKey(userId, exchange, apiKey, secretKey);
-        return ResponseEntity.ok(Map.of(
-                "message", "API Key 儲存成功",
-                "exchange", saved.getExchange(),
-                "updatedAt", saved.getUpdatedAt().toString()
-        ));
+        return ResponseEntity.ok(SaveApiKeyResponse.builder()
+                .message("API Key 儲存成功")
+                .exchange(saved.getExchange())
+                .updatedAt(saved.getUpdatedAt().toString())
+                .build());
     }
 
     /**
      * 查詢用戶已綁定的交易所列表
      * GET /api/user/api-keys
      *
-     * 只回傳 metadata，絕不回傳真實 key
+     * @return {@link List}<{@link ApiKeyMetadata}>（只含 metadata，絕不回傳真實 key）
      */
     @GetMapping("/api-keys")
-    public ResponseEntity<?> getApiKeys() {
+    public ResponseEntity<List<ApiKeyMetadata>> getApiKeys() {
         String userId = SecurityUtil.getCurrentUserId();
         List<UserApiKey> keys = userService.getApiKeys(userId);
 
-        List<Map<String, Object>> result = keys.stream()
-                .map(k -> Map.<String, Object>of(
-                        "exchange", k.getExchange(),
-                        "hasApiKey", k.getEncryptedApiKey() != null
-                                && !k.getEncryptedApiKey().isBlank(),
-                        "updatedAt", k.getUpdatedAt().toString()
-                ))
+        List<ApiKeyMetadata> result = keys.stream()
+                .map(k -> ApiKeyMetadata.builder()
+                        .exchange(k.getExchange())
+                        .hasApiKey(k.getEncryptedApiKey() != null
+                                && !k.getEncryptedApiKey().isBlank())
+                        .updatedAt(k.getUpdatedAt().toString())
+                        .build())
                 .toList();
 
         return ResponseEntity.ok(result);
