@@ -105,4 +105,16 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      */
     @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :from AND t.exitTime < :to")
     List<Trade> findClosedTradesBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /**
+     * 查詢指定時間後已平倉的所有交易（用於績效統計）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :since ORDER BY t.exitTime ASC")
+    List<Trade> findClosedTradesAfterOrderByExitTime(@Param("since") LocalDateTime since);
+
+    /**
+     * 已平倉交易（倒序，用於交易歷史分頁）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' ORDER BY t.exitTime DESC")
+    List<Trade> findAllClosedTradesDesc();
 }
