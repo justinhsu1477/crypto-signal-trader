@@ -702,7 +702,7 @@ curl -X POST http://localhost:8080/api/execute-trade \
 - **Java 17** + **Spring Boot 3.2.5** — 交易引擎
 - **Spring Security** + **JJWT 0.12.6** — JWT 認證（骨架）
 - **Python 3** — Discord CDP 監聽 + Gemini AI 解析
-- **H2 Database** — 交易紀錄持久化（計畫遷移 PostgreSQL）
+- **PostgreSQL 16** — 交易紀錄持久化（Docker 容器化部署）
 - **OkHttp** — Binance API 通訊 + WebSocket 長連線
 - **Stripe**（計畫整合） — 訂閱計費
 - **Docker Compose** — 容器化部署（一鍵啟動）
@@ -716,9 +716,12 @@ curl -X POST http://localhost:8080/api/execute-trade \
 - 最多重試 2 次（間隔 1s → 3s）
 - 全部失敗 → Discord 紅色告警
 
-### 資料庫 (H2)
+### 資料庫 (PostgreSQL)
 
-資料存在 `./data/trading` 檔案中（H2 嵌入式資料庫，計畫遷移 PostgreSQL）。
+使用 PostgreSQL 16 (Docker 容器)，Hibernate `ddl-auto: update` 自動建表。
+
+- Dev DB：`localhost:5432`（可用 DBeaver 等工具連線查看）
+- Prod DB：`localhost:5433`
 
 #### 交易相關
 
@@ -807,6 +810,6 @@ curl -X POST http://localhost:8080/api/execute-trade \
 | P1 | auth + user 模組實作（JWT 認證完整流程） | 🔨 骨架完成 |
 | P1 | subscription 模組實作（Stripe 整合） | 🔨 骨架完成 |
 | P1 | dashboard 模組實作（前端 API） | 🔨 骨架完成 |
-| P2 | PostgreSQL 遷移（替換 H2） | 📋 計畫中 |
+| P2 | PostgreSQL 遷移（替換 H2） | ✅ 完成 |
 | P2 | signal 模組（訊號廣播給多用戶） | 📋 計畫中 |
 | P2 | per-user Binance WebSocket | 📋 計畫中 |
