@@ -3,8 +3,9 @@ package com.trader.user.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 @Data
 @Builder
@@ -15,8 +16,6 @@ import java.time.ZoneId;
         @Index(name = "idx_api_key_user_id", columnList = "userId")
 })
 public class UserApiKey {
-
-    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -42,12 +41,12 @@ public class UserApiKey {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now(TAIPEI_ZONE);
-        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
+        createdAt = LocalDateTime.now(AppConstants.ZONE_ID);
+        updatedAt = LocalDateTime.now(AppConstants.ZONE_ID);
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
+        updatedAt = LocalDateTime.now(AppConstants.ZONE_ID);
     }
 }

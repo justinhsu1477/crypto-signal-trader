@@ -1,5 +1,6 @@
 package com.trader.trading.service;
 
+import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.repository.TradeRepository;
@@ -10,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.HexFormat;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -84,7 +84,7 @@ public class SignalDeduplicationService {
 
         // ===== 第二層：DB 持久化檢查 =====
         // 查詢最近 DEDUP_WINDOW 內是否有相同 signalHash 的 OPEN 或 CLOSED 交易
-        LocalDateTime windowStart = LocalDateTime.now(ZoneId.of("Asia/Taipei")).minusSeconds(DEDUP_WINDOW_MS / 1000);
+        LocalDateTime windowStart = LocalDateTime.now(AppConstants.ZONE_ID).minusSeconds(DEDUP_WINDOW_MS / 1000);
         boolean existsInDb = tradeRepository.existsBySignalHashAndCreatedAtAfter(hash, windowStart);
 
         if (existsInDb) {

@@ -3,8 +3,9 @@ package com.trader.subscription.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 @Data
 @Builder
@@ -16,8 +17,6 @@ import java.time.ZoneId;
         @Index(name = "idx_sub_stripe_id", columnList = "stripeSubscriptionId")
 })
 public class Subscription {
-
-    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -57,12 +56,12 @@ public class Subscription {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now(TAIPEI_ZONE);
-        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
+        createdAt = LocalDateTime.now(AppConstants.ZONE_ID);
+        updatedAt = LocalDateTime.now(AppConstants.ZONE_ID);
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
+        updatedAt = LocalDateTime.now(AppConstants.ZONE_ID);
     }
 }

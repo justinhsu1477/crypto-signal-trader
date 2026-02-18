@@ -1,5 +1,6 @@
 package com.trader.trading.service;
 
+import com.trader.shared.config.AppConstants;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import lombok.extern.slf4j.Slf4j;
@@ -8,8 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +29,6 @@ import java.util.Map;
 @Service
 public class DailyReportService {
 
-    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final TradeRecordService tradeRecordService;
@@ -53,7 +51,7 @@ public class DailyReportService {
      * 在每日報告（08:00）前 5 分鐘執行，確保報告中的持倉數是乾淨的。
      * 比對 DB 中 OPEN 的 Trade 與幣安實際持倉，無持倉的標記為 CANCELLED。
      */
-    @Scheduled(cron = "0 55 7 * * *", zone = "Asia/Taipei")
+    @Scheduled(cron = "0 55 7 * * *", zone = "${app.timezone}")
     public void scheduledCleanup() {
         try {
             log.info("排程殭屍 Trade 清理開始...");
@@ -82,17 +80,17 @@ public class DailyReportService {
      * 每日 08:00 台灣時間自動發送「昨日」交易摘要
      *
      * cron = "0 0 8 * * *" → 每天 08:00:00
-     * zone = "Asia/Taipei" → 台灣時區
+     * zone = "${app.timezone}" → 台灣時區
      *
      * 時間範圍：昨天 00:00:00 ~ 今天 00:00:00（台灣時間）
      */
-    @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Taipei")
+    @Scheduled(cron = "0 0 8 * * *", zone = "${app.timezone}")
     public void sendDailyReport() {
         try {
             log.info("開始產生每日交易摘要...");
 
             // 1. 計算昨天的時間範圍
-            LocalDate today = LocalDate.now(TAIPEI_ZONE);
+            LocalDate today = LocalDate.now(AppConstants.ZONE_ID);
             LocalDate yesterday = today.minusDays(1);
             LocalDateTime startOfYesterday = yesterday.atStartOfDay();
             LocalDateTime startOfToday = today.atStartOfDay();

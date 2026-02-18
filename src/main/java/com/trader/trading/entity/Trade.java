@@ -6,8 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 /**
  * 交易主表 — 一筆「開倉→平倉」= 一筆紀錄
@@ -73,16 +74,14 @@ public class Trade {
 
     // 事件查詢請使用 TradeEventRepository.findByTradeIdOrderByTimestampAsc(tradeId)
 
-    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
-
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now(TAIPEI_ZONE);
-        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
+        createdAt = LocalDateTime.now(AppConstants.ZONE_ID);
+        updatedAt = LocalDateTime.now(AppConstants.ZONE_ID);
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now(TAIPEI_ZONE);
+        updatedAt = LocalDateTime.now(AppConstants.ZONE_ID);
     }
 }

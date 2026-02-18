@@ -1,12 +1,12 @@
 package com.trader.notification.service;
 
+import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.WebhookConfig;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -33,7 +33,6 @@ public class DiscordWebhookService {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final ZoneId TAIPEI_ZONE = ZoneId.of("Asia/Taipei");
 
     private final OkHttpClient httpClient;
     private final WebhookConfig webhookConfig;
@@ -60,7 +59,7 @@ public class DiscordWebhookService {
             return;
         }
 
-        String timestamp = ZonedDateTime.now(TAIPEI_ZONE).format(TIME_FMT);
+        String timestamp = ZonedDateTime.now(AppConstants.ZONE_ID).format(TIME_FMT);
 
         // 建構 Discord Embed JSON
         String json = buildEmbedJson(title, message, color, timestamp);
