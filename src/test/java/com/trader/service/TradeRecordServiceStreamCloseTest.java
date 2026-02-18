@@ -1,9 +1,10 @@
 package com.trader.service;
 
-import com.trader.entity.Trade;
-import com.trader.entity.TradeEvent;
-import com.trader.repository.TradeEventRepository;
-import com.trader.repository.TradeRepository;
+import com.trader.trading.entity.Trade;
+import com.trader.trading.entity.TradeEvent;
+import com.trader.trading.repository.TradeEventRepository;
+import com.trader.trading.repository.TradeRepository;
+import com.trader.trading.service.TradeRecordService;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 

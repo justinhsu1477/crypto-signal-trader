@@ -2,7 +2,10 @@ package com.trader.service;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import com.trader.config.BinanceConfig;
+import com.trader.shared.config.BinanceConfig;
+import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.service.BinanceUserDataStreamService;
+import com.trader.trading.service.TradeRecordService;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.*;
 import org.mockito.*;

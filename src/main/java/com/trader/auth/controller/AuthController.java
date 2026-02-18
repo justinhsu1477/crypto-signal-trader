@@ -8,6 +8,7 @@ import com.trader.user.entity.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,12 +45,17 @@ public class AuthController {
      * POST /api/auth/login
      * Body: { "email": "...", "password": "..." }
      *
-     * TODO: 實作完整登入邏輯
+     * 回傳: { token, refreshToken, expiresIn, userId, email }
      */
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
-        // TODO: 呼叫 authService.login(request)
-        return ResponseEntity.ok(Map.of("status", "TODO", "message", "login 尚未實作"));
+        try {
+            LoginResponse response = authService.login(request);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 
     /**
@@ -57,11 +63,21 @@ public class AuthController {
      * POST /api/auth/refresh
      * Body: { "refreshToken": "..." }
      *
-     * TODO: 實作 token 刷新
+     * 回傳: 新的 { token, refreshToken, expiresIn, userId, email }
      */
     @PostMapping("/refresh")
     public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> body) {
-        // TODO: 呼叫 authService.refreshToken(body.get("refreshToken"))
-        return ResponseEntity.ok(Map.of("status", "TODO", "message", "refreshToken 尚未實作"));
+        String refreshToken = body.get("refreshToken");
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "refreshToken 不可為空"));
+        }
+        try {
+            LoginResponse response = authService.refreshToken(refreshToken);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 }

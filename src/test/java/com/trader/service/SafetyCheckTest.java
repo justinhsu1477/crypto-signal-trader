@@ -1,11 +1,15 @@
 package com.trader.service;
 
-import com.trader.config.BinanceConfig;
-import com.trader.config.RiskConfig;
-import com.trader.entity.Trade;
-import com.trader.model.OrderResult;
-import com.trader.model.TradeSignal;
-import com.trader.repository.TradeRepository;
+import com.trader.shared.config.BinanceConfig;
+import com.trader.shared.config.RiskConfig;
+import com.trader.trading.entity.Trade;
+import com.trader.shared.model.OrderResult;
+import com.trader.shared.model.TradeSignal;
+import com.trader.trading.repository.TradeRepository;
+import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.SignalDeduplicationService;
+import com.trader.trading.service.TradeRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -64,7 +68,7 @@ class SafetyCheckTest {
             // httpClient=null → sendPublicGet → executeRequest 拋 NullPointerException
             // 這驗證了當 API 不可用時，getMarkPrice 不會靜默回傳 0
             BinanceFuturesService service = new BinanceFuturesService(
-                    null, new com.trader.config.BinanceConfig("https://fake.test", null, "", ""),
+                    null, new BinanceConfig("https://fake.test", null, "", ""),
                     riskConfig, null, null, null);
 
             assertThatThrownBy(() -> service.getMarkPrice("BTCUSDT"))
