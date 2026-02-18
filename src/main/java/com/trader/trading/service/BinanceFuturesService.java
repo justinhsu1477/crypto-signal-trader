@@ -723,7 +723,20 @@ public class BinanceFuturesService {
                 }
             }
             if (positionAmt == 0) {
-                return List.of(OrderResult.fail("無持倉可平"));
+                // 無持倉但可能有未成交的 LIMIT 入場掛單 → 全部取消
+                log.info("CLOSE 訊號但無持倉，取消 {} 所有掛單", symbol);
+                cancelAllOrders(symbol);
+                try {
+                    tradeRecordService.recordCancel(symbol);
+                } catch (Exception e) {
+                    log.warn("取消紀錄寫入失敗: {}", e.getMessage());
+                }
+                discordWebhookService.sendNotification(
+                        "🚫 CLOSE 但無持倉 — 已取消掛單",
+                        String.format("%s\n訊號要求平倉，但無實際持倉\n已取消所有未成交掛單（入場/SL/TP）",
+                                symbol),
+                        DiscordWebhookService.COLOR_YELLOW);
+                return List.of(OrderResult.fail("無持倉，已取消掛單"));
             }
         }
 
