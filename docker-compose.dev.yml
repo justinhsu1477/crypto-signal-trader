@@ -5,14 +5,19 @@
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 services:
+  postgres:
+    container_name: trading-db-dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data-dev:/var/lib/postgresql/data
+
   trading-api:
     container_name: trading-api-dev
     ports:
       - "8080:8080"
     env_file:
       - .env.dev
-    volumes:
-      - h2-data-dev:/app/data
 
   discord-monitor:
     container_name: discord-monitor-dev
@@ -20,4 +25,4 @@ services:
       - .env.dev
 
 volumes:
-  h2-data-dev:
+  pg-data-dev:

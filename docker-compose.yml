@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trading-db
+    environment:
+      POSTGRES_DB: trading
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: trading
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   trading-api:
     build:
       context: .
@@ -8,8 +24,9 @@ services:
       - "8080:8080"
     env_file:
       - .env
-    volumes:
-      - h2-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/balance"]
       interval: 10s
@@ -31,4 +48,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  h2-data:
+  pg-data:
