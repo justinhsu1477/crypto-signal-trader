@@ -92,8 +92,13 @@ com.trader/
 ### Step 1: 設定環境變數
 
 ```bash
-cp .env.example .env
-# 編輯 .env 填入必要設定
+# Dev 環境（Binance Testnet 假錢測試）
+cp .env.example .env.dev
+# 編輯 .env.dev 填入 Testnet API Keys
+
+# Prod 環境（Binance 正式真錢交易）
+cp .env.example .env.prod
+# 編輯 .env.prod 填入正式 API Keys + SPRING_PROFILES_ACTIVE=prod
 ```
 
 ### Step 2: 啟動 Discord（帶 CDP）
@@ -109,42 +114,60 @@ killall Discord 2>/dev/null
 curl http://127.0.0.1:9222/json
 ```
 
-### Step 3: 一鍵啟動（Docker Compose）
+### Step 3: 啟動服務（Docker Compose）
+
+系統支援 Dev / Prod 環境分離，可同時跑兩套互不干擾。
 
 ```bash
-docker compose up --build -d
+# Dev 環境（Testnet, port 8080）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+# Prod 環境（正式, port 8081）
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-這會同時啟動兩個服務：
-- **trading-api** — Java Spring Boot 交易引擎（port 8080）
-- **discord-monitor** — Python CDP 監聽 + AI 解析
+| 環境 | Port | Binance | Container 名稱 | DB Volume |
+|------|------|---------|----------------|-----------|
+| Dev | 8080 | Testnet（假錢） | `trading-api-dev` / `discord-monitor-dev` | `h2-data-dev` |
+| Prod | 8081 | 正式（真錢） | `trading-api-prod` / `discord-monitor-prod` | `h2-data-prod` |
 
 ### 常用 Docker 指令
 
-| 指令 | 說明 |
-|------|------|
-| `docker compose up --build -d` | 建置 + 背景啟動 |
-| `docker compose logs -f` | 查看所有服務 log |
-| `docker logs -f trading-api` | 只看 Java API log |
-| `docker logs -f discord-monitor` | 只看 Python monitor log |
-| `docker compose restart trading-api` | 重啟 Java API |
-| `docker compose restart discord-monitor` | 重啟 Python monitor |
-| `docker compose down` | 停止所有服務 |
-| `docker compose ps` | 查看服務狀態 |
+```bash
+# === Dev 環境 ===
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build   # 啟動
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f          # 查看 log
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down             # 停止
+
+# === Prod 環境 ===
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build   # 啟動
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f          # 查看 log
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down             # 停止
+
+# === 單一服務 log ===
+docker logs -f trading-api-dev       # Dev Java API log
+docker logs -f discord-monitor-dev   # Dev Python monitor log
+docker logs -f trading-api-prod      # Prod Java API log
+docker logs -f discord-monitor-prod  # Prod Python monitor log
+
+# === 查看狀態 ===
+docker ps                            # 所有運行中的 container
+```
 
 ### 健康檢查 / 驗證
 
 ```bash
-# 確認 Java API 正常
+# Dev 環境 (port 8080)
 curl http://localhost:8080/api/balance
-
-# 確認 Monitor 心跳正常
 curl http://localhost:8080/api/monitor-status
-
-# 確認 WebSocket 連線正常
 curl http://localhost:8080/api/stream-status
 
-# 測試解析訊號（不下單）
+# Prod 環境 (port 8081)
+curl http://localhost:8081/api/balance
+curl http://localhost:8081/api/monitor-status
+curl http://localhost:8081/api/stream-status
+
+# 測試解析訊號（不下單，Dev 環境）
 curl -X POST http://localhost:8080/api/parse-signal \
   -H "Content-Type: application/json" \
   -d '{"message": "📢 交易訊號發布: BTCUSDT\n做多 LONG 🟢 (限價單)\n入場價格 (Entry)\n95000\n止盈目標 (TP)\n98000\n止損價格 (SL)\n93000"}'
@@ -421,7 +444,9 @@ SL 下單失敗
 
 ## 設定說明
 
-### `.env` 環境變數
+### 環境變數（`.env.dev` / `.env.prod`）
+
+依環境建立對應的 `.env` 檔案，兩套互相隔離：
 
 ```env
 SPRING_PROFILES_ACTIVE=dev          # dev=Testnet假錢, prod=正式真錢

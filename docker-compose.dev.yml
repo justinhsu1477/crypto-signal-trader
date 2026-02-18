@@ -1,0 +1,23 @@
+# ========================================
+# Dev 環境 override — Binance Testnet, port 8080
+# ========================================
+# 使用方式:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+services:
+  trading-api:
+    container_name: trading-api-dev
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.dev
+    volumes:
+      - h2-data-dev:/app/data
+
+  discord-monitor:
+    container_name: discord-monitor-dev
+    env_file:
+      - .env.dev
+
+volumes:
+  h2-data-dev:
