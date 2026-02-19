@@ -3,6 +3,7 @@
 import { Wallet, TrendingUp, DollarSign, Activity } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatAmount, formatCurrency, pnlColor } from "@/lib/utils";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { DashboardOverview } from "@/types";
 
 interface KpiCardsProps {
@@ -10,29 +11,36 @@ interface KpiCardsProps {
 }
 
 export function KpiCards({ data }: KpiCardsProps) {
+  const { t } = useT();
   const { account } = data;
+
+  const todayPnlKey = "todayPnl";
 
   const cards = [
     {
-      title: "Available Balance",
+      key: "availableBalance",
+      title: t("dashboard.availableBalance"),
       value: `${formatAmount(account.availableBalance)} USDT`,
       icon: Wallet,
       color: "text-blue-500",
     },
     {
-      title: "Open Positions",
+      key: "openPositions",
+      title: t("dashboard.openPositions"),
       value: account.openPositionCount.toString(),
       icon: Activity,
       color: "text-violet-500",
     },
     {
-      title: "Today P&L",
+      key: todayPnlKey,
+      title: t("dashboard.todayPnl"),
       value: `${formatCurrency(account.todayPnl)} USDT`,
       icon: DollarSign,
       color: pnlColor(account.todayPnl),
     },
     {
-      title: "Today Trades",
+      key: "todayTrades",
+      title: t("dashboard.todayTrades"),
       value: account.todayTradeCount.toString(),
       icon: TrendingUp,
       color: "text-amber-500",
@@ -44,7 +52,7 @@ export function KpiCards({ data }: KpiCardsProps) {
       {cards.map((card) => {
         const Icon = card.icon;
         return (
-          <Card key={card.title}>
+          <Card key={card.key}>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 {card.title}
@@ -52,7 +60,7 @@ export function KpiCards({ data }: KpiCardsProps) {
               <Icon className={`h-4 w-4 ${card.color}`} />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${card.title === "Today P&L" ? card.color : ""}`}>
+              <div className={`text-2xl font-bold ${card.key === todayPnlKey ? card.color : ""}`}>
                 {card.value}
               </div>
             </CardContent>

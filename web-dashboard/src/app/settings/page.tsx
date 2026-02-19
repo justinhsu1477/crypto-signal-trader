@@ -10,8 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { useT } from "@/lib/i18n/i18n-context";
 
 export default function SettingsPage() {
+  const { t } = useT();
+
   // Profile state
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -40,7 +43,7 @@ export default function SettingsPage() {
         const data = await getUserProfile();
         if (!cancelled) setProfile(data);
       } catch (err) {
-        if (!cancelled) setProfileError(err instanceof Error ? err.message : "載入失敗");
+        if (!cancelled) setProfileError(err instanceof Error ? err.message : t("common.loadFailed"));
       } finally {
         if (!cancelled) setProfileLoading(false);
       }
@@ -61,7 +64,7 @@ export default function SettingsPage() {
         const data = await getApiKeys();
         if (!cancelled) setApiKeys(data);
       } catch (err) {
-        if (!cancelled) setKeysError(err instanceof Error ? err.message : "載入失敗");
+        if (!cancelled) setKeysError(err instanceof Error ? err.message : t("common.loadFailed"));
       } finally {
         if (!cancelled) setKeysLoading(false);
       }
@@ -73,7 +76,7 @@ export default function SettingsPage() {
 
   async function handleSaveApiKey() {
     if (!apiKeyInput.trim() || !secretKeyInput.trim()) {
-      setSaveMessage({ type: "error", text: "請填寫 API Key 和 Secret Key" });
+      setSaveMessage({ type: "error", text: t("settings.fillRequired") });
       return;
     }
 
@@ -85,7 +88,7 @@ export default function SettingsPage() {
         apiKey: apiKeyInput.trim(),
         secretKey: secretKeyInput.trim(),
       });
-      setSaveMessage({ type: "success", text: result.message || "儲存成功" });
+      setSaveMessage({ type: "success", text: result.message || t("common.saveSuccess") });
       setApiKeyInput("");
       setSecretKeyInput("");
 
@@ -95,7 +98,7 @@ export default function SettingsPage() {
     } catch (err) {
       setSaveMessage({
         type: "error",
-        text: err instanceof Error ? err.message : "儲存失敗",
+        text: err instanceof Error ? err.message : t("common.saveFailed"),
       });
     } finally {
       setSaving(false);
@@ -104,12 +107,12 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">設定</h1>
+      <h1 className="text-2xl font-bold">{t("settings.title")}</h1>
 
       {/* Section 1: User Profile */}
       <Card>
         <CardHeader>
-          <CardTitle>個人資料</CardTitle>
+          <CardTitle>{t("settings.profile")}</CardTitle>
         </CardHeader>
         <CardContent>
           {profileLoading && (
@@ -133,17 +136,17 @@ export default function SettingsPage() {
                 <p className="text-sm">{profile.email}</p>
               </div>
               <div>
-                <Label className="text-muted-foreground text-xs">名稱</Label>
+                <Label className="text-muted-foreground text-xs">{t("settings.name")}</Label>
                 <p className="text-sm">{profile.name}</p>
               </div>
               <div>
-                <Label className="text-muted-foreground text-xs">角色</Label>
+                <Label className="text-muted-foreground text-xs">{t("settings.role")}</Label>
                 <p className="text-sm">
                   <Badge variant="outline">{profile.role}</Badge>
                 </p>
               </div>
               <div>
-                <Label className="text-muted-foreground text-xs">建立時間</Label>
+                <Label className="text-muted-foreground text-xs">{t("settings.createdAt")}</Label>
                 <p className="text-sm">{formatDateTime(profile.createdAt)}</p>
               </div>
             </div>
@@ -154,7 +157,7 @@ export default function SettingsPage() {
       {/* Section 2: API Key Management */}
       <Card>
         <CardHeader>
-          <CardTitle>API Key 管理</CardTitle>
+          <CardTitle>{t("settings.apiKeyManagement")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Current keys */}
@@ -172,7 +175,7 @@ export default function SettingsPage() {
             <>
               {apiKeys.length > 0 ? (
                 <div className="space-y-3">
-                  <Label className="text-muted-foreground text-xs">已設定的交易所</Label>
+                  <Label className="text-muted-foreground text-xs">{t("settings.configuredExchanges")}</Label>
                   <div className="space-y-2">
                     {apiKeys.map((key) => (
                       <div
@@ -183,15 +186,15 @@ export default function SettingsPage() {
                           <span className="font-medium text-sm">{key.exchange}</span>
                           {key.hasApiKey ? (
                             <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/25">
-                              已設定
+                              {t("settings.configured")}
                             </Badge>
                           ) : (
-                            <Badge variant="secondary">未設定</Badge>
+                            <Badge variant="secondary">{t("settings.notConfigured")}</Badge>
                           )}
                         </div>
                         {key.updatedAt && (
                           <span className="text-xs text-muted-foreground">
-                            更新於 {formatDateTime(key.updatedAt)}
+                            {t("settings.updatedAt", { time: formatDateTime(key.updatedAt) })}
                           </span>
                         )}
                       </div>
@@ -199,7 +202,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">尚未設定任何 API Key</p>
+                <p className="text-sm text-muted-foreground">{t("settings.noApiKeys")}</p>
               )}
             </>
           )}
@@ -208,7 +211,7 @@ export default function SettingsPage() {
 
           {/* Add / Update form */}
           <div className="space-y-4">
-            <Label className="text-sm font-medium">新增 / 更新 API Key</Label>
+            <Label className="text-sm font-medium">{t("settings.addUpdateApiKey")}</Label>
 
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
@@ -232,7 +235,7 @@ export default function SettingsPage() {
                   type="password"
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="輸入 API Key"
+                  placeholder={t("settings.apiKeyPlaceholder")}
                 />
               </div>
 
@@ -245,7 +248,7 @@ export default function SettingsPage() {
                   type="password"
                   value={secretKeyInput}
                   onChange={(e) => setSecretKeyInput(e.target.value)}
-                  placeholder="輸入 Secret Key"
+                  placeholder={t("settings.secretKeyPlaceholder")}
                 />
               </div>
             </div>
@@ -261,7 +264,7 @@ export default function SettingsPage() {
             )}
 
             <Button onClick={handleSaveApiKey} disabled={saving}>
-              {saving ? "儲存中..." : "儲存 API Key"}
+              {saving ? t("common.saving") : t("settings.saveApiKey")}
             </Button>
           </div>
         </CardContent>

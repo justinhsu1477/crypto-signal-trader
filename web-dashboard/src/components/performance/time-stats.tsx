@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatPercent, pnlColor } from "@/lib/utils";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { WeeklyStats, MonthlyStats } from "@/types";
 
 interface TimeStatsProps {
@@ -19,26 +20,28 @@ interface TimeStatsProps {
 }
 
 export function TimeStats({ weeklyStats, monthlyStats }: TimeStatsProps) {
+  const { t } = useT();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>時間統計</CardTitle>
+        <CardTitle>{t("performance.timeStats")}</CardTitle>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="weekly">
           <TabsList>
-            <TabsTrigger value="weekly">週統計</TabsTrigger>
-            <TabsTrigger value="monthly">月統計</TabsTrigger>
+            <TabsTrigger value="weekly">{t("performance.weeklyStats")}</TabsTrigger>
+            <TabsTrigger value="monthly">{t("performance.monthlyStats")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="weekly">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>期間</TableHead>
-                  <TableHead className="text-right">交易數</TableHead>
-                  <TableHead className="text-right">勝率</TableHead>
-                  <TableHead className="text-right">淨利潤</TableHead>
+                  <TableHead>{t("performance.period")}</TableHead>
+                  <TableHead className="text-right">{t("performance.tradeCount")}</TableHead>
+                  <TableHead className="text-right">{t("performance.winRate")}</TableHead>
+                  <TableHead className="text-right">{t("performance.netProfit")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -59,7 +62,7 @@ export function TimeStats({ weeklyStats, monthlyStats }: TimeStatsProps) {
                 {weeklyStats.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      無資料
+                      {t("common.noData")}
                     </TableCell>
                   </TableRow>
                 )}
@@ -71,10 +74,10 @@ export function TimeStats({ weeklyStats, monthlyStats }: TimeStatsProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>月份</TableHead>
-                  <TableHead className="text-right">交易數</TableHead>
-                  <TableHead className="text-right">勝率</TableHead>
-                  <TableHead className="text-right">淨利潤</TableHead>
+                  <TableHead>{t("performance.month")}</TableHead>
+                  <TableHead className="text-right">{t("performance.tradeCount")}</TableHead>
+                  <TableHead className="text-right">{t("performance.winRate")}</TableHead>
+                  <TableHead className="text-right">{t("performance.netProfit")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -93,7 +96,7 @@ export function TimeStats({ weeklyStats, monthlyStats }: TimeStatsProps) {
                 {monthlyStats.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      無資料
+                      {t("common.noData")}
                     </TableCell>
                   </TableRow>
                 )}

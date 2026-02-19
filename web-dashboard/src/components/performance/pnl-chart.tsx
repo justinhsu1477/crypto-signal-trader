@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { PnlDataPoint } from "@/types";
 
 interface PnlChartProps {
@@ -21,18 +22,20 @@ function CustomTooltip({
   active,
   payload,
   label,
+  t,
 }: {
   active?: boolean;
   payload?: Array<{ value: number; dataKey: string }>;
   label?: string;
+  t: (key: string) => string;
 }) {
   if (!active || !payload?.length) return null;
 
   const map: Record<string, string> = {
-    cumulativePnl: "累計盈虧",
-    dailyPnl: "當日盈虧",
-    drawdown: "回撤",
-    drawdownPercent: "回撤 %",
+    cumulativePnl: t("performance.cumulativePnl"),
+    dailyPnl: t("performance.dailyPnl"),
+    drawdown: t("performance.drawdown"),
+    drawdownPercent: t("performance.drawdownPercent"),
   };
 
   return (
@@ -55,10 +58,12 @@ function CustomTooltip({
 }
 
 export function PnlChart({ data }: PnlChartProps) {
+  const { t } = useT();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>盈虧曲線</CardTitle>
+        <CardTitle>{t("performance.pnlCurve")}</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={350}>
@@ -74,7 +79,7 @@ export function PnlChart({ data }: PnlChartProps) {
               className="text-muted-foreground"
               tickFormatter={(v: number) => `${v}`}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip t={t} />} />
             <Area
               type="monotone"
               dataKey="cumulativePnl"
@@ -82,7 +87,7 @@ export function PnlChart({ data }: PnlChartProps) {
               fillOpacity={0.15}
               stroke="#10b981"
               strokeWidth={2}
-              name="累計盈虧"
+              name={t("performance.cumulativePnl")}
             />
             <Area
               type="monotone"
@@ -91,11 +96,11 @@ export function PnlChart({ data }: PnlChartProps) {
               fillOpacity={0.1}
               stroke="#ef4444"
               strokeWidth={1}
-              name="回撤"
+              name={t("performance.drawdown")}
             />
             <Bar
               dataKey="dailyPnl"
-              name="當日盈虧"
+              name={t("performance.dailyPnl")}
               maxBarSize={8}
               fill="#10b981"
             />

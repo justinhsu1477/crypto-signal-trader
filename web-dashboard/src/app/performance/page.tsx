@@ -11,20 +11,22 @@ import { SignalRanking } from "@/components/performance/signal-ranking";
 import { TimeStats } from "@/components/performance/time-stats";
 import { DayOfWeekChart } from "@/components/performance/day-of-week-chart";
 import { DcaAnalysis } from "@/components/performance/dca-analysis";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { PerformanceStats } from "@/types";
 
-const PERIOD_OPTIONS = [
-  { label: "7d", days: 7 },
-  { label: "30d", days: 30 },
-  { label: "90d", days: 90 },
-  { label: "全部", days: 3650 },
-];
-
 export default function PerformancePage() {
+  const { t } = useT();
   const [days, setDays] = useState(30);
   const [data, setData] = useState<PerformanceStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const PERIOD_OPTIONS = [
+    { label: "7d", days: 7 },
+    { label: "30d", days: 30 },
+    { label: "90d", days: 90 },
+    { label: t("performance.all"), days: 3650 },
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +41,7 @@ export default function PerformancePage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "載入失敗");
+          setError(err instanceof Error ? err.message : t("common.loadFailed"));
         }
       } finally {
         if (!cancelled) {
@@ -57,7 +59,7 @@ export default function PerformancePage() {
   if (loading) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
-        <p className="text-muted-foreground">載入中...</p>
+        <p className="text-muted-foreground">{t("common.loading")}</p>
       </div>
     );
   }
@@ -65,7 +67,7 @@ export default function PerformancePage() {
   if (error || !data) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
-        <p className="text-red-500">{error ?? "無法載入資料"}</p>
+        <p className="text-red-500">{error ?? t("common.cannotLoad")}</p>
       </div>
     );
   }
@@ -74,7 +76,7 @@ export default function PerformancePage() {
     <div className="space-y-6 p-6">
       {/* Header with period tabs */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">績效分析</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("performance.title")}</h1>
         <div className="flex gap-1 rounded-lg bg-muted p-1">
           {PERIOD_OPTIONS.map((option) => (
             <button

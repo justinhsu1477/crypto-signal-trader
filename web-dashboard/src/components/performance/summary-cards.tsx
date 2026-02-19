@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatPercent, pnlColor } from "@/lib/utils";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { PerformanceSummary } from "@/types";
 
 interface SummaryCardsProps {
@@ -9,53 +10,55 @@ interface SummaryCardsProps {
 }
 
 export function SummaryCards({ summary }: SummaryCardsProps) {
+  const { t } = useT();
+
   const mainCards = [
     {
-      title: "勝率",
+      title: t("performance.winRate"),
       value: formatPercent(summary.winRate),
       subtitle: `${summary.winningTrades}W / ${summary.totalTrades}T`,
       color: summary.winRate >= 50 ? "text-emerald-500" : "text-red-500",
     },
     {
-      title: "盈虧比 (Profit Factor)",
+      title: t("performance.profitFactor"),
       value: summary.profitFactor.toFixed(2),
-      subtitle: "盈利 / 虧損",
+      subtitle: t("performance.profitOverLoss"),
       color: summary.profitFactor >= 1 ? "text-emerald-500" : "text-red-500",
     },
     {
-      title: "淨利潤",
+      title: t("performance.netProfit"),
       value: `${formatCurrency(summary.totalNetProfit)} USDT`,
-      subtitle: `佣金 ${summary.totalCommission.toFixed(2)} USDT`,
+      subtitle: t("performance.commission", { amount: summary.totalCommission.toFixed(2) }),
       color: pnlColor(summary.totalNetProfit),
     },
     {
-      title: "期望值",
+      title: t("performance.expectancy"),
       value: `${formatCurrency(summary.expectancy)} USDT`,
-      subtitle: "每筆交易預期收益",
+      subtitle: t("performance.expectancySubtitle"),
       color: pnlColor(summary.expectancy),
     },
     {
-      title: "最大回撤",
+      title: t("performance.maxDrawdown"),
       value: `${summary.maxDrawdown.toFixed(2)} USDT`,
-      subtitle: `${summary.maxDrawdownPercent.toFixed(2)}% / ${summary.maxDrawdownDays} 天`,
+      subtitle: t("performance.maxDrawdownSubtitle", { percent: summary.maxDrawdownPercent.toFixed(2), days: summary.maxDrawdownDays }),
       color: summary.maxDrawdown < 0 ? "text-red-500" : "text-muted-foreground",
     },
     {
-      title: "風險報酬比",
+      title: t("performance.riskRewardRatio"),
       value: summary.riskRewardRatio.toFixed(2),
-      subtitle: "平均盈利 / 平均虧損",
+      subtitle: t("performance.riskRewardSubtitle"),
       color: summary.riskRewardRatio >= 1 ? "text-emerald-500" : "text-red-500",
     },
   ];
 
   const extraStats = [
-    { label: "連續獲利", value: `${summary.maxConsecutiveWins} 次` },
-    { label: "連續虧損", value: `${summary.maxConsecutiveLosses} 次` },
-    { label: "平均持倉時間", value: `${summary.avgHoldingHours.toFixed(1)} 小時` },
-    { label: "平均獲利", value: `${formatCurrency(summary.avgWin)} USDT` },
-    { label: "平均虧損", value: `${formatCurrency(summary.avgLoss)} USDT` },
-    { label: "最大單筆獲利", value: `${formatCurrency(summary.maxWin)} USDT` },
-    { label: "最大單筆虧損", value: `${formatCurrency(summary.maxLoss)} USDT` },
+    { label: t("performance.consecutiveWins"), value: t("performance.times", { n: summary.maxConsecutiveWins }) },
+    { label: t("performance.consecutiveLosses"), value: t("performance.times", { n: summary.maxConsecutiveLosses }) },
+    { label: t("performance.avgHoldingTime"), value: t("performance.hours", { n: summary.avgHoldingHours.toFixed(1) }) },
+    { label: t("performance.avgWin"), value: `${formatCurrency(summary.avgWin)} USDT` },
+    { label: t("performance.avgLoss"), value: `${formatCurrency(summary.avgLoss)} USDT` },
+    { label: t("performance.maxWin"), value: `${formatCurrency(summary.maxWin)} USDT` },
+    { label: t("performance.maxLoss"), value: `${formatCurrency(summary.maxLoss)} USDT` },
   ];
 
   return (

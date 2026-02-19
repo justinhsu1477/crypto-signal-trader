@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatPercent, pnlColor } from "@/lib/utils";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { SymbolStats as SymbolStatsType } from "@/types";
 
 interface SymbolStatsProps {
@@ -17,21 +18,23 @@ interface SymbolStatsProps {
 }
 
 export function SymbolStats({ data }: SymbolStatsProps) {
+  const { t } = useT();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>幣種績效</CardTitle>
+        <CardTitle>{t("performance.symbolPerformance")}</CardTitle>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>幣種</TableHead>
-              <TableHead className="text-right">交易數</TableHead>
-              <TableHead className="text-right">勝場</TableHead>
-              <TableHead className="text-right">勝率</TableHead>
-              <TableHead className="text-right">淨利潤</TableHead>
-              <TableHead className="text-right">平均利潤</TableHead>
+              <TableHead>{t("performance.symbol")}</TableHead>
+              <TableHead className="text-right">{t("performance.tradeCount")}</TableHead>
+              <TableHead className="text-right">{t("performance.wins")}</TableHead>
+              <TableHead className="text-right">{t("performance.winRate")}</TableHead>
+              <TableHead className="text-right">{t("performance.netProfit")}</TableHead>
+              <TableHead className="text-right">{t("performance.avgProfit")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -54,7 +57,7 @@ export function SymbolStats({ data }: SymbolStatsProps) {
             {data.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  無資料
+                  {t("common.noData")}
                 </TableCell>
               </TableRow>
             )}

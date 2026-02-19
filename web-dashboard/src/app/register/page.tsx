@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ import { Loader2 } from "lucide-react";
 export default function RegisterPage() {
   const router = useRouter();
   const { register } = useAuth();
+  const { t } = useT();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -31,7 +33,7 @@ export default function RegisterPage() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError("註冊失敗，請稍後再試");
+        setError(t("register.registerFailed"));
       }
     } finally {
       setIsLoading(false);
@@ -41,9 +43,9 @@ export default function RegisterPage() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-8 shadow-2xl shadow-black/20">
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold">建立帳號</h2>
+        <h2 className="text-2xl font-bold">{t("register.createAccount")}</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          免費註冊，立即開始智能交易
+          {t("register.subtitle")}
         </p>
       </div>
 
@@ -56,12 +58,12 @@ export default function RegisterPage() {
 
         <div className="space-y-2">
           <Label htmlFor="name" className="text-sm text-muted-foreground">
-            名稱
+            {t("register.name")}
           </Label>
           <Input
             id="name"
             type="text"
-            placeholder="您的名稱"
+            placeholder={t("register.namePlaceholder")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -72,7 +74,7 @@ export default function RegisterPage() {
 
         <div className="space-y-2">
           <Label htmlFor="email" className="text-sm text-muted-foreground">
-            電子郵件
+            {t("login.email")}
           </Label>
           <Input
             id="email"
@@ -88,7 +90,7 @@ export default function RegisterPage() {
 
         <div className="space-y-2">
           <Label htmlFor="password" className="text-sm text-muted-foreground">
-            密碼
+            {t("login.password")}
           </Label>
           <Input
             id="password"
@@ -110,20 +112,20 @@ export default function RegisterPage() {
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              註冊中...
+              {t("register.registering")}
             </>
           ) : (
-            "免費註冊"
+            t("register.registerButton")
           )}
         </Button>
 
         <p className="text-center text-sm text-muted-foreground pt-2">
-          已經有帳號？{" "}
+          {t("register.hasAccount")}
           <Link
             href="/login"
             className="font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
           >
-            返回登入
+            {t("register.backToLogin")}
           </Link>
         </p>
       </form>

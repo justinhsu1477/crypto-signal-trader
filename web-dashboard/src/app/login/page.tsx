@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ import { Loader2 } from "lucide-react";
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
+  const { t } = useT();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,7 +32,7 @@ export default function LoginPage() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError("登入失敗，請稍後再試");
+        setError(t("login.loginFailed"));
       }
     } finally {
       setIsLoading(false);
@@ -40,9 +42,9 @@ export default function LoginPage() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-8 shadow-2xl shadow-black/20">
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold">歡迎回來</h2>
+        <h2 className="text-2xl font-bold">{t("login.welcomeBack")}</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          登入以繼續使用交易系統
+          {t("login.subtitle")}
         </p>
       </div>
 
@@ -55,7 +57,7 @@ export default function LoginPage() {
 
         <div className="space-y-2">
           <Label htmlFor="email" className="text-sm text-muted-foreground">
-            電子郵件
+            {t("login.email")}
           </Label>
           <Input
             id="email"
@@ -71,7 +73,7 @@ export default function LoginPage() {
 
         <div className="space-y-2">
           <Label htmlFor="password" className="text-sm text-muted-foreground">
-            密碼
+            {t("login.password")}
           </Label>
           <Input
             id="password"
@@ -93,20 +95,20 @@ export default function LoginPage() {
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              登入中...
+              {t("login.loggingIn")}
             </>
           ) : (
-            "登入"
+            t("login.loginButton")
           )}
         </Button>
 
         <p className="text-center text-sm text-muted-foreground pt-2">
-          還沒有帳號？{" "}
+          {t("login.noAccount")}
           <Link
             href="/register"
             className="font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
           >
-            立即註冊
+            {t("login.registerNow")}
           </Link>
         </p>
       </form>

@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useT } from "@/lib/i18n/i18n-context";
 
 interface TradeTableProps {
   trades: TradeRecord[];
@@ -59,12 +60,13 @@ export function TradeTable({
   onPageChange,
   onSelect,
 }: TradeTableProps) {
+  const { t } = useT();
   const { page, totalPages, totalElements } = pagination;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>交易紀錄</CardTitle>
+        <CardTitle>{t("trades.title")}</CardTitle>
       </CardHeader>
       <CardContent>
         <Table>
@@ -88,7 +90,7 @@ export function TradeTable({
             {trades.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
-                  沒有交易紀錄
+                  {t("trades.noTrades")}
                 </TableCell>
               </TableRow>
             ) : (
@@ -101,19 +103,19 @@ export function TradeTable({
                   <TableCell className="font-medium">{trade.symbol}</TableCell>
                   <TableCell>{sideBadge(trade.side)}</TableCell>
                   <TableCell className="text-right">
-                    {trade.entryPrice?.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "—"}
+                    {trade.entryPrice?.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "\u2014"}
                   </TableCell>
                   <TableCell className="text-right">
-                    {trade.exitPrice?.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "—"}
+                    {trade.exitPrice?.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "\u2014"}
                   </TableCell>
                   <TableCell className="text-right">
-                    {trade.entryQuantity?.toLocaleString("en-US") ?? "—"}
+                    {trade.entryQuantity?.toLocaleString("en-US") ?? "\u2014"}
                   </TableCell>
                   <TableCell className={`text-right font-medium ${pnlColor(trade.netProfit)}`}>
                     {formatCurrency(trade.netProfit)}
                   </TableCell>
-                  <TableCell>{trade.exitReason ?? "—"}</TableCell>
-                  <TableCell>{trade.signalSource ?? "—"}</TableCell>
+                  <TableCell>{trade.exitReason ?? "\u2014"}</TableCell>
+                  <TableCell>{trade.signalSource ?? "\u2014"}</TableCell>
                   <TableCell className="text-center">{trade.dcaCount ?? 0}</TableCell>
                   <TableCell>{formatDateTime(trade.entryTime)}</TableCell>
                   <TableCell>{formatDateTime(trade.exitTime)}</TableCell>
@@ -127,7 +129,7 @@ export function TradeTable({
         {/* Pagination */}
         <div className="flex items-center justify-between mt-4">
           <p className="text-sm text-muted-foreground">
-            第 {page + 1} / {totalPages} 頁，共 {totalElements} 筆
+            {t("trades.pagination", { current: page + 1, total: totalPages, count: totalElements })}
           </p>
           <div className="flex gap-2">
             <Button
@@ -136,7 +138,7 @@ export function TradeTable({
               disabled={page <= 0}
               onClick={() => onPageChange(page - 1)}
             >
-              Previous
+              {t("common.previous")}
             </Button>
             <Button
               variant="outline"
@@ -144,7 +146,7 @@ export function TradeTable({
               disabled={page >= totalPages - 1}
               onClick={() => onPageChange(page + 1)}
             >
-              Next
+              {t("common.next")}
             </Button>
           </div>
         </div>

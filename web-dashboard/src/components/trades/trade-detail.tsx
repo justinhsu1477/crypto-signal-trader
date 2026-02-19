@@ -12,6 +12,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { useT } from "@/lib/i18n/i18n-context";
 
 interface TradeDetailProps {
   tradeId: string;
@@ -37,6 +38,7 @@ function eventTypeBadge(eventType: string) {
 }
 
 export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
+  const { t } = useT();
   const [events, setEvents] = useState<TradeEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "載入失敗");
+          setError(err instanceof Error ? err.message : t("common.loadFailed"));
         }
       } finally {
         if (!cancelled) {
@@ -73,7 +75,7 @@ export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>交易事件明細</DialogTitle>
+          <DialogTitle>{t("trades.tradeEventDetail")}</DialogTitle>
           <DialogDescription>Trade ID: {tradeId}</DialogDescription>
         </DialogHeader>
 
@@ -89,7 +91,7 @@ export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
 
         {!loading && !error && events.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
-            沒有事件紀錄
+            {t("trades.noEvents")}
           </div>
         )}
 

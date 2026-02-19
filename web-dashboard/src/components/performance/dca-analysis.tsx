@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatPercent } from "@/lib/utils";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { DcaAnalysis as DcaAnalysisType } from "@/types";
 
 interface DcaAnalysisProps {
@@ -9,12 +10,13 @@ interface DcaAnalysisProps {
 }
 
 export function DcaAnalysis({ data }: DcaAnalysisProps) {
+  const { t } = useT();
   const noDcaBetter = data.noDcaAvgProfit >= data.dcaAvgProfit;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>DCA 補倉分析</CardTitle>
+        <CardTitle>{t("performance.dcaAnalysis")}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-4">
@@ -27,24 +29,24 @@ export function DcaAnalysis({ data }: DcaAnalysisProps) {
             }`}
           >
             <h4 className="text-sm font-semibold">
-              無補倉
+              {t("performance.noDca")}
               {noDcaBetter && (
-                <span className="ml-2 text-xs text-emerald-500">較佳</span>
+                <span className="ml-2 text-xs text-emerald-500">{t("performance.better")}</span>
               )}
             </h4>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">交易數</span>
+                <span className="text-muted-foreground">{t("performance.tradeCount")}</span>
                 <span className="font-medium">{data.noDcaTrades}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">勝率</span>
+                <span className="text-muted-foreground">{t("performance.winRate")}</span>
                 <span className="font-medium">
                   {formatPercent(data.noDcaWinRate)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">平均利潤</span>
+                <span className="text-muted-foreground">{t("performance.avgProfit")}</span>
                 <span
                   className={`font-medium ${
                     data.noDcaAvgProfit >= 0
@@ -67,24 +69,24 @@ export function DcaAnalysis({ data }: DcaAnalysisProps) {
             }`}
           >
             <h4 className="text-sm font-semibold">
-              有補倉
+              {t("performance.withDca")}
               {!noDcaBetter && (
-                <span className="ml-2 text-xs text-emerald-500">較佳</span>
+                <span className="ml-2 text-xs text-emerald-500">{t("performance.better")}</span>
               )}
             </h4>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">交易數</span>
+                <span className="text-muted-foreground">{t("performance.tradeCount")}</span>
                 <span className="font-medium">{data.dcaTrades}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">勝率</span>
+                <span className="text-muted-foreground">{t("performance.winRate")}</span>
                 <span className="font-medium">
                   {formatPercent(data.dcaWinRate)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">平均利潤</span>
+                <span className="text-muted-foreground">{t("performance.avgProfit")}</span>
                 <span
                   className={`font-medium ${
                     data.dcaAvgProfit >= 0

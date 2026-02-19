@@ -11,21 +11,12 @@ import {
   Cell,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { DayOfWeekStats } from "@/types";
 
 interface DayOfWeekChartProps {
   data: DayOfWeekStats[];
 }
-
-const DAY_NAME_MAP: Record<string, string> = {
-  MONDAY: "週一",
-  TUESDAY: "週二",
-  WEDNESDAY: "週三",
-  THURSDAY: "週四",
-  FRIDAY: "週五",
-  SATURDAY: "週六",
-  SUNDAY: "週日",
-};
 
 const DAY_ORDER = [
   "MONDAY",
@@ -38,6 +29,18 @@ const DAY_ORDER = [
 ];
 
 export function DayOfWeekChart({ data }: DayOfWeekChartProps) {
+  const { t } = useT();
+
+  const DAY_NAME_MAP: Record<string, string> = {
+    MONDAY: t("performance.monday"),
+    TUESDAY: t("performance.tuesday"),
+    WEDNESDAY: t("performance.wednesday"),
+    THURSDAY: t("performance.thursday"),
+    FRIDAY: t("performance.friday"),
+    SATURDAY: t("performance.saturday"),
+    SUNDAY: t("performance.sunday"),
+  };
+
   // Sort by day order and map names
   const sorted = DAY_ORDER.map((day) => {
     const found = data.find((d) => d.dayOfWeek === day);
@@ -52,7 +55,7 @@ export function DayOfWeekChart({ data }: DayOfWeekChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>星期績效</CardTitle>
+        <CardTitle>{t("performance.dayOfWeekPerformance")}</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
@@ -68,7 +71,7 @@ export function DayOfWeekChart({ data }: DayOfWeekChartProps) {
                   <div className="rounded-lg border bg-card p-3 shadow-md">
                     <p className="mb-1 text-sm font-medium">{label}</p>
                     <p className="text-xs text-muted-foreground">
-                      淨利潤:{" "}
+                      {`${t("performance.netProfit")}: `}
                       <span
                         className={
                           item.netProfit >= 0
@@ -80,10 +83,10 @@ export function DayOfWeekChart({ data }: DayOfWeekChartProps) {
                       </span>
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      交易數: {item.trades}
+                      {`${t("performance.tradeCount")}: ${item.trades}`}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      勝率: {item.winRate.toFixed(2)}%
+                      {`${t("performance.winRate")}: ${item.winRate.toFixed(2)}%`}
                     </p>
                   </div>
                 );
