@@ -38,3 +38,7 @@ data/
 
 # === Logs ===
 *.log
+
+# === AI Tools ===
+.claude/
+.agents/
