@@ -5,6 +5,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { AuthGuard } from "@/components/layout/auth-guard";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { AuthLayout } from "@/components/landing/auth-layout";
 
 const PUBLIC_PATHS = ["/login", "/register"];
 
@@ -15,7 +16,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       {isPublicPage ? (
-        children
+        <AuthLayout>{children}</AuthLayout>
       ) : (
         <AuthGuard>
           <div className="min-h-screen bg-background">
