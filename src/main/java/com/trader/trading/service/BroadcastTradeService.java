@@ -1,5 +1,6 @@
 package com.trader.trading.service;
 
+import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.model.TradeRequest;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -27,6 +28,7 @@ public class BroadcastTradeService {
 
     private final UserRepository userRepository;
     private final BinanceFuturesService binanceFuturesService;
+    private final DiscordWebhookService discordWebhookService;
 
     private static final int THREAD_POOL_SIZE = 10;
     private static final long SHUTDOWN_TIMEOUT_SECONDS = 10;
@@ -73,9 +75,28 @@ public class BroadcastTradeService {
                         binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
                         successCount.incrementAndGet();
                         log.debug("跟單成功: userId={}", user.getUserId());
+
+                        // 發送成功通知給用戶（使用用戶自定義 webhook）
+                        discordWebhookService.sendNotificationToUser(
+                                user.getUserId(),
+                                "✅ 廣播跟單已執行",
+                                String.format("%s %s\n入場: %s\n訊號來源: 廣播",
+                                        request.getSymbol(),
+                                        request.getSide(),
+                                        request.getEntryPrice()),
+                                DiscordWebhookService.COLOR_GREEN);
                     } catch (Exception e) {
                         failCount.incrementAndGet();
                         log.error("跟單失敗: userId={} error={}", user.getUserId(), e.getMessage());
+
+                        // 發送失敗通知給用戶
+                        discordWebhookService.sendNotificationToUser(
+                                user.getUserId(),
+                                "❌ 廣播跟單失敗",
+                                String.format("%s\n錯誤: %s",
+                                        request.getSymbol(),
+                                        e.getMessage()),
+                                DiscordWebhookService.COLOR_RED);
                     }
                 });
             }

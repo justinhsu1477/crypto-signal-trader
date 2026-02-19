@@ -59,8 +59,12 @@ binance:
 
 discord:
   webhook:
-    url: ${DISCORD_WEBHOOK_URL:}                    # Discord Webhook URL
+    url: ${DISCORD_WEBHOOK_URL:}                    # Discord Webhook URL（全局 fallback）
     enabled: ${DISCORD_WEBHOOK_ENABLED:false}       # 是否啟用通知
+    # 多用戶 webhook 配置
+    per-user:
+      enabled: ${DISCORD_WEBHOOK_PER_USER_ENABLED:true}  # true = 使用用戶自定義 webhook，false = 使用全局
+      fallback-to-global: ${DISCORD_WEBHOOK_FALLBACK:true}  # 用戶無自定義 webhook 時 fallback 到全局
 
 stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}
