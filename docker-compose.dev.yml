@@ -15,6 +15,21 @@ services:
     volumes:
       - pg-data-dev:/var/lib/postgresql/data
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq-dev
+    ports:
+      - "5672:5672"     # ← AMQP
+      - "15672:15672"   # ← Management UI (http://localhost:15672, guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   trading-api:
     container_name: trading-api-dev
     ports:
@@ -23,6 +38,8 @@ services:
       - .env.dev
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   discord-monitor:
@@ -41,6 +58,9 @@ services:
       - NEXT_PUBLIC_API_URL=http://trading-api:8080  # ← 容器內用 DNS
     env_file:
       - .env.dev
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
 volumes:
   pg-data-dev:

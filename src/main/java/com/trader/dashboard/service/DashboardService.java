@@ -10,6 +10,7 @@ import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ public class DashboardService {
     private final SubscriptionService subscriptionService;
     private final BinanceFuturesService binanceFuturesService;
     private final RiskConfig riskConfig;
+    private final UserRepository userRepository;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
@@ -51,13 +53,18 @@ public class DashboardService {
     // ==================== Overview ====================
 
     /**
-     * 取得首頁摘要（帳戶、風控、訂閱、持倉）
+     * 取得首頁摘要（帳戶、風控、訂閱、持倉、自動跟單狀態）
      */
     public DashboardOverview getOverview(String userId) {
+        boolean autoTradeEnabled = userRepository.findById(userId)
+                .map(u -> u.isAutoTradeEnabled())
+                .orElse(false);
+
         return DashboardOverview.builder()
                 .account(buildAccountSummary())
                 .riskBudget(buildRiskBudget())
                 .subscription(buildSubscriptionInfo(userId))
+                .autoTradeEnabled(autoTradeEnabled)
                 .positions(buildPositionList())
                 .build();
     }

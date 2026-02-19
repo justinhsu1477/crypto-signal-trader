@@ -1,9 +1,15 @@
 app:
   timezone: Asia/Taipei
 
+# ========== 多用戶跟單開關 ==========
+multi-user:
+  enabled: ${MULTI_USER_ENABLED:false}      # true = 啟用多用戶模式, false = 舊系統
+  rabbitmq:
+    enabled: ${RABBITMQ_ENABLED:false}      # true = 用 RabbitMQ，false = 同步執行
+
 # ========== 多用戶支援配置 ==========
 trading:
-  user-id: ${TRADING_USER_ID:test-user}  # 當前交易用戶 ID
+  user-id: ${TRADING_USER_ID:test-user}  # 當前交易用戶 ID（舊系統用）
                                           # 開發/測試: test-user
                                           # 生產: 從環境變數讀取真實用戶 ID
 
@@ -13,6 +19,13 @@ server:
 spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/trading}
     driver-class-name: org.postgresql.Driver

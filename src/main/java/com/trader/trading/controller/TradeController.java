@@ -7,6 +7,7 @@ import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeRequest;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.BroadcastTradeService;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalDeduplicationService;
@@ -36,6 +37,7 @@ import java.util.Optional;
 public class TradeController {
 
     private final BinanceFuturesService binanceFuturesService;
+    private final BroadcastTradeService broadcastTradeService;
     private final SignalParserService signalParserService;
     private final RiskConfig riskConfig;
     private final TradeRecordService tradeRecordService;
@@ -590,5 +592,36 @@ public class TradeController {
     @GetMapping("/stats/summary")
     public ResponseEntity<Map<String, Object>> getStatsSummary() {
         return ResponseEntity.ok(tradeRecordService.getStatsSummary());
+    }
+
+    // ==================== 多用戶廣播跟單 ====================
+
+    /**
+     * 廣播跟單給所有啟用自動跟單的用戶
+     * POST /api/broadcast-trade
+     * Body: { "action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG", ... }
+     *
+     * 只廣播給 autoTradeEnabled=true 的用戶
+     * 用 Thread Pool (10 個線程) 並行執行，約 2 秒內完成所有用戶
+     */
+    @PostMapping("/broadcast-trade")
+    public ResponseEntity<?> broadcastTrade(@RequestBody TradeRequest request) {
+        log.info("廣播跟單請求: action={} symbol={}", request.getAction(), request.getSymbol());
+
+        // 驗證請求
+        if (request.getAction() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "action 不可為空"));
+        }
+        String symbol = request.getSymbol();
+        if (symbol == null || !riskConfig.isSymbolAllowed(symbol)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "交易對不在白名單",
+                    "allowed", riskConfig.getAllowedSymbols().toString(),
+                    "received", symbol != null ? symbol : "null"));
+        }
+
+        // 執行廣播
+        Map<String, Object> result = broadcastTradeService.broadcastTrade(request);
+        return ResponseEntity.ok(result);
     }
 }

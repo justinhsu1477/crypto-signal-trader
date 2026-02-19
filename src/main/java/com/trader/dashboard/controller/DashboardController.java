@@ -5,10 +5,14 @@ import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Dashboard API
@@ -25,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final UserRepository userRepository;
 
     /**
      * 首頁總覽
@@ -61,5 +66,58 @@ public class DashboardController {
             @RequestParam(defaultValue = "20") int size) {
         String userId = SecurityUtil.getCurrentUserId();
         return ResponseEntity.ok(dashboardService.getTradeHistory(userId, page, size));
+    }
+
+    /**
+     * 查詢自動跟單狀態
+     * GET /api/dashboard/auto-trade-status
+     *
+     * 回傳：{ "autoTradeEnabled": true/false }
+     */
+    @GetMapping("/auto-trade-status")
+    public ResponseEntity<Map<String, Object>> getAutoTradeStatus() {
+        String userId = SecurityUtil.getCurrentUserId();
+        var user = userRepository.findById(userId);
+        if (user.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of(
+                "userId", userId,
+                "autoTradeEnabled", user.get().isAutoTradeEnabled()));
+    }
+
+    /**
+     * 更新自動跟單開關
+     * POST /api/dashboard/auto-trade-status
+     * Body: { "enabled": true/false }
+     *
+     * 回傳：{ "autoTradeEnabled": true/false, "message": "已更新" }
+     */
+    @PostMapping("/auto-trade-status")
+    public ResponseEntity<Map<String, Object>> updateAutoTradeStatus(
+            @RequestBody Map<String, Boolean> body) {
+        String userId = SecurityUtil.getCurrentUserId();
+        Boolean enabled = body.get("enabled");
+
+        if (enabled == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "enabled 欄位不可為空"));
+        }
+
+        var user = userRepository.findById(userId);
+        if (user.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        var userEntity = user.get();
+        userEntity.setAutoTradeEnabled(enabled);
+        userRepository.save(userEntity);
+
+        log.info("用戶 {} 自動跟單設定已更新: {}", userId, enabled);
+
+        return ResponseEntity.ok(Map.of(
+                "userId", userId,
+                "autoTradeEnabled", enabled,
+                "message", enabled ? "已啟用自動跟單" : "已關閉自動跟單"));
     }
 }
