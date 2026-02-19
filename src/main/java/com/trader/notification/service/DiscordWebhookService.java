@@ -2,6 +2,7 @@ package com.trader.notification.service;
 
 import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.WebhookConfig;
+import com.trader.user.repository.UserDiscordWebhookRepository;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 
 /**
  * Discord Webhook 通知服務
@@ -36,10 +38,13 @@ public class DiscordWebhookService {
 
     private final OkHttpClient httpClient;
     private final WebhookConfig webhookConfig;
+    private final UserDiscordWebhookRepository userWebhookRepository;
 
-    public DiscordWebhookService(OkHttpClient httpClient, WebhookConfig webhookConfig) {
+    public DiscordWebhookService(OkHttpClient httpClient, WebhookConfig webhookConfig,
+                                  UserDiscordWebhookRepository userWebhookRepository) {
         this.httpClient = httpClient;
         this.webhookConfig = webhookConfig;
+        this.userWebhookRepository = userWebhookRepository;
     }
 
     /**
@@ -59,13 +64,27 @@ public class DiscordWebhookService {
             return;
         }
 
-        String timestamp = ZonedDateTime.now(AppConstants.ZONE_ID).format(TIME_FMT);
+        sendNotificationToUrl(url, title, message, color);
+    }
 
-        // 建構 Discord Embed JSON
+    /**
+     * 發送通知到指定的 Webhook URL (per-user)
+     *
+     * @param webhookUrl 用戶自定義的 Webhook URL（可為 null，則忽略）
+     * @param title      標題
+     * @param message    內容
+     * @param color      顏色
+     */
+    public void sendNotificationToUrl(String webhookUrl, String title, String message, int color) {
+        if (webhookUrl == null || webhookUrl.isBlank()) {
+            return;
+        }
+
+        String timestamp = ZonedDateTime.now(AppConstants.ZONE_ID).format(TIME_FMT);
         String json = buildEmbedJson(title, message, color, timestamp);
 
         Request request = new Request.Builder()
-                .url(url)
+                .url(webhookUrl)
                 .post(RequestBody.create(json, JSON))
                 .build();
 
@@ -136,5 +155,47 @@ public class DiscordWebhookService {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    /**
+     * 取得用戶的 webhook URL
+     * 優先順序：
+     * 1. 用戶自定義的 webhook（如果有啟用的）
+     * 2. 全局 webhook（fallback）
+     * 3. null（都沒有）
+     */
+    public Optional<String> getUserWebhookUrl(String userId) {
+        Optional<String> userWebhook = userWebhookRepository
+                .findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc(userId)
+                .map(w -> w.getWebhookUrl());
+
+        if (userWebhook.isPresent()) {
+            return userWebhook;
+        }
+
+        // Fallback 到全局 webhook
+        if (webhookConfig.isEnabled()) {
+            String globalUrl = webhookConfig.getUrl();
+            if (globalUrl != null && !globalUrl.isBlank()) {
+                return Optional.of(globalUrl);
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * 發送通知到用戶（優先用用戶自定義 webhook）
+     *
+     * @param userId  用戶 ID
+     * @param title   標題
+     * @param message 內容
+     * @param color   顏色
+     */
+    public void sendNotificationToUser(String userId, String title, String message, int color) {
+        Optional<String> webhookUrl = getUserWebhookUrl(userId);
+        if (webhookUrl.isPresent()) {
+            sendNotificationToUrl(webhookUrl.get(), title, message, color);
+        }
     }
 }

@@ -6,11 +6,14 @@ import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.user.repository.UserRepository;
+import com.trader.user.service.UserDiscordWebhookService;
+import com.trader.user.entity.UserDiscordWebhook;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -30,6 +33,7 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
     private final UserRepository userRepository;
+    private final UserDiscordWebhookService webhookService;
 
     /**
      * 首頁總覽
@@ -119,5 +123,96 @@ public class DashboardController {
                 "userId", userId,
                 "autoTradeEnabled", enabled,
                 "message", enabled ? "已啟用自動跟單" : "已關閉自動跟單"));
+    }
+
+    // ==================== Discord Webhook 管理 ====================
+
+    /**
+     * 查詢用戶所有 webhook
+     * GET /api/dashboard/discord-webhooks
+     */
+    @GetMapping("/discord-webhooks")
+    public ResponseEntity<Map<String, Object>> getWebhooks() {
+        String userId = SecurityUtil.getCurrentUserId();
+        List<UserDiscordWebhook> webhooks = webhookService.getAllWebhooks(userId);
+        Optional<UserDiscordWebhook> primary = webhookService.getPrimaryWebhook(userId);
+
+        return ResponseEntity.ok(Map.of(
+                "userId", userId,
+                "webhooks", webhooks,
+                "primaryWebhookId", primary.map(UserDiscordWebhook::getWebhookId).orElse(null)));
+    }
+
+    /**
+     * 新增或更新 webhook
+     * POST /api/dashboard/discord-webhooks
+     * Body: { "webhookUrl": "https://discord.com/api/webhooks/...", "name": "我的交易通知" }
+     *
+     * 回傳新建立的 webhook
+     */
+    @PostMapping("/discord-webhooks")
+    public ResponseEntity<Map<String, Object>> createWebhook(
+            @RequestBody Map<String, String> body) {
+        String userId = SecurityUtil.getCurrentUserId();
+        String webhookUrl = body.get("webhookUrl");
+        String name = body.get("name");
+
+        if (webhookUrl == null || webhookUrl.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "webhookUrl 不可為空"));
+        }
+
+        // 驗證 URL 格式
+        if (!webhookUrl.startsWith("https://discord.com/api/webhooks/")) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "無效的 Discord Webhook URL"));
+        }
+
+        UserDiscordWebhook webhook = webhookService.createOrUpdateWebhook(userId, webhookUrl, name);
+
+        log.info("用戶 {} 建立/更新 webhook: {}", userId, webhook.getWebhookId());
+
+        return ResponseEntity.ok(Map.of(
+                "webhookId", webhook.getWebhookId(),
+                "userId", userId,
+                "name", webhook.getName(),
+                "enabled", webhook.isEnabled(),
+                "message", "Webhook 已設定成功"));
+    }
+
+    /**
+     * 停用 webhook
+     * POST /api/dashboard/discord-webhooks/{webhookId}/disable
+     */
+    @PostMapping("/discord-webhooks/{webhookId}/disable")
+    public ResponseEntity<Map<String, Object>> disableWebhook(
+            @PathVariable String webhookId) {
+        String userId = SecurityUtil.getCurrentUserId();
+
+        webhookService.disableWebhook(webhookId);
+
+        log.info("用戶 {} 停用 webhook: {}", userId, webhookId);
+
+        return ResponseEntity.ok(Map.of(
+                "webhookId", webhookId,
+                "message", "Webhook 已停用"));
+    }
+
+    /**
+     * 刪除 webhook
+     * DELETE /api/dashboard/discord-webhooks/{webhookId}
+     */
+    @DeleteMapping("/discord-webhooks/{webhookId}")
+    public ResponseEntity<Map<String, Object>> deleteWebhook(
+            @PathVariable String webhookId) {
+        String userId = SecurityUtil.getCurrentUserId();
+
+        webhookService.deleteWebhook(webhookId);
+
+        log.info("用戶 {} 刪除 webhook: {}", userId, webhookId);
+
+        return ResponseEntity.ok(Map.of(
+                "webhookId", webhookId,
+                "message", "Webhook 已刪除"));
     }
 }
