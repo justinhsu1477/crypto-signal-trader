@@ -1,6 +1,8 @@
 package com.trader.auth.config;
 
 import com.trader.auth.filter.JwtAuthenticationFilter;
+import com.trader.auth.handler.CustomAccessDeniedHandler;
+import com.trader.auth.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,6 +28,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class AuthConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final CustomAuthenticationEntryPoint authenticationEntryPoint;
+    private final CustomAccessDeniedHandler accessDeniedHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -35,6 +39,10 @@ public class AuthConfig {
                         .frameOptions(frame -> frame.sameOrigin()))  // H2 console
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // 例外處理：認證和授權失敗時回傳 JSON 而非 HTML
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint(authenticationEntryPoint)     // 401 Unauthorized
+                        .accessDeniedHandler(accessDeniedHandler))              // 403 Forbidden
                 .authorizeHttpRequests(auth -> auth
                         // 公開：認證端點
                         .requestMatchers("/api/auth/**").permitAll()
