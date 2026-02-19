@@ -5,19 +5,20 @@
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db up -d --build
 #
 # Dev 環境啟動本地 PostgreSQL container 作為資料庫
+# 注意：Port 與 Prod 環境分開，可同時運行兩個環境
 
 services:
   postgres:
     container_name: trading-db-dev
     ports:
-      - "5432:5432"
+      - "5433:5432"  # ← Dev 用 5433（避免衝突）
     volumes:
       - pg-data-dev:/var/lib/postgresql/data
 
   trading-api:
     container_name: trading-api-dev
     ports:
-      - "8080:8080"
+      - "8082:8080"  # ← Dev 用 8082（容器內仍是 8080，避免衝突）
     env_file:
       - .env.dev
     depends_on:
@@ -30,11 +31,14 @@ services:
       - .env.dev
 
   web-dashboard:
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: http://trading-api:8080  # ← 容器內用 DNS 名稱
     container_name: web-dashboard-dev
     ports:
-      - "3000:3000"
+      - "3002:3000"  # ← Dev 用 3002（override 基礎 3000，避免衝突）
     environment:
-      - NEXT_PUBLIC_API_URL=http://trading-api:8080
+      - NEXT_PUBLIC_API_URL=http://trading-api:8080  # ← 容器內用 DNS
     env_file:
       - .env.dev
 

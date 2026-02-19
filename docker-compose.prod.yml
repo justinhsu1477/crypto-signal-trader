@@ -21,6 +21,9 @@ services:
       - .env.prod
 
   web-dashboard:
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: http://trading-api:8080
     container_name: web-dashboard-prod
     ports:
       - "3001:3000"
