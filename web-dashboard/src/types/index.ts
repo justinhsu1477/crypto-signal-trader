@@ -241,6 +241,54 @@ export interface TradeEvent {
   timestamp: string;
 }
 
+// ==================== Auto Trade ====================
+
+export interface AutoTradeStatus {
+  userId: string;
+  autoTradeEnabled: boolean;
+}
+
+export interface AutoTradeUpdateRequest {
+  enabled: boolean;
+}
+
+export interface AutoTradeUpdateResponse {
+  userId: string;
+  autoTradeEnabled: boolean;
+  message: string;
+}
+
+// ==================== Discord Webhook ====================
+
+export interface UserDiscordWebhook {
+  webhookId: string;
+  userId: string;
+  webhookUrl: string;
+  name: string;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WebhooksResponse {
+  userId: string;
+  webhooks: UserDiscordWebhook[];
+  primaryWebhookId: string | null;
+}
+
+export interface CreateWebhookRequest {
+  webhookUrl: string;
+  name?: string;
+}
+
+export interface CreateWebhookResponse {
+  webhookId: string;
+  userId: string;
+  name: string;
+  enabled: boolean;
+  message: string;
+}
+
 // ==================== System Status ====================
 
 export interface MonitorStatus {

@@ -12,6 +12,11 @@ import type {
   SaveApiKeyRequest,
   MonitorStatus,
   StreamStatus,
+  AutoTradeStatus,
+  AutoTradeUpdateResponse,
+  WebhooksResponse,
+  CreateWebhookRequest,
+  CreateWebhookResponse,
 } from "@/types";
 
 const BASE = "";  // 使用 Next.js rewrites proxy
@@ -119,4 +124,52 @@ export async function getMonitorStatus(): Promise<MonitorStatus> {
 
 export async function getStreamStatus(): Promise<StreamStatus> {
   return request<StreamStatus>("/api/stream-status");
+}
+
+// ==================== Auto Trade ====================
+
+export async function getAutoTradeStatus(): Promise<AutoTradeStatus> {
+  return request<AutoTradeStatus>("/api/dashboard/auto-trade-status");
+}
+
+export async function updateAutoTradeStatus(
+  enabled: boolean
+): Promise<AutoTradeUpdateResponse> {
+  return request<AutoTradeUpdateResponse>("/api/dashboard/auto-trade-status", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+// ==================== Discord Webhooks ====================
+
+export async function getDiscordWebhooks(): Promise<WebhooksResponse> {
+  return request<WebhooksResponse>("/api/dashboard/discord-webhooks");
+}
+
+export async function createDiscordWebhook(
+  data: CreateWebhookRequest
+): Promise<CreateWebhookResponse> {
+  return request<CreateWebhookResponse>("/api/dashboard/discord-webhooks", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function disableDiscordWebhook(
+  webhookId: string
+): Promise<{ message: string }> {
+  return request<{ message: string }>(
+    `/api/dashboard/discord-webhooks/${webhookId}/disable`,
+    { method: "POST" }
+  );
+}
+
+export async function deleteDiscordWebhook(
+  webhookId: string
+): Promise<{ message: string }> {
+  return request<{ message: string }>(
+    `/api/dashboard/discord-webhooks/${webhookId}`,
+    { method: "DELETE" }
+  );
 }

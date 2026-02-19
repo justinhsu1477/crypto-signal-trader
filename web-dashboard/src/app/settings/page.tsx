@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { UserProfile, ApiKeyMetadata } from "@/types";
-import { getUserProfile, getApiKeys, saveApiKey } from "@/lib/api";
+import type { UserProfile, ApiKeyMetadata, AutoTradeStatus } from "@/types";
+import {
+  getUserProfile,
+  getApiKeys,
+  saveApiKey,
+  getAutoTradeStatus,
+  updateAutoTradeStatus,
+} from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,7 +16,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useT } from "@/lib/i18n/i18n-context";
+import { DiscordWebhookManager } from "@/components/settings/discord-webhook-manager";
 
 export default function SettingsPage() {
   const { t } = useT();
@@ -30,7 +38,26 @@ export default function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [secretKeyInput, setSecretKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  // Auto Trade state
+  const [autoTradeStatus, setAutoTradeStatus] =
+    useState<AutoTradeStatus | null>(null);
+  const [autoTradeLoading, setAutoTradeLoading] = useState(true);
+  const [autoTradeError, setAutoTradeError] = useState<string | null>(null);
+  const [autoTradeUpdating, setAutoTradeUpdating] = useState(false);
+
+  // Webhook readiness (reported by DiscordWebhookManager)
+  const [hasActiveWebhook, setHasActiveWebhook] = useState(false);
+
+  // Prerequisite check: Binance API Key configured + Discord Webhook active
+  const hasBinanceKey = apiKeys.some(
+    (k) => k.exchange === "BINANCE" && k.hasApiKey
+  );
+  const canEnableAutoTrade = hasBinanceKey && hasActiveWebhook;
 
   // Fetch profile
   useEffect(() => {
@@ -43,14 +70,19 @@ export default function SettingsPage() {
         const data = await getUserProfile();
         if (!cancelled) setProfile(data);
       } catch (err) {
-        if (!cancelled) setProfileError(err instanceof Error ? err.message : t("common.loadFailed"));
+        if (!cancelled)
+          setProfileError(
+            err instanceof Error ? err.message : t("common.loadFailed")
+          );
       } finally {
         if (!cancelled) setProfileLoading(false);
       }
     }
 
     fetchProfile();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Fetch API keys
@@ -64,14 +96,46 @@ export default function SettingsPage() {
         const data = await getApiKeys();
         if (!cancelled) setApiKeys(data);
       } catch (err) {
-        if (!cancelled) setKeysError(err instanceof Error ? err.message : t("common.loadFailed"));
+        if (!cancelled)
+          setKeysError(
+            err instanceof Error ? err.message : t("common.loadFailed")
+          );
       } finally {
         if (!cancelled) setKeysLoading(false);
       }
     }
 
     fetchKeys();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fetch auto trade status
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchAutoTradeStatus() {
+      setAutoTradeLoading(true);
+      setAutoTradeError(null);
+      try {
+        const data = await getAutoTradeStatus();
+        if (!cancelled) setAutoTradeStatus(data);
+      } catch (err) {
+        if (!cancelled) {
+          setAutoTradeError(
+            err instanceof Error ? err.message : t("common.loadFailed")
+          );
+        }
+      } finally {
+        if (!cancelled) setAutoTradeLoading(false);
+      }
+    }
+
+    fetchAutoTradeStatus();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleSaveApiKey() {
@@ -88,7 +152,10 @@ export default function SettingsPage() {
         apiKey: apiKeyInput.trim(),
         secretKey: secretKeyInput.trim(),
       });
-      setSaveMessage({ type: "success", text: result.message || t("common.saveSuccess") });
+      setSaveMessage({
+        type: "success",
+        text: result.message || t("common.saveSuccess"),
+      });
       setApiKeyInput("");
       setSecretKeyInput("");
 
@@ -102,6 +169,30 @@ export default function SettingsPage() {
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Handle toggle auto trade
+  async function handleToggleAutoTrade(enabled: boolean) {
+    setAutoTradeUpdating(true);
+    try {
+      const result = await updateAutoTradeStatus(enabled);
+      setAutoTradeStatus(result);
+      setSaveMessage({
+        type: "success",
+        text: result.message,
+      });
+    } catch (err) {
+      setSaveMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : t("common.saveFailed"),
+      });
+      // Revert the toggle
+      setAutoTradeStatus((prev) =>
+        prev ? { ...prev, autoTradeEnabled: !enabled } : null
+      );
+    } finally {
+      setAutoTradeUpdating(false);
     }
   }
 
@@ -122,13 +213,17 @@ export default function SettingsPage() {
           )}
 
           {profileError && (
-            <div className="text-center py-6 text-red-500">{profileError}</div>
+            <div className="text-center py-6 text-red-500">
+              {profileError}
+            </div>
           )}
 
           {!profileLoading && !profileError && profile && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label className="text-muted-foreground text-xs">User ID</Label>
+                <Label className="text-muted-foreground text-xs">
+                  User ID
+                </Label>
                 <p className="font-mono text-sm">{profile.userId}</p>
               </div>
               <div>
@@ -136,18 +231,26 @@ export default function SettingsPage() {
                 <p className="text-sm">{profile.email}</p>
               </div>
               <div>
-                <Label className="text-muted-foreground text-xs">{t("settings.name")}</Label>
+                <Label className="text-muted-foreground text-xs">
+                  {t("settings.name")}
+                </Label>
                 <p className="text-sm">{profile.name}</p>
               </div>
               <div>
-                <Label className="text-muted-foreground text-xs">{t("settings.role")}</Label>
+                <Label className="text-muted-foreground text-xs">
+                  {t("settings.role")}
+                </Label>
                 <p className="text-sm">
                   <Badge variant="outline">{profile.role}</Badge>
                 </p>
               </div>
               <div>
-                <Label className="text-muted-foreground text-xs">{t("settings.createdAt")}</Label>
-                <p className="text-sm">{formatDateTime(profile.createdAt)}</p>
+                <Label className="text-muted-foreground text-xs">
+                  {t("settings.createdAt")}
+                </Label>
+                <p className="text-sm">
+                  {formatDateTime(profile.createdAt)}
+                </p>
               </div>
             </div>
           )}
@@ -175,7 +278,9 @@ export default function SettingsPage() {
             <>
               {apiKeys.length > 0 ? (
                 <div className="space-y-3">
-                  <Label className="text-muted-foreground text-xs">{t("settings.configuredExchanges")}</Label>
+                  <Label className="text-muted-foreground text-xs">
+                    {t("settings.configuredExchanges")}
+                  </Label>
                   <div className="space-y-2">
                     {apiKeys.map((key) => (
                       <div
@@ -183,18 +288,24 @@ export default function SettingsPage() {
                         className="flex items-center justify-between p-3 border rounded-lg"
                       >
                         <div className="flex items-center gap-3">
-                          <span className="font-medium text-sm">{key.exchange}</span>
+                          <span className="font-medium text-sm">
+                            {key.exchange}
+                          </span>
                           {key.hasApiKey ? (
                             <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/25">
                               {t("settings.configured")}
                             </Badge>
                           ) : (
-                            <Badge variant="secondary">{t("settings.notConfigured")}</Badge>
+                            <Badge variant="secondary">
+                              {t("settings.notConfigured")}
+                            </Badge>
                           )}
                         </div>
                         {key.updatedAt && (
                           <span className="text-xs text-muted-foreground">
-                            {t("settings.updatedAt", { time: formatDateTime(key.updatedAt) })}
+                            {t("settings.updatedAt", {
+                              time: formatDateTime(key.updatedAt),
+                            })}
                           </span>
                         )}
                       </div>
@@ -202,7 +313,9 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">{t("settings.noApiKeys")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t("settings.noApiKeys")}
+                </p>
               )}
             </>
           )}
@@ -211,11 +324,16 @@ export default function SettingsPage() {
 
           {/* Add / Update form */}
           <div className="space-y-4">
-            <Label className="text-sm font-medium">{t("settings.addUpdateApiKey")}</Label>
+            <Label className="text-sm font-medium">
+              {t("settings.addUpdateApiKey")}
+            </Label>
 
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="exchange" className="text-xs text-muted-foreground">
+                <Label
+                  htmlFor="exchange"
+                  className="text-xs text-muted-foreground"
+                >
                   Exchange
                 </Label>
                 <Input
@@ -227,7 +345,10 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="apiKey" className="text-xs text-muted-foreground">
+                <Label
+                  htmlFor="apiKey"
+                  className="text-xs text-muted-foreground"
+                >
                   API Key
                 </Label>
                 <Input
@@ -240,7 +361,10 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="secretKey" className="text-xs text-muted-foreground">
+                <Label
+                  htmlFor="secretKey"
+                  className="text-xs text-muted-foreground"
+                >
                   Secret Key
                 </Label>
                 <Input
@@ -256,7 +380,9 @@ export default function SettingsPage() {
             {saveMessage && (
               <p
                 className={`text-sm ${
-                  saveMessage.type === "success" ? "text-emerald-500" : "text-red-500"
+                  saveMessage.type === "success"
+                    ? "text-emerald-500"
+                    : "text-red-500"
                 }`}
               >
                 {saveMessage.text}
@@ -269,6 +395,79 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Section 3: Auto Trade Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            🤖 {t("settings.autoTrade")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {autoTradeLoading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          )}
+
+          {autoTradeError && (
+            <div className="text-center py-6 text-red-500">
+              {autoTradeError}
+            </div>
+          )}
+
+          {!autoTradeLoading && !autoTradeError && autoTradeStatus && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                <div className="space-y-1">
+                  <Label className="text-base font-medium">
+                    {t("settings.autoTradeLabel")}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t("settings.autoTradeDescription")}
+                  </p>
+                </div>
+                <Switch
+                  checked={autoTradeStatus.autoTradeEnabled}
+                  onCheckedChange={handleToggleAutoTrade}
+                  disabled={autoTradeUpdating || !canEnableAutoTrade}
+                />
+              </div>
+
+              {/* Prerequisite warning */}
+              {!canEnableAutoTrade && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 dark:bg-red-950/30 dark:border-red-900 dark:text-red-300 space-y-1">
+                  <p className="font-medium">
+                    🔒 {t("settings.autoTradePrerequisite")}
+                  </p>
+                  <ul className="list-disc list-inside text-xs space-y-0.5">
+                    {!hasBinanceKey && (
+                      <li>❌ {t("settings.autoTradeMissingApiKey")}</li>
+                    )}
+                    {!hasActiveWebhook && (
+                      <li>❌ {t("settings.autoTradeMissingWebhook")}</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              {/* Status indicator */}
+              {canEnableAutoTrade && autoTradeStatus.autoTradeEnabled ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-900 dark:text-emerald-300">
+                  ✓ {t("settings.autoTradeEnabled")}
+                </div>
+              ) : canEnableAutoTrade && !autoTradeStatus.autoTradeEnabled ? (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700 dark:bg-yellow-950/30 dark:border-yellow-900 dark:text-yellow-300">
+                  ⚠️ {t("settings.autoTradeDisabled")}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Section 4: Discord Webhook Management */}
+      <DiscordWebhookManager onWebhooksChange={setHasActiveWebhook} />
     </div>
   );
 }

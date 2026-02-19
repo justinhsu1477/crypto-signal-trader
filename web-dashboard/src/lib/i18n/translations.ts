@@ -216,6 +216,75 @@ const translations = {
     secretKeyPlaceholder: { en: "Enter Secret Key", "zh-TW": "輸入 Secret Key", "zh-CN": "输入 Secret Key" },
     fillRequired: { en: "Please fill in API Key and Secret Key", "zh-TW": "請填寫 API Key 和 Secret Key", "zh-CN": "请填写 API Key 和 Secret Key" },
     saveApiKey: { en: "Save API Key", "zh-TW": "儲存 API Key", "zh-CN": "保存 API Key" },
+    // Auto Trade
+    autoTrade: { en: "Auto Trade Settings", "zh-TW": "自動跟單設定", "zh-CN": "自动跟单设置" },
+    autoTradeLabel: { en: "Auto Trade", "zh-TW": "自動跟單", "zh-CN": "自动跟单" },
+    autoTradeDescription: {
+      en: "When enabled, your account will automatically receive broadcast trading signals",
+      "zh-TW": "當啟用時，您的帳戶將自動接收廣播跟單訊號",
+      "zh-CN": "当启用时，您的账户将自动接收广播跟单信号",
+    },
+    autoTradeEnabled: {
+      en: "Auto trade is enabled. You will receive broadcast signals.",
+      "zh-TW": "已啟用自動跟單，您將接收廣播訊號",
+      "zh-CN": "已启用自动跟单，您将接收广播信号",
+    },
+    autoTradeDisabled: {
+      en: "Auto trade is disabled. Broadcast signals will not execute trades on your account.",
+      "zh-TW": "已關閉自動跟單，廣播訊號將不會對您的帳戶執行交易",
+      "zh-CN": "已关闭自动跟单，广播信号将不会对您的账户执行交易",
+    },
+    autoTradePrerequisite: {
+      en: "You must configure Binance API Key and Discord Webhook before enabling auto trade.",
+      "zh-TW": "您必須先設定 Binance API Key 和 Discord Webhook 才能啟用自動跟單。",
+      "zh-CN": "您必须先配置 Binance API Key 和 Discord Webhook 才能启用自动跟单。",
+    },
+    autoTradeMissingApiKey: {
+      en: "Binance API Key not configured",
+      "zh-TW": "尚未設定 Binance API Key",
+      "zh-CN": "尚未配置 Binance API Key",
+    },
+    autoTradeMissingWebhook: {
+      en: "Discord Webhook not configured",
+      "zh-TW": "尚未設定 Discord Webhook",
+      "zh-CN": "尚未配置 Discord Webhook",
+    },
+    // Discord Webhook
+    discordNotification: { en: "Discord Notifications", "zh-TW": "Discord 通知設定", "zh-CN": "Discord 通知设置" },
+    currentWebhooks: { en: "Current Webhooks", "zh-TW": "現有 Webhook", "zh-CN": "现有 Webhook" },
+    addNewWebhook: { en: "Add New Webhook", "zh-TW": "新增 Webhook", "zh-CN": "新增 Webhook" },
+    webhookName: { en: "Webhook Name", "zh-TW": "Webhook 名稱", "zh-CN": "Webhook 名称" },
+    webhookNamePlaceholder: { en: "e.g. My Trade Alerts", "zh-TW": "例：我的交易通知", "zh-CN": "例：我的交易通知" },
+    webhookUrlRequired: { en: "Webhook URL is required", "zh-TW": "Webhook URL 不可為空", "zh-CN": "Webhook URL 不可为空" },
+    invalidWebhookUrl: { en: "Invalid Discord Webhook URL", "zh-TW": "無效的 Discord Webhook URL", "zh-CN": "无效的 Discord Webhook URL" },
+    addWebhook: { en: "Add Webhook", "zh-TW": "新增", "zh-CN": "新增" },
+    disable: { en: "Disable", "zh-TW": "停用", "zh-CN": "停用" },
+    delete: { en: "Delete", "zh-TW": "刪除", "zh-CN": "删除" },
+    enabled: { en: "Active", "zh-TW": "啟用中", "zh-CN": "启用中" },
+    primary: { en: "Primary", "zh-TW": "主要", "zh-CN": "主要" },
+    confirmDelete: { en: "Are you sure you want to delete this webhook?", "zh-TW": "確認刪除此 Webhook？", "zh-CN": "确认删除此 Webhook？" },
+    howToGetWebhook: { en: "How to get a Webhook URL?", "zh-TW": "如何取得 Webhook URL？", "zh-CN": "如何获取 Webhook URL？" },
+    step1CreateChannel: {
+      en: "Create a text channel in your Discord server",
+      "zh-TW": "在 Discord 伺服器建立文字頻道",
+      "zh-CN": "在 Discord 服务器创建文字频道",
+    },
+    step2EditChannel: {
+      en: "Edit Channel → Integrations → Webhooks",
+      "zh-TW": "編輯頻道 → 整合 → Webhook",
+      "zh-CN": "编辑频道 → 集成 → Webhook",
+    },
+    step3CreateWebhook: {
+      en: "Create a new Webhook and give it a name",
+      "zh-TW": "新建 Webhook 並給予名稱",
+      "zh-CN": "新建 Webhook 并命名",
+    },
+    step4CopyUrl: {
+      en: "Copy the Webhook URL and paste it above",
+      "zh-TW": "複製 Webhook URL 並貼到上方",
+      "zh-CN": "复制 Webhook URL 并粘贴到上方",
+    },
+    noWebhooks: { en: "No webhooks configured", "zh-TW": "尚未設定任何 Webhook", "zh-CN": "尚未配置任何 Webhook" },
   },
 } as const;
 
