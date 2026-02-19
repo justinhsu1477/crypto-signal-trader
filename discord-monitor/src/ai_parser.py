@@ -270,6 +270,17 @@ class AiSignalParser:
                 text = response.text.strip()
                 parsed = json.loads(text)
 
+                # 防禦：Gemini 有時會回傳 JSON array（複雜訊號含多段時）
+                # 例如 [{"action":"ENTRY",...}, {"action":"INFO",...}]
+                if isinstance(parsed, list):
+                    logger.warning(
+                        "AI parser: got list (%d items), extracting best signal: %s",
+                        len(parsed), text[:200],
+                    )
+                    parsed = self._pick_best_from_list(parsed)
+                    if parsed is None:
+                        return None
+
                 if not self._validate(parsed):
                     logger.warning("AI parser: validation failed for: %s", text[:200])
                     return None
@@ -315,6 +326,43 @@ class AiSignalParser:
             last_error,
         )
         return None
+
+    def _pick_best_from_list(self, items: list) -> dict | None:
+        """When Gemini returns a JSON array, pick the most actionable signal.
+
+        Priority: ENTRY > CLOSE > MOVE_SL > CANCEL > INFO
+        If multiple ENTRY signals exist (e.g. prefix + standard), pick the one
+        with the most complete data (has stop_loss and take_profit).
+        """
+        if not items:
+            return None
+
+        # Filter to dicts only
+        dicts = [item for item in items if isinstance(item, dict) and item.get("action")]
+        if not dicts:
+            return None
+
+        # If only one, use it
+        if len(dicts) == 1:
+            return dicts[0]
+
+        # Priority ranking
+        priority = {"ENTRY": 5, "CLOSE": 4, "MOVE_SL": 3, "CANCEL": 2, "INFO": 1}
+
+        # Sort by: action priority desc, then completeness desc
+        def score(d: dict) -> tuple:
+            action_score = priority.get(d.get("action", ""), 0)
+            # Completeness: count how many key fields are present
+            completeness = sum(1 for k in ("stop_loss", "take_profit", "entry_price", "side")
+                               if d.get(k) is not None)
+            return (action_score, completeness)
+
+        best = max(dicts, key=score)
+        logger.info(
+            "AI parser: picked %s %s from %d candidates",
+            best.get("action"), best.get("symbol"), len(dicts),
+        )
+        return best
 
     def _validate(self, parsed: dict) -> bool:
         """Validate parsed result has required fields based on action type."""
