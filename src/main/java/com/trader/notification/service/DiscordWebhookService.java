@@ -160,27 +160,43 @@ public class DiscordWebhookService {
     /**
      * 取得用戶的 webhook URL
      * 優先順序：
-     * 1. 用戶自定義的 webhook（如果有啟用的）
-     * 2. 全局 webhook（fallback）
+     * 1. 用戶自定義的 webhook（如果 per-user enabled + 有啟用的 webhook）
+     * 2. 全局 webhook（如果啟用 fallback + 有全局 URL）
      * 3. null（都沒有）
      */
     public Optional<String> getUserWebhookUrl(String userId) {
-        Optional<String> userWebhook = userWebhookRepository
-                .findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc(userId)
-                .map(w -> w.getWebhookUrl());
+        // 如果啟用了 per-user 配置
+        if (webhookConfig.getPerUser().isEnabled()) {
+            Optional<String> userWebhook = userWebhookRepository
+                    .findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc(userId)
+                    .map(w -> w.getWebhookUrl());
 
-        if (userWebhook.isPresent()) {
-            return userWebhook;
+            if (userWebhook.isPresent()) {
+                return userWebhook;
+            }
+
+            // Fallback 到全局（如果配置允許）
+            if (webhookConfig.getPerUser().isFallbackToGlobal()) {
+                return getGlobalWebhookUrl();
+            }
+        } else {
+            // 未啟用 per-user，直接用全局
+            return getGlobalWebhookUrl();
         }
 
-        // Fallback 到全局 webhook
+        return Optional.empty();
+    }
+
+    /**
+     * 取得全局 webhook URL
+     */
+    private Optional<String> getGlobalWebhookUrl() {
         if (webhookConfig.isEnabled()) {
             String globalUrl = webhookConfig.getUrl();
             if (globalUrl != null && !globalUrl.isBlank()) {
                 return Optional.of(globalUrl);
             }
         }
-
         return Optional.empty();
     }
 
