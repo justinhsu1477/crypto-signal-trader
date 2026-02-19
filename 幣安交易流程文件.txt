@@ -1,0 +1,433 @@
+================================================================================
+                    Crypto Signal Trader — 幣安合約交易流程文件
+                              (供 PM 審閱確認)
+================================================================================
+
+更新日期: 2026-02-12
+版本: 含安全加固改動 (API fail-fast + 每日熔斷 + retry + fail-safe)
+
+================================================================================
+ 一、系統架構總覽
+================================================================================
+
+  Discord 訊號頻道
+       │
+       ▼
+  [Python Discord Monitor] (CDP 連接 Discord Desktop)
+       │  攔截 WebSocket MESSAGE_CREATE
+       ▼
+  [AI Signal Parser] (Gemini API)
+       │  解析訊號 → 結構化 JSON
+       │  失敗 → fallback 到 regex 解析
+       ▼
+  [Spring Boot Trading Engine] (Java)
+       │  風控檢查 → 下單 → 紀錄 → 通知
+       ▼
+  [Binance Futures API] (合約交易)
+       │
+       ▼
+  [Discord Webhook] (交易結果通知)
+
+監聽頻道:
+  - Guild: 862188678876233748
+  - Channel: 1325133886509944983
+
+================================================================================
+ 二、訊號類型識別
+================================================================================
+
+Discord 訊號格式與對應動作:
+
+  訊號格式                    類型        動作
+  ─────────────────────────  ─────────  ─────────────────
+  📢 交易訊號發布              ENTRY      自動開倉 (下單)
+  ⚠️ 掛單取消                 CANCEL     取消所有掛單
+  訂單/TP-SL 修改             MODIFY     修改止損/止盈
+  🚀 訊號成交                 INFO       僅記錄，不動作
+  🛑 止損出場                 INFO       僅記錄，不動作
+  💰 盈虧更新                 INFO       僅記錄，不動作
+
+訊號路由策略 (AI-first, Regex-fallback):
+  1. 訊息進入 → AI Parser (Gemini) 嘗試解析
+  2. AI 成功 → 結構化 JSON → POST /api/execute-trade
+  3. AI 失敗 → 原始文字 → POST /api/execute-signal → Java regex 解析
+
+================================================================================
+ 三、風控參數 (RiskConfig)
+================================================================================
+
+  參數                   預設值          說明
+  ────────────────────  ──────────────  ────────────────────────
+  fixedLossPerTrade     500 USDT        每筆交易固定最大虧損
+  maxDailyOrders        10              每日最大下單數
+  maxPositions          1               同時最大持倉數
+  fixedLeverage         20x             固定槓桿倍數
+  allowedSymbols        BTCUSDT,        交易對白名單
+                        ETHUSDT
+  dedupEnabled          true            重複訊號防護開關
+  每日虧損上限           5000 USDT       = fixedLossPerTrade × maxDailyOrders
+
+保證金模式: ISOLATED (逐倉)
+下單數量計算: 以損定倉
+  qty = fixedLossPerTrade / |entryPrice - stopLoss|
+  範例: BTC entry=95000, SL=93000
+        qty = 500 / |95000 - 93000| = 500 / 2000 = 0.250 BTC
+
+================================================================================
+ 四、ENTRY 開倉流程 (完整步驟)
+================================================================================
+
+觸發條件: 收到 ENTRY 訊號 (📢 交易訊號發布)
+
+步驟                        說明                              失敗處理
+─────────────────────────  ───────────────────────────────  ──────────────────
+1. 交易對白名單檢查         只允許 BTCUSDT / ETHUSDT          → 拒絕，Discord 通知
+2. 每日虧損熔斷檢查         |今日已虧損| >= 5000 USDT?        → 拒絕，Discord 告警
+3. 查詢當前持倉              GET /fapi/v2/positionRisk        → API 失敗拋異常，拒絕
+4. 持倉數量上限檢查         已有持倉 >= maxPositions (1)?      → 拒絕
+5. 未成交掛單檢查           已有 LIMIT 入場掛單?               → 拒絕，防重複下單
+6. 重複訊號防護             SHA256 hash, 5分鐘時間窗口         → 拒絕
+7. 止損驗證                 SL 不可為 0                        → 拒絕
+8. 方向邏輯驗證             做多: SL < Entry                   → 拒絕
+                            做空: SL > Entry
+9. 市價偏離檢查             取得 markPrice                     → API 失敗拋異常
+                            |entry - markPrice| / markPrice    → 超過 10% 拒絕
+                            markPrice <= 0?                    → 拒絕
+10. 設定逐倉 ISOLATED        POST /fapi/v1/marginType          已是 ISOLATED 會報錯
+                                                              (可忽略)
+11. 設定槓桿 20x             POST /fapi/v1/leverage            -
+12. 以損定倉計算             qty = 500 / |entry - SL|          -
+13. 掛 LIMIT 入場單          POST /fapi/v1/order               → 失敗：回傳失敗結果
+                            type=LIMIT, timeInForce=GTC
+                            side=BUY (做多) / SELL (做空)
+14. 掛 STOP_MARKET 止損單    POST /fapi/v1/order               → 失敗：觸發 Fail-Safe
+                            type=STOP_MARKET
+                            side=SELL (做多) / BUY (做空)
+                            closePosition=true
+15. 掛 TAKE_PROFIT 止盈單    POST /fapi/v1/order               → 失敗：僅 log 警告
+    (如果訊號有 TP)          type=TAKE_PROFIT_MARKET            (不影響入場和止損)
+                            closePosition=true
+16. 寫入 DB 交易紀錄         Trade (OPEN) + TradeEvent          → 失敗：僅 log
+17. Discord Webhook 通知     ✅ ENTRY 入場成功 / ❌ 失敗        -
+
+Binance 下單結果:
+  - 入場單: LIMIT GTC 掛單 (等待成交)
+  - 止損單: STOP_MARKET (觸價即市價平倉)
+  - 止盈單: TAKE_PROFIT_MARKET (觸價即市價平倉)
+
+================================================================================
+ 五、ENTRY Fail-Safe 安全機制 (止損單失敗的保護流程)
+================================================================================
+
+當步驟 14 止損單掛失敗時:
+
+  止損單失敗
+    │
+    ├─→ 記錄 Fail-Safe 事件到 DB
+    │
+    ├─→ 嘗試取消入場單 (cancelOrder)
+    │     │
+    │     ├─ 成功 → 結束 (安全退出，無裸倉)
+    │     │
+    │     └─ 失敗 ─→ 嘗試市價平倉 (placeMarketOrder)
+    │                 │
+    │                 ├─ 成功 → 結束 (已平倉)
+    │                 │
+    │                 └─ 失敗 ─→ 🚨 CRITICAL 告警
+    │                            Discord 通知: "止損單+取消單+市價平倉全部失敗!"
+    │                            記錄 Fail-Safe "所有自動保護措施失敗"
+    │                            → 需要人工立即介入!
+
+================================================================================
+ 六、CLOSE 平倉流程
+================================================================================
+
+觸發條件: 收到 CLOSE 訊號
+
+步驟                        說明
+─────────────────────────  ───────────────────────────────────
+1. 查詢持倉                 getCurrentPositionAmount(symbol)
+                            正數=多倉, 負數=空倉, 0=無持倉
+                            API 失敗 → 拒絕平倉
+2. 計算平倉數量             closeQty = |持倉| × closeRatio
+                            closeRatio 預設 1.0 (全平)
+                            支援分批: 0.5 = 平一半
+3. 取消所有掛單             DELETE /fapi/v1/allOpenOrders
+                            (取消 SL + TP 掛單)
+4. 取得市價                 getMarkPrice(symbol)
+                            API 失敗 → 拒絕平倉
+5. 掛反向 LIMIT 平倉單      多倉: SELL @ markPrice × 0.999
+                            空倉: BUY  @ markPrice × 1.001
+                            (略低/高於市價以確保成交)
+6. 寫入 DB 平倉紀錄         Trade → CLOSED, 計算盈虧
+7. 重掛止損 (分批平倉時)     如果 closeRatio < 1.0
+                            且有 newStopLoss
+                            → 對剩餘倉位掛新的 STOP_MARKET
+8. Discord 通知             💰 平倉成功 / ❌ 平倉失敗
+
+盈虧計算:
+  grossProfit = (exitPrice - entryPrice) × qty × direction
+                direction: LONG=1, SHORT=-1
+  commission  = (entry × qty × 0.02%) + (exit × qty × 0.02%)
+  netProfit   = grossProfit - commission
+
+================================================================================
+ 七、MOVE_SL 移動止損/止盈流程
+================================================================================
+
+觸發條件: 收到 MOVE_SL 訊號 (訂單/TP-SL 修改)
+
+步驟                        說明
+─────────────────────────  ───────────────────────────────────
+1. 查詢持倉                 確認有持倉
+                            API 失敗 → 拒絕修改
+2. 取消所有舊掛單           DELETE /fapi/v1/allOpenOrders
+                            (清除舊 SL + TP)
+3. 掛新 STOP_MARKET         如果有新 stopLoss
+    (新止損)                 side = 多倉 SELL / 空倉 BUY
+                            quantity = 全部持倉數量
+4. 掛新 TAKE_PROFIT_MARKET  如果有新 takeProfit
+    (新止盈)                 side = 多倉 SELL / 空倉 BUY
+5. 寫入 DB 紀錄             MOVE_SL event + 更新 Trade.stopLoss
+6. Discord 通知             🔄 TP/SL 修改成功 / ❌ 失敗
+
+================================================================================
+ 八、CANCEL 取消掛單流程
+================================================================================
+
+觸發條件: 收到 CANCEL 訊號 (⚠️ 掛單取消)
+
+步驟                        說明
+─────────────────────────  ───────────────────────────────────
+1. 重複取消防護             同一交易對 30 秒內的重複取消 → 跳過
+2. 取消所有掛單             DELETE /fapi/v1/allOpenOrders
+3. 寫入 DB 紀錄             Trade → CANCELLED
+4. Discord 通知             🚫 CANCEL 取消掛單
+
+================================================================================
+ 九、安全機制總覽
+================================================================================
+
+1. API 失敗拋異常 (Fail-Fast)
+   - getCurrentPositionAmount()  API 失敗 → throw RuntimeException
+   - getMarkPrice()              API 失敗 → throw RuntimeException
+   - getActivePositionCount()    API 失敗 → throw RuntimeException
+   - hasOpenEntryOrders()        API 失敗 → throw RuntimeException
+   → executeSignal() 外層 try-catch 捕獲 → 拒絕交易
+   → 確保不會因 API 失敗靜默回傳 0/false 而誤判
+
+2. 每日虧損熔斷
+   - 計算今日已平倉虧損交易的 netProfit 總和
+   - |今日虧損| >= 5000 USDT → 拒絕所有新 ENTRY
+   - Discord 發送 🚨 熔斷告警
+
+3. 重複訊號防護 (雙層)
+   - 第一層: 內存 ConcurrentHashMap (毫秒級)
+   - 第二層: DB Trade 表查詢 (重啟後仍有效)
+   - ENTRY: SHA256(symbol|side|entryPrice|SL), 5 分鐘窗口
+   - CANCEL: 同一 symbol, 30 秒窗口
+
+4. 交易對白名單
+   - 只允許 BTCUSDT, ETHUSDT
+   - 其他交易對直接拒絕
+
+5. 持倉數量上限
+   - maxPositions = 1 (同時只能持一個倉位)
+   - 有持倉時拒絕新 ENTRY
+
+6. 未成交掛單檢查
+   - 有 LIMIT 入場掛單時拒絕新 ENTRY
+   - 防止重複下單
+
+7. 方向邏輯驗證
+   - 做多: SL 必須 < Entry
+   - 做空: SL 必須 > Entry
+
+8. 市價偏離檢查
+   - 入場價與市價偏差 > 10% → 拒絕
+   - markPrice <= 0 → 拒絕
+
+9. Fail-Safe (止損單失敗保護)
+   - SL 失敗 → 取消入場單 → 取消失敗 → 市價平倉
+   - 市價平倉也失敗 → Discord CRITICAL 告警 + DB 紀錄
+
+10. Python HTTP Retry (網路閃斷保護)
+    - 3 次重試, 間隔 [1, 3, 10] 秒 (指數退避)
+    - 只有 5xx 和網路錯誤才重試
+    - 4xx 客戶端錯誤不重試
+
+================================================================================
+ 十、Binance API 使用清單
+================================================================================
+
+  Endpoint                        Method   說明                  簽名
+  ──────────────────────────────  ──────  ────────────────────  ──────
+  /fapi/v2/balance                GET      查詢帳戶餘額          Signed
+  /fapi/v2/positionRisk           GET      查詢持倉資訊          Signed
+  /fapi/v1/exchangeInfo           GET      查詢交易對資訊        Public
+  /fapi/v1/ticker/price?symbol=X  GET      查詢市場價格          Public
+  /fapi/v1/leverage               POST     設定槓桿              Signed
+  /fapi/v1/marginType             POST     設定保證金模式        Signed
+  /fapi/v1/order                  POST     下單 (LIMIT /         Signed
+                                           MARKET /
+                                           STOP_MARKET /
+                                           TAKE_PROFIT_MARKET)
+  /fapi/v1/order                  DELETE   取消單筆訂單          Signed
+  /fapi/v1/allOpenOrders          DELETE   取消全部掛單          Signed
+  /fapi/v1/openOrders             GET      查詢未成交訂單        Signed
+
+簽名方式: HMAC-SHA256 (所有 Signed 請求都帶 timestamp + signature)
+HTTP Client: OkHttp (同步請求)
+
+================================================================================
+ 十一、下單類型說明
+================================================================================
+
+  類型                  用途                    觸發方式
+  ───────────────────  ─────────────────────  ──────────────
+  LIMIT (GTC)          入場掛單 + 平倉掛單     到達指定價格成交
+  STOP_MARKET          止損單                  觸價後以市價成交
+  TAKE_PROFIT_MARKET   止盈單                  觸價後以市價成交
+  MARKET               緊急市價單              立即以市價成交
+                       (僅 Fail-Safe 使用)
+
+GTC = Good Till Cancel (掛單直到取消或成交)
+closePosition = true (止損/止盈單: 平掉全部持倉)
+
+================================================================================
+ 十二、Discord 通知類型
+================================================================================
+
+  通知                          顏色     觸發時機
+  ────────────────────────────  ──────  ──────────────────────
+  ✅ ENTRY 入場成功              🟢綠    開倉所有步驟成功
+  ❌ ENTRY 入場失敗              🔴紅    開倉任一步驟失敗
+  💰 CLOSE 平倉成功             🟢綠    平倉成功
+  ❌ CLOSE 平倉失敗             🔴紅    平倉失敗
+  🔄 TP/SL 修改成功             🔵藍    止損/止盈修改成功
+  ❌ TP/SL 修改失敗             🔴紅    止損/止盈修改失敗
+  🚫 CANCEL 取消掛單            🔵藍    掛單取消成功
+  ⏭️ 重複取消跳過               🟡黃    30秒內重複取消
+  ⚠️ 風控攔截                   🟡黃    白名單/缺 SL 等攔截
+  🚨 每日虧損熔斷               🔴紅    今日虧損達上限
+  🚨 Fail-Safe 全部失敗          🔴紅    所有自動保護失敗
+                                        → 需人工介入!
+
+通知方式: Discord Webhook (Embed 格式, 非同步發送不阻塞交易)
+
+================================================================================
+ 十三、REST API 端點
+================================================================================
+
+  端點                         Method   說明
+  ───────────────────────────  ──────  ──────────────────────────
+  /api/execute-signal          POST    接收原文，regex 解析後執行
+  /api/execute-trade           POST    接收結構化 JSON，直接執行
+  /api/parse-signal            POST    僅解析不下單 (dry-run)
+  /api/balance                 GET     查詢帳戶餘額
+  /api/positions               GET     查詢持倉
+  /api/open-orders?symbol=X    GET     查詢掛單
+  /api/exchange-info           GET     查詢交易所資訊
+  /api/leverage                POST    手動設定槓桿
+  /api/orders?symbol=X         DELETE  取消所有掛單
+  /api/trades                  GET     查詢交易紀錄
+  /api/trades?status=OPEN      GET     查詢持倉中交易
+  /api/trades?status=CLOSED    GET     查詢已平倉交易
+  /api/trades/{tradeId}        GET     查詢單筆交易詳情
+  /api/trades/{tradeId}/events GET     查詢交易事件日誌
+  /api/stats/summary           GET     盈虧統計摘要
+
+/api/execute-trade 接受的 JSON 格式:
+  ENTRY:   {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG",
+            "entry_price":95000,"stop_loss":94000,"take_profit":97000}
+  CLOSE:   {"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5}
+  MOVE_SL: {"action":"MOVE_SL","symbol":"BTCUSDT","new_stop_loss":95500}
+  CANCEL:  {"action":"CANCEL","symbol":"BTCUSDT"}
+
+================================================================================
+ 十四、數據庫紀錄 (H2)
+================================================================================
+
+Trade 表 (主交易紀錄):
+  tradeId         UUID
+  symbol          交易對 (BTCUSDT)
+  side            方向 (LONG / SHORT)
+  entryPrice      入場價
+  entryQuantity   入場數量
+  entryOrderId    幣安入場單 ID
+  entryTime       入場時間
+  exitPrice       出場價
+  exitQuantity    出場數量
+  exitOrderId     幣安出場單 ID
+  exitTime        出場時間
+  exitReason      出場原因 (SIGNAL_CLOSE / STOP_LOSS / CANCEL)
+  stopLoss        止損價
+  leverage        槓桿倍數
+  riskAmount      風險金額 (固定 500 USDT)
+  grossProfit     毛利
+  commission      手續費 (估算 0.04%)
+  netProfit       淨利
+  signalHash      訊號去重雜湊
+  status          狀態 (OPEN / CLOSED / CANCELLED)
+
+TradeEvent 表 (事件日誌):
+  tradeId         關聯交易 ID
+  eventType       事件類型 (ENTRY_PLACED / SL_PLACED /
+                  CLOSE_PLACED / MOVE_SL / CANCEL / FAIL_SAFE)
+  binanceOrderId  幣安訂單 ID
+  orderSide       方向
+  orderType       訂單類型
+  price           價格
+  quantity        數量
+  success         是否成功
+  errorMessage    錯誤訊息
+  detail          額外詳情 (JSON)
+  timestamp       事件時間
+
+================================================================================
+ 十五、ENTRY 完整範例
+================================================================================
+
+訊號: "📢 交易訊號發布 BTC 做多 入場 95000 止損 93000"
+
+  1. 白名單 → BTCUSDT ✓
+  2. 熔斷 → 今日虧損 -1200 USDT < 5000 ✓
+  3. 持倉 → 0 BTC (無持倉) ✓
+  4. 掛單 → 無未成交 LIMIT 單 ✓
+  5. 去重 → 5 分鐘內無相同 hash ✓
+  6. SL 驗證 → 93000 ≠ 0 ✓
+  7. 方向驗證 → LONG, SL 93000 < Entry 95000 ✓
+  8. 市價偏離 → markPrice=95100, 偏離 0.1% < 10% ✓
+  9. 設定 → ISOLATED + 20x 槓桿
+  10. 計算 → qty = 500 / |95000 - 93000| = 0.250 BTC
+  11. 下單 →
+      入場: LIMIT BUY  0.250 BTC @ 95000  (GTC)
+      止損: STOP_MARKET SELL @ 93000       (closePosition=true)
+  12. 紀錄 → Trade(OPEN) + ENTRY_PLACED event + SL_PLACED event
+  13. 通知 → ✅ ENTRY 入場成功 BTCUSDT LONG
+             入場: 95000 | 止損: 93000
+             ✓ LIMIT qty=0.250 price=95000
+             ✓ STOP_MARKET qty=0.250 price=93000
+
+預期最大虧損: 0.250 × (95000 - 93000) = 500 USDT ✓
+
+================================================================================
+ 十六、上線前確認清單
+================================================================================
+
+  [ ] Binance Testnet 測試 24 小時
+  [ ] 確認 ENTRY 流程: 入場 + SL + TP 都正常掛上
+  [ ] 確認 CLOSE 流程: 平倉成功 + DB 盈虧計算正確
+  [ ] 確認 CANCEL 流程: 取消所有掛單
+  [ ] 確認 MOVE_SL 流程: 修改止損/止盈正確
+  [ ] 確認 Fail-Safe: 模擬 SL 失敗 → 自動取消入場單
+  [ ] 確認熔斷: 模擬連續虧損 → 達上限後拒絕新 ENTRY
+  [ ] 確認 Discord 通知: 所有場景都有對應通知
+  [ ] 確認 API retry: 模擬網路閃斷 → 自動重試成功
+  [ ] 確認去重: 短時間內重複訊號被正確攔截
+  [ ] 確認白名單: 非 BTC/ETH 訊號被拒絕
+  [ ] 確認槓桿 20x + ISOLATED 模式正確設定
+  [ ] 確認 .env 未上 git (API key 安全)
+  [ ] 切換 production API key + 確認 base URL
+
+================================================================================

@@ -24,6 +24,9 @@ public class DashboardOverview {
     /** 訂閱狀態 */
     private SubscriptionInfo subscription;
 
+    /** 自動跟單是否啟用 */
+    private boolean autoTradeEnabled;
+
     /** 目前持倉列表 */
     private List<OpenPositionSummary> positions;
 

@@ -35,6 +35,9 @@ public class User {
     @Builder.Default
     private boolean enabled = true;
 
+    @Builder.Default
+    private boolean autoTradeEnabled = true;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

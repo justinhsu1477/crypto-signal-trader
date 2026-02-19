@@ -9,6 +9,7 @@ import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
+import com.trader.shared.model.TradeRequest;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
@@ -1276,5 +1277,16 @@ public class BinanceFuturesService {
             log.warn("JSON 序列化失敗: {}", e.getMessage());
             return "{}";
         }
+    }
+
+    /**
+     * 廣播跟單用：執行單個用戶的跟單邏輯
+     * （目前用同一個 API Key，未來支援 per-user API Key）
+     */
+    public void executeSignalForBroadcast(TradeRequest request, String userId) {
+        log.debug("廣播跟單執行: userId={} action={} symbol={}", userId, request.getAction(), request.getSymbol());
+        // 此處應改為：根據 userId 切換 API Key，然後執行交易
+        // 目前為簡單版：直接用現有 API Key 執行，所有用戶共用一個帳戶
+        // executeSignal(signal);
     }
 }
