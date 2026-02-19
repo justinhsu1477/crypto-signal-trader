@@ -17,6 +17,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+# 在構建時設置 API URL（Docker Compose 中 trading-api 為容器內 DNS）
+ARG NEXT_PUBLIC_API_URL=http://trading-api:8080
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build
 
 # ========================================
