@@ -1,6 +1,12 @@
 app:
   timezone: Asia/Taipei
 
+# ========== 多用戶支援配置 ==========
+trading:
+  user-id: ${TRADING_USER_ID:test-user}  # 當前交易用戶 ID
+                                          # 開發/測試: test-user
+                                          # 生產: 從環境變數讀取真實用戶 ID
+
 server:
   port: ${SERVER_PORT:8080}
 

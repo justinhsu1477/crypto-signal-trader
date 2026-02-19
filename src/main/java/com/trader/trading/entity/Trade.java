@@ -18,11 +18,18 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "trades")
+@Table(name = "trades", indexes = {
+    @Index(name = "idx_user_id", columnList = "user_id"),
+    @Index(name = "idx_user_symbol", columnList = "user_id, symbol"),
+    @Index(name = "idx_user_status", columnList = "user_id, status")
+})
 public class Trade {
 
     @Id
     private String tradeId;              // UUID，交易唯一識別碼
+
+    // === 用戶關聯 ===
+    private String userId;               // 用戶 ID（UUID），表示此交易屬於哪個用戶
 
     private String symbol;               // 交易對，例如 BTCUSDT
     private String side;                 // 方向：LONG 或 SHORT
