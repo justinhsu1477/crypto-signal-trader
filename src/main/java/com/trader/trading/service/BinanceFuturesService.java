@@ -1281,12 +1281,127 @@ public class BinanceFuturesService {
 
     /**
      * 廣播跟單用：執行單個用戶的跟單邏輯
-     * （目前用同一個 API Key，未來支援 per-user API Key）
+     *
+     * 目前 MVP：所有用戶共用全局 API Key
+     * 未來：根據 userId 切換 per-user API Key
+     *
+     * @param request 交易請求（來自 Python AI 解析）
+     * @param userId  用戶 ID（目前僅用於日誌，未來用於切換 API Key）
+     * @throws RuntimeException 交易失敗時拋出，讓 BroadcastTradeService 捕獲
      */
     public void executeSignalForBroadcast(TradeRequest request, String userId) {
-        log.debug("廣播跟單執行: userId={} action={} symbol={}", userId, request.getAction(), request.getSymbol());
-        // 此處應改為：根據 userId 切換 API Key，然後執行交易
-        // 目前為簡單版：直接用現有 API Key 執行，所有用戶共用一個帳戶
-        // executeSignal(signal);
+        log.info("廣播跟單執行: userId={} action={} symbol={}", userId, request.getAction(), request.getSymbol());
+
+        String action = request.getAction();
+        if (action == null) {
+            throw new IllegalArgumentException("action 不可為空");
+        }
+
+        String symbol = request.getSymbol();
+        if (symbol == null || !riskConfig.isSymbolAllowed(symbol)) {
+            throw new IllegalArgumentException("交易對不在白名單: " + symbol);
+        }
+
+        // TODO: 未來根據 userId 切換 per-user API Key
+        // BinanceConfig userConfig = userApiKeyService.getConfig(userId);
+
+        switch (action.toUpperCase()) {
+            case "ENTRY" -> {
+                boolean isDca = request.getIsDca() != null && request.getIsDca();
+
+                if (!isDca && request.getSide() == null) {
+                    throw new IllegalArgumentException("ENTRY 需要 side");
+                }
+                if (request.getEntryPrice() == null) {
+                    throw new IllegalArgumentException("ENTRY 需要 entry_price");
+                }
+                if (request.getStopLoss() == null && !isDca) {
+                    throw new IllegalArgumentException("ENTRY 必須包含 stop_loss");
+                }
+
+                // DCA 止損容錯
+                if (isDca && request.getNewStopLoss() == null && request.getStopLoss() != null) {
+                    request.setNewStopLoss(request.getStopLoss());
+                }
+
+                TradeSignal.TradeSignalBuilder builder = TradeSignal.builder()
+                        .symbol(symbol)
+                        .entryPriceLow(request.getEntryPrice())
+                        .entryPriceHigh(request.getEntryPrice())
+                        .signalType(TradeSignal.SignalType.ENTRY)
+                        .isDca(isDca)
+                        .newStopLoss(request.getNewStopLoss())
+                        .newTakeProfit(request.getNewTakeProfit())
+                        .source(request.getSource());
+
+                if (request.getSide() != null) {
+                    builder.side(TradeSignal.Side.valueOf(request.getSide().toUpperCase()));
+                }
+                if (isDca) {
+                    builder.stopLoss(request.getNewStopLoss() != null ? request.getNewStopLoss() : 0);
+                } else {
+                    builder.stopLoss(request.getStopLoss());
+                }
+
+                TradeSignal signal = builder.build();
+                if (request.getTakeProfit() != null) {
+                    signal.setTakeProfits(List.of(request.getTakeProfit()));
+                }
+
+                List<OrderResult> results = executeSignal(signal);
+                boolean ok = results.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+                if (!ok) {
+                    String errors = results.stream()
+                            .filter(r -> !r.isSuccess())
+                            .map(OrderResult::getErrorMessage)
+                            .collect(Collectors.joining("; "));
+                    throw new RuntimeException("ENTRY 失敗: " + errors);
+                }
+            }
+            case "CLOSE" -> {
+                TradeSignal signal = TradeSignal.builder()
+                        .symbol(symbol)
+                        .signalType(TradeSignal.SignalType.CLOSE)
+                        .closeRatio(request.getCloseRatio())
+                        .newStopLoss(request.getNewStopLoss())
+                        .newTakeProfit(request.getNewTakeProfit())
+                        .build();
+
+                List<OrderResult> results = executeClose(signal);
+                boolean ok = !results.isEmpty() && results.get(0).isSuccess();
+                if (!ok) {
+                    throw new RuntimeException("CLOSE 失敗: " + symbol);
+                }
+            }
+            case "MOVE_SL" -> {
+                TradeSignal signal = TradeSignal.builder()
+                        .symbol(symbol)
+                        .signalType(TradeSignal.SignalType.MOVE_SL)
+                        .newStopLoss(request.getNewStopLoss())
+                        .newTakeProfit(request.getNewTakeProfit())
+                        .build();
+
+                List<OrderResult> results = executeMoveSL(signal);
+                boolean ok = results.stream().allMatch(OrderResult::isSuccess);
+                if (!ok) {
+                    throw new RuntimeException("MOVE_SL 失敗: " + symbol);
+                }
+            }
+            case "CANCEL" -> {
+                if (deduplicationService.isCancelDuplicate(symbol)) {
+                    log.warn("廣播跟單: 重複取消跳過 userId={} symbol={}", userId, symbol);
+                    return;  // 靜默跳過，不拋異常
+                }
+                cancelAllOrders(symbol);
+                try {
+                    tradeRecordService.recordCancel(symbol);
+                } catch (Exception e) {
+                    log.error("取消紀錄寫入失敗: {}", e.getMessage());
+                }
+            }
+            default -> throw new IllegalArgumentException("不支援的 action: " + action);
+        }
+
+        log.info("廣播跟單完成: userId={} action={} symbol={}", userId, action, symbol);
     }
 }

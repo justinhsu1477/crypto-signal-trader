@@ -122,7 +122,11 @@ class ApiClient:
     async def send_trade(
         self, trade_request: dict, dry_run: bool = False, source: dict | None = None,
     ) -> ExecutionResult:
-        """POST structured JSON to /api/execute-trade.
+        """POST structured JSON to trading API.
+
+        Endpoint depends on multi_user_enabled config:
+        - False (default): /api/execute-trade (single account)
+        - True: /api/broadcast-trade (broadcast to all users)
 
         Args:
             trade_request: Dict matching TradeRequest schema (action, symbol, side, etc.)
@@ -137,10 +141,16 @@ class ApiClient:
                 summary=f"[DRY RUN] {trade_request}",
             )
 
-        url = f"{self.config.base_url}/api/execute-trade"
+        if self.config.multi_user_enabled:
+            endpoint = "/api/broadcast-trade"
+        else:
+            endpoint = "/api/execute-trade"
+
+        url = f"{self.config.base_url}{endpoint}"
         payload = dict(trade_request)
         if source:
             payload["source"] = source
+        logger.info("send_trade → %s %s %s", endpoint, trade_request.get("action"), trade_request.get("symbol"))
         return await self._post_with_retry(url, payload)
 
     async def check_health(self) -> bool:
