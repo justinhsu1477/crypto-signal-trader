@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getMonitorStatus, getStreamStatus } from "@/lib/api";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { MonitorStatus, StreamStatus } from "@/types";
 
 interface SystemStatusProps {
@@ -20,6 +21,7 @@ function StatusDot({ connected }: { connected: boolean }) {
 }
 
 export function SystemStatus({ circuitBreakerActive }: SystemStatusProps) {
+  const { t } = useT();
   const [monitor, setMonitor] = useState<MonitorStatus | null>(null);
   const [stream, setStream] = useState<StreamStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,12 +62,12 @@ export function SystemStatus({ circuitBreakerActive }: SystemStatusProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">系統狀態</CardTitle>
+        <CardTitle className="text-base">{t("dashboard.systemStatus")}</CardTitle>
       </CardHeader>
       <CardContent>
         {loading ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            載入中...
+            {t("common.loading")}
           </p>
         ) : (
           <div className="space-y-3">
@@ -80,7 +82,7 @@ export function SystemStatus({ circuitBreakerActive }: SystemStatusProps) {
                 <div className="flex items-center gap-2">
                   <StatusDot connected={item.connected} />
                   <span className="text-sm font-medium">
-                    {item.connected ? "Connected" : "Disconnected"}
+                    {item.connected ? t("common.connected") : t("common.disconnected")}
                   </span>
                 </div>
               </div>

@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatPercent, pnlColor } from "@/lib/utils";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { SignalSourceStats } from "@/types";
 
 interface SignalRankingProps {
@@ -17,24 +18,26 @@ interface SignalRankingProps {
 }
 
 export function SignalRanking({ data }: SignalRankingProps) {
+  const { t } = useT();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>訊號來源排名</CardTitle>
+        <CardTitle>{t("performance.signalSourceRanking")}</CardTitle>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground">
-            無訊號來源資料
+            {t("performance.noSignalData")}
           </p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>來源</TableHead>
-                <TableHead className="text-right">交易數</TableHead>
-                <TableHead className="text-right">勝率</TableHead>
-                <TableHead className="text-right">淨利潤</TableHead>
+                <TableHead>{t("performance.source")}</TableHead>
+                <TableHead className="text-right">{t("performance.tradeCount")}</TableHead>
+                <TableHead className="text-right">{t("performance.winRate")}</TableHead>
+                <TableHead className="text-right">{t("performance.netProfit")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

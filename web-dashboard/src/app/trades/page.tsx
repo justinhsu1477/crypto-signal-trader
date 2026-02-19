@@ -5,8 +5,10 @@ import type { TradeHistoryResponse } from "@/types";
 import { getTradeHistory } from "@/lib/api";
 import { TradeTable } from "@/components/trades/trade-table";
 import { TradeDetail } from "@/components/trades/trade-detail";
+import { useT } from "@/lib/i18n/i18n-context";
 
 export default function TradesPage() {
+  const { t } = useT();
   const [page, setPage] = useState(0);
   const [size] = useState(20);
   const [response, setResponse] = useState<TradeHistoryResponse | null>(null);
@@ -27,7 +29,7 @@ export default function TradesPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "載入失敗");
+          setError(err instanceof Error ? err.message : t("common.loadFailed"));
         }
       } finally {
         if (!cancelled) {
@@ -44,7 +46,7 @@ export default function TradesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">交易紀錄</h1>
+      <h1 className="text-2xl font-bold">{t("trades.title")}</h1>
 
       {loading && (
         <div className="flex items-center justify-center py-20">

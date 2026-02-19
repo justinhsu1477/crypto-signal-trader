@@ -1,0 +1,222 @@
+export const locales = ["en", "zh-TW", "zh-CN"] as const;
+export type Locale = (typeof locales)[number];
+
+export const localeLabels: Record<Locale, string> = {
+  en: "English",
+  "zh-TW": "繁體中文",
+  "zh-CN": "简体中文",
+};
+
+export const htmlLangMap: Record<Locale, string> = {
+  en: "en",
+  "zh-TW": "zh-Hant",
+  "zh-CN": "zh-Hans",
+};
+
+const translations = {
+  // ─── common ───
+  common: {
+    loading: { en: "Loading...", "zh-TW": "載入中...", "zh-CN": "加载中..." },
+    loadFailed: { en: "Failed to load", "zh-TW": "載入失敗", "zh-CN": "加载失败" },
+    noData: { en: "No data", "zh-TW": "無資料", "zh-CN": "无数据" },
+    cannotLoad: { en: "Unable to load data", "zh-TW": "無法載入資料", "zh-CN": "无法加载数据" },
+    saveFailed: { en: "Save failed", "zh-TW": "儲存失敗", "zh-CN": "保存失败" },
+    saveSuccess: { en: "Saved successfully", "zh-TW": "儲存成功", "zh-CN": "保存成功" },
+    saving: { en: "Saving...", "zh-TW": "儲存中...", "zh-CN": "保存中..." },
+    previous: { en: "Previous", "zh-TW": "上一頁", "zh-CN": "上一页" },
+    next: { en: "Next", "zh-TW": "下一頁", "zh-CN": "下一页" },
+    connected: { en: "Connected", "zh-TW": "已連線", "zh-CN": "已连接" },
+    disconnected: { en: "Disconnected", "zh-TW": "未連線", "zh-CN": "未连接" },
+  },
+
+  // ─── nav ───
+  nav: {
+    overview: { en: "Overview", "zh-TW": "總覽", "zh-CN": "总览" },
+    performance: { en: "Performance", "zh-TW": "績效", "zh-CN": "绩效" },
+    trades: { en: "Trade History", "zh-TW": "交易紀錄", "zh-CN": "交易记录" },
+    settings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置" },
+    logout: { en: "Logout", "zh-TW": "登出", "zh-CN": "退出登录" },
+    features: { en: "Features", "zh-TW": "功能特色", "zh-CN": "功能特色" },
+    pricing: { en: "Pricing", "zh-TW": "方案價格", "zh-CN": "方案价格" },
+    about: { en: "About", "zh-TW": "關於我們", "zh-CN": "关于我们" },
+    contact: { en: "Contact", "zh-TW": "聯繫我們", "zh-CN": "联系我们" },
+  },
+
+  // ─── login ───
+  login: {
+    welcomeBack: { en: "Welcome Back", "zh-TW": "歡迎回來", "zh-CN": "欢迎回来" },
+    subtitle: { en: "Sign in to continue using the trading system", "zh-TW": "登入以繼續使用交易系統", "zh-CN": "登录以继续使用交易系统" },
+    email: { en: "Email", "zh-TW": "電子郵件", "zh-CN": "电子邮件" },
+    password: { en: "Password", "zh-TW": "密碼", "zh-CN": "密码" },
+    loginButton: { en: "Sign In", "zh-TW": "登入", "zh-CN": "登录" },
+    loggingIn: { en: "Signing in...", "zh-TW": "登入中...", "zh-CN": "登录中..." },
+    loginFailed: { en: "Login failed, please try again later", "zh-TW": "登入失敗，請稍後再試", "zh-CN": "登录失败，请稍后再试" },
+    noAccount: { en: "Don't have an account? ", "zh-TW": "還沒有帳號？ ", "zh-CN": "还没有账号？ " },
+    registerNow: { en: "Register Now", "zh-TW": "立即註冊", "zh-CN": "立即注册" },
+    freeRegister: { en: "Sign Up Free", "zh-TW": "免費註冊", "zh-CN": "免费注册" },
+    signIn: { en: "Sign In", "zh-TW": "登入", "zh-CN": "登录" },
+  },
+
+  // ─── register ───
+  register: {
+    createAccount: { en: "Create Account", "zh-TW": "建立帳號", "zh-CN": "创建账号" },
+    subtitle: { en: "Sign up free, start smart trading now", "zh-TW": "免費註冊，立即開始智能交易", "zh-CN": "免费注册，立即开始智能交易" },
+    name: { en: "Name", "zh-TW": "名稱", "zh-CN": "名称" },
+    namePlaceholder: { en: "Your name", "zh-TW": "您的名稱", "zh-CN": "您的名称" },
+    registerButton: { en: "Sign Up Free", "zh-TW": "免費註冊", "zh-CN": "免费注册" },
+    registering: { en: "Registering...", "zh-TW": "註冊中...", "zh-CN": "注册中..." },
+    registerFailed: { en: "Registration failed, please try again later", "zh-TW": "註冊失敗，請稍後再試", "zh-CN": "注册失败，请稍后再试" },
+    hasAccount: { en: "Already have an account? ", "zh-TW": "已經有帳號？ ", "zh-CN": "已有账号？ " },
+    backToLogin: { en: "Back to Sign In", "zh-TW": "返回登入", "zh-CN": "返回登录" },
+  },
+
+  // ─── landing ───
+  landing: {
+    statusBadge: { en: "System Running — 24/7 Auto-Trading", "zh-TW": "系統運行中 — 24/7 全自動交易", "zh-CN": "系统运行中 — 24/7 全自动交易" },
+    heroTitle1: { en: "Trade Crypto with", "zh-TW": "用 AI 訊號", "zh-CN": "用 AI 信号" },
+    heroTitle2: { en: "AI-Powered Signals", "zh-TW": "智能交易加密貨幣", "zh-CN": "智能交易加密货币" },
+    heroDescription: {
+      en: "Integrating signals from top Discord & Telegram communities, auto-executing trades on Binance. AI risk analysis keeps your investments safe and efficient.",
+      "zh-TW": "整合 Discord、Telegram 知名社群策略訊號，自動在幣安執行交易。AI 風控分析，讓您的投資更加安全高效。",
+      "zh-CN": "整合 Discord、Telegram 知名社群策略信号，自动在币安执行交易。AI 风控分析，让您的投资更加安全高效。",
+    },
+    featureSignalTitle: { en: "Real-time Signals", "zh-TW": "即時訊號", "zh-CN": "实时信号" },
+    featureSignalDesc: {
+      en: "Instant signals from top Discord & Telegram groups, auto-executing orders",
+      "zh-TW": "Discord、Telegram 知名大群策略訊號即時推送，自動下單",
+      "zh-CN": "Discord、Telegram 知名大群策略信号即时推送，自动下单",
+    },
+    featureRiskTitle: { en: "Smart Risk Control", "zh-TW": "智能風控", "zh-CN": "智能风控" },
+    featureRiskDesc: {
+      en: "Daily risk budget management with automatic stop-loss to protect your assets",
+      "zh-TW": "每日風險預算管理，自動停損保護您的資產",
+      "zh-CN": "每日风险预算管理，自动止损保护您的资产",
+    },
+    featureAiTitle: { en: "AI Analysis", "zh-TW": "AI 分析", "zh-CN": "AI 分析" },
+    featureAiDesc: {
+      en: "Gemini AI daily account risk analysis with professional trading advice",
+      "zh-TW": "Gemini AI 每日分析帳戶風險，提供專業交易建議",
+      "zh-CN": "Gemini AI 每日分析账户风险，提供专业交易建议",
+    },
+    featureSecurityTitle: { en: "Secure & Reliable", "zh-TW": "安全可靠", "zh-CN": "安全可靠" },
+    featureSecurityDesc: {
+      en: "JWT authentication + API key encryption, your funds are protected",
+      "zh-TW": "JWT 認證 + API Key 加密，資金安全有保障",
+      "zh-CN": "JWT 认证 + API Key 加密，资金安全有保障",
+    },
+    footer: { en: "Smart Crypto Trading Platform", "zh-TW": "智能加密貨幣交易平台", "zh-CN": "智能加密货币交易平台" },
+  },
+
+  // ─── dashboard ───
+  dashboard: {
+    title: { en: "Overview", "zh-TW": "總覽", "zh-CN": "总览" },
+    availableBalance: { en: "Available Balance", "zh-TW": "可用餘額", "zh-CN": "可用余额" },
+    openPositions: { en: "Open Positions", "zh-TW": "持倉數量", "zh-CN": "持仓数量" },
+    todayPnl: { en: "Today P&L", "zh-TW": "今日盈虧", "zh-CN": "今日盈亏" },
+    todayTrades: { en: "Today Trades", "zh-TW": "今日交易", "zh-CN": "今日交易" },
+    currentPositions: { en: "Current Positions", "zh-TW": "當前持倉", "zh-CN": "当前持仓" },
+    noPositions: { en: "No open positions", "zh-TW": "目前無持倉", "zh-CN": "暂无持仓" },
+    riskBudget: { en: "Risk Budget", "zh-TW": "風控預算", "zh-CN": "风控预算" },
+    circuitBreaker: { en: "Circuit Breaker", "zh-TW": "熔斷中", "zh-CN": "熔断中" },
+    lossUsed: { en: "Loss budget used", "zh-TW": "已用損失額度", "zh-CN": "已用损失额度" },
+    remainingBudget: { en: "Remaining budget", "zh-TW": "剩餘預算", "zh-CN": "剩余预算" },
+    systemStatus: { en: "System Status", "zh-TW": "系統狀態", "zh-CN": "系统状态" },
+  },
+
+  // ─── trades ───
+  trades: {
+    title: { en: "Trade History", "zh-TW": "交易紀錄", "zh-CN": "交易记录" },
+    noTrades: { en: "No trade records", "zh-TW": "沒有交易紀錄", "zh-CN": "没有交易记录" },
+    pagination: {
+      en: "Page {current} / {total}, {count} records",
+      "zh-TW": "第 {current} / {total} 頁，共 {count} 筆",
+      "zh-CN": "第 {current} / {total} 页，共 {count} 条",
+    },
+    tradeEventDetail: { en: "Trade Event Detail", "zh-TW": "交易事件明細", "zh-CN": "交易事件明细" },
+    noEvents: { en: "No event records", "zh-TW": "沒有事件紀錄", "zh-CN": "没有事件记录" },
+  },
+
+  // ─── performance ───
+  performance: {
+    title: { en: "Performance Analysis", "zh-TW": "績效分析", "zh-CN": "绩效分析" },
+    all: { en: "All", "zh-TW": "全部", "zh-CN": "全部" },
+    winRate: { en: "Win Rate", "zh-TW": "勝率", "zh-CN": "胜率" },
+    profitFactor: { en: "Profit Factor", "zh-TW": "盈虧比 (Profit Factor)", "zh-CN": "盈亏比 (Profit Factor)" },
+    profitOverLoss: { en: "Profit / Loss", "zh-TW": "盈利 / 虧損", "zh-CN": "盈利 / 亏损" },
+    netProfit: { en: "Net Profit", "zh-TW": "淨利潤", "zh-CN": "净利润" },
+    commission: { en: "Commission {amount} USDT", "zh-TW": "佣金 {amount} USDT", "zh-CN": "佣金 {amount} USDT" },
+    expectancy: { en: "Expectancy", "zh-TW": "期望值", "zh-CN": "期望值" },
+    expectancySubtitle: { en: "Expected profit per trade", "zh-TW": "每筆交易預期收益", "zh-CN": "每笔交易预期收益" },
+    maxDrawdown: { en: "Max Drawdown", "zh-TW": "最大回撤", "zh-CN": "最大回撤" },
+    maxDrawdownSubtitle: { en: "{percent}% / {days} days", "zh-TW": "{percent}% / {days} 天", "zh-CN": "{percent}% / {days} 天" },
+    riskRewardRatio: { en: "Risk/Reward Ratio", "zh-TW": "風險報酬比", "zh-CN": "风险报酬比" },
+    riskRewardSubtitle: { en: "Avg profit / Avg loss", "zh-TW": "平均盈利 / 平均虧損", "zh-CN": "平均盈利 / 平均亏损" },
+    consecutiveWins: { en: "Consecutive Wins", "zh-TW": "連續獲利", "zh-CN": "连续获利" },
+    consecutiveLosses: { en: "Consecutive Losses", "zh-TW": "連續虧損", "zh-CN": "连续亏损" },
+    times: { en: "{n} times", "zh-TW": "{n} 次", "zh-CN": "{n} 次" },
+    avgHoldingTime: { en: "Avg Holding Time", "zh-TW": "平均持倉時間", "zh-CN": "平均持仓时间" },
+    hours: { en: "{n} hours", "zh-TW": "{n} 小時", "zh-CN": "{n} 小时" },
+    avgWin: { en: "Avg Win", "zh-TW": "平均獲利", "zh-CN": "平均获利" },
+    avgLoss: { en: "Avg Loss", "zh-TW": "平均虧損", "zh-CN": "平均亏损" },
+    maxWin: { en: "Largest Win", "zh-TW": "最大單筆獲利", "zh-CN": "最大单笔获利" },
+    maxLoss: { en: "Largest Loss", "zh-TW": "最大單筆虧損", "zh-CN": "最大单笔亏损" },
+    pnlCurve: { en: "P&L Curve", "zh-TW": "盈虧曲線", "zh-CN": "盈亏曲线" },
+    cumulativePnl: { en: "Cumulative P&L", "zh-TW": "累計盈虧", "zh-CN": "累计盈亏" },
+    dailyPnl: { en: "Daily P&L", "zh-TW": "當日盈虧", "zh-CN": "当日盈亏" },
+    drawdown: { en: "Drawdown", "zh-TW": "回撤", "zh-CN": "回撤" },
+    drawdownPercent: { en: "Drawdown %", "zh-TW": "回撤 %", "zh-CN": "回撤 %" },
+    symbolPerformance: { en: "Symbol Performance", "zh-TW": "幣種績效", "zh-CN": "币种绩效" },
+    symbol: { en: "Symbol", "zh-TW": "幣種", "zh-CN": "币种" },
+    tradeCount: { en: "Trades", "zh-TW": "交易數", "zh-CN": "交易数" },
+    wins: { en: "Wins", "zh-TW": "勝場", "zh-CN": "胜场" },
+    avgProfit: { en: "Avg Profit", "zh-TW": "平均利潤", "zh-CN": "平均利润" },
+    longShortComparison: { en: "Long / Short Comparison", "zh-TW": "多空對比", "zh-CN": "多空对比" },
+    exitReasonDistribution: { en: "Exit Reason Distribution", "zh-TW": "出場原因分布", "zh-CN": "出场原因分布" },
+    exitStopLoss: { en: "Stop Loss", "zh-TW": "止損", "zh-CN": "止损" },
+    exitSignalClose: { en: "Signal Close", "zh-TW": "訊號平倉", "zh-CN": "信号平仓" },
+    exitManualClose: { en: "Manual Close", "zh-TW": "手動平倉", "zh-CN": "手动平仓" },
+    exitCount: { en: "{n} trades ({pct}%)", "zh-TW": "{n} 筆 ({pct}%)", "zh-CN": "{n} 笔 ({pct}%)" },
+    signalSourceRanking: { en: "Signal Source Ranking", "zh-TW": "訊號來源排名", "zh-CN": "信号来源排名" },
+    noSignalData: { en: "No signal source data", "zh-TW": "無訊號來源資料", "zh-CN": "无信号来源数据" },
+    source: { en: "Source", "zh-TW": "來源", "zh-CN": "来源" },
+    timeStats: { en: "Time Statistics", "zh-TW": "時間統計", "zh-CN": "时间统计" },
+    weeklyStats: { en: "Weekly", "zh-TW": "週統計", "zh-CN": "周统计" },
+    monthlyStats: { en: "Monthly", "zh-TW": "月統計", "zh-CN": "月统计" },
+    period: { en: "Period", "zh-TW": "期間", "zh-CN": "期间" },
+    month: { en: "Month", "zh-TW": "月份", "zh-CN": "月份" },
+    dayOfWeekPerformance: { en: "Day of Week Performance", "zh-TW": "星期績效", "zh-CN": "星期绩效" },
+    monday: { en: "Mon", "zh-TW": "週一", "zh-CN": "周一" },
+    tuesday: { en: "Tue", "zh-TW": "週二", "zh-CN": "周二" },
+    wednesday: { en: "Wed", "zh-TW": "週三", "zh-CN": "周三" },
+    thursday: { en: "Thu", "zh-TW": "週四", "zh-CN": "周四" },
+    friday: { en: "Fri", "zh-TW": "週五", "zh-CN": "周五" },
+    saturday: { en: "Sat", "zh-TW": "週六", "zh-CN": "周六" },
+    sunday: { en: "Sun", "zh-TW": "週日", "zh-CN": "周日" },
+    dcaAnalysis: { en: "DCA Analysis", "zh-TW": "DCA 補倉分析", "zh-CN": "DCA 补仓分析" },
+    noDca: { en: "No DCA", "zh-TW": "無補倉", "zh-CN": "无补仓" },
+    withDca: { en: "With DCA", "zh-TW": "有補倉", "zh-CN": "有补仓" },
+    better: { en: "Better", "zh-TW": "較佳", "zh-CN": "较优" },
+  },
+
+  // ─── settings ───
+  settings: {
+    title: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置" },
+    profile: { en: "Profile", "zh-TW": "個人資料", "zh-CN": "个人资料" },
+    name: { en: "Name", "zh-TW": "名稱", "zh-CN": "名称" },
+    role: { en: "Role", "zh-TW": "角色", "zh-CN": "角色" },
+    createdAt: { en: "Created At", "zh-TW": "建立時間", "zh-CN": "创建时间" },
+    apiKeyManagement: { en: "API Key Management", "zh-TW": "API Key 管理", "zh-CN": "API Key 管理" },
+    configuredExchanges: { en: "Configured Exchanges", "zh-TW": "已設定的交易所", "zh-CN": "已配置的交易所" },
+    configured: { en: "Configured", "zh-TW": "已設定", "zh-CN": "已配置" },
+    notConfigured: { en: "Not Configured", "zh-TW": "未設定", "zh-CN": "未配置" },
+    updatedAt: { en: "Updated at {time}", "zh-TW": "更新於 {time}", "zh-CN": "更新于 {time}" },
+    noApiKeys: { en: "No API keys configured", "zh-TW": "尚未設定任何 API Key", "zh-CN": "尚未配置任何 API Key" },
+    addUpdateApiKey: { en: "Add / Update API Key", "zh-TW": "新增 / 更新 API Key", "zh-CN": "新增 / 更新 API Key" },
+    apiKeyPlaceholder: { en: "Enter API Key", "zh-TW": "輸入 API Key", "zh-CN": "输入 API Key" },
+    secretKeyPlaceholder: { en: "Enter Secret Key", "zh-TW": "輸入 Secret Key", "zh-CN": "输入 Secret Key" },
+    fillRequired: { en: "Please fill in API Key and Secret Key", "zh-TW": "請填寫 API Key 和 Secret Key", "zh-CN": "请填写 API Key 和 Secret Key" },
+    saveApiKey: { en: "Save API Key", "zh-TW": "儲存 API Key", "zh-CN": "保存 API Key" },
+  },
+} as const;
+
+export default translations;

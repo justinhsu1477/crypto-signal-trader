@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatAmount, formatDateTime } from "@/lib/utils";
+import { useT } from "@/lib/i18n/i18n-context";
 import type { OpenPositionSummary } from "@/types";
 
 interface PositionsTableProps {
@@ -18,15 +19,17 @@ interface PositionsTableProps {
 }
 
 export function PositionsTable({ positions }: PositionsTableProps) {
+  const { t } = useT();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">當前持倉</CardTitle>
+        <CardTitle className="text-base">{t("dashboard.currentPositions")}</CardTitle>
       </CardHeader>
       <CardContent>
         {positions.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            目前無持倉
+            {t("dashboard.noPositions")}
           </p>
         ) : (
           <Table>
@@ -64,10 +67,10 @@ export function PositionsTable({ positions }: PositionsTableProps) {
                     {formatAmount(pos.stopLoss)}
                   </TableCell>
                   <TableCell className="text-center">
-                    {pos.dcaCount ?? "—"}
+                    {pos.dcaCount ?? "\u2014"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {pos.signalSource ?? "—"}
+                    {pos.signalSource ?? "\u2014"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(pos.entryTime)}

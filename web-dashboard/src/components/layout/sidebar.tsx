@@ -12,17 +12,20 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-
-const navItems = [
-  { href: "/", label: "總覽", icon: LayoutDashboard },
-  { href: "/performance", label: "績效", icon: BarChart3 },
-  { href: "/trades", label: "交易紀錄", icon: History },
-  { href: "/settings", label: "設定", icon: Settings },
-];
+import { useT } from "@/lib/i18n/i18n-context";
+import { LanguageSwitcher } from "@/components/ui/language-switcher";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { logout, email } = useAuth();
+  const { t } = useT();
+
+  const navItems = [
+    { href: "/", label: t("nav.overview"), icon: LayoutDashboard },
+    { href: "/performance", label: t("nav.performance"), icon: BarChart3 },
+    { href: "/trades", label: t("nav.trades"), icon: History },
+    { href: "/settings", label: t("nav.settings"), icon: Settings },
+  ];
 
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-card border-r border-border">
@@ -56,8 +59,11 @@ export function Sidebar() {
 
       {/* User & Logout */}
       <div className="border-t border-border px-3 py-4">
-        <div className="px-3 mb-2 text-xs text-muted-foreground truncate">
-          {email || "User"}
+        <div className="flex items-center justify-between px-3 mb-2">
+          <span className="text-xs text-muted-foreground truncate">
+            {email || "User"}
+          </span>
+          <LanguageSwitcher />
         </div>
         <button
           onClick={() => {
@@ -67,7 +73,7 @@ export function Sidebar() {
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
         >
           <LogOut className="h-5 w-5" />
-          登出
+          {t("nav.logout")}
         </button>
       </div>
     </aside>

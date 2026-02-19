@@ -4,17 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-const NAV_LINKS = [
-  { href: "#features", label: "功能特色" },
-  { href: "#pricing", label: "方案價格" },
-  { href: "#about", label: "關於我們" },
-  { href: "#contact", label: "聯繫我們" },
-];
+import { LanguageSwitcher } from "@/components/ui/language-switcher";
+import { useT } from "@/lib/i18n/i18n-context";
 
 export function PublicNavbar() {
   const pathname = usePathname();
   const isLogin = pathname === "/login";
+  const { t } = useT();
+
+  const navLinks = [
+    { href: "#features", label: t("nav.features") },
+    { href: "#pricing", label: t("nav.pricing") },
+    { href: "#about", label: t("nav.about") },
+    { href: "#contact", label: t("nav.contact") },
+  ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-black/60 backdrop-blur-xl">
@@ -31,7 +34,7 @@ export function PublicNavbar() {
 
         {/* Center links */}
         <div className="hidden md:flex items-center gap-1">
-          {NAV_LINKS.map((link) => (
+          {navLinks.map((link) => (
             <a
               key={link.href}
               href={link.href}
@@ -44,17 +47,18 @@ export function PublicNavbar() {
 
         {/* Right CTA */}
         <div className="flex items-center gap-3">
+          <LanguageSwitcher />
           {isLogin ? (
             <Button asChild variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white">
-              <Link href="/register">免費註冊</Link>
+              <Link href="/register">{t("login.freeRegister")}</Link>
             </Button>
           ) : (
             <>
               <Button asChild variant="ghost" size="sm">
-                <Link href="/login">登入</Link>
+                <Link href="/login">{t("login.signIn")}</Link>
               </Button>
               <Button asChild variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white">
-                <Link href="/register">免費註冊</Link>
+                <Link href="/register">{t("login.freeRegister")}</Link>
               </Button>
             </>
           )}
