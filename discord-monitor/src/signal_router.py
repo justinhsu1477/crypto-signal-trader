@@ -5,6 +5,7 @@ import logging
 
 from .api_client import ApiClient
 from .config import DiscordConfig
+from .trade_action_detector import detector
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,21 @@ class SignalRouter:
         # === Agent 1: AI Signal Parser (primary) ===
         if self.ai_parser:
             parsed = await self.ai_parser.parse(content)
+
+            # 如果 AI 返回 INFO 或無法解析，嘗試 TradeActionDetector 補助判斷
+            if parsed and parsed.get("action") == "INFO":
+                # AI 判為 INFO，檢查是否為完全平倉訊號
+                if detector.detect_close(content):
+                    logger.info("TradeActionDetector 補救: INFO → CLOSE (content: %s)", content[:80])
+                    parsed['action'] = 'CLOSE'
+                    parsed['_detector_refinement'] = 'INFO→CLOSE by TradeActionDetector'
+                    # 確保有 symbol（預設為 BTCUSDT）
+                    if not parsed.get('symbol'):
+                        parsed['symbol'] = 'BTCUSDT'
+                else:
+                    logger.debug("AI identified as INFO, TradeActionDetector 無補救, skipping")
+                    return
+
             if parsed and parsed.get("action") not in ("INFO", "UNKNOWN"):
                 logger.info("AI parsed → %s %s %s", parsed.get("action"), parsed.get("symbol"), parsed.get("side", ""))
 
@@ -174,7 +190,7 @@ class SignalRouter:
                     logger.warning("AI trade FAILED (HTTP %d): %s", result.status_code, result.error)
                 return
             elif parsed and parsed.get("action") == "INFO":
-                logger.debug("AI identified as INFO, skipping")
+                logger.debug("AI identified as INFO (TradeActionDetector 未補救), skipping")
                 return
             else:
                 logger.warning("AI parsing failed, falling back to regex")
