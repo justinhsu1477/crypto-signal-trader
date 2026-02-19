@@ -6,6 +6,8 @@ import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.user.repository.UserRepository;
+import com.trader.user.service.UserDiscordWebhookService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -31,12 +33,16 @@ import static org.mockito.Mockito.*;
 class DashboardControllerTest {
 
     private DashboardService dashboardService;
+    private UserRepository userRepository;
+    private UserDiscordWebhookService webhookService;
     private DashboardController controller;
 
     @BeforeEach
     void setUp() {
         dashboardService = mock(DashboardService.class);
-        controller = new DashboardController(dashboardService);
+        userRepository = mock(UserRepository.class);
+        webhookService = mock(UserDiscordWebhookService.class);
+        controller = new DashboardController(dashboardService, userRepository, webhookService);
     }
 
     // ==================== /overview ====================
