@@ -16,7 +16,7 @@ Python Monitor (discord-monitor/)
     │            regex 解析原始文字
     │  心跳回報 → Java API (每 30 秒)
     ▼
-Spring Boot API (Docker, port 8080)
+Spring Boot API (Docker, port 8080/8081)
     │  風控檢查 → Binance 下單
     │  → 部分平倉 + SL/TP 重掛保護
     │  → DCA 補倉（2R 加碼）
@@ -30,6 +30,13 @@ Binance Futures API
 WebSocket User Data Stream（即時回報）
     → SL/TP 觸發 → 真實數據寫入 DB（支援部分平倉）
     → SL/TP 被取消 → Discord 告警（持倉裸奔）
+
+資料庫:
+    Prod → Neon 雲端 PostgreSQL (Singapore)  ← 資料永久保存
+    Dev  → 本地 PostgreSQL Docker container
+
+前端:
+    Web Dashboard (Next.js + React + shadcn/ui, port 3000/3001)
 ```
 
 ## 模組架構
@@ -98,7 +105,7 @@ cp .env.example .env.dev
 
 # Prod 環境（Binance 正式真錢交易）
 cp .env.example .env.prod
-# 編輯 .env.prod 填入正式 API Keys + SPRING_PROFILES_ACTIVE=prod
+# 編輯 .env.prod 填入正式 API Keys + Neon DB 連線
 ```
 
 ### Step 2: 啟動 Discord（帶 CDP）
@@ -119,36 +126,53 @@ curl http://127.0.0.1:9222/json
 系統支援 Dev / Prod 環境分離，可同時跑兩套互不干擾。
 
 ```bash
-# Dev 環境（Testnet, port 8080）
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-
-# Prod 環境（正式, port 8081）
+# === Prod 環境（正式, port 8081, Neon 雲端 DB）===
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# === Dev 環境（Testnet, port 8080, 本地 PostgreSQL）===
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db up -d --build
 ```
 
-| 環境 | Port | Binance | Container 名稱 | DB Volume |
-|------|------|---------|----------------|-----------|
-| Dev | 8080 | Testnet（假錢） | `trading-api-dev` / `discord-monitor-dev` | `h2-data-dev` |
-| Prod | 8081 | 正式（真錢） | `trading-api-prod` / `discord-monitor-prod` | `h2-data-prod` |
+| 環境 | API Port | Dashboard Port | Binance | DB | Container 前綴 |
+|------|----------|----------------|---------|-----|---------------|
+| **Prod** | 8081 | 3001 | 正式（真錢） | Neon 雲端 PostgreSQL | `*-prod` |
+| **Dev** | 8080 | 3000 | Testnet（假錢） | 本地 PostgreSQL container | `*-dev` |
+
+### 換版部署 SOP（Prod）
+
+```bash
+# 1. 拉最新程式碼
+git pull
+
+# 2. 只重建 app 服務（DB 在 Neon 雲端，不受影響）
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# 3. 確認健康
+docker ps
+curl http://localhost:8081/api/balance
+```
+
+> Prod 環境使用 Neon 雲端 DB，`docker compose down` 不會影響資料。
+> Dev 環境的本地 DB 資料存在 `pg-data-dev` volume，只要不加 `-v` 就不會丟。
 
 ### 常用 Docker 指令
 
 ```bash
-# === Dev 環境 ===
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build   # 啟動
-docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f          # 查看 log
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down             # 停止
-
 # === Prod 環境 ===
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build   # 啟動
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f          # 查看 log
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down             # 停止
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down             # 停止（資料安全）
+
+# === Dev 環境 ===
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db up -d --build   # 啟動
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db logs -f          # 查看 log
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db down             # 停止
 
 # === 單一服務 log ===
-docker logs -f trading-api-dev       # Dev Java API log
-docker logs -f discord-monitor-dev   # Dev Python monitor log
 docker logs -f trading-api-prod      # Prod Java API log
 docker logs -f discord-monitor-prod  # Prod Python monitor log
+docker logs -f trading-api-dev       # Dev Java API log
+docker logs -f discord-monitor-dev   # Dev Python monitor log
 
 # === 查看狀態 ===
 docker ps                            # 所有運行中的 container
@@ -157,15 +181,15 @@ docker ps                            # 所有運行中的 container
 ### 健康檢查 / 驗證
 
 ```bash
-# Dev 環境 (port 8080)
-curl http://localhost:8080/api/balance
-curl http://localhost:8080/api/monitor-status
-curl http://localhost:8080/api/stream-status
-
 # Prod 環境 (port 8081)
 curl http://localhost:8081/api/balance
 curl http://localhost:8081/api/monitor-status
 curl http://localhost:8081/api/stream-status
+
+# Dev 環境 (port 8080)
+curl http://localhost:8080/api/balance
+curl http://localhost:8080/api/monitor-status
+curl http://localhost:8080/api/stream-status
 
 # 測試解析訊號（不下單，Dev 環境）
 curl -X POST http://localhost:8080/api/parse-signal \
@@ -188,6 +212,7 @@ curl -X POST http://localhost:8080/api/parse-signal \
 | 方向自動判斷 | 補倉方向跟隨既有持倉（不用再寫 LONG/SHORT） |
 | 均價計算 | 自動更新加權平均入場價 |
 | SL/TP 重掛 | 補倉後自動以新的止損止盈重掛保護單 |
+| 無持倉防護 | DCA 訊號在無持倉時自動拒絕，不會誤開新倉 |
 
 ```
 首次入場 (1R) → 補倉 1 (2R) → 補倉 2 (2R) → 達到上限，拒絕
@@ -259,7 +284,7 @@ Python monitor 同時回報 AI parser 狀態（`aiStatus`）：
 ### 查詢監控狀態
 
 ```bash
-curl http://localhost:8080/api/monitor-status
+curl http://localhost:8081/api/monitor-status
 # 回傳: lastHeartbeat, elapsedSeconds, online, monitorStatus, aiStatus, alertSent
 ```
 
@@ -282,7 +307,7 @@ curl http://localhost:8080/api/monitor-status
 
 ```bash
 # 查詢 WebSocket 連線狀態
-curl http://localhost:8080/api/stream-status
+curl http://localhost:8081/api/stream-status
 # 回傳: connected, listenKeyActive, lastMessageTime, reconnectAttempts
 ```
 
@@ -291,11 +316,22 @@ curl http://localhost:8080/api/stream-status
 | 時間 (台灣) | 排程 | 說明 |
 |------------|------|------|
 | 07:55 | 殭屍清理 | 比對幣安持倉，清理 DB 中無對應持倉的 OPEN 紀錄 |
-| 08:00 | 每日報告 | 推送昨日交易統計（筆數、勝率、盈虧、手續費、累計績效）到 Discord |
+| 08:00 | 每日報告 | 推送每日交易摘要到 Discord |
+
+#### 每日報告內容（6 大區塊）
+
+| 區塊 | 內容 | 資料來源 |
+|------|------|---------|
+| 💰 帳戶餘額 | 可用餘額 USDT | Binance API |
+| 📊 昨日交易 | 筆數、勝率、淨利 + 最多 5 筆明細 + 最大單筆虧損 | DB |
+| 📍 當前持倉 | symbol、方向、入場價、SL、DCA 次數 | DB |
+| 🛡️ 今日風控 | 已用額度 / 每日限額 + 熔斷狀態 | DB + Config |
+| 📈 累計統計 | 總淨利、勝率、PF、平均每筆盈虧 | DB |
+| ⚙️ 系統狀態 | Monitor 心跳 + AI Agent + WebSocket 連線 | Memory |
 
 ```bash
 # 手動觸發殭屍清理
-curl -X POST http://localhost:8080/api/admin/cleanup-trades
+curl -X POST http://localhost:8081/api/admin/cleanup-trades
 ```
 
 ---
@@ -449,19 +485,32 @@ SL 下單失敗
 依環境建立對應的 `.env` 檔案，兩套互相隔離：
 
 ```env
-SPRING_PROFILES_ACTIVE=dev          # dev=Testnet假錢, prod=正式真錢
+# === 必填 ===
+SPRING_PROFILES_ACTIVE=prod         # dev=Testnet假錢, prod=正式真錢
 BINANCE_API_KEY=your_key
 BINANCE_SECRET_KEY=your_secret
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/你的ID/你的TOKEN
 DISCORD_WEBHOOK_ENABLED=true
 GEMINI_API_KEY=your_gemini_key      # AI 訊號解析用
 
-# Discord 監聽設定 (Python)
+# === Discord 監聽設定 (Python) ===
 DISCORD_CHANNEL_IDS=your_channel_id
 DISCORD_GUILD_IDS=your_guild_id
 
-# SaaS 功能（骨架階段，尚未啟用）
+# === 資料庫 ===
+# Prod: Neon 雲端 PostgreSQL
+DB_URL=jdbc:postgresql://ep-xxx.ap-southeast-1.aws.neon.tech/trading?sslmode=require
+DB_USERNAME=neondb_owner
+DB_PASSWORD=your_neon_password
+
+# Dev: 本地 PostgreSQL container
+# DB_URL=jdbc:postgresql://postgres:5432/trading
+# DB_USERNAME=trading
+# DB_PASSWORD=trading
+
+# === SaaS 功能（骨架階段，尚未啟用）===
 JWT_SECRET=your-jwt-secret-at-least-256-bits
+AES_ENCRYPTION_KEY=your-aes-key-must-be-32-chars!!
 STRIPE_SECRET_KEY=sk_test_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
 ```
@@ -636,42 +685,42 @@ AI 靠語意理解判斷，不綁死特定 emoji 或格式。不同群主的訊�
 
 ```bash
 # ENTRY 開倉（含訊號來源）
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":95000,"stop_loss":93000,"take_profit":98000,"source":{"platform":"DISCORD","channel_id":"123","author_name":"陳哥"}}'
 
 # DCA 補倉（已有 BTC 持倉，加倉 + 更新 SL/TP）
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"ENTRY","symbol":"BTCUSDT","is_dca":true,"entry_price":93000,"new_stop_loss":91000,"new_take_profit":98000}'
 
 # CLOSE 全部平倉
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"CLOSE","symbol":"BTCUSDT"}'
 
 # CLOSE 平倉 50% + 剩餘做成本保護
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":null}'
 
 # CLOSE 平倉 50% + 剩餘指定新 SL
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":94500,"new_take_profit":99000}'
 
 # MOVE_SL 移動止損（指定價格）
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"MOVE_SL","symbol":"BTCUSDT","new_stop_loss":94500}'
 
 # MOVE_SL 成本保護（不帶價格 → 用開倉價）
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"MOVE_SL","symbol":"BTCUSDT"}'
 
 # CANCEL 取消掛單
-curl -X POST http://localhost:8080/api/execute-trade \
+curl -X POST http://localhost:8081/api/execute-trade \
   -H "Content-Type: application/json" \
   -d '{"action":"CANCEL","symbol":"BTCUSDT"}'
 ```
@@ -702,11 +751,40 @@ curl -X POST http://localhost:8080/api/execute-trade \
 - **Java 17** + **Spring Boot 3.2.5** — 交易引擎
 - **Spring Security** + **JJWT 0.12.6** — JWT 認證（骨架）
 - **Python 3** — Discord CDP 監聽 + Gemini AI 解析
-- **PostgreSQL 16** — 交易紀錄持久化（Docker 容器化部署）
+- **Next.js 14** + **React** + **shadcn/ui** — Web Dashboard 前端（深色主題）
+- **PostgreSQL 16** — 交易紀錄持久化
+  - Prod：**Neon** 雲端 (Singapore, `sslmode=require`)
+  - Dev：本地 Docker container
 - **OkHttp** — Binance API 通訊 + WebSocket 長連線
 - **Stripe**（計畫整合） — 訂閱計費
-- **Docker Compose** — 容器化部署（一鍵啟動）
+- **Docker Compose** — 容器化部署（Dev/Prod 環境分離）
 - **Gradle 8.13** — 建置工具
+
+### 部署架構
+
+```
+┌────────────────────────────────────────────────┐
+│                  本機 Docker                     │
+│                                                 │
+│  ┌──────────────┐  ┌───────────────────────┐    │
+│  │ trading-api   │  │  web-dashboard        │    │
+│  │ (Spring Boot) │  │  (Next.js, port 3001) │    │
+│  │  port 8081    │  └───────────┬───────────┘    │
+│  └──────┬────────┘              │                │
+│         │              HTTP API 呼叫              │
+│  ┌──────┴────────┐                               │
+│  │ discord-      │                               │
+│  │ monitor       │                               │
+│  │ (Python)      │                               │
+│  └───────────────┘                               │
+└────────────┬─────────────────────────────────────┘
+             │ DB 連線 (SSL)
+             ▼
+    ┌─────────────────┐
+    │  Neon 雲端 PG    │  ← 資料永久保存
+    │  (Singapore)     │     docker down 不影響
+    └─────────────────┘
+```
 
 ### SL/TP 下單重試機制
 
@@ -716,16 +794,18 @@ curl -X POST http://localhost:8080/api/execute-trade \
 - 最多重試 2 次（間隔 1s → 3s）
 - 全部失敗 → Discord 紅色告警
 
-### 資料庫 (PostgreSQL)
+### 資料庫 (PostgreSQL 16)
 
-使用 PostgreSQL 16 (Docker 容器)，Hibernate `ddl-auto: update` 自動建表。
+Hibernate `ddl-auto: update` 自動管理 schema（只增不刪，不會丟資料）。
 
-- Dev DB：`localhost:5432`（可用 DBeaver 等工具連線查看）
-- Prod DB：`localhost:5433`
+| 環境 | 位置 | 連線方式 |
+|------|------|---------|
+| **Prod** | Neon 雲端 (Singapore) | `DB_URL` in `.env.prod`，SSL 加密 |
+| **Dev** | 本地 Docker container | `postgres:5432`，`--profile local-db` 啟動 |
 
 #### 交易相關
 
-**trade 表** — 交易主紀錄：
+**trades 表** — 交易主紀錄：
 
 | 欄位類別 | 欄位 |
 |---------|------|
@@ -740,7 +820,7 @@ curl -X POST http://localhost:8080/api/execute-trade \
 | 去重 | signalHash |
 | 時間 | createdAt, updatedAt |
 
-**trade_event 表** — 事件日誌：
+**trade_events 表** — 事件日誌：
 
 | 事件類型 | 說明 |
 |---------|------|
@@ -790,9 +870,9 @@ curl -X POST http://localhost:8080/api/execute-trade \
 
 ### 並發安全
 
-- **Per-symbol ReentrantLock**：同幣種的操作互斥（防止信號平倉和 WebSocket 事件同時到）
-- **訊號去重**：signalHash + 5 分鐘窗口
-- **WebSocket per-symbol lock**：SL/TP 觸發處理加鎖
+- **SymbolLockRegistry**：`@Component` 共享鎖管理器，BinanceFuturesService 和 BinanceUserDataStreamService 共用同一把 per-symbol `ReentrantLock`，確保跨服務互斥
+- **訊號去重**：signalHash + 5 分鐘窗口（side 為 null 時安全處理，DCA 用 "DCA" 替代）
+- **NPE 防護**：MOVE_SL `newStopLoss=null`、DCA `stopLoss=null` 均有 null 安全檢查
 
 ### 時區
 
@@ -807,9 +887,16 @@ curl -X POST http://localhost:8080/api/execute-trade \
 | P0 | 交易核心（開倉/平倉/風控/WebSocket/DCA） | ✅ 完成 |
 | P0 | Discord 監聽 + AI 解析 | ✅ 完成 |
 | P0 | 模組化拆分 | ✅ 完成 |
+| P0 | PostgreSQL 遷移（替換 H2） | ✅ 完成 |
+| P0 | Neon 雲端 DB（Prod 環境資料永久保存） | ✅ 完成 |
+| P0 | Docker Dev/Prod 環境分離 | ✅ 完成 |
+| P0 | Web Dashboard 前端（Next.js + shadcn/ui） | ✅ 完成 |
+| P0 | 交易績效分析（回撤、連勝連敗、風報比、分組統計） | ✅ 完成 |
+| P0 | 穩定性修復（NPE 防護 + 跨服務共享鎖 + DCA 防護） | ✅ 完成 |
+| P0 | 每日報告優化（6 區塊：餘額/明細/風控/系統狀態） | ✅ 完成 |
 | P1 | auth + user 模組實作（JWT 認證完整流程） | 🔨 骨架完成 |
 | P1 | subscription 模組實作（Stripe 整合） | 🔨 骨架完成 |
 | P1 | dashboard 模組實作（前端 API） | 🔨 骨架完成 |
-| P2 | PostgreSQL 遷移（替換 H2） | ✅ 完成 |
 | P2 | signal 模組（訊號廣播給多用戶） | 📋 計畫中 |
 | P2 | per-user Binance WebSocket | 📋 計畫中 |
+| P2 | VPS 部署（24/7 雲端運行） | 📋 計畫中 |

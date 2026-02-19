@@ -2,6 +2,8 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: trading-db
+    profiles:
+      - local-db
     environment:
       POSTGRES_DB: trading
       POSTGRES_USER: trading
@@ -24,9 +26,6 @@ services:
       - "8080:8080"
     env_file:
       - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/balance"]
       interval: 10s

@@ -1,8 +1,10 @@
 # ========================================
-# Dev 環境 override — Binance Testnet, port 8080
+# Dev 環境 override — Binance Testnet, 本地 PostgreSQL
 # ========================================
 # 使用方式:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db up -d --build
+#
+# Dev 環境啟動本地 PostgreSQL container 作為資料庫
 
 services:
   postgres:
@@ -18,6 +20,9 @@ services:
       - "8080:8080"
     env_file:
       - .env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   discord-monitor:
     container_name: discord-monitor-dev
