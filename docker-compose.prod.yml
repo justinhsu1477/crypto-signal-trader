@@ -1,17 +1,13 @@
 # ========================================
-# Prod 環境 override — Binance 正式環境, port 8081
+# Prod 環境 override — Binance 正式環境, Neon 雲端 DB
 # ========================================
 # 使用方式:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Prod 環境不啟動本地 PostgreSQL，改用 Neon 雲端資料庫
+# DB 連線設定在 .env.prod 中
 
 services:
-  postgres:
-    container_name: trading-db-prod
-    ports:
-      - "5433:5432"
-    volumes:
-      - pg-data-prod:/var/lib/postgresql/data
-
   trading-api:
     container_name: trading-api-prod
     ports:
@@ -32,6 +28,3 @@ services:
       - NEXT_PUBLIC_API_URL=http://trading-api:8080
     env_file:
       - .env.prod
-
-volumes:
-  pg-data-prod:

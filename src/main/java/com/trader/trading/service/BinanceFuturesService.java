@@ -1232,9 +1232,14 @@ public class BinanceFuturesService {
         try (Response response = httpClient.newCall(request).execute()) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                log.error("Binance API error: {} - {}", response.code(), body);
+                log.error("Binance API error: {} {} - {}", request.method(), request.url().encodedPath(), body);
+                // 解析 Binance 錯誤訊息，提供清楚的異常
+                String errorMsg = parseBinanceError(body, response.code());
+                throw new RuntimeException(errorMsg);
             }
             return body;
+        } catch (RuntimeException e) {
+            throw e; // 不包裝已有的 RuntimeException
         } catch (IOException e) {
             log.error("HTTP request failed: {}", e.getMessage(), e);
             discordWebhookService.sendNotification(
@@ -1243,6 +1248,21 @@ public class BinanceFuturesService {
                             request.method(), request.url().encodedPath(), e.getMessage()),
                     DiscordWebhookService.COLOR_RED);
             throw new RuntimeException("Binance API request failed", e);
+        }
+    }
+
+    /**
+     * 解析 Binance API 錯誤回應，提取有意義的錯誤訊息
+     * Binance error format: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action"}
+     */
+    private String parseBinanceError(String body, int httpCode) {
+        try {
+            JsonObject error = gson.fromJson(body, JsonObject.class);
+            int code = error.has("code") ? error.get("code").getAsInt() : httpCode;
+            String msg = error.has("msg") ? error.get("msg").getAsString() : body;
+            return String.format("Binance API 錯誤 [%d]: %s", code, msg);
+        } catch (Exception e) {
+            return String.format("Binance API HTTP %d: %s", httpCode, body);
         }
     }
 

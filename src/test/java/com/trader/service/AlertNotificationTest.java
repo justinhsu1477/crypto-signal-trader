@@ -187,8 +187,8 @@ class AlertNotificationTest {
         }
 
         @Test
-        @DisplayName("HTTP 非 200 回應不應觸發連線中斷告警（非 IOException）")
-        void httpErrorDoesNotTriggerConnectionAlert() throws Exception {
+        @DisplayName("HTTP 非 200 回應應拋 RuntimeException 但不觸發連線中斷告警")
+        void httpErrorThrowsExceptionButNoConnectionAlert() throws Exception {
             DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
             OkHttpClient mockHttpClient = mock(OkHttpClient.class);
             Call mockCall = mock(Call.class);
@@ -210,10 +210,12 @@ class AlertNotificationTest {
                     mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
                     new SymbolLockRegistry());
 
-            // 呼叫不應拋異常（HTTP 回應正常接收，只是非 200）
-            String result = service.getExchangeInfo();
+            // HTTP 非 200 應拋出 RuntimeException（包含 Binance 錯誤訊息）
+            assertThatThrownBy(() -> service.getExchangeInfo())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Illegal characters");
 
-            // 不應觸發連線中斷告警
+            // 不應觸發連線中斷告警（只有 IOException 才會）
             verify(mockWebhook, never()).sendNotification(
                     contains("連線中斷"), anyString(), anyInt());
         }
