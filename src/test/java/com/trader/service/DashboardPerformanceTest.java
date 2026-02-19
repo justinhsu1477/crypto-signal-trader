@@ -394,4 +394,371 @@ class DashboardPerformanceTest {
             assertThat(dca.getNoDcaTrades()).isEqualTo(0);
         }
     }
+
+    // ==================== Profit Factor ====================
+
+    @Nested
+    @DisplayName("Profit Factor 計算")
+    class ProfitFactorTest {
+
+        @Test
+        @DisplayName("grossWins=1000, grossLosses=500 → PF=2.0")
+        void normalProfitFactor() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            // grossProfit > 0 的加總 = 600 + 400 = 1000
+            // grossProfit < 0 的加總 = |(-300)| + |(-200)| = 500
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 580, 600, base, base.plusHours(1), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "LONG", 380, 400, base, base.plusHours(2), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "SHORT", -310, -300, base, base.plusHours(3), 0, "STOP_LOSS"),
+                    closedTrade("BTCUSDT", "SHORT", -210, -200, base, base.plusHours(4), 0, "STOP_LOSS")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getSummary().getProfitFactor()).isCloseTo(2.0, within(0.01));
+        }
+
+        @Test
+        @DisplayName("全勝（無虧損） → PF=0（除以零保護）")
+        void allWinsProfitFactor() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(1), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), 0, "SIGNAL_CLOSE")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            // grossLosses = 0 → PF = 0（divide by zero protection）
+            assertThat(stats.getSummary().getProfitFactor()).isEqualTo(0.0);
+        }
+
+        @Test
+        @DisplayName("全虧 → PF=0（grossWins=0）")
+        void allLossesProfitFactor() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "SHORT", -100, -90, base, base.plusHours(1), 0, "STOP_LOSS"),
+                    closedTrade("BTCUSDT", "SHORT", -200, -180, base, base.plusHours(2), 0, "STOP_LOSS")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getSummary().getProfitFactor()).isEqualTo(0.0);
+        }
+    }
+
+    // ==================== 出場原因分布 ====================
+
+    @Nested
+    @DisplayName("出場原因分布 (ExitReasonBreakdown)")
+    class ExitReasonBreakdownTest {
+
+        @Test
+        @DisplayName("多種出場原因 — 正確計數")
+        void multipleExitReasons() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(1), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "SHORT", -50, -45, base, base.plusHours(3), 0, "STOP_LOSS"),
+                    closedTrade("BTCUSDT", "SHORT", -80, -70, base, base.plusHours(4), 0, "STOP_LOSS"),
+                    closedTrade("BTCUSDT", "LONG", 150, 160, base, base.plusHours(5), 0, "STOP_LOSS"),
+                    closedTrade("BTCUSDT", "LONG", 300, 310, base, base.plusHours(6), 0, "FAIL_SAFE")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getExitReasonBreakdown()).containsEntry("SIGNAL_CLOSE", 2L);
+            assertThat(stats.getExitReasonBreakdown()).containsEntry("STOP_LOSS", 3L);
+            assertThat(stats.getExitReasonBreakdown()).containsEntry("FAIL_SAFE", 1L);
+        }
+
+        @Test
+        @DisplayName("exitReason 為 null 的交易 → 不計入分布")
+        void nullExitReason() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(1), 0, null),
+                    closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), 0, "SIGNAL_CLOSE")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getExitReasonBreakdown()).containsEntry("SIGNAL_CLOSE", 1L);
+            assertThat(stats.getExitReasonBreakdown()).doesNotContainKey(null);
+        }
+    }
+
+    // ==================== 訊號來源排名 ====================
+
+    @Nested
+    @DisplayName("訊號來源排名 (SignalSourceRanking)")
+    class SignalSourceRankingTest {
+
+        @Test
+        @DisplayName("多來源 — 按 netProfit 降序排列")
+        void multipleSourcesRanking() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTradeWithSource("BTCUSDT", "LONG", 500, 520, base, base.plusHours(1), "陳哥"),
+                    closedTradeWithSource("BTCUSDT", "LONG", -100, -90, base, base.plusHours(2), "陳哥"),
+                    closedTradeWithSource("ETHUSDT", "SHORT", 200, 210, base, base.plusHours(3), "老王"),
+                    closedTradeWithSource("ETHUSDT", "SHORT", 300, 310, base, base.plusHours(4), "老王")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getSignalSourceRanking()).hasSize(2);
+            // 老王: 200+300=500 → 排第一
+            assertThat(stats.getSignalSourceRanking().get(0).getSource()).isEqualTo("老王");
+            assertThat(stats.getSignalSourceRanking().get(0).getNetProfit()).isCloseTo(500.0, within(0.01));
+            assertThat(stats.getSignalSourceRanking().get(0).getTrades()).isEqualTo(2);
+            assertThat(stats.getSignalSourceRanking().get(0).getWinRate()).isCloseTo(100.0, within(0.01));
+            // 陳哥: 500+(-100)=400
+            assertThat(stats.getSignalSourceRanking().get(1).getSource()).isEqualTo("陳哥");
+            assertThat(stats.getSignalSourceRanking().get(1).getNetProfit()).isCloseTo(400.0, within(0.01));
+            assertThat(stats.getSignalSourceRanking().get(1).getWinRate()).isCloseTo(50.0, within(0.01));
+        }
+
+        @Test
+        @DisplayName("sourceAuthorName 為空白 → 不計入排名")
+        void blankSourceExcluded() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTradeWithSource("BTCUSDT", "LONG", 100, 110, base, base.plusHours(1), ""),
+                    closedTradeWithSource("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), "陳哥")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getSignalSourceRanking()).hasSize(1);
+            assertThat(stats.getSignalSourceRanking().get(0).getSource()).isEqualTo("陳哥");
+        }
+    }
+
+    // ==================== 月統計 ====================
+
+    @Nested
+    @DisplayName("月統計 (MonthlyStats)")
+    class MonthlyStatsTest {
+
+        @Test
+        @DisplayName("跨月交易 → 正確分組")
+        void crossMonthTrades() {
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110,
+                            LocalDateTime.of(2026, 1, 15, 10, 0),
+                            LocalDateTime.of(2026, 1, 15, 14, 0), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "LONG", 200, 210,
+                            LocalDateTime.of(2026, 1, 20, 10, 0),
+                            LocalDateTime.of(2026, 1, 20, 16, 0), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "SHORT", -50, -45,
+                            LocalDateTime.of(2026, 2, 5, 10, 0),
+                            LocalDateTime.of(2026, 2, 5, 12, 0), 0, "STOP_LOSS")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getMonthlyStats()).hasSize(2);
+            // 2026-01: 2 trades, +300
+            assertThat(stats.getMonthlyStats().get(0).getMonth()).isEqualTo("2026-01");
+            assertThat(stats.getMonthlyStats().get(0).getTrades()).isEqualTo(2);
+            assertThat(stats.getMonthlyStats().get(0).getNetProfit()).isCloseTo(300.0, within(0.01));
+            // 2026-02: 1 trade, -50
+            assertThat(stats.getMonthlyStats().get(1).getMonth()).isEqualTo("2026-02");
+            assertThat(stats.getMonthlyStats().get(1).getTrades()).isEqualTo(1);
+        }
+    }
+
+    // ==================== 週統計 ====================
+
+    @Nested
+    @DisplayName("週統計 (WeeklyStats)")
+    class WeeklyStatsTest {
+
+        @Test
+        @DisplayName("跨週交易 → 分成多個週")
+        void crossWeekTrades() {
+            // 2026-01-12 = Monday, 2026-01-19 = next Monday
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110,
+                            LocalDateTime.of(2026, 1, 12, 10, 0),
+                            LocalDateTime.of(2026, 1, 12, 14, 0), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "LONG", 200, 210,
+                            LocalDateTime.of(2026, 1, 14, 10, 0),
+                            LocalDateTime.of(2026, 1, 14, 16, 0), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "SHORT", -50, -45,
+                            LocalDateTime.of(2026, 1, 19, 10, 0),
+                            LocalDateTime.of(2026, 1, 19, 12, 0), 0, "STOP_LOSS")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getWeeklyStats()).hasSize(2);
+            // 第一週 2 trades
+            assertThat(stats.getWeeklyStats().get(0).getTrades()).isEqualTo(2);
+            assertThat(stats.getWeeklyStats().get(0).getNetProfit()).isCloseTo(300.0, within(0.01));
+            // 第二週 1 trade
+            assertThat(stats.getWeeklyStats().get(1).getTrades()).isEqualTo(1);
+        }
+    }
+
+    // ==================== 單筆交易 ====================
+
+    @Nested
+    @DisplayName("單筆交易邊界情境")
+    class SingleTradeTest {
+
+        @Test
+        @DisplayName("只有一筆獲利 → 所有指標正確")
+        void singleWin() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(3), 0, "SIGNAL_CLOSE")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            PerformanceStats.Summary s = stats.getSummary();
+            assertThat(s.getTotalTrades()).isEqualTo(1);
+            assertThat(s.getWinningTrades()).isEqualTo(1);
+            assertThat(s.getLosingTrades()).isEqualTo(0);
+            assertThat(s.getWinRate()).isCloseTo(100.0, within(0.01));
+            assertThat(s.getMaxWin()).isCloseTo(100.0, within(0.01));
+            assertThat(s.getMaxLoss()).isCloseTo(100.0, within(0.01)); // min of [100] = 100
+            assertThat(s.getMaxConsecutiveWins()).isEqualTo(1);
+            assertThat(s.getMaxConsecutiveLosses()).isEqualTo(0);
+            assertThat(s.getMaxDrawdown()).isEqualTo(0.0);
+            assertThat(s.getAvgHoldingHours()).isCloseTo(3.0, within(0.01));
+        }
+
+        @Test
+        @DisplayName("只有一筆虧損 → expectancy 為負")
+        void singleLoss() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "SHORT", -150, -140, base, base.plusHours(1), 0, "STOP_LOSS")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            PerformanceStats.Summary s = stats.getSummary();
+            assertThat(s.getTotalTrades()).isEqualTo(1);
+            assertThat(s.getWinningTrades()).isEqualTo(0);
+            assertThat(s.getWinRate()).isEqualTo(0.0);
+            // expectancy = (0 × 0) - (1 × 150) = -150
+            assertThat(s.getExpectancy()).isCloseTo(-150.0, within(0.01));
+        }
+    }
+
+    // ==================== SideComparison 邊界 ====================
+
+    @Nested
+    @DisplayName("多空對比 — 邊界情境")
+    class SideComparisonEdgeCases {
+
+        @Test
+        @DisplayName("只有 LONG 交易 → SHORT stats 全為 0")
+        void onlyLongTrades() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(1), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), 0, "SIGNAL_CLOSE")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            assertThat(stats.getSideComparison().getLongStats().getTrades()).isEqualTo(2);
+            assertThat(stats.getSideComparison().getShortStats().getTrades()).isEqualTo(0);
+            assertThat(stats.getSideComparison().getShortStats().getWinRate()).isEqualTo(0.0);
+        }
+
+        @Test
+        @DisplayName("Profit Factor — LONG 有虧損, SHORT 全勝")
+        void profitFactorComparison() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(1), 0, "SIGNAL_CLOSE"),
+                    closedTrade("BTCUSDT", "LONG", -50, -40, base, base.plusHours(2), 0, "STOP_LOSS"),
+                    closedTrade("BTCUSDT", "SHORT", 200, 220, base, base.plusHours(3), 0, "SIGNAL_CLOSE")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            // LONG: grossWins=110, grossLosses=40 → PF = 110/40 = 2.75
+            assertThat(stats.getSideComparison().getLongStats().getProfitFactor()).isCloseTo(2.75, within(0.01));
+            // SHORT: grossWins=220, grossLosses=0 → PF = 0 (divide by zero)
+            assertThat(stats.getSideComparison().getShortStats().getProfitFactor()).isEqualTo(0.0);
+        }
+    }
+
+    // ==================== netProfit null 處理 ====================
+
+    @Nested
+    @DisplayName("netProfit null 處理")
+    class NullNetProfitTest {
+
+        @Test
+        @DisplayName("部分 Trade netProfit 為 null → 正確過濾，不影響計算")
+        void someNullNetProfit() {
+            LocalDateTime base = LocalDateTime.of(2026, 1, 10, 12, 0);
+            List<Trade> trades = List.of(
+                    closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(1), 0, "SIGNAL_CLOSE"),
+                    Trade.builder()
+                            .symbol("BTCUSDT").side("LONG").status("CLOSED")
+                            .netProfit(null).grossProfit(null)
+                            .entryTime(base).exitTime(base.plusHours(2))
+                            .exitReason("SIGNAL_CLOSE").dcaCount(0)
+                            .build(),
+                    closedTrade("BTCUSDT", "SHORT", -50, -45, base, base.plusHours(3), 0, "STOP_LOSS")
+            );
+
+            when(tradeRecordService.findAll()).thenReturn(trades);
+            PerformanceStats stats = dashboardService.getPerformance("user1", 365);
+
+            // netProfit null 的 trade 不算 winning（netProfit > 0 是 false）
+            PerformanceStats.Summary s = stats.getSummary();
+            assertThat(s.getTotalTrades()).isEqualTo(3);
+            assertThat(s.getWinningTrades()).isEqualTo(1);
+            assertThat(s.getLosingTrades()).isEqualTo(2); // null 算 loss
+            // totalNetProfit: 100 + (-50) = 50（null 被過濾）
+            assertThat(s.getTotalNetProfit()).isCloseTo(50.0, within(0.01));
+        }
+    }
+
+    // ==================== 工具方法 ====================
+
+    /**
+     * 建立帶有訊號來源的 CLOSED Trade
+     */
+    private Trade closedTradeWithSource(String symbol, String side, double netProfit, double grossProfit,
+                                         LocalDateTime entryTime, LocalDateTime exitTime, String source) {
+        return Trade.builder()
+                .symbol(symbol)
+                .side(side)
+                .status("CLOSED")
+                .netProfit(netProfit)
+                .grossProfit(grossProfit)
+                .entryTime(entryTime)
+                .exitTime(exitTime)
+                .dcaCount(0)
+                .exitReason("SIGNAL_CLOSE")
+                .sourceAuthorName(source)
+                .build();
+    }
 }
