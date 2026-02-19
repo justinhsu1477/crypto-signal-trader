@@ -14,6 +14,8 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.util.BinanceSignatureUtil;
+import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -38,7 +40,16 @@ public class BinanceFuturesService {
     private final DiscordWebhookService discordWebhookService;
     private final ObjectMapper objectMapper;
     private final SymbolLockRegistry symbolLockRegistry;
+    private final UserApiKeyService userApiKeyService;
     private final Gson gson = new Gson();
+
+    /**
+     * ThreadLocal 暫存 per-user API Key
+     * 在 executeSignalForBroadcast 開始時 set，結束時 remove。
+     * 所有 sendSignedXxx 方法自動讀取此 ThreadLocal，
+     * 若為 null 則使用全局 binanceConfig 的 key。
+     */
+    private static final ThreadLocal<BinanceKeys> CURRENT_USER_KEYS = new ThreadLocal<>();
 
     // SL/TP 下單重試配置
     private static final int ORDER_MAX_RETRIES = 2;
@@ -49,7 +60,8 @@ public class BinanceFuturesService {
                                   SignalDeduplicationService deduplicationService,
                                   DiscordWebhookService discordWebhookService,
                                   ObjectMapper objectMapper,
-                                  SymbolLockRegistry symbolLockRegistry) {
+                                  SymbolLockRegistry symbolLockRegistry,
+                                  UserApiKeyService userApiKeyService) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
@@ -58,6 +70,7 @@ public class BinanceFuturesService {
         this.discordWebhookService = discordWebhookService;
         this.objectMapper = objectMapper;
         this.symbolLockRegistry = symbolLockRegistry;
+        this.userApiKeyService = userApiKeyService;
     }
 
     // ==================== 帳戶相關 ====================
@@ -1113,6 +1126,24 @@ public class BinanceFuturesService {
         return executeRequest(request);
     }
 
+    // ==================== Per-User API Key 支援 ====================
+
+    /**
+     * 取得當前生效的 API Key（ThreadLocal per-user 優先，fallback 全局）
+     */
+    private String getActiveApiKey() {
+        BinanceKeys userKeys = CURRENT_USER_KEYS.get();
+        return userKeys != null ? userKeys.apiKey() : binanceConfig.getApiKey();
+    }
+
+    /**
+     * 取得當前生效的 Secret Key（ThreadLocal per-user 優先，fallback 全局）
+     */
+    private String getActiveSecretKey() {
+        BinanceKeys userKeys = CURRENT_USER_KEYS.get();
+        return userKeys != null ? userKeys.secretKey() : binanceConfig.getSecretKey();
+    }
+
     private String sendSignedGet(String endpoint, Map<String, String> params) {
         String queryString = buildSignedQueryString(params);
         String url = binanceConfig.getBaseUrl() + endpoint + "?" + queryString;
@@ -1120,7 +1151,7 @@ public class BinanceFuturesService {
         Request request = new Request.Builder()
                 .url(url)
                 .get()
-                .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                .addHeader("X-MBX-APIKEY", getActiveApiKey())
                 .build();
         return executeRequest(request);
     }
@@ -1135,7 +1166,7 @@ public class BinanceFuturesService {
         Request request = new Request.Builder()
                 .url(url)
                 .post(body)
-                .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                .addHeader("X-MBX-APIKEY", getActiveApiKey())
                 .build();
         return executeRequest(request);
     }
@@ -1147,7 +1178,7 @@ public class BinanceFuturesService {
         Request request = new Request.Builder()
                 .url(url)
                 .delete()
-                .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                .addHeader("X-MBX-APIKEY", getActiveApiKey())
                 .build();
         return executeRequest(request);
     }
@@ -1160,7 +1191,7 @@ public class BinanceFuturesService {
                 .map(e -> e.getKey() + "=" + e.getValue())
                 .collect(Collectors.joining("&"));
 
-        String signature = BinanceSignatureUtil.sign(queryString, binanceConfig.getSecretKey());
+        String signature = BinanceSignatureUtil.sign(queryString, getActiveSecretKey());
         return queryString + "&signature=" + signature;
     }
 
@@ -1181,7 +1212,7 @@ public class BinanceFuturesService {
                         queryString, MediaType.parse("application/x-www-form-urlencoded"));
                 Request request = new Request.Builder()
                         .url(url).post(body)
-                        .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                        .addHeader("X-MBX-APIKEY", getActiveApiKey())
                         .build();
 
                 try (Response response = httpClient.newCall(request).execute()) {
@@ -1282,11 +1313,14 @@ public class BinanceFuturesService {
     /**
      * 廣播跟單用：執行單個用戶的跟單邏輯
      *
-     * 目前 MVP：所有用戶共用全局 API Key
-     * 未來：根據 userId 切換 per-user API Key
+     * 使用 ThreadLocal 切換 per-user API Key：
+     * 1. 查詢用戶 DB 中的加密 API Key → 解密
+     * 2. 設入 ThreadLocal，所有 sendSignedXxx 自動使用
+     * 3. 若用戶未設定 API Key → 直接拒絕，不 fallback 到全局 key
+     * 4. finally 清除 ThreadLocal，避免洩漏
      *
      * @param request 交易請求（來自 Python AI 解析）
-     * @param userId  用戶 ID（目前僅用於日誌，未來用於切換 API Key）
+     * @param userId  用戶 ID（用於查詢 per-user API Key）
      * @throws RuntimeException 交易失敗時拋出，讓 BroadcastTradeService 捕獲
      */
     public void executeSignalForBroadcast(TradeRequest request, String userId) {
@@ -1302,9 +1336,16 @@ public class BinanceFuturesService {
             throw new IllegalArgumentException("交易對不在白名單: " + symbol);
         }
 
-        // TODO: 未來根據 userId 切換 per-user API Key
-        // BinanceConfig userConfig = userApiKeyService.getConfig(userId);
+        // 取得 per-user API Key — 未設定則拒絕執行
+        var userKeysOpt = userApiKeyService.getUserBinanceKeys(userId);
+        if (userKeysOpt.isEmpty()) {
+            throw new IllegalStateException(
+                    "用戶 " + userId + " 未設定 Binance API Key，無法執行廣播跟單");
+        }
+        CURRENT_USER_KEYS.set(userKeysOpt.get());
+        log.info("廣播跟單: userId={} 使用 per-user API Key", userId);
 
+        try {
         switch (action.toUpperCase()) {
             case "ENTRY" -> {
                 boolean isDca = request.getIsDca() != null && request.getIsDca();
@@ -1403,5 +1444,9 @@ public class BinanceFuturesService {
         }
 
         log.info("廣播跟單完成: userId={} action={} symbol={}", userId, action, symbol);
+        } finally {
+            // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
+            CURRENT_USER_KEYS.remove();
+        }
     }
 }

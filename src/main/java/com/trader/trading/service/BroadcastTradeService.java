@@ -4,6 +4,7 @@ import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.model.TradeRequest;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import com.trader.user.service.UserApiKeyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,9 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 廣播跟單服務 (Thread Pool 版本)
- * - 查詢所有啟用自動跟單的用戶
+ * - 查詢所有啟用自動跟單且已設定 API Key 的用戶
  * - 用 10 個線程並行執行跟單邏輯
- * - MVP 階段完全夠用
  */
 @Slf4j
 @Service
@@ -29,6 +29,7 @@ public class BroadcastTradeService {
     private final UserRepository userRepository;
     private final BinanceFuturesService binanceFuturesService;
     private final DiscordWebhookService discordWebhookService;
+    private final UserApiKeyService userApiKeyService;
 
     private static final int THREAD_POOL_SIZE = 10;
     private static final long SHUTDOWN_TIMEOUT_SECONDS = 10;
@@ -43,13 +44,23 @@ public class BroadcastTradeService {
      */
     public Map<String, Object> broadcastTrade(TradeRequest request) {
         // 查詢所有啟用自動跟單的用戶
-        List<User> activeUsers = userRepository.findAll().stream()
+        List<User> enabledUsers = userRepository.findAll().stream()
                 .filter(User::isAutoTradeEnabled)
                 .filter(User::isEnabled)
                 .toList();
 
-        log.info("廣播跟單: 找到 {} 個啟用用戶, action={} symbol={}",
-                activeUsers.size(), request.getAction(), request.getSymbol());
+        // 過濾：只保留已設定 Binance API Key 的用戶
+        List<User> activeUsers = enabledUsers.stream()
+                .filter(u -> userApiKeyService.hasApiKey(u.getUserId()))
+                .toList();
+
+        int skippedCount = enabledUsers.size() - activeUsers.size();
+        if (skippedCount > 0) {
+            log.warn("廣播跟單: {} 個用戶未設定 API Key，已跳過", skippedCount);
+        }
+
+        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過 {} 個無 API Key), action={} symbol={}",
+                activeUsers.size(), skippedCount, request.getAction(), request.getSymbol());
 
         if (activeUsers.isEmpty()) {
             return Map.of(
@@ -57,7 +68,9 @@ public class BroadcastTradeService {
                     "totalUsers", 0,
                     "successCount", 0,
                     "failCount", 0,
-                    "message", "無啟用用戶");
+                    "skippedNoApiKey", skippedCount,
+                    "message", activeUsers.isEmpty() && skippedCount > 0
+                            ? "所有用戶均未設定 API Key" : "無啟用用戶");
         }
 
         // 用 Thread Pool 並行執行
@@ -69,9 +82,6 @@ public class BroadcastTradeService {
             for (User user : activeUsers) {
                 executor.submit(() -> {
                     try {
-                        // 此處應該改為使用 user 的 API Key 執行交易
-                        // 目前為簡單版：所有用戶用同一個 API Key
-                        // TODO: 未來支援每個用戶獨立 API Key
                         binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
                         successCount.incrementAndGet();
                         log.debug("跟單成功: userId={}", user.getUserId());
@@ -117,7 +127,7 @@ public class BroadcastTradeService {
                     "totalUsers", activeUsers.size(),
                     "successCount", successCount.get(),
                     "failCount", failCount.get(),
-                    "duration_ms", "~2000");
+                    "skippedNoApiKey", skippedCount);
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
