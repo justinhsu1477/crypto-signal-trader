@@ -7,6 +7,7 @@ import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -39,7 +40,7 @@ class DashboardPerformanceTest {
         RiskConfig riskConfig = Mockito.mock(RiskConfig.class);
 
         dashboardService = new DashboardService(
-                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig);
+                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class));
     }
 
     /**

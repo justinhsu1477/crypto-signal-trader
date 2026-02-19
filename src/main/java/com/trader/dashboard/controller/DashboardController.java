@@ -137,10 +137,12 @@ public class DashboardController {
         List<UserDiscordWebhook> webhooks = webhookService.getAllWebhooks(userId);
         Optional<UserDiscordWebhook> primary = webhookService.getPrimaryWebhook(userId);
 
-        return ResponseEntity.ok(Map.of(
-                "userId", userId,
-                "webhooks", webhooks,
-                "primaryWebhookId", primary.map(UserDiscordWebhook::getWebhookId).orElse(null)));
+        Map<String, Object> response = new java.util.HashMap<>();
+        response.put("userId", userId);
+        response.put("webhooks", webhooks);
+        response.put("primaryWebhookId", primary.map(UserDiscordWebhook::getWebhookId).orElse(null));
+
+        return ResponseEntity.ok(response);
     }
 
     /**
