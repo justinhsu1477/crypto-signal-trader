@@ -201,6 +201,15 @@ const translations = {
   // ─── settings ───
   settings: {
     title: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置" },
+    // Sidebar nav
+    navProfile: { en: "Profile", "zh-TW": "個人資料", "zh-CN": "个人资料" },
+    navApiKeys: { en: "API Keys", "zh-TW": "API 金鑰", "zh-CN": "API 密钥" },
+    navTrading: { en: "Trading", "zh-TW": "交易設定", "zh-CN": "交易设置" },
+    navNotifications: { en: "Notifications", "zh-TW": "通知設定", "zh-CN": "通知设置" },
+    navProfileDesc: { en: "Account information and preferences", "zh-TW": "帳戶資訊與偏好設定", "zh-CN": "账户信息与偏好设置" },
+    navApiKeysDesc: { en: "Exchange API key management", "zh-TW": "交易所 API 金鑰管理", "zh-CN": "交易所 API 密钥管理" },
+    navTradingDesc: { en: "Auto trade and signal settings", "zh-TW": "自動跟單與訊號設定", "zh-CN": "自动跟单与信号设置" },
+    navNotificationsDesc: { en: "Discord webhook configuration", "zh-TW": "Discord Webhook 設定", "zh-CN": "Discord Webhook 设置" },
     profile: { en: "Profile", "zh-TW": "個人資料", "zh-CN": "个人资料" },
     name: { en: "Name", "zh-TW": "名稱", "zh-CN": "名称" },
     role: { en: "Role", "zh-TW": "角色", "zh-CN": "角色" },
