@@ -55,6 +55,16 @@ jwt:
 encryption:
   aes-key: ${AES_ENCRYPTION_KEY:default-aes-key-change-in-prod!!}
 
+# AI 交易顧問
+advisor:
+  enabled: ${ADVISOR_ENABLED:false}
+  gemini-api-key: ${GEMINI_API_KEY:}
+  gemini-model: gemini-2.0-flash
+  cron-expression: "0 0 2,6,10,14,18,22 * * *"
+  max-response-tokens: 1024
+  recent-trades-count: 10
+  temperature-value: 0.7
+
 logging:
   level:
     com.trader: DEBUG
