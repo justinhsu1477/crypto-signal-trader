@@ -421,6 +421,18 @@ public class TradeRecordService {
     }
 
     /**
+     * 取得指定時間範圍內的已平倉交易列表
+     * 供每日報告的交易明細使用
+     *
+     * @param from 起始時間（含）
+     * @param to   結束時間（不含）
+     * @return 已平倉交易列表（按時間排序）
+     */
+    public List<Trade> getClosedTradesForRange(LocalDateTime from, LocalDateTime to) {
+        return tradeRepository.findClosedTradesBetween(from, to);
+    }
+
+    /**
      * 取得指定時間範圍的交易統計
      * 供每日摘要排程（昨日統計）和即時查詢使用
      *
