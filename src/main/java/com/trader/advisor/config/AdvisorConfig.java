@@ -4,7 +4,6 @@ import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-@Getter
 @ConfigurationProperties(prefix = "advisor")
 public class AdvisorConfig {
 
@@ -32,5 +31,33 @@ public class AdvisorConfig {
         this.maxResponseTokens = maxResponseTokens;
         this.recentTradesCount = recentTradesCount;
         this.temperatureValue = temperatureValue;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public String getGeminiApiKey() {
+        return geminiApiKey;
+    }
+
+    public String getGeminiModel() {
+        return geminiModel;
+    }
+
+    public String getCronExpression() {
+        return cronExpression;
+    }
+
+    public int getMaxResponseTokens() {
+        return maxResponseTokens;
+    }
+
+    public int getRecentTradesCount() {
+        return recentTradesCount;
+    }
+
+    public double getTemperatureValue() {
+        return temperatureValue;
     }
 }

@@ -163,9 +163,25 @@ class SignalRouter:
         if self.ai_parser:
             parsed = await self.ai_parser.parse(content)
 
-            # 如果 AI 返回 INFO 或無法解析，嘗試 TradeActionDetector 補助判斷
-            if parsed and parsed.get("action") == "INFO":
-                # AI 判為 INFO，檢查是否為完全平倉訊號
+            # === TradeActionDetector 補充判斷 ===
+            # 當 AI 無法判斷（返回 None）或判為 INFO 時，嘗試 TradeActionDetector 補助
+            if parsed is None:
+                # AI Parser 完全失敗，嘗試 TradeActionDetector
+                logger.debug("AI Parser 返回 None，嘗試 TradeActionDetector 補救")
+                if detector.detect_close(content):
+                    parsed = {
+                        'action': 'CLOSE',
+                        'symbol': 'BTCUSDT',
+                        '_detector_refinement': 'NONE→CLOSE by TradeActionDetector'
+                    }
+                    logger.info("TradeActionDetector 補救: NONE → CLOSE (content: %s)", content[:80])
+                else:
+                    # TradeActionDetector 也無法判斷，進入 regex fallback
+                    logger.debug("AI Parser 失敗，TradeActionDetector 也無補救，進入 regex fallback")
+                    parsed = None
+
+            elif parsed.get("action") == "INFO":
+                # AI 判為 INFO，嘗試 TradeActionDetector 補助
                 if detector.detect_close(content):
                     logger.info("TradeActionDetector 補救: INFO → CLOSE (content: %s)", content[:80])
                     parsed['action'] = 'CLOSE'
@@ -177,6 +193,7 @@ class SignalRouter:
                     logger.debug("AI identified as INFO, TradeActionDetector 無補救, skipping")
                     return
 
+            # 如果有有效的 action（不是 INFO 也不是 UNKNOWN）
             if parsed and parsed.get("action") not in ("INFO", "UNKNOWN"):
                 logger.info("AI parsed → %s %s %s", parsed.get("action"), parsed.get("symbol"), parsed.get("side", ""))
 

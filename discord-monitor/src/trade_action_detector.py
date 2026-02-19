@@ -114,26 +114,44 @@ class TradeActionDetector:
 
         Logic:
             1. 檢查是否包含平倉關鍵詞
-            2. 檢查是否同時包含「繼續持有」（矛盾，不算平倉）
-            3. 返回最終判斷
+            2. 如果有「止盈出局」等強信號，即使有「繼續持有」也判為 CLOSE
+            3. 對於複雜組合（例如「止盈50% + 繼續持有」），返回 False 讓 AI 處理
+
+        Examples:
+            - "止盈出局" → True (完全平倉)
+            - "短线收益止盈出局【收益800点】" → True (完全平倉，即使後面有其他內容)
+            - "止盈50%做成本保护继续持有" → False (複雜訊號，交給 AI)
+            - "全部平倉" → True (完全平倉)
         """
         if not message:
             return False
 
-        # 檢查平倉關鍵詞
-        has_close_keyword = self._contains_any(message, self.close_keywords)
-        if not has_close_keyword:
+        # 檢查是否包含強平倉信號（「出局」、「全部平倉」）
+        strong_close_keywords = ['止盈出局', '出局', '全部平倉', '全部平仓', '全部清倉', '全部清仓']
+        has_strong_close = self._contains_any(message, strong_close_keywords)
+
+        if has_strong_close:
+            # 強信號出現，認定為完全平倉（即使後面有其他內容）
+            # 例如：「短线收益止盈出局【收益800点】中长线止盈50%做成本保护继续持有」
+            # 前半部分「止盈出局」是主要訊號，應被識別
+            logger.info(f"偵測到強平倉信號（止盈出局）: {message[:80]}")
+            return True
+
+        # 檢查其他平倉關鍵詞
+        other_close_keywords = ['平倉', '平仓', '清倉', '清仓']
+        has_other_close = self._contains_any(message, other_close_keywords)
+
+        if not has_other_close:
+            # 完全沒有平倉關鍵詞
             return False
 
-        # 檢查是否同時有「繼續持有」（矛盾情況）
+        # 有平倉關鍵詞但不是強信號，檢查是否同時有「繼續持有」
         has_holding_keyword = self._contains_any(message, self.holding_keywords)
 
-        # 如果有「止盈出局」或「出局」或「平倉」，即使有「繼續持有」也視為平倉
-        # 因為「做成本保護繼續持有」是特殊case，應由 AI Parser 處理
         if has_holding_keyword:
-            logger.warning(f"訊息同時包含平倉和持有關鍵詞（矛盾）: {message[:100]}")
-            # 暫時視為 INFO，不判為平倉
-            # 理由：AI Parser 應該能判別這種複雜情況
+            # 例如：「平倉50%做成本保護繼續持有」
+            # 這類複雜訊號交給 AI Parser 處理，避免誤判
+            logger.warning(f"複雜訊號（既平倉又持有）: {message[:100]}")
             return False
 
         return True

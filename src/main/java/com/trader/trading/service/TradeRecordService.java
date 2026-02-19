@@ -12,6 +12,7 @@ import com.trader.trading.repository.TradeEventRepository;
 import com.trader.trading.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +40,10 @@ public class TradeRecordService {
     private final TradeEventRepository tradeEventRepository;
     private final ObjectMapper objectMapper;
 
+    // ========== 多用戶支援 ==========
+    @Value("${trading.user-id:${user.id:test-user}}")
+    private String defaultUserId;  // 從環境變數或配置讀取，測試時預設 test-user
+
     // ==================== 寫入操作 ====================
 
     /**
@@ -63,6 +68,7 @@ public class TradeRecordService {
         // 建立 Trade 主紀錄
         Trade trade = Trade.builder()
                 .tradeId(tradeId)
+                .userId(defaultUserId)  // ← 新增：自動填入當前用戶 ID
                 .symbol(signal.getSymbol())
                 .side(signal.getSide().name())
                 .entryPrice(entryOrder.getPrice())

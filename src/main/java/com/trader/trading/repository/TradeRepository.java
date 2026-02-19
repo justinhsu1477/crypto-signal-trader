@@ -117,4 +117,64 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      */
     @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' ORDER BY t.exitTime DESC")
     List<Trade> findAllClosedTradesDesc();
+
+    // ========== userId 相關查詢（多用戶支援） ==========
+
+    /**
+     * 依用戶 ID 查詢所有交易
+     */
+    List<Trade> findByUserId(String userId);
+
+    /**
+     * 依用戶 ID 和狀態查詢
+     */
+    List<Trade> findByUserIdAndStatus(String userId, String status);
+
+    /**
+     * 依用戶 ID 和交易對查詢
+     */
+    List<Trade> findByUserIdAndSymbol(String userId, String symbol);
+
+    /**
+     * 依用戶 ID、交易對、狀態查詢（最常用：找用戶的 OPEN 持倉）
+     */
+    List<Trade> findByUserIdAndSymbolAndStatus(String userId, String symbol, String status);
+
+    /**
+     * 找用戶某交易對目前唯一的 OPEN 交易
+     */
+    default Optional<Trade> findUserOpenTrade(String userId, String symbol) {
+        List<Trade> openTrades = findByUserIdAndSymbolAndStatus(userId, symbol, "OPEN");
+        return openTrades.isEmpty() ? Optional.empty() : Optional.of(openTrades.get(0));
+    }
+
+    /**
+     * 統計用戶已平倉交易中獲利的筆數
+     */
+    @Query("SELECT COUNT(t) FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED' AND t.netProfit > 0")
+    long countUserWinningTrades(@Param("userId") String userId);
+
+    /**
+     * 統計用戶已平倉交易總筆數
+     */
+    @Query("SELECT COUNT(t) FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED'")
+    long countUserClosedTrades(@Param("userId") String userId);
+
+    /**
+     * 用戶已平倉交易的淨利總和
+     */
+    @Query("SELECT COALESCE(SUM(t.netProfit), 0) FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED'")
+    double sumUserNetProfit(@Param("userId") String userId);
+
+    /**
+     * 用戶指定時間後已平倉的交易
+     */
+    @Query("SELECT t FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED' AND t.exitTime >= :since ORDER BY t.exitTime DESC")
+    List<Trade> findUserClosedTradesAfter(@Param("userId") String userId, @Param("since") LocalDateTime since);
+
+    /**
+     * 用戶已平倉交易（倒序，用於歷史分頁）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED' ORDER BY t.exitTime DESC")
+    List<Trade> findUserAllClosedTradesDesc(@Param("userId") String userId);
 }
