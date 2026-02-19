@@ -6,8 +6,11 @@
 
 binance:
   futures:
-    base-url: https://fapi.binance.com
-    ws-base-url: wss://fstream.binance.com/ws/
+#    base-url: https://fapi.binance.com
+#    ws-base-url: wss://fstream.binance.com/ws/
+    base-url: https://testnet.binancefuture.com
+    ws-base-url: wss://testnet.binancefuture.com/ws/
+
 
 logging:
   level:
