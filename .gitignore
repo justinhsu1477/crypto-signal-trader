@@ -42,3 +42,6 @@ data/
 # === AI Tools ===
 .claude/
 .agents/
+
+# === Temp / Export ===
+export.txt
