@@ -30,6 +30,7 @@ class ApiConfig:
     parse_endpoint: str = "/api/parse-signal"
     timeout: int = 10
     dry_run: bool = False
+    multi_user_enabled: bool = False  # true = /api/broadcast-trade, false = /api/execute-trade
 
 
 @dataclass
@@ -98,6 +99,7 @@ def load_config(path: str) -> AppConfig:
             parse_endpoint=api_raw.get("parse_endpoint", "/api/parse-signal"),
             timeout=api_raw.get("timeout", 10),
             dry_run=api_raw.get("dry_run", False),
+            multi_user_enabled=os.environ.get("MULTI_USER_ENABLED", str(api_raw.get("multi_user_enabled", False))).lower() == "true",
         ),
         ai=AiConfig(
             enabled=ai_raw.get("enabled", False),
