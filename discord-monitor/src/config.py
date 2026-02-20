@@ -31,6 +31,7 @@ class ApiConfig:
     timeout: int = 10
     dry_run: bool = False
     multi_user_enabled: bool = False  # true = /api/broadcast-trade, false = /api/execute-trade
+    api_key: str = ""  # Monitor API Key for authentication (X-Api-Key header)
 
 
 @dataclass
@@ -100,6 +101,7 @@ def load_config(path: str) -> AppConfig:
             timeout=api_raw.get("timeout", 10),
             dry_run=api_raw.get("dry_run", False),
             multi_user_enabled=os.environ.get("MULTI_USER_ENABLED", str(api_raw.get("multi_user_enabled", False))).lower() == "true",
+            api_key=os.environ.get("MONITOR_API_KEY", api_raw.get("api_key", "")),
         ),
         ai=AiConfig(
             enabled=ai_raw.get("enabled", False),
