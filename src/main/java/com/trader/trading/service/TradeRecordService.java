@@ -3,6 +3,7 @@ package com.trader.trading.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.config.AppConstants;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.entity.TradeEvent;
 import com.trader.shared.model.OrderResult;
@@ -21,7 +22,11 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * 交易紀錄服務 — 負責將每次操作寫入 H2 資料庫
+ * 交易紀錄服務 — 負責將每次操作寫入資料庫
+ *
+ * 多用戶模式（MULTI_USER_ENABLED）：
+ * - true  → 用 ThreadLocal userId 隔離查詢，每個用戶只看到自己的 Trade
+ * - false → 全局查詢（舊系統行為，所有 Trade 不分用戶）
  *
  * 核心職責:
  * 1. ENTRY 成功時 → 建立 Trade(OPEN) + 入場/止損事件
@@ -39,10 +44,46 @@ public class TradeRecordService {
     private final TradeRepository tradeRepository;
     private final TradeEventRepository tradeEventRepository;
     private final ObjectMapper objectMapper;
+    private final MultiUserConfig multiUserConfig;
 
     // ========== 多用戶支援 ==========
     @Value("${trading.user-id:${user.id:test-user}}")
     private String defaultUserId;  // 從環境變數或配置讀取，測試時預設 test-user
+
+    /** 廣播模式下，BinanceFuturesService 會設定當前用戶 ID */
+    private static final ThreadLocal<String> CURRENT_USER_ID = new ThreadLocal<>();
+
+    /** 設定當前線程的用戶 ID（供 BinanceFuturesService.executeSignalForBroadcast 呼叫） */
+    public static void setCurrentUserId(String userId) {
+        CURRENT_USER_ID.set(userId);
+    }
+
+    /** 清除當前線程的用戶 ID */
+    public static void clearCurrentUserId() {
+        CURRENT_USER_ID.remove();
+    }
+
+    /**
+     * 取得當前有效的 userId
+     * 優先順序：ThreadLocal（廣播模式）→ defaultUserId（全局設定）
+     */
+    private String getActiveUserId() {
+        String threadUserId = CURRENT_USER_ID.get();
+        return threadUserId != null ? threadUserId : defaultUserId;
+    }
+
+    /**
+     * 查找 OPEN 交易 — 根據 MULTI_USER_ENABLED 決定策略
+     * - true：只查當前用戶的（per-user 隔離）
+     * - false：全局查詢（舊系統行為）
+     */
+    private Optional<Trade> resolveOpenTrade(String symbol) {
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            return tradeRepository.findUserOpenTrade(userId, symbol);
+        }
+        return tradeRepository.findOpenTrade(symbol);
+    }
 
     // ==================== 寫入操作 ====================
 
@@ -68,7 +109,7 @@ public class TradeRecordService {
         // 建立 Trade 主紀錄
         Trade trade = Trade.builder()
                 .tradeId(tradeId)
-                .userId(defaultUserId)  // ← 新增：自動填入當前用戶 ID
+                .userId(getActiveUserId())  // 多用戶模式用 ThreadLocal，否則用全局 defaultUserId
                 .symbol(signal.getSymbol())
                 .side(signal.getSide().name())
                 .entryPrice(entryOrder.getPrice())
@@ -120,7 +161,7 @@ public class TradeRecordService {
      */
     @Transactional
     public void recordDcaEntry(String symbol, TradeSignal signal, OrderResult dcaOrder, double riskAmount) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("DCA 找不到 OPEN 交易: {}, 改為建立新紀錄", symbol);
             return;
@@ -178,7 +219,7 @@ public class TradeRecordService {
      */
     @Transactional
     public void recordClose(String symbol, OrderResult closeOrder, String exitReason) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
             return;
@@ -217,7 +258,7 @@ public class TradeRecordService {
      */
     @Transactional
     public void recordPartialClose(String symbol, OrderResult closeOrder, double closeRatio, String exitReason) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
             return;
@@ -256,7 +297,7 @@ public class TradeRecordService {
      * 查詢某交易對 OPEN 中的開倉價（用於成本保護時當作 SL）
      */
     public Double getEntryPrice(String symbol) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         return openTradeOpt.map(Trade::getEntryPrice).orElse(null);
     }
 
@@ -270,7 +311,7 @@ public class TradeRecordService {
      */
     @Transactional
     public void recordMoveSL(String symbol, OrderResult slOrder, double oldSl, double newSl) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
             return;
@@ -309,7 +350,7 @@ public class TradeRecordService {
      */
     @Transactional
     public void recordCancel(String symbol) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
             return;
@@ -341,7 +382,7 @@ public class TradeRecordService {
      */
     @Transactional
     public void recordFailSafe(String symbol, String detail) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
 
         TradeEvent event = TradeEvent.builder()
@@ -359,10 +400,10 @@ public class TradeRecordService {
     // ==================== 查詢操作 ====================
 
     /**
-     * 查找目前 OPEN 的交易
+     * 查找目前 OPEN 的交易（對外 API，根據多用戶開關自動隔離）
      */
     public Optional<Trade> findOpenTrade(String symbol) {
-        return tradeRepository.findOpenTrade(symbol);
+        return resolveOpenTrade(symbol);
     }
 
     /**
@@ -371,6 +412,10 @@ public class TradeRecordService {
      * 如果指定 symbol 無持倉，嘗試找其他 OPEN trade
      */
     public List<Trade> findAllOpenTrades() {
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            return tradeRepository.findByUserIdAndStatus(userId, "OPEN");
+        }
         return tradeRepository.findAllOpenTrades();
     }
 
@@ -533,7 +578,7 @@ public class TradeRecordService {
     public void recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
                                        double commission, double realizedProfit,
                                        String orderId, String exitReason, long transactionTime) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("WebSocket 平倉事件但找不到 OPEN 交易: {} orderId={}", symbol, orderId);
             return;
@@ -640,7 +685,7 @@ public class TradeRecordService {
      */
     @Transactional
     public void recordProtectionLost(String symbol, String orderType, String orderId, String reason) {
-        Optional<Trade> openTradeOpt = tradeRepository.findOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
 
         String eventType = "STOP_MARKET".equals(orderType) ? "SL_LOST" : "TP_LOST";

@@ -29,7 +29,7 @@ class TradeRecordServiceStreamCloseTest {
     void setUp() {
         tradeRepository = mock(TradeRepository.class);
         tradeEventRepository = mock(TradeEventRepository.class);
-        service = new TradeRecordService(tradeRepository, tradeEventRepository, new ObjectMapper());
+        service = new TradeRecordService(tradeRepository, tradeEventRepository, new ObjectMapper(), new com.trader.trading.config.MultiUserConfig());
     }
 
     @Nested
