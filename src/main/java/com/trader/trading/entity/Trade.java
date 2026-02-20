@@ -78,6 +78,10 @@ public class Trade {
     private String sourceAuthorName;     // 訊號發送者
     private String sourceMessageId;      // 原始訊息 ID
 
+    // === 樂觀鎖 ===
+    @Version
+    private Long version;                // JPA 樂觀鎖，防止 WebSocket 事件與 API 並發更新衝突
+
     private LocalDateTime createdAt;     // 紀錄建立時間
     private LocalDateTime updatedAt;     // 最後更新時間
 

@@ -168,6 +168,31 @@ public class BinanceUserDataStreamService {
         }
     }
 
+    /**
+     * 每 30 秒檢查 WebSocket 訊息流是否正常
+     * 如果超過 120 秒沒收到任何訊息，觸發重連
+     *
+     * OkHttp 的 pingInterval(20s) 只處理傳輸層存活，
+     * 這裡監控的是「應用層是否還在收到 Binance 事件」
+     */
+    @Scheduled(fixedRate = 30_000, initialDelay = 90_000)
+    public void checkWebSocketHeartbeat() {
+        if (shuttingDown || !connected) return;
+
+        Instant lastMsg = lastMessageTime.get();
+        if (lastMsg == null) return;
+
+        long elapsed = Instant.now().getEpochSecond() - lastMsg.getEpochSecond();
+        if (elapsed > 120) {
+            log.warn("WebSocket 心跳超時: 已 {}s 未收到訊息，觸發重連", elapsed);
+            discordWebhookService.sendNotification(
+                    "⚠️ WebSocket 心跳超時",
+                    String.format("已 %d 秒未收到 Binance 訊息，正在重連...", elapsed),
+                    DiscordWebhookService.COLOR_YELLOW);
+            reconnect();
+        }
+    }
+
     private void deleteListenKey() {
         if (listenKey == null) return;
         String url = binanceConfig.getBaseUrl() + "/fapi/v1/listenKey";
@@ -293,7 +318,36 @@ public class BinanceUserDataStreamService {
             return;
         }
 
-        // 非 FILLED 的其他狀態（NEW, PARTIALLY_FILLED 等）→ 忽略
+        // SL/TP 部分成交 → 告警 + 記錄事件（不動 Trade 主紀錄，等最終 FILLED 才處理）
+        if ("PARTIALLY_FILLED".equals(orderStatus)
+                && ("STOP_MARKET".equals(orderType) || "TAKE_PROFIT_MARKET".equals(orderType))) {
+            double filledQty = order.get("z").getAsDouble();
+            double origQty = order.get("q").getAsDouble();
+            double remainingQty = origQty - filledQty;
+            boolean isSL = "STOP_MARKET".equals(orderType);
+
+            log.warn("⚠️ SL/TP 部分成交: {} {} filled={}/{} remaining={}",
+                    symbol, orderType, filledQty, origQty, remainingQty);
+
+            try {
+                tradeRecordService.recordOrderEvent(symbol,
+                        isSL ? "SL_PARTIAL_FILL" : "TP_PARTIAL_FILL",
+                        null, gson.toJson(Map.of(
+                                "orderId", orderId, "filledQty", filledQty,
+                                "origQty", origQty, "remainingQty", remainingQty)));
+            } catch (Exception e) {
+                log.error("記錄部分成交事件失敗: {}", e.getMessage());
+            }
+
+            discordWebhookService.sendNotification(
+                    "⚠️ " + (isSL ? "止損" : "止盈") + "單部分成交",
+                    String.format("%s %s\n成交: %.4f / %.4f\n剩餘 %.4f 等待完全成交",
+                            symbol, orderType, filledQty, origQty, remainingQty),
+                    DiscordWebhookService.COLOR_YELLOW);
+            return;
+        }
+
+        // 非 FILLED 的其他狀態（NEW 等）→ 忽略
         if (!"FILLED".equals(orderStatus)) {
             log.debug("訂單未完全成交 ({}), 忽略", orderStatus);
             return;
