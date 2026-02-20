@@ -17,6 +17,9 @@ import type {
   WebhooksResponse,
   CreateWebhookRequest,
   CreateWebhookResponse,
+  UserTradeSettings,
+  UpdateTradeSettingsRequest,
+  TradeSettingsDefaults,
 } from "@/types";
 
 const BASE = "";  // 使用 Next.js rewrites proxy
@@ -139,6 +142,25 @@ export async function updateAutoTradeStatus(
     method: "POST",
     body: JSON.stringify({ enabled }),
   });
+}
+
+// ==================== Trade Settings ====================
+
+export async function getTradeSettings(): Promise<UserTradeSettings> {
+  return request<UserTradeSettings>("/api/dashboard/trade-settings");
+}
+
+export async function updateTradeSettings(
+  data: UpdateTradeSettingsRequest
+): Promise<UserTradeSettings> {
+  return request<UserTradeSettings>("/api/dashboard/trade-settings", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getTradeSettingsDefaults(): Promise<TradeSettingsDefaults> {
+  return request<TradeSettingsDefaults>("/api/dashboard/trade-settings/defaults");
 }
 
 // ==================== Discord Webhooks ====================
