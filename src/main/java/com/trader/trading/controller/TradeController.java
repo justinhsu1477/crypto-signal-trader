@@ -13,6 +13,7 @@ import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalDeduplicationService;
 import com.trader.trading.service.SignalParserService;
 import com.trader.trading.service.BinanceUserDataStreamService;
+import com.trader.trading.service.SignalRecordService;
 import com.trader.trading.service.TradeRecordService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class TradeController {
     private final DiscordWebhookService webhookService;
     private final MonitorHeartbeatService heartbeatService;
     private final BinanceUserDataStreamService userDataStreamService;
+    private final SignalRecordService signalRecordService;
 
     /**
      * 查詢帳戶餘額
@@ -111,6 +113,10 @@ public class TradeController {
 
         if (signalOpt.isEmpty()) {
             log.debug("訊號解析失敗，非交易訊號: {}", message != null ? message.substring(0, Math.min(message.length(), 100)) : "null");
+            // 記錄解析失敗的訊號（用最小 TradeSignal）
+            signalRecordService.recordSignal(
+                    TradeSignal.builder().rawMessage(message).build(),
+                    "IGNORED", "parse-failed", null);
             return ResponseEntity.ok(Map.of(
                     "action", "IGNORED",
                     "reason", "非交易訊號，無法解析"));
@@ -143,11 +149,13 @@ public class TradeController {
                     "🚫 CANCEL 取消掛單",
                     signal.getSymbol() + " — 已取消所有掛單",
                     DiscordWebhookService.COLOR_BLUE);
+            signalRecordService.recordSignal(signal, "EXECUTED", null, null);
             return ResponseEntity.ok(Map.of("action", "CANCEL", "symbol", signal.getSymbol(), "result", result));
         }
 
         // 處理資訊通知
         if (signal.getSignalType() == TradeSignal.SignalType.INFO) {
+            signalRecordService.recordSignal(signal, "IGNORED", "info-signal", null);
             return ResponseEntity.ok(Map.of("action", "INFO", "message", "已記錄，不執行下單"));
         }
 
@@ -157,6 +165,7 @@ public class TradeController {
                     "⚠️ 風控攔截 — 交易對不在白名單",
                     "收到: " + signal.getSymbol() + "\n允許: " + riskConfig.getAllowedSymbols(),
                     DiscordWebhookService.COLOR_YELLOW);
+            signalRecordService.recordSignal(signal, "REJECTED", "symbol-not-allowed", null);
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "交易對不在白名單",
                     "allowed", riskConfig.getAllowedSymbols().toString(),
@@ -171,6 +180,7 @@ public class TradeController {
                     allSuccess ? "💰 CLOSE 平倉成功" : "❌ CLOSE 平倉失敗",
                     formatCloseResults(signal.getSymbol(), results),
                     allSuccess ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
+            signalRecordService.recordSignal(signal, allSuccess ? "EXECUTED" : "FAILED", null, null);
             return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
         }
 
@@ -181,6 +191,7 @@ public class TradeController {
                     allSuccess ? "🔄 TP/SL 修改成功" : "❌ TP/SL 修改失敗",
                     formatMoveSLResults(signal, results),
                     allSuccess ? DiscordWebhookService.COLOR_BLUE : DiscordWebhookService.COLOR_RED);
+            signalRecordService.recordSignal(signal, allSuccess ? "EXECUTED" : "FAILED", null, null);
             return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
         }
 
@@ -190,6 +201,7 @@ public class TradeController {
                     "⚠️ 風控攔截 — 缺少止損",
                     signal.getSymbol() + " " + signal.getSide() + "\nENTRY 訊號必須包含 stop_loss",
                     DiscordWebhookService.COLOR_YELLOW);
+            signalRecordService.recordSignal(signal, "REJECTED", "missing-stop-loss", null);
             return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 訊號必須包含 stop_loss"));
         }
 
@@ -199,6 +211,11 @@ public class TradeController {
                 entrySuccess ? "✅ ENTRY 入場成功" : "❌ ENTRY 入場失敗",
                 formatEntryResults(signal, results),
                 entrySuccess ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
+        // 嘗試取得關聯的 tradeId
+        String tradeId = results.stream()
+                .filter(r -> r.isSuccess() && r.getOrderId() != null)
+                .map(OrderResult::getOrderId).findFirst().orElse(null);
+        signalRecordService.recordSignal(signal, entrySuccess ? "EXECUTED" : "FAILED", null, tradeId);
         return ResponseEntity.ok(Map.of("action", "ENTRY", "results", results));
     }
 
@@ -289,6 +306,7 @@ public class TradeController {
                         title,
                         formatEntryResults(signal, results),
                         entryOk ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
+                signalRecordService.recordSignal(signal, entryOk ? "EXECUTED" : "FAILED", null, null);
                 return ResponseEntity.ok(Map.of("action", isDca ? "DCA" : "ENTRY", "results", results));
             }
 
@@ -317,6 +335,8 @@ public class TradeController {
                     closeColor = DiscordWebhookService.COLOR_GREEN;
                 }
                 webhookService.sendNotification(closeTitle, formatCloseResults(symbol, results), closeColor);
+                signalRecordService.recordFromRequest("CLOSE", symbol, null,
+                        null, null, closeOk ? "EXECUTED" : "FAILED", null, null, request.getSource());
                 return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
             }
 
@@ -337,6 +357,8 @@ public class TradeController {
                         moveOk ? "🔄 TP/SL 修改成功 (API)" : "❌ TP/SL 修改失敗 (API)",
                         formatMoveSLResults(signal, results),
                         moveOk ? DiscordWebhookService.COLOR_BLUE : DiscordWebhookService.COLOR_RED);
+                signalRecordService.recordFromRequest("MOVE_SL", symbol, null,
+                        null, null, moveOk ? "EXECUTED" : "FAILED", null, null, request.getSource());
                 return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
             }
 
@@ -358,6 +380,8 @@ public class TradeController {
                         "🚫 CANCEL 取消掛單 (API)",
                         symbol + " — 已取消所有掛單",
                         DiscordWebhookService.COLOR_BLUE);
+                signalRecordService.recordFromRequest("CANCEL", symbol, null,
+                        null, null, "EXECUTED", null, null, request.getSource());
                 return ResponseEntity.ok(Map.of("action", "CANCEL", "symbol", symbol, "result", cancelResult));
             }
 
@@ -622,6 +646,13 @@ public class TradeController {
 
         // 執行廣播
         Map<String, Object> result = broadcastTradeService.broadcastTrade(request);
+
+        // 訊號記錄（廣播層級記一次，非 per-user）
+        signalRecordService.recordFromRequest(
+                request.getAction(), symbol, request.getSide(),
+                request.getEntryPrice(), request.getStopLoss(),
+                "EXECUTED", null, null, request.getSource());
+
         return ResponseEntity.ok(result);
     }
 }
