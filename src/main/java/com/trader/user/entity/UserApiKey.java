@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Entity
 @Table(name = "user_api_keys", indexes = {
-        @Index(name = "idx_api_key_user_id", columnList = "userId")
+        @Index(name = "idx_uak_user_id", columnList = "userId")
 })
 public class UserApiKey {
 

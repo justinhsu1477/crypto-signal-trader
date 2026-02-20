@@ -38,11 +38,17 @@ spring:
       idle-timeout: 300000          # 閒置 5 分鐘回收
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true       # 既有 DB 自動建立 baseline（跳過 V1）
+    baseline-version: 1
+    locations: classpath:db/migration
 
 binance:
   futures:
