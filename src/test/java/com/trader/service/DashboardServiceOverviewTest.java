@@ -5,8 +5,10 @@ import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.config.RiskConfig;
 import com.trader.subscription.dto.SubscriptionStatusResponse;
 import com.trader.subscription.service.SubscriptionService;
+import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +43,7 @@ class DashboardServiceOverviewTest {
     private SubscriptionService subscriptionService;
     private BinanceFuturesService binanceFuturesService;
     private RiskConfig riskConfig;
+    private TradeConfigResolver tradeConfigResolver;
 
     @BeforeEach
     void setUp() {
@@ -48,9 +51,18 @@ class DashboardServiceOverviewTest {
         subscriptionService = Mockito.mock(SubscriptionService.class);
         binanceFuturesService = Mockito.mock(BinanceFuturesService.class);
         riskConfig = Mockito.mock(RiskConfig.class);
+        tradeConfigResolver = Mockito.mock(TradeConfigResolver.class);
+
+        // mock TradeConfigResolver — buildRiskBudget 會用到 resolve().maxDailyLossUsdt()
+        EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
+                0.20, 50000, 2000, 3, 2.0, 20,
+                java.util.List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
+        );
+        Mockito.when(tradeConfigResolver.resolve(Mockito.any())).thenReturn(defaultConfig);
 
         dashboardService = new DashboardService(
-                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class));
+                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class),
+                tradeConfigResolver);
     }
 
     // ==================== AccountSummary ====================

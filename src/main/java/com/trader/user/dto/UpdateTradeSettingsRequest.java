@@ -12,6 +12,8 @@ public class UpdateTradeSettingsRequest {
     private Integer maxDcaLayers;
     private Double maxPositionSizeUsdt;
     private List<String> allowedSymbols;
+    private Double dailyLossLimitUsdt;
+    private Double dcaRiskMultiplier;
     private Boolean autoSlEnabled;
     private Boolean autoTpEnabled;
 }

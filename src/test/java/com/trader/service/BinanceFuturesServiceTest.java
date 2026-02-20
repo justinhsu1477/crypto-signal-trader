@@ -4,6 +4,7 @@ import com.trader.shared.config.BinanceConfig;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
+import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.service.*;
@@ -32,6 +33,7 @@ class BinanceFuturesServiceTest {
     private SignalDeduplicationService mockDedup;
     private DiscordWebhookService mockWebhook;
     private UserApiKeyService mockUserApiKeyService;
+    private TradeConfigResolver mockTradeConfigResolver;
     private BinanceFuturesService service;
 
     @BeforeEach
@@ -45,11 +47,20 @@ class BinanceFuturesServiceTest {
         mockDedup = mock(SignalDeduplicationService.class);
         mockWebhook = mock(DiscordWebhookService.class);
         mockUserApiKeyService = mock(UserApiKeyService.class);
+        mockTradeConfigResolver = mock(TradeConfigResolver.class);
+
+        // mock TradeConfigResolver — 回傳與全局 RiskConfig 一致的 EffectiveTradeConfig
+        EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
+                0.20, 50000, 2000, 3, 2.0, 20,
+                List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
+        );
+        when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
 
         service = spy(new BinanceFuturesService(
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
-                new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService));
+                new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
+                mockTradeConfigResolver));
 
         // 通用 mock — 大部分測試需要的基礎環境
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
