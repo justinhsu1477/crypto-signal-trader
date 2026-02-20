@@ -340,7 +340,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of(loss1, loss2, win1));
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null);
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
             double todayLoss = service.getTodayRealizedLoss();
 
             // 只計算虧損部分：-500 + -300 = -800
@@ -358,7 +358,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of(win1, win2));
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null);
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
             double todayLoss = service.getTodayRealizedLoss();
 
             assertThat(todayLoss).isEqualTo(0.0);
@@ -372,7 +372,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of());
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null);
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
             double todayLoss = service.getTodayRealizedLoss();
 
             assertThat(todayLoss).isEqualTo(0.0);
@@ -389,7 +389,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of(loss1, nullTrade));
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null);
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
             double todayLoss = service.getTodayRealizedLoss();
 
             assertThat(todayLoss).isEqualTo(-500.0);

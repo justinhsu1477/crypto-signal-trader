@@ -1343,6 +1343,7 @@ public class BinanceFuturesService {
                     "用戶 " + userId + " 未設定 Binance API Key，無法執行廣播跟單");
         }
         CURRENT_USER_KEYS.set(userKeysOpt.get());
+        TradeRecordService.setCurrentUserId(userId);  // 同步設定 TradeRecordService 的 userId
         log.info("廣播跟單: userId={} 使用 per-user API Key", userId);
 
         try {
@@ -1447,6 +1448,7 @@ public class BinanceFuturesService {
         } finally {
             // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
             CURRENT_USER_KEYS.remove();
+            TradeRecordService.clearCurrentUserId();
         }
     }
 }
