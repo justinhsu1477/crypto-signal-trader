@@ -20,6 +20,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/lib/i18n/i18n-context";
 import { DiscordWebhookManager } from "@/components/settings/discord-webhook-manager";
+import { TradeSettingsForm } from "@/components/settings/trade-settings-form";
 import {
   User,
   KeyRound,
@@ -500,6 +501,16 @@ export default function SettingsPage() {
             ) : null}
           </div>
         )}
+
+        {/* Trade Parameters */}
+        <Separator />
+        <div>
+          <h2 className="text-lg font-semibold">{t("settings.tradeParams")}</h2>
+          <p className="text-sm text-muted-foreground">
+            {t("settings.tradeParamsDesc")}
+          </p>
+        </div>
+        <TradeSettingsForm />
       </div>
     );
   }

@@ -289,6 +289,38 @@ export interface CreateWebhookResponse {
   message: string;
 }
 
+// ==================== Trade Settings ====================
+
+export interface UserTradeSettings {
+  userId: string;
+  riskPercent: number;
+  maxLeverage: number;
+  maxDcaLayers: number;
+  maxPositionSizeUsdt: number;
+  allowedSymbols: string[];
+  autoSlEnabled: boolean;
+  autoTpEnabled: boolean;
+  updatedAt?: string;
+}
+
+export interface UpdateTradeSettingsRequest {
+  riskPercent?: number;
+  maxLeverage?: number;
+  maxDcaLayers?: number;
+  maxPositionSizeUsdt?: number;
+  allowedSymbols?: string[];
+  autoSlEnabled?: boolean;
+  autoTpEnabled?: boolean;
+}
+
+export interface TradeSettingsDefaults {
+  planId: string;
+  maxRiskPercent: number;
+  maxPositions: number;
+  maxSymbols: number;
+  dcaLayersAllowed: number;
+}
+
 // ==================== System Status ====================
 
 export interface MonitorStatus {
