@@ -23,12 +23,13 @@ import static org.assertj.core.api.Assertions.within;
 class ProfitCalculationTest {
 
     /**
-     * 透過反射呼叫 private calculateProfit() 方法。
+     * 透過反射呼叫 private calculateProfit(Trade, double) 方法。
+     * realExitCommission=0 時會 fallback 到估算值（保守 taker 0.04%）
      */
     private void invokeCalculateProfit(TradeRecordService service, Trade trade) throws Exception {
-        Method method = TradeRecordService.class.getDeclaredMethod("calculateProfit", Trade.class);
+        Method method = TradeRecordService.class.getDeclaredMethod("calculateProfit", Trade.class, double.class);
         method.setAccessible(true);
-        method.invoke(service, trade);
+        method.invoke(service, trade, 0.0);  // 0 = 使用估算值
     }
 
     private TradeRecordService createService() {

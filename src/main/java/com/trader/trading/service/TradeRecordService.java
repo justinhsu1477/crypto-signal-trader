@@ -103,8 +103,16 @@ public class TradeRecordService {
                               int leverage, double riskAmount, String signalHash) {
         String tradeId = UUID.randomUUID().toString();
 
-        // 入場手續費：Binance maker 0.02%
-        double entryCommission = round2(entryOrder.getPrice() * entryOrder.getQuantity() * 0.0002);
+        // 入場手續費：優先用 Binance 回傳的真實手續費，fallback 到估算值（maker 0.02%）
+        double entryCommission = entryOrder.getCommission() > 0
+                ? round2(entryOrder.getCommission())
+                : round2(entryOrder.getPrice() * entryOrder.getQuantity() * 0.0002);
+
+        // 止盈目標序列化為 JSON（如有）
+        String takeProfitsJson = null;
+        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            takeProfitsJson = toJson(Map.of("targets", signal.getTakeProfits()));
+        }
 
         // 建立 Trade 主紀錄
         Trade trade = Trade.builder()
@@ -117,6 +125,7 @@ public class TradeRecordService {
                 .entryTime(LocalDateTime.now(AppConstants.ZONE_ID))
                 .entryOrderId(entryOrder.getOrderId())
                 .stopLoss(signal.getStopLoss())
+                .takeProfits(takeProfitsJson)
                 .leverage(leverage)
                 .riskAmount(riskAmount)
                 .entryCommission(entryCommission)
@@ -170,16 +179,23 @@ public class TradeRecordService {
         Trade trade = openTradeOpt.get();
 
         // 計算加權平均入場價
-        double oldQty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
+        // 修正：部分平倉後 DCA 應用 remainingQuantity 而非 entryQuantity
+        // 避免已平倉數量被重複計入，導致 entryQuantity 膨脹
+        double effectiveOldQty = trade.getRemainingQuantity() != null
+                ? trade.getRemainingQuantity()
+                : (trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0);
         double oldPrice = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
         double newQty = dcaOrder.getQuantity();
         double newPrice = dcaOrder.getPrice();
-        double totalQty = oldQty + newQty;
-        double avgPrice = totalQty > 0 ? (oldPrice * oldQty + newPrice * newQty) / totalQty : newPrice;
+        double totalQty = effectiveOldQty + newQty;
+        double avgPrice = totalQty > 0 ? (oldPrice * effectiveOldQty + newPrice * newQty) / totalQty : newPrice;
 
         // 更新 Trade
         trade.setEntryPrice(round2(avgPrice));
         trade.setEntryQuantity(totalQty);
+        // DCA 後重置部分平倉追蹤（新的總倉位基數已更新）
+        trade.setRemainingQuantity(null);
+        trade.setTotalClosedQuantity(null);
         trade.setDcaCount((trade.getDcaCount() != null ? trade.getDcaCount() : 0) + 1);
         trade.setRiskAmount(round2((trade.getRiskAmount() != null ? trade.getRiskAmount() : 0) + riskAmount));
 
@@ -188,8 +204,10 @@ public class TradeRecordService {
             trade.setStopLoss(signal.getNewStopLoss());
         }
 
-        // 入場手續費累加
-        double dcaCommission = round2(newPrice * newQty * 0.0002);
+        // 入場手續費累加：優先用 Binance 回傳真實值，fallback 到估算值
+        double dcaCommission = dcaOrder.getCommission() > 0
+                ? round2(dcaOrder.getCommission())
+                : round2(newPrice * newQty * 0.0002);
         double oldCommission = trade.getEntryCommission() != null ? trade.getEntryCommission() : 0;
         trade.setEntryCommission(round2(oldCommission + dcaCommission));
 
@@ -199,7 +217,7 @@ public class TradeRecordService {
         saveEvent(trade.getTradeId(), "DCA_ENTRY", dcaOrder);
 
         log.info("DCA 紀錄更新: tradeId={} {} 均價: {} → {}, 數量: {} → {}, DCA第{}次, 新SL={}",
-                trade.getTradeId(), symbol, oldPrice, avgPrice, oldQty, totalQty,
+                trade.getTradeId(), symbol, oldPrice, avgPrice, effectiveOldQty, totalQty,
                 trade.getDcaCount(), trade.getStopLoss());
     }
 
@@ -235,8 +253,9 @@ public class TradeRecordService {
         trade.setExitReason(exitReason);
         trade.setStatus("CLOSED");
 
-        // 計算盈虧
-        calculateProfit(trade);
+        // 計算盈虧（優先用 Binance 回傳的真實出場手續費）
+        double realExitCommission = closeOrder.getCommission() > 0 ? closeOrder.getCommission() : 0;
+        calculateProfit(trade, realExitCommission);
 
         tradeRepository.save(trade);
 
@@ -395,6 +414,47 @@ public class TradeRecordService {
         tradeEventRepository.save(event);
 
         log.warn("Fail-Safe 紀錄: tradeId={} {} detail={}", tradeId, symbol, detail);
+    }
+
+    /**
+     * 通用事件紀錄 — 記錄任何訂單操作的結果（成功或失敗）
+     * 適用於不需要更動 Trade 主紀錄，只需新增 TradeEvent 的場景
+     *
+     * @param symbol    交易對（用於查找 tradeId；若無 OPEN Trade 則用 "UNKNOWN"）
+     * @param eventType 事件類型（如 ENTRY_FAILED, CLOSE_FAILED, TP_PLACED 等）
+     * @param order     OrderResult（可為 null，null 時只記 eventType + detail）
+     * @param detail    補充描述（JSON 或文字，可為 null）
+     */
+    @Transactional
+    public void recordOrderEvent(String symbol, String eventType, OrderResult order, String detail) {
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
+        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
+
+        TradeEvent.TradeEventBuilder builder = TradeEvent.builder()
+                .tradeId(tradeId)
+                .eventType(eventType)
+                .detail(detail);
+
+        if (order != null) {
+            builder.binanceOrderId(order.getOrderId())
+                   .orderSide(order.getSide())
+                   .orderType(order.getType())
+                   .price(order.getPrice())
+                   .quantity(order.getQuantity())
+                   .success(order.isSuccess())
+                   .errorMessage(order.isSuccess() ? null : order.getErrorMessage());
+        } else {
+            builder.success(false);
+        }
+
+        tradeEventRepository.save(builder.build());
+
+        if (order != null && order.isSuccess()) {
+            log.info("事件紀錄: tradeId={} {} {} orderId={}", tradeId, symbol, eventType, order.getOrderId());
+        } else {
+            log.warn("事件紀錄: tradeId={} {} {} error={}", tradeId, symbol, eventType,
+                    order != null ? order.getErrorMessage() : "N/A");
+        }
     }
 
     // ==================== 查詢操作 ====================
@@ -709,7 +769,12 @@ public class TradeRecordService {
     /**
      * 計算盈虧（毛利、手續費、淨利）
      */
-    private void calculateProfit(Trade trade) {
+    /**
+     * 計算盈虧
+     * @param trade 交易紀錄
+     * @param realExitCommission Binance 回傳的真實出場手續費，0 則 fallback 到估算
+     */
+    private void calculateProfit(Trade trade, double realExitCommission) {
         if (trade.getEntryPrice() == null || trade.getExitPrice() == null) {
             return;
         }
@@ -722,11 +787,10 @@ public class TradeRecordService {
         int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
         double grossProfit = (exit - entry) * qty * direction;
 
-        // 手續費：入場 (已記錄) + 出場 (此處計算)
-        // 止損出場走 STOP_MARKET (taker 0.04%), 止盈或手動出場走 maker 0.02%
-        // 保守以 taker 計算出場手續費
+        // 手續費：入場 (已記錄) + 出場
+        // 出場優先用真實值，fallback 到估算值（保守 taker 0.04%）
         double entryCom = trade.getEntryCommission() != null ? trade.getEntryCommission() : (entry * qty * 0.0002);
-        double exitCom = round2(exit * qty * 0.0004);
+        double exitCom = realExitCommission > 0 ? round2(realExitCommission) : round2(exit * qty * 0.0004);
         double commission = entryCom + exitCom;
 
         double netProfit = grossProfit - commission;

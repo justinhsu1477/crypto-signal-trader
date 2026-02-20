@@ -14,6 +14,7 @@ public class OrderResult {
     private String type;
     private double price;
     private double quantity;
+    private double commission;   // Binance 回傳的實際手續費（USDT），0 表示尚未取得
     private String errorMessage;
     private String rawResponse;
     private String riskSummary;  // 風控摘要（入場時填入：餘額、1R、保證金等）
