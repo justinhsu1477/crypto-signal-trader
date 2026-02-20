@@ -24,6 +24,9 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'com.h2database:h2'          // 保留給未來測試用
 
+    // Flyway DB Migration（9.x — PostgreSQL 支援已內建於 flyway-core）
+    implementation 'org.flywaydb:flyway-core'
+
     // JWT
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'

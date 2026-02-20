@@ -19,9 +19,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Entity
 @Table(name = "trade_events", indexes = {
-        @Index(name = "idx_trade_id", columnList = "tradeId"),
-        @Index(name = "idx_event_type", columnList = "eventType"),
-        @Index(name = "idx_timestamp", columnList = "timestamp")
+        @Index(name = "idx_te_trade_id", columnList = "tradeId"),
+        @Index(name = "idx_te_event_type", columnList = "eventType"),
+        @Index(name = "idx_te_timestamp", columnList = "timestamp")
 })
 public class TradeEvent {
 

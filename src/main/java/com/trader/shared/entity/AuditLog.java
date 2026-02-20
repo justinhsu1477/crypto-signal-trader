@@ -23,10 +23,10 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "audit_logs", indexes = {
-        @Index(name = "idx_user_id", columnList = "user_id"),
-        @Index(name = "idx_timestamp", columnList = "timestamp"),
-        @Index(name = "idx_action", columnList = "action"),
-        @Index(name = "idx_status", columnList = "status")
+        @Index(name = "idx_al_user_id", columnList = "user_id"),
+        @Index(name = "idx_al_timestamp", columnList = "timestamp"),
+        @Index(name = "idx_al_action", columnList = "action"),
+        @Index(name = "idx_al_status", columnList = "status")
 })
 @Data
 @Builder
