@@ -8,6 +8,7 @@ import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserDiscordWebhookService;
+import com.trader.user.service.UserTradeSettingsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -35,6 +36,7 @@ class DashboardControllerTest {
     private DashboardService dashboardService;
     private UserRepository userRepository;
     private UserDiscordWebhookService webhookService;
+    private UserTradeSettingsService tradeSettingsService;
     private DashboardController controller;
 
     @BeforeEach
@@ -42,7 +44,8 @@ class DashboardControllerTest {
         dashboardService = mock(DashboardService.class);
         userRepository = mock(UserRepository.class);
         webhookService = mock(UserDiscordWebhookService.class);
-        controller = new DashboardController(dashboardService, userRepository, webhookService);
+        tradeSettingsService = mock(UserTradeSettingsService.class);
+        controller = new DashboardController(dashboardService, userRepository, webhookService, tradeSettingsService);
     }
 
     // ==================== /overview ====================

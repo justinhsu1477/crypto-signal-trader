@@ -5,8 +5,13 @@ import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.user.dto.TradeSettingsDefaultsResponse;
+import com.trader.user.dto.TradeSettingsResponse;
+import com.trader.user.dto.UpdateTradeSettingsRequest;
+import com.trader.user.entity.UserTradeSettings;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserDiscordWebhookService;
+import com.trader.user.service.UserTradeSettingsService;
 import com.trader.user.entity.UserDiscordWebhook;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +39,7 @@ public class DashboardController {
     private final DashboardService dashboardService;
     private final UserRepository userRepository;
     private final UserDiscordWebhookService webhookService;
+    private final UserTradeSettingsService tradeSettingsService;
 
     /**
      * 首頁總覽
@@ -123,6 +129,52 @@ public class DashboardController {
                 "userId", userId,
                 "autoTradeEnabled", enabled,
                 "message", enabled ? "已啟用自動跟單" : "已關閉自動跟單"));
+    }
+
+    // ==================== 交易參數管理 ====================
+
+    /**
+     * 查詢用戶交易參數
+     * GET /api/dashboard/trade-settings
+     */
+    @GetMapping("/trade-settings")
+    public ResponseEntity<TradeSettingsResponse> getTradeSettings() {
+        String userId = SecurityUtil.getCurrentUserId();
+        UserTradeSettings settings = tradeSettingsService.getOrCreateSettings(userId);
+        return ResponseEntity.ok(tradeSettingsService.toResponse(settings));
+    }
+
+    /**
+     * 更新用戶交易參數（部分更新）
+     * PUT /api/dashboard/trade-settings
+     */
+    @PutMapping("/trade-settings")
+    public ResponseEntity<?> updateTradeSettings(
+            @RequestBody UpdateTradeSettingsRequest request) {
+        String userId = SecurityUtil.getCurrentUserId();
+        try {
+            UserTradeSettings updated = tradeSettingsService.updateSettings(userId, request);
+            return ResponseEntity.ok(tradeSettingsService.toResponse(updated));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 查詢方案預設值（用於前端顯示限制）
+     * GET /api/dashboard/trade-settings/defaults
+     */
+    @GetMapping("/trade-settings/defaults")
+    public ResponseEntity<TradeSettingsDefaultsResponse> getTradeSettingsDefaults() {
+        // MVP: 回傳 free 方案的預設值
+        // TODO: 未來從 subscription + plans 表查詢用戶實際方案
+        return ResponseEntity.ok(TradeSettingsDefaultsResponse.builder()
+                .planId("free")
+                .maxRiskPercent(0.10)
+                .maxPositions(1)
+                .maxSymbols(3)
+                .dcaLayersAllowed(0)
+                .build());
     }
 
     // ==================== Discord Webhook 管理 ====================
