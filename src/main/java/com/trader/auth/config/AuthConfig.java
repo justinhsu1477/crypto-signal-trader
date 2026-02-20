@@ -1,6 +1,7 @@
 package com.trader.auth.config;
 
 import com.trader.auth.filter.JwtAuthenticationFilter;
+import com.trader.auth.filter.MonitorApiKeyFilter;
 import com.trader.auth.handler.CustomAccessDeniedHandler;
 import com.trader.auth.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
@@ -17,10 +18,17 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 /**
  * Spring Security 設定
  *
+ * 認證方式：
+ * 1. JWT (Bearer Token) — 前端用戶使用
+ * 2. API Key (X-Api-Key) — Python Monitor 內部服務使用
+ *
  * 路徑規則：
  * - /api/auth/** → 公開（登入、註冊、刷新 token）
- * - /api/user/**, /api/dashboard/**, /api/subscription/** → 需要 JWT
- * - trading 端點 → 公開（Python monitor 不帶 JWT）
+ * - /api/heartbeat → 公開（健康檢查）
+ * - /api/subscription/webhook → 公開（Stripe callback）
+ * - trading 端點 → 需要認證（JWT 或 API Key）
+ * - /api/user/**, /api/dashboard/** → 需要認證（JWT）
+ * - 其他 → 拒絕
  */
 @Configuration
 @EnableWebSecurity
@@ -28,6 +36,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class AuthConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final MonitorApiKeyFilter monitorApiKeyFilter;
     private final CustomAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
 
@@ -36,38 +45,42 @@ public class AuthConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .headers(headers -> headers
-                        .frameOptions(frame -> frame.sameOrigin()))  // H2 console
+                        .frameOptions(frame -> frame.sameOrigin()))
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // 例外處理：認證和授權失敗時回傳 JSON 而非 HTML
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(authenticationEntryPoint)     // 401 Unauthorized
-                        .accessDeniedHandler(accessDeniedHandler))              // 403 Forbidden
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
-                        // 公開：認證端點
+                        // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
-                        // 公開：Stripe webhook（server-to-server）
+                        .requestMatchers("/api/heartbeat").permitAll()
                         .requestMatchers("/api/subscription/webhook").permitAll()
-                        // 公開：trading 端點（Python monitor 使用，不帶 JWT）
+
+                        // === 受保護：需要 JWT 或 Monitor API Key ===
                         .requestMatchers(
+                                "/api/execute-signal", "/api/execute-trade",
+                                "/api/broadcast-trade", "/api/parse-signal",
                                 "/api/balance", "/api/positions",
                                 "/api/exchange-info", "/api/open-orders",
-                                "/api/execute-signal", "/api/execute-trade",
-                                "/api/parse-signal", "/api/heartbeat",
                                 "/api/monitor-status", "/api/stream-status",
-                                "/api/leverage", "/api/orders",
-                                "/api/trades/**", "/api/stats/**",
-                                "/api/admin/**"
-                        ).permitAll()
-                        // 公開：H2 console（dev 環境）
-                        .requestMatchers("/h2-console/**").permitAll()
-                        // 受保護：SaaS 端點需要 JWT
+                                "/api/leverage", "/api/orders"
+                        ).authenticated()
+
+                        // === 受保護：SaaS 端點需要 JWT ===
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/dashboard/**").authenticated()
                         .requestMatchers("/api/subscription/**").authenticated()
-                        // 其他：開發階段放行
-                        .anyRequest().permitAll()
+                        .requestMatchers("/api/trades/**").authenticated()
+                        .requestMatchers("/api/stats/**").authenticated()
+                        .requestMatchers("/api/admin/**").authenticated()
+
+                        // === 其他：全部拒絕 ===
+                        .anyRequest().denyAll()
                 )
+                // Filter 順序：API Key → JWT → Spring Security
+                .addFilterBefore(monitorApiKeyFilter,
+                        UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class);
 

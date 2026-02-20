@@ -22,6 +22,7 @@ api:
   parse_endpoint: "/api/parse-signal"
   timeout: 10                  # HTTP 逾時 (秒)
   dry_run: false               # true = 只解析不下單
+  api_key: ""                  # Monitor API Key（或用環境變數 MONITOR_API_KEY）
 
 # AI 解析設定 (Gemini)
 ai:

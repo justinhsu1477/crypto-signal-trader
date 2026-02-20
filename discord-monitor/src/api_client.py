@@ -35,7 +35,12 @@ class ApiClient:
 
     async def start(self) -> None:
         timeout = aiohttp.ClientTimeout(total=self.config.timeout)
-        self._session = aiohttp.ClientSession(timeout=timeout)
+        # 如果有設定 API Key，自動帶在所有請求的 header
+        headers = {}
+        if self.config.api_key:
+            headers["X-Api-Key"] = self.config.api_key
+            logger.info("Monitor API Key 已載入，將自動帶入請求 header")
+        self._session = aiohttp.ClientSession(timeout=timeout, headers=headers)
 
     async def close(self) -> None:
         if self._session:
