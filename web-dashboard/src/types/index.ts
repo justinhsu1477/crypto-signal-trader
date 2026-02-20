@@ -297,6 +297,8 @@ export interface UserTradeSettings {
   maxLeverage: number;
   maxDcaLayers: number;
   maxPositionSizeUsdt: number;
+  dailyLossLimitUsdt?: number;
+  dcaRiskMultiplier?: number;
   allowedSymbols: string[];
   autoSlEnabled: boolean;
   autoTpEnabled: boolean;
@@ -308,6 +310,8 @@ export interface UpdateTradeSettingsRequest {
   maxLeverage?: number;
   maxDcaLayers?: number;
   maxPositionSizeUsdt?: number;
+  dailyLossLimitUsdt?: number;
+  dcaRiskMultiplier?: number;
   allowedSymbols?: string[];
   autoSlEnabled?: boolean;
   autoTpEnabled?: boolean;

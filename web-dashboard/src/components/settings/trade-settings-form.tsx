@@ -21,6 +21,8 @@ export function TradeSettingsForm() {
   const [maxLeverage, setMaxLeverage] = useState("");
   const [maxDcaLayers, setMaxDcaLayers] = useState("");
   const [maxPositionSize, setMaxPositionSize] = useState("");
+  const [dailyLossLimit, setDailyLossLimit] = useState("");
+  const [dcaRiskMultiplier, setDcaRiskMultiplier] = useState("");
   const [allowedSymbols, setAllowedSymbols] = useState("");
   const [autoSlEnabled, setAutoSlEnabled] = useState(true);
   const [autoTpEnabled, setAutoTpEnabled] = useState(true);
@@ -57,6 +59,16 @@ export function TradeSettingsForm() {
             data.maxPositionSizeUsdt != null
               ? String(data.maxPositionSizeUsdt)
               : "50000"
+          );
+          setDailyLossLimit(
+            data.dailyLossLimitUsdt != null
+              ? String(data.dailyLossLimitUsdt)
+              : ""
+          );
+          setDcaRiskMultiplier(
+            data.dcaRiskMultiplier != null
+              ? String(data.dcaRiskMultiplier)
+              : ""
           );
           setAllowedSymbols(
             data.allowedSymbols ? data.allowedSymbols.join(", ") : "BTCUSDT"
@@ -104,6 +116,24 @@ export function TradeSettingsForm() {
         throw new Error(t("settings.maxPositionSize") + ": >= 100");
       }
 
+      // Daily loss limit (optional)
+      let dailyLossVal: number | undefined;
+      if (dailyLossLimit.trim() !== "") {
+        dailyLossVal = parseFloat(dailyLossLimit);
+        if (isNaN(dailyLossVal) || dailyLossVal < 0 || dailyLossVal > 1000000) {
+          throw new Error(t("settings.dailyLossLimit") + ": 0-1,000,000");
+        }
+      }
+
+      // DCA risk multiplier (optional)
+      let dcaMultiplierVal: number | undefined;
+      if (dcaRiskMultiplier.trim() !== "") {
+        dcaMultiplierVal = parseFloat(dcaRiskMultiplier);
+        if (isNaN(dcaMultiplierVal) || dcaMultiplierVal < 1 || dcaMultiplierVal > 10) {
+          throw new Error(t("settings.dcaRiskMultiplier") + ": 1-10");
+        }
+      }
+
       const symbols = allowedSymbols
         .split(",")
         .map((s) => s.trim().toUpperCase())
@@ -114,6 +144,8 @@ export function TradeSettingsForm() {
         maxLeverage: leverageVal,
         maxDcaLayers: dcaVal,
         maxPositionSizeUsdt: positionVal,
+        dailyLossLimitUsdt: dailyLossVal,
+        dcaRiskMultiplier: dcaMultiplierVal,
         allowedSymbols: symbols,
         autoSlEnabled,
         autoTpEnabled,
@@ -223,6 +255,52 @@ export function TradeSettingsForm() {
         </div>
         <p className="text-xs text-muted-foreground">
           {t("settings.maxPositionSizeDesc")}
+        </p>
+      </div>
+
+      {/* Daily Loss Limit */}
+      <div className="space-y-2">
+        <Label htmlFor="dailyLossLimit">{t("settings.dailyLossLimit")}</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="dailyLossLimit"
+            type="number"
+            min={0}
+            max={1000000}
+            step={100}
+            value={dailyLossLimit}
+            onChange={(e) => setDailyLossLimit(e.target.value)}
+            placeholder={t("settings.dailyLossLimitPlaceholder")}
+            className="max-w-[200px]"
+          />
+          <span className="text-sm text-muted-foreground">USDT</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t("settings.dailyLossLimitDesc")}
+        </p>
+      </div>
+
+      {/* DCA Risk Multiplier */}
+      <div className="space-y-2">
+        <Label htmlFor="dcaRiskMultiplier">
+          {t("settings.dcaRiskMultiplier")}
+        </Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="dcaRiskMultiplier"
+            type="number"
+            min={1}
+            max={10}
+            step={0.1}
+            value={dcaRiskMultiplier}
+            onChange={(e) => setDcaRiskMultiplier(e.target.value)}
+            placeholder={t("settings.dcaRiskMultiplierPlaceholder")}
+            className="max-w-[120px]"
+          />
+          <span className="text-sm text-muted-foreground">x</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t("settings.dcaRiskMultiplierDesc")}
         </p>
       </div>
 

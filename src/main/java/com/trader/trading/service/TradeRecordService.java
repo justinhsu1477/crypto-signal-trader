@@ -63,6 +63,11 @@ public class TradeRecordService {
         CURRENT_USER_ID.remove();
     }
 
+    /** 取得當前線程的用戶 ID（供 TradeConfigResolver 使用） */
+    public static String getCurrentUserId() {
+        return CURRENT_USER_ID.get();
+    }
+
     /**
      * 取得當前有效的 userId
      * 優先順序：ThreadLocal（廣播模式）→ defaultUserId（全局設定）

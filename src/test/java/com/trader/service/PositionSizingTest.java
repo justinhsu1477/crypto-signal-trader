@@ -33,7 +33,7 @@ class PositionSizingTest {
                 3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
         service = new BinanceFuturesService(null, null, riskConfig, null, null, null, null,
-                new SymbolLockRegistry(), null);
+                new SymbolLockRegistry(), null, null);
     }
 
     @Nested
@@ -121,7 +121,7 @@ class PositionSizingTest {
                     2000, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT"), "BTCUSDT"
             );
             BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null, null,
-                    new SymbolLockRegistry(), null);
+                    new SymbolLockRegistry(), null, null);
             // 1R = 1000 × 0.20 = 200, riskDistance = 1, qty = 200
             double qty = svc.calculatePositionSize(1000, 95000, 94999);
             assertThat(qty).isEqualTo(200.0);

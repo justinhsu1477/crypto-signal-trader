@@ -6,6 +6,7 @@ import com.trader.shared.config.RiskConfig;
 import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +44,8 @@ class DashboardServiceTradeHistoryTest {
         UserRepository userRepository = Mockito.mock(UserRepository.class);
 
         dashboardService = new DashboardService(
-                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, userRepository);
+                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, userRepository,
+                Mockito.mock(TradeConfigResolver.class));
     }
 
     /**

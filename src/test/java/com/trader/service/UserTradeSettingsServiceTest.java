@@ -184,6 +184,94 @@ class UserTradeSettingsServiceTest {
         }
 
         @Test
+        @DisplayName("部分更新 dailyLossLimitUsdt -> 只改這個欄位")
+        void partialUpdate_dailyLossLimitUsdt() {
+            UserTradeSettings existing = defaultSettings("user-1");
+            when(settingsRepository.findById("user-1")).thenReturn(Optional.of(existing));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setDailyLossLimitUsdt(500.0);
+
+            UserTradeSettings result = service.updateSettings("user-1", request);
+
+            assertThat(result.getDailyLossLimitUsdt()).isEqualTo(500.0);
+            // 其他欄位保持不變
+            assertThat(result.getRiskPercent()).isEqualTo(0.20);
+        }
+
+        @Test
+        @DisplayName("部分更新 dcaRiskMultiplier -> 只改這個欄位")
+        void partialUpdate_dcaRiskMultiplier() {
+            UserTradeSettings existing = defaultSettings("user-1");
+            when(settingsRepository.findById("user-1")).thenReturn(Optional.of(existing));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setDcaRiskMultiplier(3.5);
+
+            UserTradeSettings result = service.updateSettings("user-1", request);
+
+            assertThat(result.getDcaRiskMultiplier()).isEqualTo(3.5);
+            // 其他欄位保持不變
+            assertThat(result.getMaxLeverage()).isEqualTo(20);
+        }
+
+        @Test
+        @DisplayName("dailyLossLimitUsdt 超出範圍 -> 拋出例外")
+        void dailyLossLimitUsdt_outOfRange_throws() {
+            UserTradeSettings existing = defaultSettings("user-1");
+            when(settingsRepository.findById("user-1")).thenReturn(Optional.of(existing));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setDailyLossLimitUsdt(2_000_000.0); // max 1,000,000
+
+            assertThatThrownBy(() -> service.updateSettings("user-1", request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("dailyLossLimitUsdt");
+        }
+
+        @Test
+        @DisplayName("dailyLossLimitUsdt 負數 -> 拋出例外")
+        void dailyLossLimitUsdt_negative_throws() {
+            UserTradeSettings existing = defaultSettings("user-1");
+            when(settingsRepository.findById("user-1")).thenReturn(Optional.of(existing));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setDailyLossLimitUsdt(-100.0);
+
+            assertThatThrownBy(() -> service.updateSettings("user-1", request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("dailyLossLimitUsdt");
+        }
+
+        @Test
+        @DisplayName("dcaRiskMultiplier 超出範圍 -> 拋出例外")
+        void dcaRiskMultiplier_outOfRange_throws() {
+            UserTradeSettings existing = defaultSettings("user-1");
+            when(settingsRepository.findById("user-1")).thenReturn(Optional.of(existing));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setDcaRiskMultiplier(15.0); // max 10.0
+
+            assertThatThrownBy(() -> service.updateSettings("user-1", request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("dcaRiskMultiplier");
+        }
+
+        @Test
+        @DisplayName("dcaRiskMultiplier 小於 1.0 -> 拋出例外")
+        void dcaRiskMultiplier_tooSmall_throws() {
+            UserTradeSettings existing = defaultSettings("user-1");
+            when(settingsRepository.findById("user-1")).thenReturn(Optional.of(existing));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setDcaRiskMultiplier(0.5); // min 1.0
+
+            assertThatThrownBy(() -> service.updateSettings("user-1", request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("dcaRiskMultiplier");
+        }
+
+        @Test
         @DisplayName("maxPositionSizeUsdt 超出範圍 -> 拋出例外")
         void maxPositionSize_outOfRange_throws() {
             UserTradeSettings existing = defaultSettings("user-1");
@@ -228,6 +316,8 @@ class UserTradeSettingsServiceTest {
             request.setMaxLeverage(125);
             request.setMaxDcaLayers(10);
             request.setMaxPositionSizeUsdt(1_000_000.0);
+            request.setDailyLossLimitUsdt(1_000_000.0);
+            request.setDcaRiskMultiplier(10.0);
 
             UserTradeSettings result = service.updateSettings("user-1", request);
 
@@ -235,6 +325,8 @@ class UserTradeSettingsServiceTest {
             assertThat(result.getMaxLeverage()).isEqualTo(125);
             assertThat(result.getMaxDcaLayers()).isEqualTo(10);
             assertThat(result.getMaxPositionSizeUsdt()).isEqualTo(1_000_000.0);
+            assertThat(result.getDailyLossLimitUsdt()).isEqualTo(1_000_000.0);
+            assertThat(result.getDcaRiskMultiplier()).isEqualTo(10.0);
         }
     }
 
@@ -243,7 +335,7 @@ class UserTradeSettingsServiceTest {
     class ToResponse {
 
         @Test
-        @DisplayName("正常轉換 -> DTO 欄位正確")
+        @DisplayName("正常轉換 -> DTO 欄位正確（含 dailyLossLimitUsdt + dcaRiskMultiplier）")
         void normalConversion() {
             UserTradeSettings settings = UserTradeSettings.builder()
                     .userId("user-1")
@@ -251,6 +343,8 @@ class UserTradeSettingsServiceTest {
                     .maxLeverage(25)
                     .maxDcaLayers(3)
                     .maxPositionSizeUsdt(30000.0)
+                    .dailyLossLimitUsdt(1500.0)
+                    .dcaRiskMultiplier(2.5)
                     .allowedSymbols("[\"BTCUSDT\",\"ETHUSDT\"]")
                     .autoSlEnabled(true)
                     .autoTpEnabled(false)
@@ -263,6 +357,8 @@ class UserTradeSettingsServiceTest {
             assertThat(response.getMaxLeverage()).isEqualTo(25);
             assertThat(response.getMaxDcaLayers()).isEqualTo(3);
             assertThat(response.getMaxPositionSizeUsdt()).isEqualTo(30000.0);
+            assertThat(response.getDailyLossLimitUsdt()).isEqualTo(1500.0);
+            assertThat(response.getDcaRiskMultiplier()).isEqualTo(2.5);
             assertThat(response.getAllowedSymbols()).containsExactly("BTCUSDT", "ETHUSDT");
             assertThat(response.isAutoSlEnabled()).isTrue();
             assertThat(response.isAutoTpEnabled()).isFalse();

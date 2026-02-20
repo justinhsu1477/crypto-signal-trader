@@ -34,6 +34,12 @@ public class UserTradeSettings {
     @Column(columnDefinition = "TEXT")
     private String allowedSymbols;
 
+    /** 每日虧損上限 (USDT), null = 使用全局 RiskConfig 預設值 */
+    private Double dailyLossLimitUsdt;
+
+    /** DCA 風險倍數, null = 使用全局 RiskConfig 預設值 */
+    private Double dcaRiskMultiplier;
+
     /** 自動止損開關 */
     @Builder.Default
     private boolean autoSlEnabled = true;

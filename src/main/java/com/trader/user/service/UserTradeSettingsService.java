@@ -72,6 +72,14 @@ public class UserTradeSettingsService {
             validateRange(request.getMaxPositionSizeUsdt(), 100.0, 1_000_000.0, "maxPositionSizeUsdt");
             settings.setMaxPositionSizeUsdt(request.getMaxPositionSizeUsdt());
         }
+        if (request.getDailyLossLimitUsdt() != null) {
+            validateRange(request.getDailyLossLimitUsdt(), 0.0, 1_000_000.0, "dailyLossLimitUsdt");
+            settings.setDailyLossLimitUsdt(request.getDailyLossLimitUsdt());
+        }
+        if (request.getDcaRiskMultiplier() != null) {
+            validateRange(request.getDcaRiskMultiplier(), 1.0, 10.0, "dcaRiskMultiplier");
+            settings.setDcaRiskMultiplier(request.getDcaRiskMultiplier());
+        }
         if (request.getAllowedSymbols() != null) {
             settings.setAllowedSymbols(serializeSymbols(request.getAllowedSymbols()));
         }
@@ -97,6 +105,8 @@ public class UserTradeSettingsService {
                 .maxLeverage(settings.getMaxLeverage())
                 .maxDcaLayers(settings.getMaxDcaLayers())
                 .maxPositionSizeUsdt(settings.getMaxPositionSizeUsdt())
+                .dailyLossLimitUsdt(settings.getDailyLossLimitUsdt())
+                .dcaRiskMultiplier(settings.getDcaRiskMultiplier())
                 .allowedSymbols(deserializeSymbols(settings.getAllowedSymbols()))
                 .autoSlEnabled(settings.isAutoSlEnabled())
                 .autoTpEnabled(settings.isAutoTpEnabled())

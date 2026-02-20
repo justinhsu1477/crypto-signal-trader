@@ -19,6 +19,8 @@ public class TradeSettingsResponse {
     private Integer maxDcaLayers;
     private Double maxPositionSizeUsdt;
     private List<String> allowedSymbols;
+    private Double dailyLossLimitUsdt;
+    private Double dcaRiskMultiplier;
     private boolean autoSlEnabled;
     private boolean autoTpEnabled;
     private String updatedAt;

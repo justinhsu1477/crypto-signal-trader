@@ -1,6 +1,10 @@
 app:
   timezone: Asia/Taipei
 
+# ========== Per-User 個人化交易參數 ==========
+per-user-settings:
+  enabled: ${PER_USER_SETTINGS_ENABLED:false}  # true = 用戶個人風控, false = 全局 RiskConfig
+
 # ========== 多用戶跟單開關 ==========
 multi-user:
   enabled: ${MULTI_USER_ENABLED:false}      # true = 啟用多用戶模式, false = 舊系統

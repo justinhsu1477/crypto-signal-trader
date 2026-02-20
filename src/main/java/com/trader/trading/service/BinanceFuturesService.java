@@ -11,6 +11,7 @@ import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.shared.model.TradeSignal;
+import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.util.BinanceSignatureUtil;
@@ -41,6 +42,7 @@ public class BinanceFuturesService {
     private final ObjectMapper objectMapper;
     private final SymbolLockRegistry symbolLockRegistry;
     private final UserApiKeyService userApiKeyService;
+    private final TradeConfigResolver tradeConfigResolver;
     private final Gson gson = new Gson();
 
     /**
@@ -61,7 +63,8 @@ public class BinanceFuturesService {
                                   DiscordWebhookService discordWebhookService,
                                   ObjectMapper objectMapper,
                                   SymbolLockRegistry symbolLockRegistry,
-                                  UserApiKeyService userApiKeyService) {
+                                  UserApiKeyService userApiKeyService,
+                                  TradeConfigResolver tradeConfigResolver) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
@@ -71,6 +74,16 @@ public class BinanceFuturesService {
         this.objectMapper = objectMapper;
         this.symbolLockRegistry = symbolLockRegistry;
         this.userApiKeyService = userApiKeyService;
+        this.tradeConfigResolver = tradeConfigResolver;
+    }
+
+    /**
+     * 取得當前有效的 userId（用於解析 per-user 交易參數）
+     * 優先順序：ThreadLocal（廣播模式）→ 全局 defaultUserId
+     */
+    private String getActiveUserId() {
+        String threadUserId = TradeRecordService.getCurrentUserId();
+        return threadUserId != null ? threadUserId : "default";
     }
 
     // ==================== 帳戶相關 ====================
@@ -389,20 +402,23 @@ public class BinanceFuturesService {
     private List<OrderResult> executeSignalInternal(TradeSignal signal) {
         String symbol = signal.getSymbol();
 
+        // 解析當前用戶的有效交易參數（per-user 或全局）
+        EffectiveTradeConfig config = tradeConfigResolver.resolve(getActiveUserId());
+
         // 1. 交易對白名單檢查
-        if (!riskConfig.isSymbolAllowed(symbol)) {
-            log.warn("交易對不在白名單: {}, 允許清單: {}", symbol, riskConfig.getAllowedSymbols());
-            return List.of(OrderResult.fail("交易對不在白名單: " + symbol + ", 允許: " + riskConfig.getAllowedSymbols()));
+        if (!config.isSymbolAllowed(symbol)) {
+            log.warn("交易對不在白名單: {}, 允許清單: {}", symbol, config.allowedSymbols());
+            return List.of(OrderResult.fail("交易對不在白名單: " + symbol + ", 允許: " + config.allowedSymbols()));
         }
 
         // 1b. 查帳戶餘額（後續熔斷 + 倉位計算都會用）
         double balance = getAvailableBalance();
-        double riskAmount = balance * riskConfig.getRiskPercent();
-        log.info("帳戶餘額: {} USDT, 1R = {} USDT ({}%)", balance, riskAmount, riskConfig.getRiskPercent() * 100);
+        double riskAmount = balance * config.riskPercent();
+        log.info("帳戶餘額: {} USDT, 1R = {} USDT ({}%)", balance, riskAmount, config.riskPercent() * 100);
 
         // 1c. 每日虧損熔斷（固定上限，不隨餘額縮水而變鬆）
         double todayLoss = tradeRecordService.getTodayRealizedLoss();
-        double maxDailyLoss = riskConfig.getMaxDailyLossUsdt();
+        double maxDailyLoss = config.maxDailyLossUsdt();
         if (maxDailyLoss > 0 && Math.abs(todayLoss) >= maxDailyLoss) {
             String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT",
                     todayLoss, maxDailyLoss);
@@ -417,7 +433,7 @@ public class BinanceFuturesService {
             if (signal.isDca()) {
                 // DCA 模式：檢查補倉次數是否已達上限
                 int dcaCount = tradeRecordService.getDcaCount(symbol);
-                int maxDca = riskConfig.getMaxDcaPerSymbol();
+                int maxDca = config.maxDcaPerSymbol();
                 if (dcaCount >= maxDca - 1) {  // maxDca 包含首次入場，dcaCount 從 0 開始
                     log.warn("DCA 已達上限: {} 已補倉 {} 次，上限 {} 層", symbol, dcaCount, maxDca);
                     return List.of(OrderResult.fail("DCA 已達上限: " + symbol + " 已 " + (dcaCount + 1) + "/" + maxDca + " 層"));
@@ -488,7 +504,7 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("入場價偏離市價超過 10%"));
         }
 
-        int leverage = riskConfig.getFixedLeverage();
+        int leverage = config.fixedLeverage();
 
         // 6. 設定逐倉 + 槓桿
         try {
@@ -500,7 +516,7 @@ public class BinanceFuturesService {
         setLeverage(symbol, leverage);
 
         // 7. 動態以損定倉: 1R = 帳戶餘額 × riskPercent, DCA 用 2R
-        double riskMultiplier = signal.isDca() ? riskConfig.getDcaRiskMultiplier() : 1.0;
+        double riskMultiplier = signal.isDca() ? config.dcaRiskMultiplier() : 1.0;
         double effectiveRiskAmount = riskAmount * riskMultiplier;
         double riskDistance = Math.abs(entry - sl);
         double quantity = effectiveRiskAmount / riskDistance;
@@ -510,7 +526,7 @@ public class BinanceFuturesService {
 
         // 7b. 名目價值上限 cap — 防止窄止損產生超大倉位
         double notional = entry * quantity;
-        double maxNotional = riskConfig.getMaxPositionUsdt();
+        double maxNotional = config.maxPositionUsdt();
         if (maxNotional > 0 && notional > maxNotional) {
             double cappedQty = maxNotional / entry;
             log.warn("倉位 cap 觸發: 原始數量={} (名目 {} USDT), 上限數量={} (名目 {} USDT)",
@@ -555,7 +571,7 @@ public class BinanceFuturesService {
         // 附加風控摘要到入場單（供 Discord 通知使用）
         entryOrder.setRiskSummary(String.format("餘額: %.2f | %s: %.2f (%.0f%%×%.0f) | 保證金: %.2f",
                 balance, signal.isDca() ? "DCA風險" : "1R",
-                effectiveRiskAmount, riskConfig.getRiskPercent() * 100, riskMultiplier,
+                effectiveRiskAmount, config.riskPercent() * 100, riskMultiplier,
                 entry * quantity / leverage));
 
         // === DCA 補倉 SL/TP 處理（與首次入場不同） ===
@@ -1356,7 +1372,9 @@ public class BinanceFuturesService {
         }
 
         String symbol = request.getSymbol();
-        if (symbol == null || !riskConfig.isSymbolAllowed(symbol)) {
+        // 廣播跟單的白名單檢查：使用 per-user 設定（如果啟用）
+        EffectiveTradeConfig broadcastConfig = tradeConfigResolver.resolve(userId);
+        if (symbol == null || !broadcastConfig.isSymbolAllowed(symbol)) {
             throw new IllegalArgumentException("交易對不在白名單: " + symbol);
         }
 

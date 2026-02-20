@@ -7,8 +7,10 @@ import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.RiskConfig;
 import com.trader.subscription.dto.SubscriptionStatusResponse;
 import com.trader.subscription.service.SubscriptionService;
+import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +48,7 @@ public class DashboardService {
     private final BinanceFuturesService binanceFuturesService;
     private final RiskConfig riskConfig;
     private final UserRepository userRepository;
+    private final TradeConfigResolver tradeConfigResolver;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
@@ -62,7 +65,7 @@ public class DashboardService {
 
         return DashboardOverview.builder()
                 .account(buildAccountSummary())
-                .riskBudget(buildRiskBudget())
+                .riskBudget(buildRiskBudget(userId))
                 .subscription(buildSubscriptionInfo(userId))
                 .autoTradeEnabled(autoTradeEnabled)
                 .positions(buildPositionList())
@@ -90,8 +93,9 @@ public class DashboardService {
                 .build();
     }
 
-    private DashboardOverview.RiskBudget buildRiskBudget() {
-        double dailyLimit = riskConfig.getMaxDailyLossUsdt();
+    private DashboardOverview.RiskBudget buildRiskBudget(String userId) {
+        EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
+        double dailyLimit = config.maxDailyLossUsdt();
         double todayLoss = tradeRecordService.getTodayRealizedLoss(); // 負數
         double lossUsed = Math.abs(todayLoss);
         double remaining = Math.max(0, dailyLimit - lossUsed);
