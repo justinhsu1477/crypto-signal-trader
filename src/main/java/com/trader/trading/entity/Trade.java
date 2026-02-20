@@ -48,6 +48,8 @@ public class Trade {
 
     // === 風控參數 ===
     private Double stopLoss;             // 設定的止損價
+    @Column(columnDefinition = "TEXT")
+    private String takeProfits;          // 止盈目標（JSON 陣列，如 "[68400.0, 66700.0]"）
     private Integer leverage;            // 使用的槓桿倍數
     private Double riskAmount;           // 計畫風險金額 (1R = balance × riskPercent)
 

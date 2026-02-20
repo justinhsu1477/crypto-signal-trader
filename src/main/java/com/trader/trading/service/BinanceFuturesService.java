@@ -549,6 +549,7 @@ public class BinanceFuturesService {
         OrderResult entryOrder = placeLimitOrder(symbol, entrySide, entry, quantity);
         if (!entryOrder.isSuccess()) {
             log.error("入場單失敗: {}", entryOrder.getErrorMessage());
+            tradeRecordService.recordOrderEvent(symbol, "ENTRY_FAILED", entryOrder, null);
             return List.of(entryOrder);
         }
         // 附加風控摘要到入場單（供 Discord 通知使用）
@@ -589,6 +590,8 @@ public class BinanceFuturesService {
                 tpOrder = placeTakeProfit(symbol, closeSide, signal.getNewTakeProfit(), totalQty);
                 if (!tpOrder.isSuccess()) {
                     log.warn("DCA 止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
+                    tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder,
+                            toJson(Map.of("context", "DCA")));
                 }
             }
         } else {
@@ -603,11 +606,14 @@ public class BinanceFuturesService {
                 tpOrder = placeTakeProfit(symbol, closeSide, tp, quantity);
                 if (!tpOrder.isSuccess()) {
                     log.warn("止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
+                    tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder, null);
                     discordWebhookService.sendNotification(
                             "⚠️ 止盈單失敗（需手動設定）",
                             String.format("%s %s\n入場和止損已正常設定\n止盈錯誤: %s\n請手動設定 TP",
                                     symbol, signal.getSide(), tpOrder.getErrorMessage()),
                             DiscordWebhookService.COLOR_YELLOW);
+                } else {
+                    tradeRecordService.recordOrderEvent(symbol, "TP_PLACED", tpOrder, null);
                 }
             }
         }
@@ -640,6 +646,8 @@ public class BinanceFuturesService {
                     tradeRecordService.recordFailSafe(symbol,
                             toJson(Map.of("reason", "所有自動保護措施失敗", "market_close_error", marketClose.getErrorMessage() != null ? marketClose.getErrorMessage() : "")));
                 } else {
+                    tradeRecordService.recordOrderEvent(symbol, "FAIL_SAFE_CLOSE", marketClose,
+                            toJson(Map.of("reason", "SL失敗+取消失敗，已市價平倉")));
                     discordWebhookService.sendNotification("🛑 Fail-Safe: 止損失敗，已市價平倉",
                             String.format("%s %s\n止損掛單失敗: %s\n取消入場單也失敗，已市價平倉 %s\n⚠️ 請確認帳戶狀態",
                                     symbol, signal.getSide(),
@@ -810,6 +818,8 @@ public class BinanceFuturesService {
             } catch (Exception e) {
                 log.error("平倉紀錄寫入失敗（不影響交易）: {}", e.getMessage());
             }
+        } else {
+            tradeRecordService.recordOrderEvent(symbol, "CLOSE_FAILED", closeOrder, null);
         }
 
         List<OrderResult> results = new ArrayList<>();
@@ -857,8 +867,13 @@ public class BinanceFuturesService {
             if (slToUse > 0) {
                 OrderResult newSl = placeStopLoss(symbol, slSide, slToUse, remainingQty);
                 results.add(newSl);
+                tradeRecordService.recordOrderEvent(symbol,
+                        newSl.isSuccess() ? "SL_REHUNG" : "SL_REHUNG_FAILED", newSl,
+                        toJson(Map.of("sl_price", slToUse, "remaining_qty", remainingQty)));
             } else {
                 log.error("⚠️ 部分平倉後未能重掛 SL！{} 剩餘 {} 裸奔中", symbol, remainingQty);
+                tradeRecordService.recordOrderEvent(symbol, "SL_REHUNG_FAILED", null,
+                        toJson(Map.of("reason", "no_sl_price", "remaining_qty", remainingQty)));
                 results.add(OrderResult.fail("部分平倉後無法重掛 SL — 剩餘倉位無保護"));
             }
 
@@ -874,6 +889,9 @@ public class BinanceFuturesService {
             if (tpToUse > 0) {
                 OrderResult newTp = placeTakeProfit(symbol, slSide, tpToUse, remainingQty);
                 results.add(newTp);
+                tradeRecordService.recordOrderEvent(symbol,
+                        newTp.isSuccess() ? "TP_REHUNG" : "TP_REHUNG_FAILED", newTp,
+                        toJson(Map.of("tp_price", tpToUse, "remaining_qty", remainingQty)));
             }
         }
 
@@ -983,6 +1001,9 @@ public class BinanceFuturesService {
                 } catch (Exception e) {
                     log.error("移動止損紀錄寫入失敗（不影響交易）: {}", e.getMessage());
                 }
+            } else {
+                tradeRecordService.recordOrderEvent(symbol, "MOVE_SL_FAILED", slOrder,
+                        toJson(Map.of("old_sl", oldSl, "new_sl", newSl)));
             }
         }
 
@@ -1001,6 +1022,8 @@ public class BinanceFuturesService {
 
             if (!tpOrder.isSuccess()) {
                 log.warn("新止盈單失敗: {}", tpOrder.getErrorMessage());
+                tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder,
+                        toJson(Map.of("context", "MOVE_SL")));
                 discordWebhookService.sendNotification(
                         "⚠️ 新止盈單失敗（需手動設定）",
                         String.format("%s\n新TP設定失敗: %s\n請手動設定 TP",
@@ -1108,6 +1131,7 @@ public class BinanceFuturesService {
                     .type(json.has("type") ? json.get("type").getAsString() : "")
                     .price(json.has("price") ? json.get("price").getAsDouble() : 0)
                     .quantity(json.has("origQty") ? json.get("origQty").getAsDouble() : 0)
+                    .commission(json.has("cumCommission") ? json.get("cumCommission").getAsDouble() : 0)
                     .rawResponse(response)
                     .build();
         } catch (Exception e) {
@@ -1304,7 +1328,7 @@ public class BinanceFuturesService {
     private String toJson(Map<String, Object> map) {
         try {
             return objectMapper.writeValueAsString(map);
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.warn("JSON 序列化失敗: {}", e.getMessage());
             return "{}";
         }
