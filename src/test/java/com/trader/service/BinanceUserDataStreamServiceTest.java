@@ -7,6 +7,7 @@ import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceUserDataStreamService;
 import com.trader.trading.service.MultiUserDataStreamManager;
+import com.trader.trading.service.OrderEventHandler;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
 import okhttp3.OkHttpClient;
@@ -18,8 +19,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * BinanceUserDataStreamService 測試
- * 驗證 WebSocket 事件處理、重連邏輯、狀態查詢
+ * BinanceUserDataStreamService + OrderEventHandler 測試
+ * 驗證 WebSocket 事件處理、重連邏輯、狀態查詢、多用戶委派
  */
 class BinanceUserDataStreamServiceTest {
 
@@ -30,6 +31,7 @@ class BinanceUserDataStreamServiceTest {
     private MultiUserConfig multiUserConfig;
     private MultiUserDataStreamManager multiUserManager;
     private BinanceUserDataStreamService service;
+    private OrderEventHandler orderEventHandler;
     private final Gson gson = new Gson();
 
     @BeforeEach
@@ -55,6 +57,12 @@ class BinanceUserDataStreamServiceTest {
         service = new BinanceUserDataStreamService(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
                 new SymbolLockRegistry(), multiUserConfig, multiUserManager);
+
+        // 直接建立 OrderEventHandler 測試事件處理邏輯
+        orderEventHandler = new OrderEventHandler(
+                tradeRecordService, new SymbolLockRegistry(),
+                discordWebhookService::sendNotification,
+                gson, "");
     }
 
     // ==================== 事件處理 ====================
@@ -70,7 +78,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
                     93000.0, 0.5, 18.6, "USDT", -1000.0, 123456789L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             verify(tradeRecordService).recordCloseFromStream(
                     eq("BTCUSDT"), eq(93000.0), eq(0.5),
@@ -92,7 +100,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "TAKE_PROFIT_MARKET", "FILLED", "SELL",
                     98000.0, 0.5, 19.6, "USDT", 1500.0, 987654321L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             verify(tradeRecordService).recordCloseFromStream(
                     eq("BTCUSDT"), eq(98000.0), eq(0.5),
@@ -114,7 +122,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "LIMIT", "FILLED", "BUY",
                     95000.0, 0.5, 9.5, "USDT", 0.0, 111222333L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             verify(tradeRecordService, never()).recordCloseFromStream(
                     anyString(), anyDouble(), anyDouble(),
@@ -129,7 +137,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "STOP_MARKET", "NEW", "SELL",
                     93000.0, 0.5, 0.0, "USDT", 0.0, 444555666L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             verify(tradeRecordService, never()).recordCloseFromStream(
                     anyString(), anyDouble(), anyDouble(),
@@ -145,7 +153,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
                     93000.0, 0.5, 0.01, "BNB", -1000.0, 777888999L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             // 估算手續費 = 93000 × 0.5 × 0.0004 = 18.6
             double expectedCommission = 93000.0 * 0.5 * 0.0004;
@@ -163,7 +171,7 @@ class BinanceUserDataStreamServiceTest {
             event.addProperty("e", "ORDER_TRADE_UPDATE");
             // 沒有 "o" 欄位
 
-            assertThatCode(() -> service.handleOrderTradeUpdate(event))
+            assertThatCode(() -> orderEventHandler.handleOrderTradeUpdate(event))
                     .doesNotThrowAnyException();
 
             verify(tradeRecordService, never()).recordCloseFromStream(
@@ -204,7 +212,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "STOP_MARKET", "CANCELED", "SELL",
                     0.0, 0.0, 0.0, "USDT", 0.0, 555666777L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             // 不應觸發平倉記錄
             verify(tradeRecordService, never()).recordCloseFromStream(
@@ -230,7 +238,7 @@ class BinanceUserDataStreamServiceTest {
                     "ETHUSDT", "TAKE_PROFIT_MARKET", "CANCELED", "BUY",
                     0.0, 0.0, 0.0, "USDT", 0.0, 888999000L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             // 應記錄保護消失事件
             verify(tradeRecordService).recordProtectionLost(
@@ -250,7 +258,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "STOP_MARKET", "EXPIRED", "SELL",
                     0.0, 0.0, 0.0, "USDT", 0.0, 111222333L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("111222333"), eq("EXPIRED"));
@@ -268,7 +276,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "LIMIT", "CANCELED", "BUY",
                     0.0, 0.0, 0.0, "USDT", 0.0, 444555666L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             verify(tradeRecordService, never()).recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString());
@@ -298,7 +306,7 @@ class BinanceUserDataStreamServiceTest {
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
                     93000.0, 0.5, 18.6, "USDT", -1000.0, 123456789L, 1700000000000L);
 
-            service.handleOrderTradeUpdate(event);
+            orderEventHandler.handleOrderTradeUpdate(event);
 
             // 應發黃色告警
             verify(discordWebhookService).sendNotification(

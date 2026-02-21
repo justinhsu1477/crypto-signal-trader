@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
-import com.trader.trading.config.MultiUserConfig;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
@@ -15,7 +14,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 多用戶 User Data Stream 管理器
@@ -48,12 +46,9 @@ public class MultiUserDataStreamManager {
     private final ConcurrentHashMap<String, UserStreamContext> activeStreams = new ConcurrentHashMap<>();
 
     // 共用重連排程器（所有用戶共用，避免 per-user thread 浪費）
-    private final ScheduledExecutorService reconnectExecutor =
-            Executors.newScheduledThreadPool(2, r -> {
-                Thread t = new Thread(r, "multi-ws-reconnect");
-                t.setDaemon(true);
-                return t;
-            });
+    // 使用 AtomicReference 確保 stopAllStreams → startAllStreams 可以重建 executor
+    private final java.util.concurrent.atomic.AtomicReference<ScheduledExecutorService> reconnectExecutorRef =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     private volatile boolean shuttingDown = false;
 
@@ -81,6 +76,28 @@ public class MultiUserDataStreamManager {
                 .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .pingInterval(20, java.util.concurrent.TimeUnit.SECONDS)
                 .build();
+    }
+
+    /**
+     * 取得或建立重連 executor（stopAllStreams 後重新啟動時會重建）
+     */
+    private ScheduledExecutorService getOrCreateReconnectExecutor() {
+        ScheduledExecutorService existing = reconnectExecutorRef.get();
+        if (existing != null && !existing.isShutdown()) {
+            return existing;
+        }
+        ScheduledExecutorService newExecutor = Executors.newScheduledThreadPool(2, r -> {
+            Thread t = new Thread(r, "multi-ws-reconnect");
+            t.setDaemon(true);
+            return t;
+        });
+        if (reconnectExecutorRef.compareAndSet(existing, newExecutor)) {
+            return newExecutor;
+        } else {
+            // 另一個 thread 搶先建立了，關掉自己的
+            newExecutor.shutdownNow();
+            return reconnectExecutorRef.get();
+        }
     }
 
     // ==================== 生命週期 ====================
@@ -185,7 +202,10 @@ public class MultiUserDataStreamManager {
             stopUserStream(userId);
         }
 
-        reconnectExecutor.shutdownNow();
+        ScheduledExecutorService executor = reconnectExecutorRef.getAndSet(null);
+        if (executor != null) {
+            executor.shutdownNow();
+        }
         log.info("所有用戶 Data Stream 已停止");
     }
 
@@ -291,7 +311,7 @@ public class MultiUserDataStreamManager {
         context.cancelPendingReconnect();
 
         try {
-            ScheduledFuture<?> future = reconnectExecutor.schedule(() -> {
+            ScheduledFuture<?> future = getOrCreateReconnectExecutor().schedule(() -> {
                 if (!shuttingDown) {
                     reconnect(userId);
                 }
@@ -336,8 +356,12 @@ public class MultiUserDataStreamManager {
                     return;
                 }
 
+                // 使用最新的 API Key（用戶可能已更換）
+                BinanceKeys freshKeys = keysOpt.get();
+                context.updateApiKey(freshKeys.apiKey(), freshKeys.secretKey());
+
                 // 重建 stream
-                String listenKey = createListenKey(context.getApiKey());
+                String listenKey = createListenKey(freshKeys.apiKey());
                 context.setListenKey(listenKey);
 
                 String wsUrl = binanceConfig.getWsBaseUrl() + listenKey;
@@ -364,9 +388,16 @@ public class MultiUserDataStreamManager {
     private class PerUserWebSocketListener extends WebSocketListener {
 
         private final UserStreamContext context;
+        private final OrderEventHandler orderEventHandler;
 
         PerUserWebSocketListener(UserStreamContext context) {
             this.context = context;
+            // per-user 版：通知走 sendNotificationToUser
+            this.orderEventHandler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry,
+                    (title, msg, color) -> discordWebhookService.sendNotificationToUser(
+                            context.getUserId(), title, msg, color),
+                    gson, "用戶 " + context.getUserId() + " ");
         }
 
         @Override
@@ -395,7 +426,7 @@ public class MultiUserDataStreamManager {
 
                 switch (eventType) {
                     case "ORDER_TRADE_UPDATE":
-                        handleOrderTradeUpdate(json);
+                        orderEventHandler.handleOrderTradeUpdate(json);
                         break;
                     case "ACCOUNT_UPDATE":
                         log.debug("用戶 {} ACCOUNT_UPDATE received (ignored)", context.getUserId());
@@ -451,162 +482,6 @@ public class MultiUserDataStreamManager {
             }
         }
 
-        // ==================== 事件處理（複用原 Service 邏輯）====================
-
-        /**
-         * 處理 ORDER_TRADE_UPDATE 事件
-         * 邏輯與 BinanceUserDataStreamService.handleOrderTradeUpdate 完全一致
-         * ThreadLocal userId 已在 onMessage 中設定
-         */
-        private void handleOrderTradeUpdate(JsonObject event) {
-            JsonObject order = event.getAsJsonObject("o");
-            if (order == null) {
-                log.warn("用戶 {} ORDER_TRADE_UPDATE missing 'o' field", context.getUserId());
-                return;
-            }
-
-            String symbol = order.get("s").getAsString();
-            String orderType = order.get("o").getAsString();
-            String orderStatus = order.get("X").getAsString();
-            String orderId = String.valueOf(order.get("i").getAsLong());
-            String side = order.get("S").getAsString();
-
-            log.info("用戶 {} ORDER_TRADE_UPDATE: {} {} {} status={} orderId={}",
-                    context.getUserId(), symbol, side, orderType, orderStatus, orderId);
-
-            // SL/TP 被取消或過期 → 告警保護消失
-            if (("CANCELED".equals(orderStatus) || "EXPIRED".equals(orderStatus))
-                    && ("STOP_MARKET".equals(orderType) || "TAKE_PROFIT_MARKET".equals(orderType))) {
-                handleProtectionLost(symbol, orderType, orderId, orderStatus);
-                return;
-            }
-
-            // SL/TP 部分成交
-            if ("PARTIALLY_FILLED".equals(orderStatus)
-                    && ("STOP_MARKET".equals(orderType) || "TAKE_PROFIT_MARKET".equals(orderType))) {
-                handlePartialFill(order, symbol, orderType, orderId);
-                return;
-            }
-
-            // 非 FILLED → 忽略
-            if (!"FILLED".equals(orderStatus)) {
-                log.debug("用戶 {} 訂單未完全成交 ({}), 忽略", context.getUserId(), orderStatus);
-                return;
-            }
-
-            double avgPrice = order.get("ap").getAsDouble();
-            double filledQty = order.get("z").getAsDouble();
-            double commission = order.get("n").getAsDouble();
-            String commissionAsset = order.get("N").getAsString();
-            double realizedProfit = order.get("rp").getAsDouble();
-            long transactionTime = order.get("T").getAsLong();
-
-            if (!"USDT".equals(commissionAsset)) {
-                commission = avgPrice * filledQty * 0.0004;
-            }
-
-            switch (orderType) {
-                case "STOP_MARKET":
-                    log.info("用戶 {} 止損觸發: {} @ {}", context.getUserId(), symbol, avgPrice);
-                    processStreamClose(symbol, avgPrice, filledQty, commission,
-                            realizedProfit, orderId, "SL_TRIGGERED", transactionTime);
-                    break;
-                case "TAKE_PROFIT_MARKET":
-                    log.info("用戶 {} 止盈觸發: {} @ {}", context.getUserId(), symbol, avgPrice);
-                    processStreamClose(symbol, avgPrice, filledQty, commission,
-                            realizedProfit, orderId, "TP_TRIGGERED", transactionTime);
-                    break;
-                case "LIMIT":
-                case "MARKET":
-                    log.info("用戶 {} {} 訂單成交: {} {} @ {}",
-                            context.getUserId(), orderType, symbol, side, avgPrice);
-                    break;
-                default:
-                    log.debug("用戶 {} 非關注訂單類型: {} {}", context.getUserId(), orderType, symbol);
-            }
-        }
-
-        private void handlePartialFill(JsonObject order, String symbol, String orderType, String orderId) {
-            double filledQty = order.get("z").getAsDouble();
-            double origQty = order.get("q").getAsDouble();
-            double remainingQty = origQty - filledQty;
-            boolean isSL = "STOP_MARKET".equals(orderType);
-
-            log.warn("用戶 {} SL/TP 部分成交: {} {} filled={}/{}",
-                    context.getUserId(), symbol, orderType, filledQty, origQty);
-
-            try {
-                tradeRecordService.recordOrderEvent(symbol,
-                        isSL ? "SL_PARTIAL_FILL" : "TP_PARTIAL_FILL",
-                        null, gson.toJson(java.util.Map.of(
-                                "orderId", orderId, "filledQty", filledQty,
-                                "origQty", origQty, "remainingQty", remainingQty)));
-            } catch (Exception e) {
-                log.error("用戶 {} 記錄部分成交事件失敗: {}", context.getUserId(), e.getMessage());
-            }
-
-            discordWebhookService.sendNotificationToUser(context.getUserId(),
-                    "⚠️ " + (isSL ? "止損" : "止盈") + "單部分成交",
-                    String.format("%s %s\n成交: %.4f / %.4f\n剩餘 %.4f 等待完全成交",
-                            symbol, orderType, filledQty, origQty, remainingQty),
-                    DiscordWebhookService.COLOR_YELLOW);
-        }
-
-        private void handleProtectionLost(String symbol, String orderType, String orderId, String reason) {
-            boolean isSL = "STOP_MARKET".equals(orderType);
-            String label = isSL ? "止損" : "止盈";
-
-            log.warn("用戶 {} {} 被{}: {} orderId={}",
-                    context.getUserId(), label, reason, symbol, orderId);
-
-            try {
-                tradeRecordService.recordProtectionLost(symbol, orderType, orderId, reason);
-            } catch (Exception e) {
-                log.error("用戶 {} 記錄保護消失事件失敗: {}", context.getUserId(), e.getMessage());
-            }
-
-            int color = isSL ? DiscordWebhookService.COLOR_RED : DiscordWebhookService.COLOR_YELLOW;
-            String urgency = isSL ? "🚨" : "⚠️";
-
-            discordWebhookService.sendNotificationToUser(context.getUserId(),
-                    urgency + " " + label + "單被取消",
-                    String.format("%s\n訂單號: %s\n原因: %s\n%s",
-                            symbol, orderId, reason,
-                            isSL ? "⚠️ 持倉已失去止損保護！請立即檢查" : "止盈保護已消失，止損仍有效"),
-                    color);
-        }
-
-        private void processStreamClose(String symbol, double exitPrice, double exitQty,
-                                          double commission, double realizedProfit,
-                                          String orderId, String exitReason, long transactionTime) {
-            ReentrantLock lock = symbolLockRegistry.getLock(symbol);
-            lock.lock();
-            try {
-                tradeRecordService.recordCloseFromStream(
-                        symbol, exitPrice, exitQty, commission,
-                        realizedProfit, orderId, exitReason, transactionTime);
-
-                String emoji = "SL_TRIGGERED".equals(exitReason) ? "🛑" : "🎯";
-                String label = "SL_TRIGGERED".equals(exitReason) ? "止損觸發" : "止盈觸發";
-                discordWebhookService.sendNotificationToUser(context.getUserId(),
-                        emoji + " " + label + " (自動)",
-                        String.format("%s\n出場價: %.2f\n數量: %.4f\n手續費: %.4f USDT\n已實現損益: %.2f USDT",
-                                symbol, exitPrice, exitQty, commission, realizedProfit),
-                        "SL_TRIGGERED".equals(exitReason)
-                                ? DiscordWebhookService.COLOR_RED
-                                : DiscordWebhookService.COLOR_GREEN);
-            } catch (Exception e) {
-                log.error("用戶 {} WebSocket 平倉記錄失敗: {} {} - {}",
-                        context.getUserId(), symbol, exitReason, e.getMessage(), e);
-                discordWebhookService.sendNotificationToUser(context.getUserId(),
-                        "⚠️ WebSocket 平倉記錄失敗",
-                        String.format("%s %s\norderId=%s\n錯誤: %s\n請手動檢查 DB",
-                                symbol, exitReason, orderId, e.getMessage()),
-                        DiscordWebhookService.COLOR_YELLOW);
-            } finally {
-                lock.unlock();
-            }
-        }
     }
 
     // ==================== 狀態查詢 ====================
@@ -637,7 +512,7 @@ public class MultiUserDataStreamManager {
     }
 
     ScheduledExecutorService getReconnectExecutor() {
-        return reconnectExecutor;
+        return reconnectExecutorRef.get();
     }
 
     boolean isShuttingDown() {
