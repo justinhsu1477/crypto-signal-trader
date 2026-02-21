@@ -54,6 +54,7 @@ public class AuthConfig {
                 .authorizeHttpRequests(auth -> auth
                         // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/heartbeat").permitAll()
                         .requestMatchers("/api/subscription/webhook").permitAll()
 
