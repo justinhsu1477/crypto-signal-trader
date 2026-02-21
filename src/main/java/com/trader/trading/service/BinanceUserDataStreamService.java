@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Binance Futures User Data Stream 服務
@@ -48,6 +47,7 @@ public class BinanceUserDataStreamService {
     private final MultiUserConfig multiUserConfig;
     private final MultiUserDataStreamManager multiUserManager;
     private final Gson gson = new Gson();
+    private final OrderEventHandler orderEventHandler;
 
     // 連線狀態
     private volatile String listenKey;
@@ -87,6 +87,12 @@ public class BinanceUserDataStreamService {
         this.symbolLockRegistry = symbolLockRegistry;
         this.multiUserConfig = multiUserConfig;
         this.multiUserManager = multiUserManager;
+
+        // 共用事件處理器（單用戶版 — 全局通知）
+        this.orderEventHandler = new OrderEventHandler(
+                tradeRecordService, symbolLockRegistry,
+                discordWebhookService::sendNotification,
+                gson, "");
 
         // WebSocket 專用 client：無 read timeout + 每 20 秒 ping
         this.wsClient = httpClient.newBuilder()
@@ -262,7 +268,7 @@ public class BinanceUserDataStreamService {
 
                 switch (eventType) {
                     case "ORDER_TRADE_UPDATE":
-                        handleOrderTradeUpdate(json);
+                        orderEventHandler.handleOrderTradeUpdate(json);
                         break;
                     case "ACCOUNT_UPDATE":
                         log.debug("ACCOUNT_UPDATE received (ignored)");
@@ -295,6 +301,11 @@ public class BinanceUserDataStreamService {
                         selfInitiatedClose, shuttingDown);
                 return;
             }
+            // 如果 ws 已經不是當前的 webSocket（reconnect 已建新連線），忽略舊的回呼
+            if (ws != webSocket) {
+                log.debug("舊 WebSocket 的 onClosed 回呼，已有新連線，忽略");
+                return;
+            }
             // 被動斷開（Binance server 關你、網路中斷等）→ 排程重連
             scheduleReconnect();
         }
@@ -303,6 +314,11 @@ public class BinanceUserDataStreamService {
         public void onFailure(WebSocket ws, Throwable t, Response response) {
             log.error("WebSocket failure: {}", t.getMessage());
             connected = false;
+            // 如果 ws 已經不是當前的 webSocket（reconnect 已建新連線），忽略舊的回呼
+            if (ws != webSocket) {
+                log.debug("舊 WebSocket 的 onFailure 回呼，已有新連線，忽略");
+                return;
+            }
             if (!shuttingDown) {
                 if (!alertSent) {
                     alertSent = true;
@@ -315,180 +331,6 @@ public class BinanceUserDataStreamService {
                 }
                 scheduleReconnect();
             }
-        }
-    }
-
-    // ==================== 事件處理 ====================
-
-    /**
-     * 處理 ORDER_TRADE_UPDATE 事件
-     * - FILLED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 記錄平倉
-     * - CANCELED / EXPIRED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 告警保護消失
-     */
-    public void handleOrderTradeUpdate(JsonObject event) {
-        JsonObject order = event.getAsJsonObject("o");
-        if (order == null) {
-            log.warn("ORDER_TRADE_UPDATE missing 'o' field");
-            return;
-        }
-
-        String symbol = order.get("s").getAsString();
-        String orderType = order.get("o").getAsString();
-        String orderStatus = order.get("X").getAsString();
-        String orderId = String.valueOf(order.get("i").getAsLong());
-        String side = order.get("S").getAsString();
-
-        log.info("ORDER_TRADE_UPDATE: {} {} {} status={} orderId={}",
-                symbol, side, orderType, orderStatus, orderId);
-
-        // SL/TP 被取消或過期 → 持倉失去保護，緊急告警
-        if (("CANCELED".equals(orderStatus) || "EXPIRED".equals(orderStatus))
-                && ("STOP_MARKET".equals(orderType) || "TAKE_PROFIT_MARKET".equals(orderType))) {
-            handleProtectionLost(symbol, orderType, orderId, orderStatus);
-            return;
-        }
-
-        // SL/TP 部分成交 → 告警 + 記錄事件（不動 Trade 主紀錄，等最終 FILLED 才處理）
-        if ("PARTIALLY_FILLED".equals(orderStatus)
-                && ("STOP_MARKET".equals(orderType) || "TAKE_PROFIT_MARKET".equals(orderType))) {
-            double filledQty = order.get("z").getAsDouble();
-            double origQty = order.get("q").getAsDouble();
-            double remainingQty = origQty - filledQty;
-            boolean isSL = "STOP_MARKET".equals(orderType);
-
-            log.warn("⚠️ SL/TP 部分成交: {} {} filled={}/{} remaining={}",
-                    symbol, orderType, filledQty, origQty, remainingQty);
-
-            try {
-                tradeRecordService.recordOrderEvent(symbol,
-                        isSL ? "SL_PARTIAL_FILL" : "TP_PARTIAL_FILL",
-                        null, gson.toJson(Map.of(
-                                "orderId", orderId, "filledQty", filledQty,
-                                "origQty", origQty, "remainingQty", remainingQty)));
-            } catch (Exception e) {
-                log.error("記錄部分成交事件失敗: {}", e.getMessage());
-            }
-
-            discordWebhookService.sendNotification(
-                    "⚠️ " + (isSL ? "止損" : "止盈") + "單部分成交",
-                    String.format("%s %s\n成交: %.4f / %.4f\n剩餘 %.4f 等待完全成交",
-                            symbol, orderType, filledQty, origQty, remainingQty),
-                    DiscordWebhookService.COLOR_YELLOW);
-            return;
-        }
-
-        // 非 FILLED 的其他狀態（NEW 等）→ 忽略
-        if (!"FILLED".equals(orderStatus)) {
-            log.debug("訂單未完全成交 ({}), 忽略", orderStatus);
-            return;
-        }
-
-        double avgPrice = order.get("ap").getAsDouble();
-        double filledQty = order.get("z").getAsDouble();
-        double commission = order.get("n").getAsDouble();
-        String commissionAsset = order.get("N").getAsString();
-        double realizedProfit = order.get("rp").getAsDouble();
-        long transactionTime = order.get("T").getAsLong();
-
-        // 手續費幣種非 USDT 時用估算
-        if (!"USDT".equals(commissionAsset)) {
-            log.warn("手續費幣種非 USDT ({}), 使用估算: exitPrice × qty × 0.04%", commissionAsset);
-            commission = avgPrice * filledQty * 0.0004;
-        }
-
-        switch (orderType) {
-            case "STOP_MARKET":
-                log.info("止損觸發: {} @ {} qty={} commission={} rp={}",
-                        symbol, avgPrice, filledQty, commission, realizedProfit);
-                processStreamClose(symbol, avgPrice, filledQty, commission,
-                        realizedProfit, orderId, "SL_TRIGGERED", transactionTime);
-                break;
-
-            case "TAKE_PROFIT_MARKET":
-                log.info("止盈觸發: {} @ {} qty={} commission={} rp={}",
-                        symbol, avgPrice, filledQty, commission, realizedProfit);
-                processStreamClose(symbol, avgPrice, filledQty, commission,
-                        realizedProfit, orderId, "TP_TRIGGERED", transactionTime);
-                break;
-
-            case "LIMIT":
-                log.info("LIMIT 訂單成交: {} {} @ {} qty={}", symbol, side, avgPrice, filledQty);
-                break;
-
-            case "MARKET":
-                log.info("MARKET 訂單成交: {} {} @ {} qty={}", symbol, side, avgPrice, filledQty);
-                break;
-
-            default:
-                log.debug("非關注訂單類型: {} {}", orderType, symbol);
-        }
-    }
-
-    /**
-     * SL/TP 被取消或過期 — 持倉失去保護
-     * 可能原因：手動在幣安取消、掛單過期、系統 MOVE_SL 過程中
-     *
-     * 系統自己的 MOVE_SL / DCA 會先取消再重掛，所以這裡不需要自動重掛，
-     * 只做告警 + 記錄，由使用者判斷是否需要手動處理。
-     */
-    private void handleProtectionLost(String symbol, String orderType, String orderId, String reason) {
-        boolean isSL = "STOP_MARKET".equals(orderType);
-        String label = isSL ? "止損" : "止盈";
-
-        log.warn("⚠️ {} 被{}: {} orderId={}", label, reason, symbol, orderId);
-
-        // 記錄到 DB
-        try {
-            tradeRecordService.recordProtectionLost(symbol, orderType, orderId, reason);
-        } catch (Exception e) {
-            log.error("記錄保護消失事件失敗: {}", e.getMessage());
-        }
-
-        // SL 被取消是高危事件（持倉裸奔），用紅色告警
-        // TP 被取消影響較小，用黃色告警
-        int color = isSL ? DiscordWebhookService.COLOR_RED : DiscordWebhookService.COLOR_YELLOW;
-        String urgency = isSL ? "🚨" : "⚠️";
-
-        discordWebhookService.sendNotification(
-                urgency + " " + label + "單被取消",
-                String.format("%s\n訂單號: %s\n原因: %s\n%s",
-                        symbol, orderId, reason,
-                        isSL ? "⚠️ 持倉已失去止損保護！請立即檢查" : "止盈保護已消失，止損仍有效"),
-                color);
-    }
-
-    /**
-     * 處理 SL/TP 觸發的平倉，使用 per-symbol 鎖保護
-     */
-    private void processStreamClose(String symbol, double exitPrice, double exitQty,
-                                     double commission, double realizedProfit,
-                                     String orderId, String exitReason, long transactionTime) {
-        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
-        lock.lock();
-        try {
-            tradeRecordService.recordCloseFromStream(
-                    symbol, exitPrice, exitQty, commission,
-                    realizedProfit, orderId, exitReason, transactionTime);
-
-            String emoji = "SL_TRIGGERED".equals(exitReason) ? "🛑" : "🎯";
-            String label = "SL_TRIGGERED".equals(exitReason) ? "止損觸發" : "止盈觸發";
-            discordWebhookService.sendNotification(
-                    emoji + " " + label + " (自動)",
-                    String.format("%s\n出場價: %.2f\n數量: %.4f\n手續費: %.4f USDT\n已實現損益: %.2f USDT",
-                            symbol, exitPrice, exitQty, commission, realizedProfit),
-                    "SL_TRIGGERED".equals(exitReason)
-                            ? DiscordWebhookService.COLOR_RED
-                            : DiscordWebhookService.COLOR_GREEN);
-
-        } catch (Exception e) {
-            log.error("WebSocket 平倉記錄失敗: {} {} - {}", symbol, exitReason, e.getMessage(), e);
-            discordWebhookService.sendNotification(
-                    "⚠️ WebSocket 平倉記錄失敗",
-                    String.format("%s %s\norderId=%s\n錯誤: %s\n請手動檢查 DB",
-                            symbol, exitReason, orderId, e.getMessage()),
-                    DiscordWebhookService.COLOR_YELLOW);
-        } finally {
-            lock.unlock();
         }
     }
 

@@ -19,15 +19,17 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 public class UserStreamContext {
 
-    // 不可變：用戶身份與憑證
+    // 用戶身份（不可變）
     @Getter
     private final String userId;
     @Getter
-    private final String apiKey;
-    @Getter
-    private final String secretKey;
-    @Getter
     private final Instant createdAt;
+
+    // API 憑證（可更新 — 用戶可能在重連期間換了 key）
+    @Getter
+    private volatile String apiKey;
+    @Getter
+    private volatile String secretKey;
 
     // 連線狀態（可變）
     private volatile String listenKey;
@@ -46,6 +48,14 @@ public class UserStreamContext {
         this.apiKey = apiKey;
         this.secretKey = secretKey;
         this.createdAt = Instant.now();
+    }
+
+    /**
+     * 更新 API 憑證（重連時取到新 key 用）
+     */
+    public void updateApiKey(String apiKey, String secretKey) {
+        this.apiKey = apiKey;
+        this.secretKey = secretKey;
     }
 
     // ==================== listenKey & WebSocket ====================
