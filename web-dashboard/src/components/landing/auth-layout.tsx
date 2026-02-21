@@ -1,8 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { PublicNavbar } from "./public-navbar";
 import { CryptoBackground } from "./crypto-background";
-import { TrendingUp, BarChart3, Shield, Zap, Bot } from "lucide-react";
+import { BarChart3, Shield, Zap, Bot } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-context";
 
 export function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -76,8 +77,8 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
 
       <div className="relative z-10 border-t border-white/5 py-6 text-center text-xs text-muted-foreground">
         <div className="flex items-center justify-center gap-1.5">
-          <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-          <span>Signal Trader</span>
+          <Image src="/logo.jpg" alt="HookFi" width={16} height={16} className="rounded-sm" />
+          <span>HookFi</span>
           <span className="mx-2 text-white/10">|</span>
           <span>{t("landing.footer")}</span>
         </div>

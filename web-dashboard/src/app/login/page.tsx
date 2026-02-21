@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,23 @@ export default function LoginPage() {
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-8 shadow-2xl shadow-black/20">
+      {/* Logo + Brand */}
+      <div className="flex flex-col items-center mb-6">
+        <div className="relative mb-4">
+          <div className="absolute inset-0 rounded-2xl bg-emerald-500/20 blur-xl" />
+          <Image
+            src="/logo.jpg"
+            alt="HookFi"
+            width={64}
+            height={64}
+            className="relative rounded-2xl shadow-lg shadow-black/30"
+          />
+        </div>
+        <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
+          HookFi
+        </h1>
+      </div>
+
       <div className="text-center mb-6">
         <h2 className="text-2xl font-bold">{t("login.welcomeBack")}</h2>
         <p className="text-sm text-muted-foreground mt-1">

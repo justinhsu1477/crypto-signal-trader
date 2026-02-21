@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Signal Trader",
-  description: "Crypto signal trading dashboard",
+  title: "HookFi — Smart Crypto Trading",
+  description: "HookFi - AI-powered crypto signal trading platform",
 };
 
 export default function RootLayout({

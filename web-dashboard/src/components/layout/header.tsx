@@ -1,8 +1,9 @@
 "use client";
 
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu, TrendingUp } from "lucide-react";
+import { Menu } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
@@ -27,8 +28,8 @@ export function Header() {
   return (
     <header className="md:hidden sticky top-0 z-50 flex items-center justify-between px-4 py-3 bg-card border-b border-border">
       <div className="flex items-center gap-2">
-        <TrendingUp className="h-5 w-5 text-emerald-500" />
-        <span className="font-bold">Signal Trader</span>
+        <Image src="/logo.jpg" alt="HookFi" width={24} height={24} className="rounded-md" />
+        <span className="font-bold">HookFi</span>
       </div>
 
       <div className="flex items-center gap-2">
@@ -40,9 +41,9 @@ export function Header() {
             </button>
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0">
-            <div className="flex items-center gap-2 px-6 py-5 border-b border-border">
-              <TrendingUp className="h-6 w-6 text-emerald-500" />
-              <span className="text-lg font-bold">Signal Trader</span>
+            <div className="flex items-center gap-2.5 px-6 py-5 border-b border-border">
+              <Image src="/logo.jpg" alt="HookFi" width={28} height={28} className="rounded-lg" />
+              <span className="text-lg font-bold">HookFi</span>
             </div>
             <nav className="px-3 py-4 space-y-1">
               {navItems.map((item) => {
