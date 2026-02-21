@@ -4,7 +4,9 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceUserDataStreamService;
+import com.trader.trading.service.MultiUserDataStreamManager;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
 import okhttp3.OkHttpClient;
@@ -25,6 +27,8 @@ class BinanceUserDataStreamServiceTest {
     private BinanceConfig binanceConfig;
     private TradeRecordService tradeRecordService;
     private DiscordWebhookService discordWebhookService;
+    private MultiUserConfig multiUserConfig;
+    private MultiUserDataStreamManager multiUserManager;
     private BinanceUserDataStreamService service;
     private final Gson gson = new Gson();
 
@@ -34,6 +38,11 @@ class BinanceUserDataStreamServiceTest {
         binanceConfig = mock(BinanceConfig.class);
         tradeRecordService = mock(TradeRecordService.class);
         discordWebhookService = mock(DiscordWebhookService.class);
+        multiUserConfig = mock(MultiUserConfig.class);
+        multiUserManager = mock(MultiUserDataStreamManager.class);
+
+        // 預設單用戶模式（所有舊測試不受影響）
+        when(multiUserConfig.isEnabled()).thenReturn(false);
 
         // Mock wsClient builder chain
         OkHttpClient.Builder mockBuilder = mock(OkHttpClient.Builder.class);
@@ -45,7 +54,7 @@ class BinanceUserDataStreamServiceTest {
 
         service = new BinanceUserDataStreamService(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
-                new SymbolLockRegistry());
+                new SymbolLockRegistry(), multiUserConfig, multiUserManager);
     }
 
     // ==================== 事件處理 ====================
@@ -296,6 +305,83 @@ class BinanceUserDataStreamServiceTest {
                     contains("平倉記錄失敗"),
                     contains("DB error"),
                     eq(DiscordWebhookService.COLOR_YELLOW));
+        }
+    }
+
+    // ==================== 多用戶模式委派 ====================
+
+    @Nested
+    @DisplayName("多用戶模式委派")
+    class MultiUserDelegation {
+
+        @Test
+        @DisplayName("init 時 multiUser enabled → 委派給 manager.startAllStreams")
+        void initDelegatesToManagerWhenMultiUserEnabled() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+            when(binanceConfig.getWsBaseUrl()).thenReturn("wss://test.com/ws/");
+
+            service.init();
+
+            verify(multiUserManager).startAllStreams();
+        }
+
+        @Test
+        @DisplayName("init 時 multiUser disabled → 不呼叫 manager")
+        void initDoesNotDelegateWhenSingleUser() {
+            when(multiUserConfig.isEnabled()).thenReturn(false);
+            // wsBaseUrl 為 null → 直接 return，不會嘗試連線也不會呼叫 manager
+            when(binanceConfig.getWsBaseUrl()).thenReturn(null);
+
+            service.init();
+
+            verify(multiUserManager, never()).startAllStreams();
+        }
+
+        @Test
+        @DisplayName("shutdown 時 multiUser enabled → 委派給 manager.stopAllStreams")
+        void shutdownDelegatesToManager() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+
+            service.shutdown();
+
+            verify(multiUserManager).stopAllStreams();
+        }
+
+        @Test
+        @DisplayName("keepAliveListenKey 時 multiUser enabled → 委派給 manager.keepAliveAll")
+        void keepAliveDelegatesToManager() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+
+            service.keepAliveListenKey();
+
+            verify(multiUserManager).keepAliveAll();
+        }
+
+        @Test
+        @DisplayName("getStatus 時 multiUser enabled → 委派給 manager.getAllStatus")
+        void getStatusDelegatesToManager() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+            when(multiUserManager.getAllStatus()).thenReturn(
+                    java.util.Map.of("mode", "multi-user", "totalStreams", 3));
+
+            var status = service.getStatus();
+
+            assertThat(status.get("mode")).isEqualTo("multi-user");
+            assertThat(status.get("totalStreams")).isEqualTo(3);
+            verify(multiUserManager).getAllStatus();
+        }
+
+        @Test
+        @DisplayName("getStatus 時 multiUser disabled → 返回單用戶格式")
+        void getStatusReturnsSingleUserFormat() {
+            when(multiUserConfig.isEnabled()).thenReturn(false);
+
+            var status = service.getStatus();
+
+            assertThat(status.get("mode")).isEqualTo("single-user");
+            assertThat(status).containsKey("connected");
+            assertThat(status).containsKey("listenKeyActive");
+            verify(multiUserManager, never()).getAllStatus();
         }
     }
 
