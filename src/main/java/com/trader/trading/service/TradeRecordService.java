@@ -488,6 +488,10 @@ public class TradeRecordService {
      * 依狀態查詢交易
      */
     public List<Trade> findByStatus(String status) {
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            return tradeRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, status);
+        }
         return tradeRepository.findByStatusOrderByCreatedAtDesc(status);
     }
 
@@ -495,6 +499,10 @@ public class TradeRecordService {
      * 查詢所有交易（倒序）
      */
     public List<Trade> findAll() {
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            return tradeRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        }
         return tradeRepository.findAllByOrderByCreatedAtDesc();
     }
 
@@ -518,7 +526,13 @@ public class TradeRecordService {
      */
     public double getTodayRealizedLoss() {
         LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
-        List<Trade> closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
+        List<Trade> closedToday;
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            closedToday = tradeRepository.findUserClosedTradesAfter(userId, startOfToday);
+        } else {
+            closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
+        }
         return closedToday.stream()
                 .filter(t -> t.getNetProfit() != null && t.getNetProfit() < 0)
                 .mapToDouble(Trade::getNetProfit)
@@ -545,6 +559,10 @@ public class TradeRecordService {
      * @return 已平倉交易列表（按時間排序）
      */
     public List<Trade> getClosedTradesForRange(LocalDateTime from, LocalDateTime to) {
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            return tradeRepository.findUserClosedTradesBetween(userId, from, to);
+        }
         return tradeRepository.findClosedTradesBetween(from, to);
     }
 
@@ -556,7 +574,17 @@ public class TradeRecordService {
      * @param to   結束時間（不含）
      */
     public Map<String, Object> getStatsForDateRange(LocalDateTime from, LocalDateTime to) {
-        List<Trade> closedTrades = tradeRepository.findClosedTradesBetween(from, to);
+        List<Trade> closedTrades;
+        List<Trade> openTrades;
+
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            closedTrades = tradeRepository.findUserClosedTradesBetween(userId, from, to);
+            openTrades = tradeRepository.findByUserIdAndStatus(userId, "OPEN");
+        } else {
+            closedTrades = tradeRepository.findClosedTradesBetween(from, to);
+            openTrades = tradeRepository.findByStatus("OPEN");
+        }
 
         long totalCount = closedTrades.size();
         long winCount = closedTrades.stream()
@@ -572,9 +600,6 @@ public class TradeRecordService {
                 .mapToDouble(Trade::getCommission)
                 .sum();
 
-        // 當前持倉
-        List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
-
         Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("trades", totalCount);
         stats.put("wins", winCount);
@@ -587,16 +612,37 @@ public class TradeRecordService {
 
     /**
      * 盈虧統計摘要
+     * 多用戶模式下只統計當前用戶的交易
      */
     public Map<String, Object> getStatsSummary() {
         Map<String, Object> stats = new LinkedHashMap<>();
 
-        long closedCount = tradeRepository.countClosedTrades();
-        long winCount = tradeRepository.countWinningTrades();
-        double totalNetProfit = tradeRepository.sumNetProfit();
-        double grossWins = tradeRepository.sumGrossWins();
-        double grossLosses = tradeRepository.sumGrossLosses();
-        double totalCommission = tradeRepository.sumCommission();
+        long closedCount;
+        long winCount;
+        double totalNetProfit;
+        double grossWins;
+        double grossLosses;
+        double totalCommission;
+        long openCount;
+
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            closedCount = tradeRepository.countUserClosedTrades(userId);
+            winCount = tradeRepository.countUserWinningTrades(userId);
+            totalNetProfit = tradeRepository.sumUserNetProfit(userId);
+            grossWins = tradeRepository.sumUserGrossWins(userId);
+            grossLosses = tradeRepository.sumUserGrossLosses(userId);
+            totalCommission = tradeRepository.sumUserCommission(userId);
+            openCount = tradeRepository.findByUserIdAndStatus(userId, "OPEN").size();
+        } else {
+            closedCount = tradeRepository.countClosedTrades();
+            winCount = tradeRepository.countWinningTrades();
+            totalNetProfit = tradeRepository.sumNetProfit();
+            grossWins = tradeRepository.sumGrossWins();
+            grossLosses = tradeRepository.sumGrossLosses();
+            totalCommission = tradeRepository.sumCommission();
+            openCount = tradeRepository.findByStatus("OPEN").size();
+        }
 
         // 勝率
         double winRate = closedCount > 0 ? (double) winCount / closedCount * 100 : 0;
@@ -606,9 +652,6 @@ public class TradeRecordService {
 
         // 平均每筆盈虧
         double avgProfit = closedCount > 0 ? totalNetProfit / closedCount : 0;
-
-        // 目前持倉數
-        long openCount = tradeRepository.findByStatus("OPEN").size();
 
         stats.put("closedTrades", closedCount);        // 已平倉筆數
         stats.put("winningTrades", winCount);           // 獲利筆數
@@ -786,7 +829,17 @@ public class TradeRecordService {
 
         double entry = trade.getEntryPrice();
         double exit = trade.getExitPrice();
-        double qty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
+
+        // 用實際出場數量計算毛利（部分平倉後 entryQuantity ≠ 實際持倉量）
+        // 優先 exitQuantity → remainingQuantity → entryQuantity (fallback)
+        double qty;
+        if (trade.getExitQuantity() != null && trade.getExitQuantity() > 0) {
+            qty = trade.getExitQuantity();
+        } else if (trade.getRemainingQuantity() != null && trade.getRemainingQuantity() > 0) {
+            qty = trade.getRemainingQuantity();
+        } else {
+            qty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
+        }
 
         // 方向因子：LONG → (exit - entry), SHORT → (entry - exit)
         int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
