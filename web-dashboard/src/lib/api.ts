@@ -20,6 +20,9 @@ import type {
   UserTradeSettings,
   UpdateTradeSettingsRequest,
   TradeSettingsDefaults,
+  PlanInfo,
+  SubscriptionStatusDetail,
+  UpgradePlanRequest,
 } from "@/types";
 
 const BASE = "";  // 使用 Next.js rewrites proxy
@@ -194,4 +197,38 @@ export async function deleteDiscordWebhook(
     `/api/dashboard/discord-webhooks/${webhookId}`,
     { method: "DELETE" }
   );
+}
+
+// ==================== Subscription ====================
+
+export async function getSubscriptionPlans(): Promise<PlanInfo[]> {
+  return request<PlanInfo[]>("/api/subscription/plans");
+}
+
+export async function getSubscriptionStatus(): Promise<SubscriptionStatusDetail> {
+  return request<SubscriptionStatusDetail>("/api/subscription/status");
+}
+
+export async function cancelSubscription(): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>("/api/subscription/cancel", {
+    method: "POST",
+  });
+}
+
+export async function upgradeSubscription(
+  data: UpgradePlanRequest
+): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>("/api/subscription/upgrade", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getCheckoutUrl(
+  planId: string
+): Promise<{ checkoutUrl: string }> {
+  return request<{ checkoutUrl: string }>("/api/subscription/checkout", {
+    method: "POST",
+    body: JSON.stringify({ planId }),
+  });
 }

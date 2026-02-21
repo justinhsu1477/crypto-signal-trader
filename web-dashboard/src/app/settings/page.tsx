@@ -21,15 +21,17 @@ import { Switch } from "@/components/ui/switch";
 import { useT } from "@/lib/i18n/i18n-context";
 import { DiscordWebhookManager } from "@/components/settings/discord-webhook-manager";
 import { TradeSettingsForm } from "@/components/settings/trade-settings-form";
+import { SubscriptionManager } from "@/components/settings/subscription-manager";
 import {
   User,
   KeyRound,
   Bot,
   Bell,
+  CreditCard,
 } from "lucide-react";
 
 // ─── Settings sections ───
-type SettingsSection = "profile" | "api-keys" | "trading" | "notifications";
+type SettingsSection = "profile" | "api-keys" | "trading" | "notifications" | "subscription";
 
 export default function SettingsPage() {
   const { t } = useT();
@@ -102,6 +104,12 @@ export default function SettingsPage() {
       icon: Bell,
       labelKey: "settings.navNotifications",
       descKey: "settings.navNotificationsDesc",
+    },
+    {
+      id: "subscription",
+      icon: CreditCard,
+      labelKey: "settings.navSubscription",
+      descKey: "settings.navSubscriptionDesc",
     },
   ];
 
@@ -532,11 +540,29 @@ export default function SettingsPage() {
     );
   }
 
+  function renderSubscription() {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold">
+            {t("settings.subscriptionTitle")}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {t("settings.navSubscriptionDesc")}
+          </p>
+        </div>
+        <Separator />
+        <SubscriptionManager />
+      </div>
+    );
+  }
+
   const sectionRenderers: Record<SettingsSection, () => React.ReactNode> = {
     profile: renderProfile,
     "api-keys": renderApiKeys,
     trading: renderTrading,
     notifications: renderNotifications,
+    subscription: renderSubscription,
   };
 
   return (

@@ -41,6 +41,13 @@ public class Plan {
     @Column(columnDefinition = "TEXT")
     private String features;
 
+    /** Stripe Price ID (price_xxx) — 從 Stripe Dashboard 取得 */
+    private String stripePriceId;
+
+    /** Stripe Payment Link URL (https://buy.stripe.com/xxx) — 從 Stripe Dashboard 取得 */
+    @Column(length = 500)
+    private String stripePaymentLinkUrl;
+
     @Builder.Default
     private boolean active = true;
 
