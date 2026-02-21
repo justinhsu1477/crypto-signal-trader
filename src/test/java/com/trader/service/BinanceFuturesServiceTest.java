@@ -399,6 +399,42 @@ class BinanceFuturesServiceTest {
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
         }
+
+        @Test
+        @DisplayName("DCA 不帶新止損（stopLoss=0）→ 不被拒，使用 DB 現有 SL")
+        void dcaWithoutNewStopLossUsesExistingSL() {
+            setupEntryMocks(1000, 0.5, 95000);  // 已有 0.5 BTC 多倉
+
+            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(1);
+            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+                    Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
+
+            doReturn("[]").when(service).getOpenOrders(anyString());
+
+            OrderResult entryOrder = successOrder("DCA1", "BUY", 94000, 0.02);
+            OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.52);
+
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+
+            // DCA 不帶止損：stopLoss=0, newStopLoss=null（模擬 Controller 的行為）
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .entryPriceLow(94000)
+                    .stopLoss(0)              // Controller 設為 0
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .isDca(true)
+                    // newStopLoss = null（不帶新止損）
+                    .build();
+
+            List<OrderResult> results = service.executeSignal(signal);
+
+            // 不應被拒，應該成功
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isTrue();
+            // 確認用 DB 的現有 SL (93000) 重掛
+            verify(service).placeStopLoss(eq("BTCUSDT"), eq("SELL"), eq(93000.0), anyDouble());
+        }
     }
 
     // ==================== Close Flow ====================
@@ -408,14 +444,14 @@ class BinanceFuturesServiceTest {
     class CloseFlow {
 
         @Test
-        @DisplayName("全倉平倉成功")
+        @DisplayName("全倉平倉成功 — 使用 MARKET 單")
         void fullCloseSuccess() {
             doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
             doReturn(95000.0).when(service).getMarkPrice(anyString());
             doReturn("{}").when(service).cancelAllOrders(anyString());
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            doReturn(closeOrder).when(service).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);
