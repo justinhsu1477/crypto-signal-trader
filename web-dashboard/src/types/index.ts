@@ -325,6 +325,34 @@ export interface TradeSettingsDefaults {
   dcaLayersAllowed: number;
 }
 
+// ==================== Subscription ====================
+
+export interface PlanInfo {
+  planId: string;
+  name: string;
+  priceMonthly: number;
+  maxPositions: number;
+  maxSymbols: number;
+  dcaLayersAllowed: number;
+  maxRiskPercent: number;
+  paymentLinkUrl: string | null;
+  current: boolean;
+}
+
+export interface SubscriptionStatusDetail {
+  planId: string | null;
+  planName: string | null;
+  status: string;
+  currentPeriodEnd: string | null;
+  active: boolean;
+  stripeSubscriptionId: string | null;
+  stripeCustomerId: string | null;
+}
+
+export interface UpgradePlanRequest {
+  planId: string;
+}
+
 // ==================== System Status ====================
 
 export interface MonitorStatus {

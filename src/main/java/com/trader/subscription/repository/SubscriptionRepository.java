@@ -17,4 +17,6 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     Optional<Subscription> findActiveByUserId(String userId);
 
     Optional<Subscription> findByStripeSubscriptionId(String stripeSubscriptionId);
+
+    Optional<Subscription> findByStripeCustomerId(String stripeCustomerId);
 }

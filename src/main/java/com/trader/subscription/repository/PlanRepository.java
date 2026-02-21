@@ -13,4 +13,6 @@ public interface PlanRepository extends JpaRepository<Plan, String> {
     List<Plan> findByActiveTrue();
 
     Optional<Plan> findByPlanIdAndActiveTrue(String planId);
+
+    Optional<Plan> findByStripePriceId(String stripePriceId);
 }

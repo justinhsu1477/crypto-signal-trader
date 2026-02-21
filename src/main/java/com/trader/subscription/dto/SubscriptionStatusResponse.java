@@ -14,4 +14,10 @@ public class SubscriptionStatusResponse {
     private String status;
     private LocalDateTime currentPeriodEnd;
     private boolean active;
+
+    /** Stripe Subscription ID (sub_xxx) */
+    private String stripeSubscriptionId;
+
+    /** Stripe Customer ID (cus_xxx) */
+    private String stripeCustomerId;
 }
