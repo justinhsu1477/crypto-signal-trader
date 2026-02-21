@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.config.MultiUserConfig;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +13,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -43,6 +45,8 @@ public class BinanceUserDataStreamService {
     private final TradeRecordService tradeRecordService;
     private final DiscordWebhookService discordWebhookService;
     private final SymbolLockRegistry symbolLockRegistry;
+    private final MultiUserConfig multiUserConfig;
+    private final MultiUserDataStreamManager multiUserManager;
     private final Gson gson = new Gson();
 
     // 連線狀態
@@ -53,22 +57,36 @@ public class BinanceUserDataStreamService {
     private volatile boolean connected = false;
     private volatile boolean alertSent = false;
     private volatile boolean shuttingDown = false;
+    private volatile boolean selfInitiatedClose = false;       // 區分「自己關的」vs「被動斷開」
+
+    // 重連排程：單執行緒，確保同時只有一個排程任務
+    private final ScheduledExecutorService reconnectExecutor =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "ws-reconnect");
+                t.setDaemon(true);
+                return t;
+            });
+    private volatile ScheduledFuture<?> pendingReconnect;      // 追蹤當前排程，用於取消舊任務
 
     // 重連配置
-    private static final long BASE_RECONNECT_DELAY_MS = 1000;
-    private static final long MAX_RECONNECT_DELAY_MS = 60_000;
-    private static final int MAX_RECONNECT_ATTEMPTS = 20;
+    static final long BASE_RECONNECT_DELAY_MS = 1000;
+    static final long MAX_RECONNECT_DELAY_MS = 60_000;
+    static final int MAX_RECONNECT_ATTEMPTS = 20;
 
     public BinanceUserDataStreamService(OkHttpClient httpClient,
                                          BinanceConfig binanceConfig,
                                          TradeRecordService tradeRecordService,
                                          DiscordWebhookService discordWebhookService,
-                                         SymbolLockRegistry symbolLockRegistry) {
+                                         SymbolLockRegistry symbolLockRegistry,
+                                         MultiUserConfig multiUserConfig,
+                                         MultiUserDataStreamManager multiUserManager) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.tradeRecordService = tradeRecordService;
         this.discordWebhookService = discordWebhookService;
         this.symbolLockRegistry = symbolLockRegistry;
+        this.multiUserConfig = multiUserConfig;
+        this.multiUserManager = multiUserManager;
 
         // WebSocket 專用 client：無 read timeout + 每 20 秒 ping
         this.wsClient = httpClient.newBuilder()
@@ -85,9 +103,17 @@ public class BinanceUserDataStreamService {
             log.warn("WebSocket base URL 未設定，User Data Stream 功能停用");
             return;
         }
+
+        if (multiUserConfig.isEnabled()) {
+            log.info("多用戶模式啟用，委派給 MultiUserDataStreamManager");
+            multiUserManager.startAllStreams();
+            return;
+        }
+
+        // 單用戶模式（舊系統）
         try {
             startStream();
-            log.info("Binance User Data Stream 啟動成功");
+            log.info("Binance User Data Stream 啟動成功（單用戶模式）");
         } catch (Exception e) {
             log.error("User Data Stream 啟動失敗，將在背景重試: {}", e.getMessage());
             scheduleReconnect();
@@ -98,10 +124,18 @@ public class BinanceUserDataStreamService {
     public void shutdown() {
         shuttingDown = true;
         log.info("User Data Stream 正在關閉...");
-        if (webSocket != null) {
-            webSocket.close(1000, "shutdown");
+
+        if (multiUserConfig.isEnabled()) {
+            multiUserManager.stopAllStreams();
+        } else {
+            cancelPendingReconnect();
+            reconnectExecutor.shutdownNow();
+            if (webSocket != null) {
+                webSocket.close(1000, "shutdown");
+            }
+            deleteListenKey();
         }
-        deleteListenKey();
+
         log.info("User Data Stream 已關閉");
     }
 
@@ -145,6 +179,10 @@ public class BinanceUserDataStreamService {
      */
     @Scheduled(fixedRate = 30 * 60 * 1000, initialDelay = 30 * 60 * 1000)
     public void keepAliveListenKey() {
+        if (multiUserConfig.isEnabled()) {
+            multiUserManager.keepAliveAll();
+            return;
+        }
         if (listenKey == null) return;
         String url = binanceConfig.getBaseUrl() + "/fapi/v1/listenKey";
         Request request = new Request.Builder()
@@ -168,30 +206,17 @@ public class BinanceUserDataStreamService {
         }
     }
 
-    /**
-     * 每 30 秒檢查 WebSocket 訊息流是否正常
-     * 如果超過 120 秒沒收到任何訊息，觸發重連
+    /*
+     * 應用層心跳檢查已移除（方案 B）。
      *
-     * OkHttp 的 pingInterval(20s) 只處理傳輸層存活，
-     * 這裡監控的是「應用層是否還在收到 Binance 事件」
+     * 原本每 30 秒檢查「是否 120 秒沒訊息」，但 User Data Stream
+     * 在沒有交易時本來就是安靜的，會造成大量誤判重連。
+     *
+     * 現在信任：
+     * 1. OkHttp pingInterval(20s) — TCP 層存活偵測，斷線會觸發 onFailure
+     * 2. listenKey keepalive PUT 30min — 400/401 表示 listenKey 失效，觸發 reconnect
+     * 3. listenKeyExpired 事件 — Binance 主動通知 listenKey 過期
      */
-    @Scheduled(fixedRate = 30_000, initialDelay = 90_000)
-    public void checkWebSocketHeartbeat() {
-        if (shuttingDown || !connected) return;
-
-        Instant lastMsg = lastMessageTime.get();
-        if (lastMsg == null) return;
-
-        long elapsed = Instant.now().getEpochSecond() - lastMsg.getEpochSecond();
-        if (elapsed > 120) {
-            log.warn("WebSocket 心跳超時: 已 {}s 未收到訊息，觸發重連", elapsed);
-            discordWebhookService.sendNotification(
-                    "⚠️ WebSocket 心跳超時",
-                    String.format("已 %d 秒未收到 Binance 訊息，正在重連...", elapsed),
-                    DiscordWebhookService.COLOR_YELLOW);
-            reconnect();
-        }
-    }
 
     private void deleteListenKey() {
         if (listenKey == null) return;
@@ -264,9 +289,14 @@ public class BinanceUserDataStreamService {
         public void onClosed(WebSocket ws, int code, String reason) {
             log.info("WebSocket closed: code={} reason={}", code, reason);
             connected = false;
-            if (!shuttingDown) {
-                scheduleReconnect();
+            // 如果是自己發起的 close（reconnect / shutdown），不要再排重連
+            if (selfInitiatedClose || shuttingDown) {
+                log.debug("自發關閉，跳過 scheduleReconnect (selfInitiated={}, shuttingDown={})",
+                        selfInitiatedClose, shuttingDown);
+                return;
             }
+            // 被動斷開（Binance server 關你、網路中斷等）→ 排程重連
+            scheduleReconnect();
         }
 
         @Override
@@ -464,7 +494,13 @@ public class BinanceUserDataStreamService {
 
     // ==================== 重連機制 ====================
 
-    private void scheduleReconnect() {
+    /**
+     * 排程一次重連。
+     * 使用 ScheduledExecutorService 取代裸 Thread：
+     * - 每次排程前取消舊任務，確保同一時間只有一個 pending reconnect
+     * - 避免多個觸發源（onClosed / onFailure / keepalive）同時排出多個重連
+     */
+    void scheduleReconnect() {
         int attempt = reconnectAttempts.incrementAndGet();
         if (attempt > MAX_RECONNECT_ATTEMPTS) {
             log.error("WebSocket 重連次數已達上限 ({})，停止重試", MAX_RECONNECT_ATTEMPTS);
@@ -478,33 +514,55 @@ public class BinanceUserDataStreamService {
         long delay = Math.min(BASE_RECONNECT_DELAY_MS * (1L << (attempt - 1)), MAX_RECONNECT_DELAY_MS);
         log.info("WebSocket 重連排程: 第 {} 次嘗試，延遲 {}ms", attempt, delay);
 
-        Thread reconnectThread = new Thread(() -> {
-            try {
-                Thread.sleep(delay);
+        // 取消舊的排程任務（如果有的話），確保不會疊加
+        cancelPendingReconnect();
+
+        try {
+            pendingReconnect = reconnectExecutor.schedule(() -> {
                 if (!shuttingDown) {
                     reconnect();
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
-        reconnectThread.setDaemon(true);
-        reconnectThread.setName("ws-reconnect-" + attempt);
-        reconnectThread.start();
+            }, delay, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException e) {
+            log.debug("重連排程被拒絕（executor 已關閉）");
+        }
     }
 
-    private synchronized void reconnect() {
+    /**
+     * 取消當前排程中的重連任務
+     */
+    private void cancelPendingReconnect() {
+        ScheduledFuture<?> pending = this.pendingReconnect;
+        if (pending != null && !pending.isDone()) {
+            pending.cancel(false);
+            log.debug("已取消舊的重連排程");
+        }
+    }
+
+    /**
+     * 執行重連：關閉舊 socket → 刪除 listenKey → 建立新 stream。
+     * selfInitiatedClose flag 防止 onClosed() 把「自己關的」誤判為異常斷線。
+     */
+    synchronized void reconnect() {
         try {
             if (webSocket != null) {
                 try {
+                    selfInitiatedClose = true;  // 標記：接下來的 onClosed 是自己發起的
                     webSocket.close(1000, "reconnecting");
                 } catch (Exception e) {
                     log.debug("關閉舊 WebSocket 時出錯: {}", e.getMessage());
+                } finally {
+                    // 給 OkHttp 一點時間回呼 onClosed，然後重置 flag
+                    // 新 socket 的 onClosed 不應被跳過
                 }
             }
             deleteListenKey();
             startStream();
+            // startStream 成功後，新 socket 已建立，重置 flag
+            // 新 socket 的 onClosed 應正常處理
+            selfInitiatedClose = false;
         } catch (Exception e) {
+            selfInitiatedClose = false;
             log.error("重連失敗: {}", e.getMessage());
             scheduleReconnect();
         }
@@ -513,15 +571,42 @@ public class BinanceUserDataStreamService {
     // ==================== 狀態查詢 ====================
 
     public Map<String, Object> getStatus() {
+        if (multiUserConfig.isEnabled()) {
+            return multiUserManager.getAllStatus();
+        }
+
         Instant lastMsg = lastMessageTime.get();
         long elapsed = lastMsg != null ? Instant.now().getEpochSecond() - lastMsg.getEpochSecond() : -1;
-        return Map.of(
-                "connected", connected,
-                "listenKeyActive", listenKey != null,
-                "lastMessageTime", lastMsg != null ? lastMsg.toString() : "never",
-                "elapsedSeconds", elapsed,
-                "reconnectAttempts", reconnectAttempts.get(),
-                "alertSent", alertSent
-        );
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("mode", "single-user");
+        status.put("connected", connected);
+        status.put("listenKeyActive", listenKey != null);
+        status.put("lastMessageTime", lastMsg != null ? lastMsg.toString() : "never");
+        status.put("elapsedSeconds", elapsed);
+        status.put("reconnectAttempts", reconnectAttempts.get());
+        status.put("alertSent", alertSent);
+        return status;
+    }
+
+    // ==================== 測試用 accessor（package-private）====================
+
+    int getReconnectAttempts() {
+        return reconnectAttempts.get();
+    }
+
+    boolean isSelfInitiatedClose() {
+        return selfInitiatedClose;
+    }
+
+    boolean isConnected() {
+        return connected;
+    }
+
+    ScheduledFuture<?> getPendingReconnect() {
+        return pendingReconnect;
+    }
+
+    ScheduledExecutorService getReconnectExecutor() {
+        return reconnectExecutor;
     }
 }
