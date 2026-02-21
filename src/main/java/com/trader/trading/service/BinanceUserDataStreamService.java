@@ -41,9 +41,7 @@ public class BinanceUserDataStreamService {
     private final OkHttpClient httpClient;
     private final OkHttpClient wsClient;
     private final BinanceConfig binanceConfig;
-    private final TradeRecordService tradeRecordService;
     private final DiscordWebhookService discordWebhookService;
-    private final SymbolLockRegistry symbolLockRegistry;
     private final MultiUserConfig multiUserConfig;
     private final MultiUserDataStreamManager multiUserManager;
     private final Gson gson = new Gson();
@@ -82,9 +80,7 @@ public class BinanceUserDataStreamService {
                                          MultiUserDataStreamManager multiUserManager) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
-        this.tradeRecordService = tradeRecordService;
         this.discordWebhookService = discordWebhookService;
-        this.symbolLockRegistry = symbolLockRegistry;
         this.multiUserConfig = multiUserConfig;
         this.multiUserManager = multiUserManager;
 

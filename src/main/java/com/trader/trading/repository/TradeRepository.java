@@ -177,4 +177,38 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      */
     @Query("SELECT t FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED' ORDER BY t.exitTime DESC")
     List<Trade> findUserAllClosedTradesDesc(@Param("userId") String userId);
+
+    /**
+     * 用戶已平倉交易中，獲利交易的毛利總和（用於 Profit Factor）
+     */
+    @Query("SELECT COALESCE(SUM(t.grossProfit), 0) FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED' AND t.grossProfit > 0")
+    double sumUserGrossWins(@Param("userId") String userId);
+
+    /**
+     * 用戶已平倉交易中，虧損交易的毛利總和（絕對值，用於 Profit Factor）
+     */
+    @Query("SELECT COALESCE(SUM(ABS(t.grossProfit)), 0) FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED' AND t.grossProfit < 0")
+    double sumUserGrossLosses(@Param("userId") String userId);
+
+    /**
+     * 用戶手續費總和
+     */
+    @Query("SELECT COALESCE(SUM(t.commission), 0) FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED'")
+    double sumUserCommission(@Param("userId") String userId);
+
+    /**
+     * 用戶指定時間範圍內已平倉的交易
+     */
+    @Query("SELECT t FROM Trade t WHERE t.userId = :userId AND t.status = 'CLOSED' AND t.exitTime >= :from AND t.exitTime < :to")
+    List<Trade> findUserClosedTradesBetween(@Param("userId") String userId, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /**
+     * 依用戶 ID 和狀態查詢，依建立時間倒序
+     */
+    List<Trade> findByUserIdAndStatusOrderByCreatedAtDesc(String userId, String status);
+
+    /**
+     * 依用戶 ID 查詢所有交易，依建立時間倒序
+     */
+    List<Trade> findByUserIdOrderByCreatedAtDesc(String userId);
 }

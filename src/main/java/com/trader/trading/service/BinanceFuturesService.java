@@ -276,7 +276,6 @@ public class BinanceFuturesService {
         params.put("type", "STOP_MARKET");
         params.put("stopPrice", formatPrice(stopPrice));
         params.put("quantity", formatQuantity(symbol, quantity));
-        params.put("closePosition", "true");
         params.put("newClientOrderId", generateClientOrderId("SL"));
 
         log.info("設定止損: {} {} stopPrice={}", symbol, side, stopPrice);
@@ -292,7 +291,6 @@ public class BinanceFuturesService {
         params.put("type", "TAKE_PROFIT_MARKET");
         params.put("stopPrice", formatPrice(stopPrice));
         params.put("quantity", formatQuantity(symbol, quantity));
-        params.put("closePosition", "true");
         params.put("newClientOrderId", generateClientOrderId("TP"));
 
         log.info("設定止盈: {} {} stopPrice={}", symbol, side, stopPrice);
@@ -818,17 +816,25 @@ public class BinanceFuturesService {
         // 平倉方向：多倉用 SELL，空倉用 BUY
         String closeSide = isLong ? "SELL" : "BUY";
 
-        // 掛反向 LIMIT 平倉單（用市價附近的價格）
-        double closePrice = isLong ? markPrice * 0.999 : markPrice * 1.001;
-
-        OrderResult closeOrder = placeLimitOrder(symbol, closeSide, closePrice, closeQty);
+        OrderResult closeOrder;
+        if (isPartialClose) {
+            // 部分平倉：用 LIMIT 降低滑點（掛不成交也不影響剩餘倉位）
+            double closePrice = isLong ? markPrice * 0.999 : markPrice * 1.001;
+            closeOrder = placeLimitOrder(symbol, closeSide, closePrice, closeQty);
+        } else {
+            // 全平倉：用 MARKET 立即成交，避免 LIMIT 掛單不成交但 DB 已標 CLOSED
+            // 真實成交價由 WebSocket recordCloseFromStream() 記錄
+            closeOrder = placeMarketOrder(symbol, closeSide, closeQty);
+        }
 
         // 記錄平倉到資料庫
         if (closeOrder.isSuccess()) {
             try {
                 if (isPartialClose) {
+                    // 部分平倉：LIMIT 掛單，DB 維持 OPEN
                     tradeRecordService.recordPartialClose(symbol, closeOrder, closeRatio, "SIGNAL_CLOSE");
                 } else {
+                    // 全平 MARKET 單已成交，直接記錄 CLOSED
                     tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");
                 }
             } catch (Exception e) {
