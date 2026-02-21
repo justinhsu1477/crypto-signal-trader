@@ -27,7 +27,7 @@ services:
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/balance"]
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
