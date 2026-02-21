@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.config.RiskConfig;
-import com.trader.trading.config.PerUserSettingsConfig;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.user.entity.UserTradeSettings;
 import com.trader.user.service.UserTradeSettingsService;
@@ -15,10 +15,10 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 交易參數解析器 — 根據 per-user-settings.enabled 決定參數來源
+ * 交易參數解析器 — 根據 multi-user.enabled 決定參數來源
  *
- * enabled = false → 全部從全局 RiskConfig 建立（零行為改變）
- * enabled = true  → 載入 UserTradeSettings，每個欄位 null 就 fallback 到 RiskConfig
+ * multi-user.enabled = false → 全部從全局 RiskConfig 建立（單用戶模式）
+ * multi-user.enabled = true  → 載入 UserTradeSettings，每個欄位 null 就 fallback 到 RiskConfig
  *
  * 使用方式：
  * ```java
@@ -32,7 +32,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TradeConfigResolver {
 
-    private final PerUserSettingsConfig perUserSettingsConfig;
+    private final MultiUserConfig multiUserConfig;
     private final RiskConfig riskConfig;
     private final UserTradeSettingsService userTradeSettingsService;
     private final ObjectMapper objectMapper;
@@ -44,7 +44,7 @@ public class TradeConfigResolver {
      * @return 已解析的 EffectiveTradeConfig（所有欄位都有值）
      */
     public EffectiveTradeConfig resolve(String userId) {
-        if (!perUserSettingsConfig.isEnabled()) {
+        if (!multiUserConfig.isEnabled()) {
             return fromGlobal();
         }
         return fromPerUser(userId);

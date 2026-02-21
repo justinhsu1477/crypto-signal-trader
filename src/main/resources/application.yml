@@ -1,15 +1,11 @@
 app:
   timezone: Asia/Taipei
 
-# ========== Per-User 個人化交易參數 ==========
-per-user-settings:
-  enabled: ${PER_USER_SETTINGS_ENABLED:false}  # true = 用戶個人風控, false = 全局 RiskConfig
-
-# ========== 多用戶跟單開關 ==========
+# ========== 多用戶模式 ==========
+# false = 單用戶（全局 RiskConfig + 不分用戶查詢）
+# true  = 多用戶（per-user 交易參數 + userId 隔離查詢 + 多 WebSocket）
 multi-user:
-  enabled: ${MULTI_USER_ENABLED:false}      # true = 啟用多用戶模式, false = 舊系統
-  rabbitmq:
-    enabled: ${RABBITMQ_ENABLED:false}      # true = 用 RabbitMQ，false = 同步執行
+  enabled: ${MULTI_USER_ENABLED:false}
 
 # ========== 多用戶支援配置 ==========
 trading:
@@ -24,12 +20,6 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USER:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
-    virtual-host: /
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/trading}
     driver-class-name: org.postgresql.Driver

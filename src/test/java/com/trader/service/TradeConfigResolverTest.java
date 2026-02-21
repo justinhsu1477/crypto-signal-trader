@@ -2,7 +2,7 @@ package com.trader.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.config.RiskConfig;
-import com.trader.trading.config.PerUserSettingsConfig;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.user.entity.UserTradeSettings;
@@ -28,7 +28,7 @@ import static org.mockito.Mockito.*;
  */
 class TradeConfigResolverTest {
 
-    private PerUserSettingsConfig perUserConfig;
+    private MultiUserConfig multiUserConfig;
     private RiskConfig riskConfig;
     private UserTradeSettingsService userTradeSettingsService;
     private ObjectMapper objectMapper;
@@ -36,7 +36,7 @@ class TradeConfigResolverTest {
 
     @BeforeEach
     void setUp() {
-        perUserConfig = new PerUserSettingsConfig();
+        multiUserConfig = new MultiUserConfig();
         riskConfig = new RiskConfig(
                 50000, 2000, true,
                 0.20, 3, 2.0, 20,
@@ -44,7 +44,7 @@ class TradeConfigResolverTest {
         );
         userTradeSettingsService = mock(UserTradeSettingsService.class);
         objectMapper = new ObjectMapper();
-        resolver = new TradeConfigResolver(perUserConfig, riskConfig, userTradeSettingsService, objectMapper);
+        resolver = new TradeConfigResolver(multiUserConfig, riskConfig, userTradeSettingsService, objectMapper);
     }
 
     @Nested
@@ -54,7 +54,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("enabled=false → 所有值來自 RiskConfig")
         void allValuesFromRiskConfig() {
-            perUserConfig.setEnabled(false);
+            multiUserConfig.setEnabled(false);
 
             EffectiveTradeConfig config = resolver.resolve("any-user");
 
@@ -75,7 +75,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("enabled=false → isSymbolAllowed 使用全局白名單")
         void symbolAllowedFromGlobal() {
-            perUserConfig.setEnabled(false);
+            multiUserConfig.setEnabled(false);
 
             EffectiveTradeConfig config = resolver.resolve("user-1");
 
@@ -91,7 +91,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("用戶全部欄位非 null → 用 user 值")
         void allFieldsFromUser() {
-            perUserConfig.setEnabled(true);
+            multiUserConfig.setEnabled(true);
 
             UserTradeSettings userSettings = UserTradeSettings.builder()
                     .userId("user-1")
@@ -123,7 +123,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("部分欄位 null → null 欄位 fallback RiskConfig")
         void partialNullFallbackToGlobal() {
-            perUserConfig.setEnabled(true);
+            multiUserConfig.setEnabled(true);
 
             UserTradeSettings userSettings = UserTradeSettings.builder()
                     .userId("user-2")
@@ -152,7 +152,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("新用戶 → getOrCreateSettings 建立預設值")
         void newUserCreatesDefaults() {
-            perUserConfig.setEnabled(true);
+            multiUserConfig.setEnabled(true);
 
             UserTradeSettings defaults = UserTradeSettings.builder()
                     .userId("new-user")
@@ -174,7 +174,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("allowedSymbols 無效 JSON → fallback 全局白名單")
         void invalidJsonFallbackGlobal() {
-            perUserConfig.setEnabled(true);
+            multiUserConfig.setEnabled(true);
 
             UserTradeSettings userSettings = UserTradeSettings.builder()
                     .userId("user-3")
@@ -193,7 +193,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("allowedSymbols 空陣列 JSON → fallback 全局白名單")
         void emptyArrayFallbackGlobal() {
-            perUserConfig.setEnabled(true);
+            multiUserConfig.setEnabled(true);
 
             UserTradeSettings userSettings = UserTradeSettings.builder()
                     .userId("user-4")
@@ -212,7 +212,7 @@ class TradeConfigResolverTest {
         @Test
         @DisplayName("isSymbolAllowed 使用 per-user 白名單")
         void symbolAllowedFromUser() {
-            perUserConfig.setEnabled(true);
+            multiUserConfig.setEnabled(true);
 
             UserTradeSettings userSettings = UserTradeSettings.builder()
                     .userId("user-5")
