@@ -8,6 +8,7 @@ discord-monitor/config.yml
 # === Java / Gradle ===
 .gradle/
 build/
+bin/
 !gradle/wrapper/gradle-wrapper.jar
 *.class
 *.jar
@@ -45,3 +46,4 @@ data/
 
 # === Temp / Export ===
 export.txt
+logo.svg
