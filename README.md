@@ -50,7 +50,7 @@ com.trader/
 ├── notification/    # 通知（Discord Webhook，未來擴展 Email/LINE）
 ├── auth/            # 認證（JWT 登入/註冊）                ← 骨架 🔨
 ├── user/            # 用戶（帳號/API Key 管理）            ← 骨架 🔨
-├── subscription/    # 訂閱計費（Stripe 整合）              ← 骨架 🔨
+├── subscription/    # 訂閱計費（Stripe 整合）              ← 後端完成 ✅
 └── dashboard/       # 前端 Dashboard API（聚合層）         ← 骨架 🔨
 ```
 
@@ -87,10 +87,10 @@ com.trader/
 | **notification** | Discord Embed 通知（非同步 enqueue） | ✅ 生產中 |
 | **auth** | Spring Security + JWT 認證（登入/註冊/token 刷新） | 🔨 骨架 |
 | **user** | 用戶帳號 + 加密 API Key 管理 | 🔨 骨架 |
-| **subscription** | Stripe 訂閱計費（checkout/webhook/狀態查詢） | 🔨 骨架 |
+| **subscription** | Stripe 訂閱計費（Payment Links/webhook/升降級/取消） | ✅ 後端完成 |
 | **dashboard** | 前端 API 聚合層（持倉摘要/績效統計/交易紀錄） | 🔨 骨架 |
 
-> **骨架模組**：class / interface / 方法簽名已定義，方法體為 TODO，不影響現有功能。
+> **骨架模組**：class / interface / 方法簽名已定義，方法體為 TODO，不影響現有功能。subscription 模組後端已完成 Stripe 整合。
 
 ---
 
@@ -508,7 +508,7 @@ DB_PASSWORD=your_neon_password
 # DB_USERNAME=trading
 # DB_PASSWORD=trading
 
-# === SaaS 功能（骨架階段，尚未啟用）===
+# === SaaS 功能 ===
 JWT_SECRET=your-jwt-secret-at-least-256-bits
 AES_ENCRYPTION_KEY=your-aes-key-must-be-32-chars!!
 STRIPE_SECRET_KEY=sk_test_xxx
@@ -621,15 +621,15 @@ AI 靠語意理解判斷，不綁死特定 emoji 或格式。不同群主的訊�
 | `/api/user/api-keys` | PUT | 儲存交易所 API Key（加密） | TODO |
 | `/api/user/api-keys` | GET | 查詢已綁定的交易所 | TODO |
 
-### 訂閱計費（🔨 開發中）
+### 訂閱計費（✅ 後端完成）
 
 | 端點 | 方法 | 說明 | 狀態 |
 |------|------|------|------|
-| `/api/subscription/plans` | GET | 查詢可用方案 | TODO |
-| `/api/subscription/checkout` | POST | 建立 Stripe Checkout Session | TODO |
-| `/api/subscription/status` | GET | 查詢訂閱狀態 | 骨架 |
-| `/api/subscription/cancel` | POST | 取消訂閱 | TODO |
-| `/api/subscription/webhook` | POST | Stripe Webhook 回調 | TODO |
+| `/api/subscription/plans` | GET | 查詢可用方案（含 Payment Link URL） | ✅ 完成 |
+| `/api/subscription/status` | GET | 查詢訂閱狀態（含 Stripe IDs） | ✅ 完成 |
+| `/api/subscription/cancel` | POST | 取消訂閱（立即停止） | ✅ 完成 |
+| `/api/subscription/upgrade` | POST | 升降級方案 | ✅ 完成 |
+| `/api/subscription/webhook` | POST | Stripe Webhook 回調（5 事件） | ✅ 完成 |
 
 ### Dashboard（🔨 開發中）
 
@@ -756,7 +756,7 @@ curl -X POST http://localhost:8081/api/execute-trade \
   - Prod：**Neon** 雲端 (Singapore, `sslmode=require`)
   - Dev：本地 Docker container
 - **OkHttp** — Binance API 通訊 + WebSocket 長連線
-- **Stripe**（計畫整合） — 訂閱計費
+- **Stripe** (stripe-java 28.2.0) — 訂閱計費（Payment Links + Webhook）
 - **Docker Compose** — 容器化部署（Dev/Prod 環境分離）
 - **Gradle 8.13** — 建置工具
 
@@ -895,7 +895,7 @@ Hibernate `ddl-auto: update` 自動管理 schema（只增不刪，不會丟資�
 | P0 | 穩定性修復（NPE 防護 + 跨服務共享鎖 + DCA 防護） | ✅ 完成 |
 | P0 | 每日報告優化（6 區塊：餘額/明細/風控/系統狀態） | ✅ 完成 |
 | P1 | auth + user 模組實作（JWT 認證完整流程） | 🔨 骨架完成 |
-| P1 | subscription 模組實作（Stripe 整合） | 🔨 骨架完成 |
+| P1 | subscription 模組實作（Stripe 整合） | ✅ 後端完成 |
 | P1 | dashboard 模組實作（前端 API） | 🔨 骨架完成 |
 | P2 | signal 模組（訊號廣播給多用戶） | 📋 計畫中 |
 | P2 | per-user Binance WebSocket | 📋 計畫中 |
