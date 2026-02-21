@@ -475,19 +475,19 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("重複訊號，5分鐘內已收到相同訊號"));
         }
 
-        // 3. 驗證止損
-        if (signal.getStopLoss() == 0) {
+        // 3. 驗證止損（DCA 不帶新止損是合法的 — 會從 DB 查現有 SL 重掛）
+        if (signal.getStopLoss() == 0 && !signal.isDca()) {
             log.warn("ENTRY 訊號缺少止損");
             return List.of(OrderResult.fail("ENTRY 訊號必須包含 stop_loss"));
         }
 
-        // 4. 方向邏輯驗證
+        // 4. 方向邏輯驗證（DCA 的 stopLoss 可能為 0，跳過方向檢查）
         double entry = signal.getEntryPriceLow();
         double sl = signal.getStopLoss();
-        if (signal.getSide() == TradeSignal.Side.LONG && sl >= entry) {
+        if (!signal.isDca() && signal.getSide() == TradeSignal.Side.LONG && sl >= entry) {
             return List.of(OrderResult.fail("做多止損不應高於入場價"));
         }
-        if (signal.getSide() == TradeSignal.Side.SHORT && sl <= entry) {
+        if (!signal.isDca() && signal.getSide() == TradeSignal.Side.SHORT && sl <= entry) {
             return List.of(OrderResult.fail("做空止損不應低於入場價"));
         }
 
@@ -516,7 +516,23 @@ public class BinanceFuturesService {
         // 7. 動態以損定倉: 1R = 帳戶餘額 × riskPercent, DCA 用 2R
         double riskMultiplier = signal.isDca() ? config.dcaRiskMultiplier() : 1.0;
         double effectiveRiskAmount = riskAmount * riskMultiplier;
-        double riskDistance = Math.abs(entry - sl);
+
+        // DCA 不帶止損時，從 DB 查現有 SL 來計算風險距離
+        double effectiveSl = sl;
+        if (signal.isDca() && sl == 0) {
+            Double existingSl = tradeRecordService.findOpenTrade(symbol)
+                    .map(Trade::getStopLoss).orElse(null);
+            if (existingSl != null && existingSl > 0) {
+                effectiveSl = existingSl;
+                log.info("DCA 倉位計算: 使用現有 SL {} 計算風險距離", effectiveSl);
+            } else {
+                log.warn("DCA 無法取得現有 SL，使用入場價 5% 作為風險距離估算");
+                effectiveSl = signal.getSide() == TradeSignal.Side.LONG
+                        ? entry * 0.95 : entry * 1.05;
+            }
+        }
+
+        double riskDistance = Math.abs(entry - effectiveSl);
         double quantity = effectiveRiskAmount / riskDistance;
         if (signal.isDca()) {
             log.info("DCA 倉位計算: {}R = {} × {} = {} USDT", riskMultiplier, riskAmount, riskMultiplier, effectiveRiskAmount);

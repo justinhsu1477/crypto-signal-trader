@@ -47,8 +47,8 @@ public class TradeRecordService {
     private final MultiUserConfig multiUserConfig;
 
     // ========== 多用戶支援 ==========
-    @Value("${trading.user-id:${user.id:test-user}}")
-    private String defaultUserId;  // 從環境變數或配置讀取，測試時預設 test-user
+    @Value("${trading.user-id:system-trader}")
+    private String defaultUserId;  // 單用戶模式的用戶 ID（由 SingleUserInitializer 確保存在）
 
     /** 廣播模式下，BinanceFuturesService 會設定當前用戶 ID */
     private static final ThreadLocal<String> CURRENT_USER_ID = new ThreadLocal<>();
@@ -74,7 +74,12 @@ public class TradeRecordService {
      */
     private String getActiveUserId() {
         String threadUserId = CURRENT_USER_ID.get();
-        return threadUserId != null ? threadUserId : defaultUserId;
+        if (threadUserId != null && !threadUserId.isBlank()) {
+            return threadUserId;
+        }
+        // 空字串 fallback 到預設值，避免 FK 約束失敗
+        return (defaultUserId != null && !defaultUserId.isBlank())
+                ? defaultUserId : "system-trader";
     }
 
     /**
