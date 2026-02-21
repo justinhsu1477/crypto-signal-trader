@@ -2,7 +2,7 @@
 
 > 本文件涵蓋 Crypto Signal Trader 所有環境變數的定義、預設值、各環境建議值及用途說明。
 >
-> 最後更新：2025-02-21
+> 最後更新：2025-02-22
 
 ---
 
@@ -12,14 +12,13 @@
 2. [Binance API](#2-binance-api)
 3. [風控參數（YAML-Only）](#3-風控參數yaml-only)
 4. [多用戶模式](#4-多用戶模式)
-5. [Per-User 個人化參數](#5-per-user-個人化參數)
-6. [Discord Webhook](#6-discord-webhook)
-7. [資料庫](#7-資料庫)
-8. [JWT / 加密](#8-jwt--加密)
-9. [AI 顧問](#9-ai-顧問)
-10. [Stripe 訂閱](#10-stripe-訂閱)
-11. [Monitor 認證](#11-monitor-認證)
-12. [HikariCP 連線池](#12-hikaricp-連線池)
+5. [Discord Webhook](#5-discord-webhook)
+6. [資料庫](#6-資料庫)
+7. [JWT / 加密](#7-jwt--加密)
+8. [AI 顧問](#8-ai-顧問)
+9. [Stripe 訂閱](#9-stripe-訂閱)
+10. [Monitor 認證](#10-monitor-認證)
+11. [HikariCP 連線池](#11-hikaricp-連線池)
 
 ---
 
@@ -73,53 +72,30 @@
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
-| `MULTI_USER_ENABLED` | boolean | `false` | `false` | `true` | 多用戶廣播模式開關。`true` = 信號廣播給所有啟用用戶 |
-| `RABBITMQ_ENABLED` | boolean | `false` | `false` | `false` | RabbitMQ 非同步廣播。`false` = 同步 Thread Pool（目前方案） |
-
-### 多用戶模式行為
-
-```
-MULTI_USER_ENABLED=false  → 單用戶模式，信號直接用 TRADING_USER_ID 的 API Key 下單
-MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程) 並行發送給所有 autoTradeEnabled=true 的用戶
-```
-
----
-
-## 5. Per-User 個人化參數
-
-| 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
-|----------|------|--------|-----|------|------|
-| `PER_USER_SETTINGS_ENABLED` | boolean | `false` | `false` | `false` | Per-User 個人化交易參數開關 |
+| `MULTI_USER_ENABLED` | boolean | `false` | `false` | `true` | 多用戶模式總開關（唯一開關） |
 | `TRADING_USER_ID` | string | `test-user` | `test-user` | _(空)_ | 當前交易用戶 ID（單用戶模式使用，多用戶模式忽略） |
 
-### Per-User 設定解析流程
+### 單一開關設計
+
+`MULTI_USER_ENABLED` 是控制多用戶行為的**唯一環境變數**，一個開關同時控制：
+
+- 廣播跟單（Thread Pool 10 線程並行）
+- Per-user 交易參數（TradeConfigResolver 查詢 UserTradeSettings）
+- Per-user 查詢隔離（TradeRecordService 按 userId 過濾）
 
 ```
-                   ┌─────────────────────┐
-                   │ PER_USER_SETTINGS   │
-                   │ ENABLED = ?         │
-                   └──────────┬──────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              │ false (預設)                   │ true
-              ▼                               ▼
-    ┌─────────────────┐            ┌──────────────────────┐
-    │ 全部用 RiskConfig │            │ DB 查詢 UserTrade    │
-    │ (零 DB 查詢)     │            │ Settings (per-user)  │
-    │ → 行為不變       │            └──────────┬───────────┘
-    └─────────────────┘                       │
-                                    每個欄位檢查：
-                                    ├── 用戶有設 → 用用戶值
-                                    └── 用戶沒設 (null) → fallback RiskConfig
-                                              │
-                                              ▼
-                                    ┌──────────────────────┐
-                                    │ EffectiveTradeConfig  │
-                                    │ (保證所有欄位非 null)  │
-                                    └──────────────────────┘
+MULTI_USER_ENABLED=false（單用戶模式）
+  ├── 交易參數：全部用全局 RiskConfig（零 DB 查詢）
+  ├── 交易紀錄：全局查詢（不分用戶）
+  └── 下單：直接用 TRADING_USER_ID 的 API Key
+
+MULTI_USER_ENABLED=true（多用戶模式）
+  ├── 交易參數：DB 查詢 UserTradeSettings → null 欄位 fallback RiskConfig
+  ├── 交易紀錄：按 userId 隔離查詢
+  └── 下單：Thread Pool 廣播給所有 autoTradeEnabled=true 的用戶
 ```
 
-### 可自訂的 8 個參數
+### Per-User 交易參數（多用戶模式啟用時）
 
 | 參數 | 用途 | DB 欄位 | 全局 fallback |
 |------|------|---------|-------------|
@@ -136,7 +112,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 ---
 
-## 6. Discord Webhook
+## 5. Discord Webhook
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
@@ -160,7 +136,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 ---
 
-## 7. 資料庫
+## 6. 資料庫
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
@@ -172,7 +148,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 ---
 
-## 8. JWT / 加密
+## 7. JWT / 加密
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
@@ -188,7 +164,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 ---
 
-## 9. AI 顧問
+## 8. AI 顧問
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
@@ -209,7 +185,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 ---
 
-## 10. Stripe 訂閱
+## 9. Stripe 訂閱
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
@@ -218,7 +194,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 ---
 
-## 11. Monitor 認證
+## 10. Monitor 認證
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
@@ -226,7 +202,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 ---
 
-## 12. HikariCP 連線池
+## 11. HikariCP 連線池
 
 | 變數名稱 | 型別 | 預設值 | Dev | Prod | 說明 |
 |----------|------|--------|-----|------|------|
@@ -259,7 +235,7 @@ MULTI_USER_ENABLED=true   → 廣播模式，信號通過 Thread Pool (10 線程
 
 | 總計 | 數量 |
 |------|------|
-| 環境變數（可覆蓋） | 22 個 |
+| 環境變數（可覆蓋） | 20 個 |
 | YAML-Only（不可覆蓋） | 18 個 |
 | Discord Monitor 專用 | 2 個 |
 
