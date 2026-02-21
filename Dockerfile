@@ -18,7 +18,7 @@ RUN ./gradlew build -x test --no-daemon
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data /app/logs
 
 COPY --from=builder /app/build/libs/crypto-signal-trader-1.0.0.jar app.jar
 

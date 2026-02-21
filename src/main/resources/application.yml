@@ -14,6 +14,13 @@ trading:
 
 server:
   port: ${SERVER_PORT:8080}
+  tomcat:
+    max-http-form-post-size: 1MB      # POST form 最大 1MB
+    max-swallow-size: 1MB             # 超過直接斷連，不讀取
+  servlet:
+    multipart:
+      max-file-size: 1MB              # 單檔上限
+      max-request-size: 2MB           # 整個 request 上限
 
 spring:
   profiles:

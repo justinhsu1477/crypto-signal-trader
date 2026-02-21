@@ -12,6 +12,4 @@ binance:
     ws-base-url: wss://testnet.binancefuture.com/ws/
 
 
-logging:
-  level:
-    com.trader: INFO
+# logging 設定由 logback-spring.xml 統一管理
