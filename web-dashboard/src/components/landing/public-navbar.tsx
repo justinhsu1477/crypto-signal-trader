@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/ui/language-switcher";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -24,11 +24,15 @@ export function PublicNavbar() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         {/* Logo */}
         <Link href="/login" className="flex items-center gap-2.5 group">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/20 transition-colors">
-            <TrendingUp className="h-5 w-5 text-emerald-400" />
-          </div>
+          <Image
+            src="/logo.jpg"
+            alt="HookFi"
+            width={36}
+            height={36}
+            className="rounded-lg"
+          />
           <span className="text-lg font-bold tracking-tight">
-            Signal Trader
+            HookFi
           </span>
         </Link>
 

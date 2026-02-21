@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -9,7 +10,6 @@ import {
   History,
   Settings,
   LogOut,
-  TrendingUp,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -30,9 +30,15 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-card border-r border-border">
       {/* Logo */}
-      <div className="flex items-center gap-2 px-6 py-5 border-b border-border">
-        <TrendingUp className="h-6 w-6 text-emerald-500" />
-        <span className="text-lg font-bold">Signal Trader</span>
+      <div className="flex items-center gap-2.5 px-6 py-5 border-b border-border">
+        <Image
+          src="/logo.jpg"
+          alt="HookFi"
+          width={28}
+          height={28}
+          className="rounded-lg"
+        />
+        <span className="text-lg font-bold">HookFi</span>
       </div>
 
       {/* Navigation */}
