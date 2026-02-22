@@ -48,6 +48,7 @@ class SignalRouter:
         self.api_client = api_client
         self.dry_run = dry_run
         self.ai_parser = ai_parser
+        self.ignore_keywords = discord_config.ignore_keywords or []
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
 
@@ -89,6 +90,17 @@ class SignalRouter:
 
         if not content.strip():
             return
+
+        # 內容黑名單過濾（一對一指導等非交易訊號）
+        if self.ignore_keywords:
+            for kw in self.ignore_keywords:
+                if kw in content:
+                    logger.info(
+                        "⛔ 黑名單關鍵字 [%s] 命中，跳過: %s",
+                        kw,
+                        content[:80].replace("\n", " | "),
+                    )
+                    return
 
         # Dedup
         if message_id in self._processed_ids:
