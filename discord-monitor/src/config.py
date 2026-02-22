@@ -22,6 +22,7 @@ class DiscordConfig:
     channel_ids: list[str] = field(default_factory=list)
     guild_ids: list[str] = field(default_factory=list)
     author_ids: list[str] = field(default_factory=list)
+    ignore_keywords: list[str] = field(default_factory=list)  # 內容黑名單（一對一等非交易訊號）
 
 
 @dataclass
@@ -125,6 +126,7 @@ def load_config(path: str) -> AppConfig:
             channel_ids=_env_list("DISCORD_CHANNEL_IDS", discord_raw.get("channel_ids", [])),
             guild_ids=_env_list("DISCORD_GUILD_IDS", discord_raw.get("guild_ids", [])),
             author_ids=_env_list("DISCORD_AUTHOR_IDS", discord_raw.get("author_ids", [])),
+            ignore_keywords=_env_list("DISCORD_IGNORE_KEYWORDS", discord_raw.get("ignore_keywords", [])),
         ),
         api=ApiConfig(
             base_url=api_raw.get("base_url", "http://localhost:8080"),
