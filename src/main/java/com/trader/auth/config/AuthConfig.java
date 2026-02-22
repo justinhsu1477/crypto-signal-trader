@@ -7,6 +7,7 @@ import com.trader.auth.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -32,6 +33,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class AuthConfig {
 
@@ -58,10 +60,16 @@ public class AuthConfig {
                         .requestMatchers("/api/heartbeat").permitAll()
                         .requestMatchers("/api/subscription/webhook").permitAll()
 
-                        // === 受保護：需要 JWT 或 Monitor API Key ===
+                        // === ADMIN 專用：需要 ADMIN 角色（JWT ADMIN 或 Monitor API Key） ===
                         .requestMatchers(
-                                "/api/execute-signal", "/api/execute-trade",
-                                "/api/broadcast-trade", "/api/parse-signal",
+                                "/api/execute-signal", "/api/broadcast-trade",
+                                "/api/parse-signal"
+                        ).hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                        // === 受保護：需要 JWT 或 Monitor API Key（任何角色） ===
+                        .requestMatchers(
+                                "/api/execute-trade",
                                 "/api/balance", "/api/positions",
                                 "/api/exchange-info", "/api/open-orders",
                                 "/api/monitor-status", "/api/stream-status",
@@ -74,7 +82,6 @@ public class AuthConfig {
                         .requestMatchers("/api/subscription/**").authenticated()
                         .requestMatchers("/api/trades/**").authenticated()
                         .requestMatchers("/api/stats/**").authenticated()
-                        .requestMatchers("/api/admin/**").authenticated()
 
                         // === 其他：全部拒絕 ===
                         .anyRequest().denyAll()

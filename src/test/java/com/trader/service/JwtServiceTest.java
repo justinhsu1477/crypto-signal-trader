@@ -29,7 +29,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("生成的 Token 不為 null 或空白")
         void tokenNotNullOrBlank() {
-            String token = jwtService.generateToken("user-001");
+            String token = jwtService.generateToken("user-001", "USER");
 
             assertThat(token).isNotNull();
             assertThat(token).isNotBlank();
@@ -38,7 +38,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("生成的 Token 包含三段 (header.payload.signature)")
         void tokenHasThreeParts() {
-            String token = jwtService.generateToken("user-001");
+            String token = jwtService.generateToken("user-001", "USER");
 
             assertThat(token.split("\\.")).hasSize(3);
         }
@@ -52,7 +52,7 @@ class JwtServiceTest {
         @DisplayName("從 Token 提取的 userId 與生成時相同")
         void extractUserIdMatchesGenerated() {
             String userId = "user-abc-123";
-            String token = jwtService.generateToken(userId);
+            String token = jwtService.generateToken(userId, "USER");
 
             String extracted = jwtService.extractUserId(token);
 
@@ -62,11 +62,30 @@ class JwtServiceTest {
         @Test
         @DisplayName("不同 userId 產生的 Token 提取結果不同")
         void differentUserIdsDifferentTokens() {
-            String token1 = jwtService.generateToken("user-001");
-            String token2 = jwtService.generateToken("user-002");
+            String token1 = jwtService.generateToken("user-001", "USER");
+            String token2 = jwtService.generateToken("user-002", "USER");
 
             assertThat(jwtService.extractUserId(token1)).isEqualTo("user-001");
             assertThat(jwtService.extractUserId(token2)).isEqualTo("user-002");
+        }
+    }
+
+    @Nested
+    @DisplayName("extractRole 提取角色")
+    class ExtractRole {
+
+        @Test
+        @DisplayName("從 Token 提取的 role 與生成時相同")
+        void extractRoleMatchesGenerated() {
+            String token = jwtService.generateToken("user-001", "ADMIN");
+            assertThat(jwtService.extractRole(token)).isEqualTo("ADMIN");
+        }
+
+        @Test
+        @DisplayName("USER 角色 token")
+        void extractUserRole() {
+            String token = jwtService.generateToken("user-001", "USER");
+            assertThat(jwtService.extractRole(token)).isEqualTo("USER");
         }
     }
 
@@ -77,7 +96,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("有效 Token → 回傳 true")
         void validTokenReturnsTrue() {
-            String token = jwtService.generateToken("user-001");
+            String token = jwtService.generateToken("user-001", "USER");
 
             assertThat(jwtService.validateToken(token)).isTrue();
         }
@@ -87,7 +106,7 @@ class JwtServiceTest {
         void expiredTokenReturnsFalse() throws InterruptedException {
             ReflectionTestUtils.setField(jwtService, "expirationMs", 1L);
 
-            String token = jwtService.generateToken("user-001");
+            String token = jwtService.generateToken("user-001", "USER");
             Thread.sleep(50);
 
             assertThat(jwtService.validateToken(token)).isFalse();
@@ -96,7 +115,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("篡改 Token → 回傳 false")
         void tamperedTokenReturnsFalse() {
-            String token = jwtService.generateToken("user-001");
+            String token = jwtService.generateToken("user-001", "USER");
             String tampered = token.substring(0, token.lastIndexOf('.')) + ".tampered";
 
             assertThat(jwtService.validateToken(tampered)).isFalse();
@@ -113,7 +132,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("使用不同 secret 簽名的 Token → 回傳 false")
         void wrongSecretReturnsFalse() {
-            String token = jwtService.generateToken("user-001");
+            String token = jwtService.generateToken("user-001", "USER");
 
             JwtService otherService = new JwtService();
             ReflectionTestUtils.setField(otherService, "secret",
@@ -132,7 +151,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("Refresh Token 不為 null 或空白")
         void refreshTokenNotNullOrBlank() {
-            String refreshToken = jwtService.generateRefreshToken("user-001");
+            String refreshToken = jwtService.generateRefreshToken("user-001", "USER");
 
             assertThat(refreshToken).isNotNull();
             assertThat(refreshToken).isNotBlank();
@@ -141,7 +160,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("Refresh Token 可驗證通過")
         void refreshTokenIsValid() {
-            String refreshToken = jwtService.generateRefreshToken("user-001");
+            String refreshToken = jwtService.generateRefreshToken("user-001", "USER");
 
             assertThat(jwtService.validateToken(refreshToken)).isTrue();
         }
@@ -149,7 +168,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("Refresh Token 可提取正確 userId")
         void refreshTokenExtractsCorrectUserId() {
-            String refreshToken = jwtService.generateRefreshToken("user-001");
+            String refreshToken = jwtService.generateRefreshToken("user-001", "USER");
 
             assertThat(jwtService.extractUserId(refreshToken)).isEqualTo("user-001");
         }
@@ -157,8 +176,8 @@ class JwtServiceTest {
         @Test
         @DisplayName("Refresh Token 與一般 Token 不同")
         void refreshTokenDiffersFromAccessToken() {
-            String accessToken = jwtService.generateToken("user-001");
-            String refreshToken = jwtService.generateRefreshToken("user-001");
+            String accessToken = jwtService.generateToken("user-001", "USER");
+            String refreshToken = jwtService.generateRefreshToken("user-001", "USER");
 
             assertThat(refreshToken).isNotEqualTo(accessToken);
         }
@@ -189,7 +208,7 @@ class JwtServiceTest {
         @DisplayName("extractUserId 對過期 Token → 拋出異常")
         void extractUserIdFromExpiredTokenThrows() throws InterruptedException {
             ReflectionTestUtils.setField(jwtService, "expirationMs", 1L);
-            String token = jwtService.generateToken("user-001");
+            String token = jwtService.generateToken("user-001", "USER");
             Thread.sleep(50);
 
             assertThatThrownBy(() -> jwtService.extractUserId(token))
