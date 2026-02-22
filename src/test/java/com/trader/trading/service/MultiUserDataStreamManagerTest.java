@@ -1,9 +1,8 @@
-package com.trader.service;
+package com.trader.trading.service;
 
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
-import com.trader.trading.service.*;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
@@ -237,7 +236,7 @@ class MultiUserDataStreamManagerTest {
             verify(discordWebhookService).sendNotificationToUser(
                     eq("u1"),
                     contains("重連失敗"),
-                    contains("手動"),
+                    contains("管理員"),
                     eq(DiscordWebhookService.COLOR_RED));
         }
 
@@ -269,7 +268,7 @@ class MultiUserDataStreamManagerTest {
             manager.scheduleReconnect("u1", context);
 
             // shuttingDown=true，應直接 return，attempts 還是會加（但不排程）
-            assertThat(context.getPendingReconnect()).isNull();
+            assertThat((Object) context.getPendingReconnect()).isNull();
         }
     }
 
