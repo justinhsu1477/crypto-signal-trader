@@ -232,9 +232,13 @@ public class TradeRecordService {
     }
 
     /**
-     * 查詢某幣種目前的 DCA 補倉次數
+     * 查詢某幣種目前的 DCA 補倉次數 — 多用戶模式下按 userId 隔離
      */
     public int getDcaCount(String symbol) {
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            return tradeRepository.findUserDcaCountBySymbol(userId, symbol).orElse(0);
+        }
         return tradeRepository.findDcaCountBySymbol(symbol).orElse(0);
     }
 
@@ -246,11 +250,11 @@ public class TradeRecordService {
      * @param exitReason 出場原因（SIGNAL_CLOSE / STOP_LOSS / MANUAL_CLOSE / FAIL_SAFE）
      */
     @Transactional
-    public void recordClose(String symbol, OrderResult closeOrder, String exitReason) {
+    public Trade recordClose(String symbol, OrderResult closeOrder, String exitReason) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
-            return;
+            return null;
         }
 
         Trade trade = openTradeOpt.get();
@@ -274,6 +278,8 @@ public class TradeRecordService {
 
         log.info("交易平倉紀錄: tradeId={} {} exitPrice={} 淨利={} 原因={}",
                 trade.getTradeId(), symbol, closeOrder.getPrice(), trade.getNetProfit(), exitReason);
+
+        return trade;
     }
 
     /**
