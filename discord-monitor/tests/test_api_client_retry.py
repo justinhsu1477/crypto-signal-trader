@@ -12,6 +12,7 @@ class FakeConfig:
     execute_endpoint = "/api/execute-signal"
     parse_endpoint = "/api/parse-signal"
     timeout = 10
+    multi_user_enabled = False
 
 
 @pytest.fixture
