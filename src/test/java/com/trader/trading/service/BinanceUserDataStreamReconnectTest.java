@@ -1,12 +1,8 @@
-package com.trader.service;
+package com.trader.trading.service;
 
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
-import com.trader.trading.service.BinanceUserDataStreamService;
-import com.trader.trading.service.MultiUserDataStreamManager;
-import com.trader.trading.service.SymbolLockRegistry;
-import com.trader.trading.service.TradeRecordService;
 import okhttp3.*;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -231,6 +227,16 @@ class BinanceUserDataStreamReconnectTest {
             listener = (WebSocketListener) constructor.newInstance(service);
         }
 
+        /**
+         * 設定 service 的 webSocket 欄位，讓 onClosed/onFailure 中
+         * 的 ws != webSocket 檢查不會 short-circuit
+         */
+        private void setServiceWebSocket(WebSocket ws) throws Exception {
+            Field wsField = BinanceUserDataStreamService.class.getDeclaredField("webSocket");
+            wsField.setAccessible(true);
+            wsField.set(service, ws);
+        }
+
         @Test
         @DisplayName("onOpen 重置 reconnectAttempts 為 0 並標記 connected=true")
         void onOpenResetsState() throws Exception {
@@ -275,6 +281,7 @@ class BinanceUserDataStreamReconnectTest {
             int attemptsBefore = service.getReconnectAttempts();
 
             WebSocket mockWs = mock(WebSocket.class);
+            setServiceWebSocket(mockWs); // 讓 ws == webSocket 檢查通過
             listener.onClosed(mockWs, 1006, "abnormal closure");
 
             // 應觸發 scheduleReconnect → attempts +1
@@ -300,6 +307,7 @@ class BinanceUserDataStreamReconnectTest {
         @DisplayName("onFailure → 觸發 scheduleReconnect + 發送紅色告警")
         void onFailureTriggersReconnectAndAlert() throws Exception {
             WebSocket mockWs = mock(WebSocket.class);
+            setServiceWebSocket(mockWs);
             listener.onFailure(mockWs, new RuntimeException("Connection reset"), null);
 
             assertThat(service.getReconnectAttempts()).isEqualTo(1);
@@ -315,6 +323,7 @@ class BinanceUserDataStreamReconnectTest {
         @DisplayName("onFailure 重複呼叫只發一次告警")
         void onFailureMultipleCallsSendsAlertOnce() throws Exception {
             WebSocket mockWs = mock(WebSocket.class);
+            setServiceWebSocket(mockWs);
 
             listener.onFailure(mockWs, new RuntimeException("error 1"), null);
             listener.onFailure(mockWs, new RuntimeException("error 2"), null);
@@ -332,6 +341,7 @@ class BinanceUserDataStreamReconnectTest {
         void onOpenSendsRecoveryNotificationWhenAlertWasSent() throws Exception {
             // 先觸發一次 failure 讓 alertSent = true
             WebSocket mockWs = mock(WebSocket.class);
+            setServiceWebSocket(mockWs);
             listener.onFailure(mockWs, new RuntimeException("disconnected"), null);
 
             // 然後連線成功
@@ -378,7 +388,7 @@ class BinanceUserDataStreamReconnectTest {
 
             // 驗證：attempts 不增加，沒有新排程
             assertThat(service.getReconnectAttempts()).isEqualTo(0);
-            assertThat(service.getPendingReconnect()).isNull();
+            assertThat((Object) service.getPendingReconnect()).isNull();
         }
 
         @Test
@@ -389,7 +399,7 @@ class BinanceUserDataStreamReconnectTest {
             }
 
             ScheduledFuture<?> pending = service.getPendingReconnect();
-            assertThat(pending).isNotNull();
+            assertThat((Object) pending).isNotNull();
             assertThat(pending.isCancelled()).isFalse();
 
             // attempts 應為 5（每次呼叫都 incrementAndGet），但 pending task 只有 1 個

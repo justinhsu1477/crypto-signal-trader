@@ -1,6 +1,4 @@
-package com.trader.service;
-
-import com.trader.trading.service.UserStreamContext;
+package com.trader.trading.service;
 import org.junit.jupiter.api.*;
 
 import java.util.Map;
@@ -47,7 +45,7 @@ class UserStreamContextTest {
         void initialReconnectState() {
             assertThat(context.getReconnectAttempts()).isEqualTo(0);
             assertThat(context.getLastMessageTime()).isNull();
-            assertThat(context.getPendingReconnect()).isNull();
+            assertThat((Object) context.getPendingReconnect()).isNull();
         }
     }
 

@@ -50,13 +50,6 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
-tasks.named('compileTestJava') {
-    // 暫時排除 — package visibility 問題，等 cowork 修復後移除
-    exclude '**/BinanceUserDataStreamReconnectTest.java'
-    exclude '**/MultiUserDataStreamManagerTest.java'
-    exclude '**/UserStreamContextTest.java'
-}
-
 tasks.named('test') {
     useJUnitPlatform()
 }
