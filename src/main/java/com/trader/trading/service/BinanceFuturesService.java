@@ -1197,6 +1197,22 @@ public class BinanceFuturesService {
     // ==================== Per-User API Key 支援 ====================
 
     /**
+     * 設定當前線程的 per-user API Key
+     * 供排程任務（DailyReportService）查詢個別用戶的幣安帳戶餘額時使用。
+     * 使用完畢後務必呼叫 clearCurrentUserKeys() 清除，避免線程池復用時洩漏。
+     */
+    public static void setCurrentUserKeys(BinanceKeys keys) {
+        CURRENT_USER_KEYS.set(keys);
+    }
+
+    /**
+     * 清除當前線程的 per-user API Key
+     */
+    public static void clearCurrentUserKeys() {
+        CURRENT_USER_KEYS.remove();
+    }
+
+    /**
      * 取得當前生效的 API Key（ThreadLocal per-user 優先，fallback 全局）
      */
     private String getActiveApiKey() {

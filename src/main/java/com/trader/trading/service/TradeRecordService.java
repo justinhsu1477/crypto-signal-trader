@@ -665,7 +665,21 @@ public class TradeRecordService {
         } else {
             closedToday = tradeRepository.findClosedTradesAfter(startOfToday);
         }
-        return closedToday.stream()
+        return calculateRealizedLoss(closedToday);
+    }
+
+    /**
+     * 查詢指定用戶的今日已實現虧損（explicit-userId 版本）
+     * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
+     */
+    public double getTodayRealizedLoss(String userId) {
+        LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
+        List<Trade> closedToday = tradeRepository.findUserClosedTradesAfter(userId, startOfToday);
+        return calculateRealizedLoss(closedToday);
+    }
+
+    private double calculateRealizedLoss(List<Trade> closedTrades) {
+        return closedTrades.stream()
                 .filter(t -> t.getNetProfit() != null && t.getNetProfit() < 0)
                 .mapToDouble(Trade::getNetProfit)
                 .sum();
@@ -699,6 +713,14 @@ public class TradeRecordService {
     }
 
     /**
+     * 取得指定用戶在時間範圍內的已平倉交易列表（explicit-userId 版本）
+     * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
+     */
+    public List<Trade> getClosedTradesForRange(LocalDateTime from, LocalDateTime to, String userId) {
+        return tradeRepository.findUserClosedTradesBetween(userId, from, to);
+    }
+
+    /**
      * 取得指定時間範圍的交易統計
      * 供每日摘要排程（昨日統計）和即時查詢使用
      *
@@ -718,6 +740,23 @@ public class TradeRecordService {
             openTrades = tradeRepository.findByStatus("OPEN");
         }
 
+        return calculateDateRangeStats(closedTrades, openTrades);
+    }
+
+    /**
+     * 取得指定用戶在時間範圍內的交易統計（explicit-userId 版本）
+     * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
+     */
+    public Map<String, Object> getStatsForDateRange(LocalDateTime from, LocalDateTime to, String userId) {
+        List<Trade> closedTrades = tradeRepository.findUserClosedTradesBetween(userId, from, to);
+        List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(userId, "OPEN");
+        return calculateDateRangeStats(closedTrades, openTrades);
+    }
+
+    /**
+     * 計算時間範圍統計（共用邏輯，供 getStatsForDateRange 的兩個版本呼叫）
+     */
+    private Map<String, Object> calculateDateRangeStats(List<Trade> closedTrades, List<Trade> openTrades) {
         long totalCount = closedTrades.size();
         long winCount = closedTrades.stream()
                 .filter(t -> t.getNetProfit() != null && t.getNetProfit() > 0)
@@ -747,8 +786,6 @@ public class TradeRecordService {
      * 多用戶模式下只統計當前用戶的交易
      */
     public Map<String, Object> getStatsSummary() {
-        Map<String, Object> stats = new LinkedHashMap<>();
-
         long closedCount;
         long winCount;
         double totalNetProfit;
@@ -775,6 +812,36 @@ public class TradeRecordService {
             totalCommission = tradeRepository.sumCommission();
             openCount = tradeRepository.findByStatus("OPEN").size();
         }
+
+        return buildStatsSummary(closedCount, winCount, totalNetProfit,
+                grossWins, grossLosses, totalCommission, openCount);
+    }
+
+    /**
+     * 指定用戶的盈虧統計摘要（explicit-userId 版本）
+     * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
+     */
+    public Map<String, Object> getStatsSummary(String userId) {
+        long closedCount = tradeRepository.countUserClosedTrades(userId);
+        long winCount = tradeRepository.countUserWinningTrades(userId);
+        double totalNetProfit = tradeRepository.sumUserNetProfit(userId);
+        double grossWins = tradeRepository.sumUserGrossWins(userId);
+        double grossLosses = tradeRepository.sumUserGrossLosses(userId);
+        double totalCommission = tradeRepository.sumUserCommission(userId);
+        long openCount = tradeRepository.findByUserIdAndStatus(userId, "OPEN").size();
+
+        return buildStatsSummary(closedCount, winCount, totalNetProfit,
+                grossWins, grossLosses, totalCommission, openCount);
+    }
+
+    /**
+     * 組裝統計摘要 Map（共用邏輯）
+     */
+    private Map<String, Object> buildStatsSummary(long closedCount, long winCount,
+                                                    double totalNetProfit, double grossWins,
+                                                    double grossLosses, double totalCommission,
+                                                    long openCount) {
+        Map<String, Object> stats = new LinkedHashMap<>();
 
         // 勝率
         double winRate = closedCount > 0 ? (double) winCount / closedCount * 100 : 0;
