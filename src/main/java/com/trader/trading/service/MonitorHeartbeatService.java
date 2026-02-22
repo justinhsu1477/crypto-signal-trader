@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -47,6 +48,17 @@ public class MonitorHeartbeatService {
     /** 心跳逾時秒數：超過此時間沒收到心跳就告警 */
     private static final long HEARTBEAT_TIMEOUT_SECONDS = 90;
 
+    // ===== AI Token 用量統計（每日累計）=====
+    /** Python 上一次帶來的 session 累計值（用來算 delta） */
+    private final AtomicLong lastReceivedCallCount = new AtomicLong(0);
+    private final AtomicLong lastReceivedPromptTokens = new AtomicLong(0);
+    private final AtomicLong lastReceivedResponseTokens = new AtomicLong(0);
+
+    /** 每日累計（delta 累加） */
+    private final AtomicLong dailyCallCount = new AtomicLong(0);
+    private final AtomicLong dailyPromptTokens = new AtomicLong(0);
+    private final AtomicLong dailyResponseTokens = new AtomicLong(0);
+
     public MonitorHeartbeatService(DiscordWebhookService webhookService) {
         this.webhookService = webhookService;
     }
@@ -54,11 +66,13 @@ public class MonitorHeartbeatService {
     /**
      * 接收 Python monitor 的心跳
      *
-     * @param status   Python 端傳來的狀態（connected / reconnecting / connecting）
-     * @param aiStatus AI parser 狀態（active / disabled）
+     * @param status       Python 端傳來的狀態（connected / reconnecting / connecting）
+     * @param aiStatus     AI parser 狀態（active / disabled）
+     * @param aiTokenStats AI token 用量統計（Python session 累計值，可為 null）
      * @return 回應資訊
      */
-    public Map<String, Object> receiveHeartbeat(String status, String aiStatus) {
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> receiveHeartbeat(String status, String aiStatus, Map<String, Object> aiTokenStats) {
         Instant now = Instant.now();
         Instant previous = lastHeartbeat.getAndSet(now);
         String previousStatus = lastStatus;
@@ -67,6 +81,11 @@ public class MonitorHeartbeatService {
         // 更新 AI 狀態
         if (aiStatus != null) {
             lastAiStatus = aiStatus;
+        }
+
+        // ===== 更新 AI token 用量（delta 累加）=====
+        if (aiTokenStats != null) {
+            updateTokenStats(aiTokenStats);
         }
 
         // ===== 情況 1: Discord 斷了，Python 在重連 =====
@@ -176,5 +195,69 @@ public class MonitorHeartbeatService {
                 "aiStatus", lastAiStatus,
                 "alertSent", alertSent
         );
+    }
+
+    // ==================== AI Token 用量 ====================
+
+    /**
+     * 從 heartbeat 帶來的 session 累計值計算 delta 並累加到每日計數器
+     *
+     * Python 每次帶的是 session 啟動後的累計值。
+     * Java 記錄上一次收到的累計值，差值就是新增量。
+     * 若 Python 重啟（新值 < 舊值），以新值作為本次增量。
+     */
+    private void updateTokenStats(Map<String, Object> stats) {
+        long newCalls = toLong(stats.get("call_count"));
+        long newPrompt = toLong(stats.get("total_prompt_tokens"));
+        long newResponse = toLong(stats.get("total_response_tokens"));
+
+        long prevCalls = lastReceivedCallCount.getAndSet(newCalls);
+        long prevPrompt = lastReceivedPromptTokens.getAndSet(newPrompt);
+        long prevResponse = lastReceivedResponseTokens.getAndSet(newResponse);
+
+        // 計算 delta（Python 重啟時 newCalls < prevCalls，以 newCalls 作為增量）
+        long deltaCalls = newCalls >= prevCalls ? newCalls - prevCalls : newCalls;
+        long deltaPrompt = newPrompt >= prevPrompt ? newPrompt - prevPrompt : newPrompt;
+        long deltaResponse = newResponse >= prevResponse ? newResponse - prevResponse : newResponse;
+
+        if (deltaCalls > 0) {
+            dailyCallCount.addAndGet(deltaCalls);
+            dailyPromptTokens.addAndGet(deltaPrompt);
+            dailyResponseTokens.addAndGet(deltaResponse);
+            log.debug("AI token delta: calls=+{}, prompt=+{}, response=+{} (daily total: {} calls, {} tokens)",
+                    deltaCalls, deltaPrompt, deltaResponse,
+                    dailyCallCount.get(), dailyPromptTokens.get() + dailyResponseTokens.get());
+        }
+    }
+
+    private static long toLong(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        return 0;
+    }
+
+    /**
+     * 取得每日 AI token 用量統計（供 DailyReportService 查詢）
+     */
+    public Map<String, Long> getDailyTokenStats() {
+        return Map.of(
+                "callCount", dailyCallCount.get(),
+                "promptTokens", dailyPromptTokens.get(),
+                "responseTokens", dailyResponseTokens.get()
+        );
+    }
+
+    /**
+     * 重置每日 AI token 用量（每日摘要發送後呼叫）
+     */
+    public void resetDailyTokenStats() {
+        dailyCallCount.set(0);
+        dailyPromptTokens.set(0);
+        dailyResponseTokens.set(0);
+        lastReceivedCallCount.set(0);
+        lastReceivedPromptTokens.set(0);
+        lastReceivedResponseTokens.set(0);
+        log.info("每日 AI token 統計已重置");
     }
 }

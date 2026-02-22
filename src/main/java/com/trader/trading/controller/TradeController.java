@@ -420,11 +420,14 @@ public class TradeController {
      *
      * Python monitor 每 30 秒呼叫一次，Java 端超過 90 秒沒收到就告警
      */
+    @SuppressWarnings("unchecked")
     @PostMapping("/heartbeat")
-    public ResponseEntity<Map<String, Object>> heartbeat(@RequestBody(required = false) Map<String, String> body) {
-        String status = (body != null && body.containsKey("status")) ? body.get("status") : "unknown";
-        String aiStatus = (body != null) ? body.get("aiStatus") : null;
-        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus));
+    public ResponseEntity<Map<String, Object>> heartbeat(@RequestBody(required = false) Map<String, Object> body) {
+        String status = (body != null && body.containsKey("status")) ? String.valueOf(body.get("status")) : "unknown";
+        String aiStatus = (body != null && body.containsKey("aiStatus")) ? String.valueOf(body.get("aiStatus")) : null;
+        Map<String, Object> aiTokenStats = (body != null && body.get("aiTokenStats") instanceof Map)
+                ? (Map<String, Object>) body.get("aiTokenStats") : null;
+        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus, aiTokenStats));
     }
 
     /**

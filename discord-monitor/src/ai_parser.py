@@ -231,6 +231,10 @@ class AiSignalParser:
 
     def __init__(self, config: AiConfig):
         self.config = config
+        self._total_prompt_tokens = 0
+        self._total_response_tokens = 0
+        self._call_count = 0
+
         api_key = os.environ.get(config.api_key_env, "")
         if not api_key:
             logger.warning("AI parser: %s not set, AI parsing disabled", config.api_key_env)
@@ -239,6 +243,14 @@ class AiSignalParser:
 
         self.client = genai.Client(api_key=api_key)
         logger.info("AI parser initialized: model=%s", config.model)
+
+    def get_token_stats(self) -> dict:
+        """回傳 session 累計的 token 統計（供 heartbeat 傳送）。"""
+        return {
+            "call_count": self._call_count,
+            "total_prompt_tokens": self._total_prompt_tokens,
+            "total_response_tokens": self._total_response_tokens,
+        }
 
     async def parse(self, content: str) -> dict | None:
         """Parse a Discord signal message into a structured trade request.
@@ -266,6 +278,23 @@ class AiSignalParser:
                         temperature=0.0,
                     ),
                 )
+
+                # 記錄 token 用量（錢已花，不管後續 parse 成不成功都記）
+                usage = getattr(response, 'usage_metadata', None)
+                if usage:
+                    prompt_tokens = getattr(usage, 'prompt_token_count', 0) or 0
+                    response_tokens = getattr(usage, 'candidates_token_count', 0) or 0
+                    total_tokens = getattr(usage, 'total_token_count', 0) or 0
+                    self._total_prompt_tokens += prompt_tokens
+                    self._total_response_tokens += response_tokens
+                    self._call_count += 1
+                    logger.info(
+                        "AI tokens: prompt=%d, response=%d, total=%d "
+                        "(session: %d calls, avg prompt=%d)",
+                        prompt_tokens, response_tokens, total_tokens,
+                        self._call_count,
+                        self._total_prompt_tokens // max(self._call_count, 1),
+                    )
 
                 text = response.text.strip()
                 parsed = json.loads(text)

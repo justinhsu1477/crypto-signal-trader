@@ -45,6 +45,7 @@ async def main() -> None:
 
     # Load config
     config = load_config(args.config)
+    config.validate()
     dry_run = args.dry_run or config.api.dry_run
 
     # Setup logging
@@ -92,9 +93,11 @@ async def main() -> None:
         """Send heartbeat to Spring Boot API every HEARTBEAT_INTERVAL seconds."""
         while True:
             try:
+                token_stats = ai_parser.get_token_stats() if ai_parser else None
                 await api_client.send_heartbeat(
                     status_fn(),
                     ai_status="active" if ai_active else "disabled",
+                    ai_token_stats=token_stats,
                 )
             except Exception as e:
                 logger.debug("Heartbeat error (non-fatal): %s", e)

@@ -495,7 +495,7 @@ class TradeControllerTest {
         @Test
         @DisplayName("POST /api/heartbeat")
         void heartbeat() {
-            when(heartbeatService.receiveHeartbeat("connected", null))
+            when(heartbeatService.receiveHeartbeat("connected", null, null))
                     .thenReturn(Map.of("received", true));
 
             ResponseEntity<Map<String, Object>> response =
@@ -506,7 +506,7 @@ class TradeControllerTest {
         @Test
         @DisplayName("POST /api/heartbeat — body 為 null")
         void heartbeatNullBody() {
-            when(heartbeatService.receiveHeartbeat("unknown", null))
+            when(heartbeatService.receiveHeartbeat("unknown", null, null))
                     .thenReturn(Map.of("received", true));
 
             ResponseEntity<Map<String, Object>> response = controller.heartbeat(null);

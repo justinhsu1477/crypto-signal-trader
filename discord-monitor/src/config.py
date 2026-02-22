@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -57,6 +58,37 @@ class AppConfig:
     api: ApiConfig = field(default_factory=ApiConfig)
     ai: AiConfig = field(default_factory=AiConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    def validate(self) -> None:
+        """驗證必要的配置項目，啟動時呼叫。缺少必要設定時直接報錯退出。"""
+        errors: list[str] = []
+
+        if not self.discord.channel_ids:
+            errors.append(
+                "discord.channel_ids 不可為空 — "
+                "請在 config.yml 或環境變數 DISCORD_CHANNEL_IDS 設定要監聽的頻道"
+            )
+
+        if not self.api.base_url or not self.api.base_url.strip():
+            errors.append(
+                "api.base_url 不可為空 — "
+                "請在 config.yml 設定 Spring Boot API 的 base URL（例如 http://localhost:8080）"
+            )
+
+        if self.ai.enabled:
+            api_key = os.environ.get(self.ai.api_key_env, "")
+            if not api_key.strip():
+                errors.append(
+                    f"ai.enabled=true 但環境變數 {self.ai.api_key_env} 未設定或為空 — "
+                    f"請設定 {self.ai.api_key_env} 環境變數，或將 ai.enabled 設為 false"
+                )
+
+        if errors:
+            print("\n❌ 配置驗證失敗：", file=sys.stderr)
+            for i, err in enumerate(errors, 1):
+                print(f"  {i}. {err}", file=sys.stderr)
+            print(file=sys.stderr)
+            sys.exit(1)
 
 
 def _env_list(env_var: str, default: list[str]) -> list[str]:
