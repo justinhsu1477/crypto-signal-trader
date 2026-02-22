@@ -120,8 +120,8 @@ class AuthServiceTest {
 
             when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
             when(passwordEncoder.matches("password123", "$2a$10$hashedPassword")).thenReturn(true);
-            when(jwtService.generateToken("test-uuid")).thenReturn("jwt-access-token");
-            when(jwtService.generateRefreshToken("test-uuid")).thenReturn("jwt-refresh-token");
+            when(jwtService.generateToken("test-uuid", "USER")).thenReturn("jwt-access-token");
+            when(jwtService.generateRefreshToken("test-uuid", "USER")).thenReturn("jwt-refresh-token");
             when(jwtService.getExpirationMs()).thenReturn(86400000L);
 
             LoginResponse response = authService.login(request);
@@ -131,6 +131,7 @@ class AuthServiceTest {
             assertThat(response.getExpiresIn()).isEqualTo(86400L);
             assertThat(response.getUserId()).isEqualTo("test-uuid");
             assertThat(response.getEmail()).isEqualTo("test@example.com");
+            assertThat(response.getRole()).isEqualTo("USER");
         }
 
         @Test
@@ -154,7 +155,7 @@ class AuthServiceTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("帳號或密碼錯誤");
 
-            verify(jwtService, never()).generateToken(anyString());
+            verify(jwtService, never()).generateToken(anyString(), anyString());
         }
 
         @Test
@@ -214,8 +215,8 @@ class AuthServiceTest {
                     .build();
 
             when(userRepository.findById("test-uuid")).thenReturn(Optional.of(user));
-            when(jwtService.generateToken("test-uuid")).thenReturn("new-access-token");
-            when(jwtService.generateRefreshToken("test-uuid")).thenReturn("new-refresh-token");
+            when(jwtService.generateToken("test-uuid", "USER")).thenReturn("new-access-token");
+            when(jwtService.generateRefreshToken("test-uuid", "USER")).thenReturn("new-refresh-token");
             when(jwtService.getExpirationMs()).thenReturn(86400000L);
 
             LoginResponse response = authService.refreshToken(oldRefreshToken);
@@ -225,6 +226,7 @@ class AuthServiceTest {
             assertThat(response.getUserId()).isEqualTo("test-uuid");
             assertThat(response.getEmail()).isEqualTo("test@example.com");
             assertThat(response.getExpiresIn()).isEqualTo(86400L);
+            assertThat(response.getRole()).isEqualTo("USER");
         }
 
         @Test
@@ -269,7 +271,7 @@ class AuthServiceTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("帳號已停用");
 
-            verify(jwtService, never()).generateToken(anyString());
+            verify(jwtService, never()).generateToken(anyString(), anyString());
         }
     }
 }

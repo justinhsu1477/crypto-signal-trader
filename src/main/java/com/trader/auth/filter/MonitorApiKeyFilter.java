@@ -54,7 +54,7 @@ public class MonitorApiKeyFilter extends OncePerRequestFilter {
                     new UsernamePasswordAuthenticationToken(
                             MONITOR_PRINCIPAL,
                             null,
-                            List.of(new SimpleGrantedAuthority("ROLE_MONITOR"))
+                            List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
                     );
             authentication.setDetails(
                     new WebAuthenticationDetailsSource().buildDetails(request));

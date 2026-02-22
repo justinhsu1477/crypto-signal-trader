@@ -70,10 +70,11 @@ public class AuthService {
             throw new IllegalArgumentException("帳號或密碼錯誤");
         }
 
-        String token = jwtService.generateToken(user.getUserId());
-        String refreshToken = jwtService.generateRefreshToken(user.getUserId());
+        String role = user.getRole().name();
+        String token = jwtService.generateToken(user.getUserId(), role);
+        String refreshToken = jwtService.generateRefreshToken(user.getUserId(), role);
 
-        log.info("用戶登入成功: email={}", user.getEmail());
+        log.info("用戶登入成功: email={} role={}", user.getEmail(), role);
 
         return LoginResponse.builder()
                 .token(token)
@@ -81,6 +82,7 @@ public class AuthService {
                 .expiresIn(jwtService.getExpirationMs() / 1000)
                 .userId(user.getUserId())
                 .email(user.getEmail())
+                .role(role)
                 .build();
     }
 
@@ -104,10 +106,11 @@ public class AuthService {
             throw new IllegalArgumentException("帳號已停用");
         }
 
-        String newToken = jwtService.generateToken(userId);
-        String newRefreshToken = jwtService.generateRefreshToken(userId);
+        String role = user.getRole().name();
+        String newToken = jwtService.generateToken(userId, role);
+        String newRefreshToken = jwtService.generateRefreshToken(userId, role);
 
-        log.info("Token 刷新成功: userId={}", userId);
+        log.info("Token 刷新成功: userId={} role={}", userId, role);
 
         return LoginResponse.builder()
                 .token(newToken)
@@ -115,6 +118,7 @@ public class AuthService {
                 .expiresIn(jwtService.getExpirationMs() / 1000)
                 .userId(user.getUserId())
                 .email(user.getEmail())
+                .role(role)
                 .build();
     }
 }

@@ -37,12 +37,14 @@ public class JwtService {
      * 生成 JWT Token（24h）
      *
      * @param userId 用戶 ID
+     * @param role   用戶角色 (USER / ADMIN)
      * @return JWT token string
      */
-    public String generateToken(String userId) {
+    public String generateToken(String userId, String role) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(userId)
+                .claim("role", role)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + expirationMs))
                 .signWith(getSigningKey())
@@ -53,13 +55,15 @@ public class JwtService {
      * 生成 Refresh Token（7 天）
      *
      * @param userId 用戶 ID
+     * @param role   用戶角色 (USER / ADMIN)
      * @return refresh token string
      */
-    public String generateRefreshToken(String userId) {
+    public String generateRefreshToken(String userId, String role) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(userId)
                 .claim("type", "refresh")
+                .claim("role", role)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + refreshExpirationMs))
                 .signWith(getSigningKey())
@@ -105,6 +109,22 @@ public class JwtService {
                 .parseSignedClaims(token)
                 .getPayload()
                 .getSubject();
+    }
+
+    /**
+     * 從 Token 中提取 role（向下相容：舊 token 無 role claim 時回傳 "USER"）
+     *
+     * @param token JWT token
+     * @return role string (USER / ADMIN)
+     */
+    public String extractRole(String token) {
+        Object role = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .get("role");
+        return role != null ? role.toString() : "USER";
     }
 
     /**
