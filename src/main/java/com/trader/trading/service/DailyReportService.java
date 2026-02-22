@@ -129,6 +129,9 @@ public class DailyReportService {
                     message,
                     DiscordWebhookService.COLOR_BLUE);
 
+            // 5. 重置每日 AI token 統計
+            monitorHeartbeatService.resetDailyTokenStats();
+
             log.info("每日交易摘要已發送（{}）", dateStr);
 
         } catch (Exception e) {
@@ -325,6 +328,22 @@ public class DailyReportService {
                     wsConnected ? "🟢 已連線" : "🔴 未連線"));
         } catch (Exception e) {
             sb.append("WebSocket: 查詢失敗\n");
+        }
+
+        // AI Token 用量
+        try {
+            Map<String, Long> tokenStats = monitorHeartbeatService.getDailyTokenStats();
+            long calls = tokenStats.get("callCount");
+            long prompt = tokenStats.get("promptTokens");
+            long response = tokenStats.get("responseTokens");
+            if (calls > 0) {
+                sb.append(String.format("🤖 AI 用量: %d 次呼叫 | %,d + %,d = %,d tokens\n",
+                        calls, prompt, response, prompt + response));
+            } else {
+                sb.append("🤖 AI 用量: 無呼叫紀錄\n");
+            }
+        } catch (Exception e) {
+            sb.append("🤖 AI 用量: 查詢失敗\n");
         }
     }
 

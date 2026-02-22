@@ -147,6 +147,20 @@ public class GeminiService {
             }
 
             String text = parts.get(0).getAsJsonObject().get("text").getAsString();
+
+            // 記錄 token 用量（Gemini API 回覆自帶 usageMetadata）
+            JsonObject usageMeta = json.getAsJsonObject("usageMetadata");
+            if (usageMeta != null) {
+                int promptTokens = usageMeta.has("promptTokenCount")
+                        ? usageMeta.get("promptTokenCount").getAsInt() : 0;
+                int candidatesTokens = usageMeta.has("candidatesTokenCount")
+                        ? usageMeta.get("candidatesTokenCount").getAsInt() : 0;
+                int totalTokens = usageMeta.has("totalTokenCount")
+                        ? usageMeta.get("totalTokenCount").getAsInt() : 0;
+                log.info("Gemini token 用量: prompt={}, response={}, total={}",
+                        promptTokens, candidatesTokens, totalTokens);
+            }
+
             return Optional.of(text.trim());
         } catch (Exception e) {
             log.warn("解析 Gemini 回覆失敗: {}", e.getMessage());
