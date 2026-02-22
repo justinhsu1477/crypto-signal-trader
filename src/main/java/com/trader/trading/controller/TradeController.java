@@ -544,6 +544,13 @@ public class TradeController {
             if (r.isSuccess()) {
                 sb.append("✓ 平倉 qty=").append(r.getQuantity())
                         .append(" price=").append(r.getPrice()).append("\n");
+                // 顯示 PnL（由 recordClose 回填）
+                if (r.getTotalCommission() != null) {
+                    sb.append(String.format("手續費: %.2f USDT\n", r.getTotalCommission()));
+                }
+                if (r.getNetProfit() != null) {
+                    sb.append(String.format("已實現損益: %+.2f USDT\n", r.getNetProfit()));
+                }
             } else {
                 sb.append("✗ ").append(r.getErrorMessage()).append("\n");
             }

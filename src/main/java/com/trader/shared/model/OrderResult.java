@@ -18,6 +18,8 @@ public class OrderResult {
     private String errorMessage;
     private String rawResponse;
     private String riskSummary;  // 風控摘要（入場時填入：餘額、1R、保證金等）
+    private Double netProfit;       // 平倉淨利（手動 CLOSE 時由 recordClose 回填）
+    private Double totalCommission; // 平倉總手續費（入場 + 出場）
 
     public static OrderResult fail(String errorMessage) {
         return OrderResult.builder()

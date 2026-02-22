@@ -851,7 +851,11 @@ public class BinanceFuturesService {
                     tradeRecordService.recordPartialClose(symbol, closeOrder, closeRatio, "SIGNAL_CLOSE");
                 } else {
                     // 全平 MARKET 單已成交，直接記錄 CLOSED
-                    tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");
+                    Trade closedTrade = tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");
+                    if (closedTrade != null) {
+                        closeOrder.setNetProfit(closedTrade.getNetProfit());
+                        closeOrder.setTotalCommission(closedTrade.getCommission());
+                    }
                 }
             } catch (Exception e) {
                 log.error("平倉紀錄寫入失敗（不影響交易）: {}", e.getMessage());
