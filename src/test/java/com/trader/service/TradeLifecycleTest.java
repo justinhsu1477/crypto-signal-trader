@@ -65,6 +65,7 @@ class TradeLifecycleTest {
 
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
+        when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
     }
 
     private void setupEntryMocks(double balance, double position, double markPrice) {

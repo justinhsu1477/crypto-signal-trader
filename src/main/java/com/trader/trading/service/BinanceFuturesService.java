@@ -79,11 +79,11 @@ public class BinanceFuturesService {
 
     /**
      * 取得當前有效的 userId（用於解析 per-user 交易參數）
-     * 優先順序：ThreadLocal（廣播模式）→ 全局 defaultUserId
+     * 委託給 TradeRecordService，確保與 recordEntry/recordClose 使用一致的 fallback。
+     * 優先順序：ThreadLocal（廣播模式）→ TRADING_USER_ID 環境參數 → "system-trader"
      */
     private String getActiveUserId() {
-        String threadUserId = TradeRecordService.getCurrentUserId();
-        return threadUserId != null ? threadUserId : "default";
+        return tradeRecordService.getActiveUserId();
     }
 
     // ==================== 帳戶相關 ====================
@@ -468,10 +468,12 @@ public class BinanceFuturesService {
             return List.of(OrderResult.fail("已有未成交的入場掛單，拒絕重複下單"));
         }
 
-        // 2c. 重複訊號防護（signalHash 時間窗口檢查）
-        if (deduplicationService.isDuplicate(signal)) {
-            log.warn("重複訊號，拒絕執行: {} {} entry={} SL={}",
-                    symbol, signal.getSide(), signal.getEntryPriceLow(), signal.getStopLoss());
+        // 2c. 重複訊號防護（per-user signalHash 時間窗口檢查）
+        // 使用 isUserDuplicate：hash 包含 userId，不同用戶對同一訊號不互相阻擋
+        String currentUserId = getActiveUserId();
+        if (deduplicationService.isUserDuplicate(signal, currentUserId)) {
+            log.warn("重複訊號，拒絕執行: userId={} {} {} entry={} SL={}",
+                    currentUserId, symbol, signal.getSide(), signal.getEntryPriceLow(), signal.getStopLoss());
             return List.of(OrderResult.fail("重複訊號，5分鐘內已收到相同訊號"));
         }
 
@@ -1504,7 +1506,7 @@ public class BinanceFuturesService {
                 }
                 cancelAllOrders(symbol);
                 try {
-                    tradeRecordService.recordCancel(symbol);
+                    tradeRecordService.recordCancel(symbol, userId);  // 使用 explicit-userId 版本
                 } catch (Exception e) {
                     log.error("取消紀錄寫入失敗: {}", e.getMessage());
                 }

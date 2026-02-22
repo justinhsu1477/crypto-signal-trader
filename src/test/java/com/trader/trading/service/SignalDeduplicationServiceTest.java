@@ -203,6 +203,174 @@ class SignalDeduplicationServiceTest {
         }
     }
 
+    // ==================== Per-User 去重（Execution-level） ====================
+
+    @Nested
+    @DisplayName("Per-User 去重 (isUserDuplicate)")
+    class UserDeduplicationTests {
+
+        @Test
+        @DisplayName("同一訊號、不同用戶 → 不互相阻擋")
+        void sameSignalDifferentUsersNotBlocked() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            // userA 先執行 — 通過
+            assertThat(service.isUserDuplicate(signal, "user-A")).isFalse();
+            // userB 用同一訊號 — 也通過（hash 不同因為含 userId）
+            assertThat(service.isUserDuplicate(signal, "user-B")).isFalse();
+            // userC 也通過
+            assertThat(service.isUserDuplicate(signal, "user-C")).isFalse();
+        }
+
+        @Test
+        @DisplayName("同一用戶、同一訊號 → 第二次被擋")
+        void sameUserSameSignalBlocked() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            assertThat(service.isUserDuplicate(signal, "user-A")).isFalse();
+            assertThat(service.isUserDuplicate(signal, "user-A")).isTrue();
+        }
+
+        @Test
+        @DisplayName("同一用戶、不同訊號 → 不互相阻擋")
+        void sameUserDifferentSignalsNotBlocked() {
+            TradeSignal signal1 = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+            TradeSignal signal2 = TradeSignal.builder()
+                    .symbol("ETHUSDT").side(TradeSignal.Side.SHORT)
+                    .entryPriceLow(3500).stopLoss(3600).build();
+
+            assertThat(service.isUserDuplicate(signal1, "user-A")).isFalse();
+            assertThat(service.isUserDuplicate(signal2, "user-A")).isFalse();
+        }
+
+        @Test
+        @DisplayName("dedup 關閉 → 全部放行")
+        void dedupDisabledAllowsAll() {
+            when(riskConfig.isDedupEnabled()).thenReturn(false);
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            assertThat(service.isUserDuplicate(signal, "user-A")).isFalse();
+            assertThat(service.isUserDuplicate(signal, "user-A")).isFalse();
+        }
+    }
+
+    // ==================== Per-User Hash 生成 ====================
+
+    @Nested
+    @DisplayName("Per-User Hash 生成 (generateUserHash)")
+    class UserHashGenerationTests {
+
+        @Test
+        @DisplayName("不同 userId 產生不同 hash")
+        void differentUserIdDifferentHash() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            String hashA = service.generateUserHash(signal, "user-A");
+            String hashB = service.generateUserHash(signal, "user-B");
+
+            assertThat(hashA).isNotEqualTo(hashB);
+        }
+
+        @Test
+        @DisplayName("user hash 與全局 hash 不同")
+        void userHashDiffersFromGlobalHash() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            String globalHash = service.generateHash(signal);
+            String userHash = service.generateUserHash(signal, "user-A");
+
+            assertThat(userHash).isNotEqualTo(globalHash);
+        }
+
+        @Test
+        @DisplayName("相同 userId + 相同訊號 → 相同 hash")
+        void sameUserSameSignalSameHash() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            String hash1 = service.generateUserHash(signal, "user-A");
+            String hash2 = service.generateUserHash(signal, "user-A");
+
+            assertThat(hash1).isEqualTo(hash2);
+        }
+    }
+
+    // ==================== Signal-level 去重 ====================
+
+    @Nested
+    @DisplayName("Signal-level 去重 (isSignalProcessed)")
+    class SignalProcessedTests {
+
+        @Test
+        @DisplayName("isSignalProcessed 行為與 isDuplicate 一致")
+        void signalProcessedBehavesLikeIsDuplicate() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+            when(tradeRepository.existsBySignalHashAndCreatedAtAfter(anyString(), any()))
+                    .thenReturn(false);
+
+            // 首次不重複
+            assertThat(service.isSignalProcessed(signal)).isFalse();
+            // 第二次重複
+            assertThat(service.isSignalProcessed(signal)).isTrue();
+        }
+    }
+
+    // ==================== 廣播場景整合 ====================
+
+    @Nested
+    @DisplayName("廣播場景：signal-level + per-user 聯合")
+    class BroadcastScenarioTests {
+
+        @Test
+        @DisplayName("模擬廣播流程：signal-level 通過 → 3 個用戶全部通過 per-user 去重")
+        void broadcastScenario_allUsersPass() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+            when(tradeRepository.existsBySignalHashAndCreatedAtAfter(anyString(), any()))
+                    .thenReturn(false);
+
+            // Step 1: signal-level 通過（廣播入口）
+            assertThat(service.isSignalProcessed(signal)).isFalse();
+
+            // Step 2: 3 個用戶的 per-user 去重全部通過
+            assertThat(service.isUserDuplicate(signal, "user-A")).isFalse();
+            assertThat(service.isUserDuplicate(signal, "user-B")).isFalse();
+            assertThat(service.isUserDuplicate(signal, "user-C")).isFalse();
+        }
+
+        @Test
+        @DisplayName("模擬重複廣播：signal-level 第二次被擋")
+        void broadcastScenario_duplicateSignalBlocked() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+            when(tradeRepository.existsBySignalHashAndCreatedAtAfter(anyString(), any()))
+                    .thenReturn(false);
+
+            // 第一次廣播通過
+            assertThat(service.isSignalProcessed(signal)).isFalse();
+
+            // Discord 重發同一訊號 → signal-level 擋住，不會再進入廣播
+            assertThat(service.isSignalProcessed(signal)).isTrue();
+        }
+    }
+
     // ==================== 快取清理 ====================
 
     @Nested
@@ -236,6 +404,42 @@ class SignalDeduplicationServiceTest {
 
             // 過期的 501 條應被清理，只剩剛插入的 1 條
             assertThat(cache.size()).isLessThanOrEqualTo(2); // hash + possibly one more
+        }
+    }
+
+    // ==================== 邊界情況：null / 預設 userId ====================
+
+    @Nested
+    @DisplayName("邊界情況：null / 預設 userId")
+    class NullAndDefaultUserIdTests {
+
+        @Test
+        @DisplayName("null userId — 不拋 NPE，能正常去重")
+        void isUserDuplicate_nullUserId_noNPE() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            // 第一次不應拋 NPE 且通過
+            assertThat(service.isUserDuplicate(signal, null)).isFalse();
+            // null userId 第二次同 signal 被擋
+            assertThat(service.isUserDuplicate(signal, null)).isTrue();
+        }
+
+        @Test
+        @DisplayName("固定 userId（如 BECK_TEST）— 能正確去重且不與其他 userId 衝突")
+        void isUserDuplicate_fixedUserId_blocksCorrectly() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            // BECK_TEST 第一次通過
+            assertThat(service.isUserDuplicate(signal, "BECK_TEST")).isFalse();
+            // BECK_TEST 第二次被擋
+            assertThat(service.isUserDuplicate(signal, "BECK_TEST")).isTrue();
+
+            // 不同 userId 不受影響
+            assertThat(service.isUserDuplicate(signal, "test-user")).isFalse();
         }
     }
 }

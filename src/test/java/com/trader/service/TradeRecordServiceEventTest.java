@@ -38,7 +38,7 @@ class TradeRecordServiceEventTest {
         tradeRepository = mock(TradeRepository.class);
         tradeEventRepository = mock(TradeEventRepository.class);
         service = new TradeRecordService(tradeRepository, tradeEventRepository,
-                new ObjectMapper(), new MultiUserConfig());
+                new ObjectMapper(), new MultiUserConfig(), "system-trader");
     }
 
     // ==================== recordOrderEvent 測試 ====================

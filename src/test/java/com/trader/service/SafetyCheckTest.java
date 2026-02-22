@@ -123,6 +123,7 @@ class SafetyCheckTest {
 
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
+            when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
@@ -163,6 +164,7 @@ class SafetyCheckTest {
 
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-5000.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
+            when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
@@ -200,6 +202,7 @@ class SafetyCheckTest {
             // 今日虧損 -1000 USDT
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-1000.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
+            when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
@@ -266,6 +269,7 @@ class SafetyCheckTest {
             // 今日虧損 -1999 USDT（接近上限但未超過）
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-1999.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
+            when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
@@ -310,6 +314,7 @@ class SafetyCheckTest {
             // 剛好等於 2000
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-2000.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
+            when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
@@ -349,7 +354,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of(loss1, loss2, win1));
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig(), "system-trader");
             double todayLoss = service.getTodayRealizedLoss();
 
             // 只計算虧損部分：-500 + -300 = -800
@@ -367,7 +372,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of(win1, win2));
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig(), "system-trader");
             double todayLoss = service.getTodayRealizedLoss();
 
             assertThat(todayLoss).isEqualTo(0.0);
@@ -381,7 +386,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of());
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig(), "system-trader");
             double todayLoss = service.getTodayRealizedLoss();
 
             assertThat(todayLoss).isEqualTo(0.0);
@@ -398,7 +403,7 @@ class SafetyCheckTest {
             when(mockRepo.findClosedTradesAfter(any(LocalDateTime.class)))
                     .thenReturn(List.of(loss1, nullTrade));
 
-            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig());
+            TradeRecordService service = new TradeRecordService(mockRepo, null, null, new com.trader.trading.config.MultiUserConfig(), "system-trader");
             double todayLoss = service.getTodayRealizedLoss();
 
             assertThat(todayLoss).isEqualTo(-500.0);

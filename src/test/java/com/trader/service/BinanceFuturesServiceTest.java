@@ -63,8 +63,10 @@ class BinanceFuturesServiceTest {
                 mockTradeConfigResolver));
 
         // 通用 mock — 大部分測試需要的基礎環境
+        when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
+        when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
     }
 
     // ==================== Helper ====================
@@ -230,7 +232,7 @@ class BinanceFuturesServiceTest {
         @DisplayName("重複訊號 → 拒絕")
         void rejectDuplicateSignal() {
             setupEntryMocks(1000, 0, 95000);
-            when(mockDedup.isDuplicate(any())).thenReturn(true);
+            when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(true);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             List<OrderResult> results = service.executeSignal(signal);

@@ -34,7 +34,7 @@ class ProfitCalculationTest {
 
     private TradeRecordService createService() {
         // calculateProfit() 不依賴 repository，傳 null 即可
-        return new TradeRecordService(null, null, null, new com.trader.trading.config.MultiUserConfig());
+        return new TradeRecordService(null, null, null, new com.trader.trading.config.MultiUserConfig(), "system-trader");
     }
 
     @Nested
