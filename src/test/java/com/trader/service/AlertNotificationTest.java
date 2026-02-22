@@ -60,6 +60,7 @@ class AlertNotificationTest {
 
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
+            when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
             when(mockDedup.generateHash(any())).thenReturn("testhash");
 
             BinanceFuturesService service = spy(new BinanceFuturesService(

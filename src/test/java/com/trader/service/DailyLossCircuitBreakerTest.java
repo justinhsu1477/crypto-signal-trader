@@ -62,6 +62,7 @@ class DailyLossCircuitBreakerTest {
                 mockTradeConfigResolver));
 
         when(mockDedup.isDuplicate(any())).thenReturn(false);
+        when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
     }
 
     private void setupMocks(double balance, double todayLoss) {

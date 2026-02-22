@@ -11,7 +11,6 @@ import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.repository.TradeEventRepository;
 import com.trader.trading.repository.TradeRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -38,17 +37,26 @@ import java.util.*;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TradeRecordService {
 
     private final TradeRepository tradeRepository;
     private final TradeEventRepository tradeEventRepository;
     private final ObjectMapper objectMapper;
     private final MultiUserConfig multiUserConfig;
+    private final String defaultUserId;  // 單用戶模式的用戶 ID（由 SingleUserInitializer 確保存在）
 
-    // ========== 多用戶支援 ==========
-    @Value("${trading.user-id:system-trader}")
-    private String defaultUserId;  // 單用戶模式的用戶 ID（由 SingleUserInitializer 確保存在）
+    public TradeRecordService(
+            TradeRepository tradeRepository,
+            TradeEventRepository tradeEventRepository,
+            ObjectMapper objectMapper,
+            MultiUserConfig multiUserConfig,
+            @Value("${trading.user-id:system-trader}") String defaultUserId) {
+        this.tradeRepository = tradeRepository;
+        this.tradeEventRepository = tradeEventRepository;
+        this.objectMapper = objectMapper;
+        this.multiUserConfig = multiUserConfig;
+        this.defaultUserId = defaultUserId;
+    }
 
     /** 廣播模式下，BinanceFuturesService 會設定當前用戶 ID */
     private static final ThreadLocal<String> CURRENT_USER_ID = new ThreadLocal<>();
@@ -71,8 +79,11 @@ public class TradeRecordService {
     /**
      * 取得當前有效的 userId
      * 優先順序：ThreadLocal（廣播模式）→ defaultUserId（全局設定）
+     *
+     * 注意：此方法供外部讀取用（如 BinanceFuturesService 傳遞 userId），
+     * 寫入/查詢仍優先使用 explicit-userId 版本的方法。
      */
-    private String getActiveUserId() {
+    public String getActiveUserId() {
         String threadUserId = CURRENT_USER_ID.get();
         if (threadUserId != null && !threadUserId.isBlank()) {
             return threadUserId;
@@ -90,6 +101,17 @@ public class TradeRecordService {
     private Optional<Trade> resolveOpenTrade(String symbol) {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
+            return tradeRepository.findUserOpenTrade(userId, symbol);
+        }
+        return tradeRepository.findOpenTrade(symbol);
+    }
+
+    /**
+     * 查找 OPEN 交易 — 顯式 userId 版本（供廣播跟單等需要明確指定用戶的場景）
+     * 減少對 ThreadLocal 的隱式依賴，降低 userId 串錯的風險。
+     */
+    private Optional<Trade> resolveOpenTrade(String symbol, String userId) {
+        if (multiUserConfig.isEnabled()) {
             return tradeRepository.findUserOpenTrade(userId, symbol);
         }
         return tradeRepository.findOpenTrade(symbol);
@@ -171,6 +193,27 @@ public class TradeRecordService {
     }
 
     /**
+     * ENTRY 成功 — 顯式 userId 版本（供廣播跟單使用）
+     * 不依賴 ThreadLocal，直接用傳入的 userId。
+     */
+    @Transactional
+    public String recordEntry(TradeSignal signal, OrderResult entryOrder, OrderResult slOrder,
+                              int leverage, double riskAmount, String signalHash, String userId) {
+        // 暫時設定 ThreadLocal，讓內部邏輯一致（如 saveEvent 等不直接用 userId 的方法）
+        String previousUserId = CURRENT_USER_ID.get();
+        try {
+            CURRENT_USER_ID.set(userId);
+            return recordEntry(signal, entryOrder, slOrder, leverage, riskAmount, signalHash);
+        } finally {
+            if (previousUserId != null) {
+                CURRENT_USER_ID.set(previousUserId);
+            } else {
+                CURRENT_USER_ID.remove();
+            }
+        }
+    }
+
+    /**
      * DCA 補倉：更新現有 Trade 的加權平均入場價、總數量、SL、風險金額、dcaCount
      *
      * @param symbol     交易對
@@ -243,6 +286,16 @@ public class TradeRecordService {
     }
 
     /**
+     * 查詢 DCA 補倉次數 — 顯式 userId 版本
+     */
+    public int getDcaCount(String symbol, String userId) {
+        if (multiUserConfig.isEnabled()) {
+            return tradeRepository.findUserDcaCountBySymbol(userId, symbol).orElse(0);
+        }
+        return tradeRepository.findDcaCountBySymbol(symbol).orElse(0);
+    }
+
+    /**
      * CLOSE：更新 Trade 為 CLOSED，計算盈虧
      *
      * @param symbol     交易對
@@ -256,9 +309,11 @@ public class TradeRecordService {
             log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
             return null;
         }
+        return doRecordClose(openTradeOpt.get(), closeOrder, exitReason);
+    }
 
-        Trade trade = openTradeOpt.get();
-
+    /** 內部共用的平倉紀錄邏輯（供 recordClose 和 explicit-userId 版本共用） */
+    private Trade doRecordClose(Trade trade, OrderResult closeOrder, String exitReason) {
         // 更新平倉資訊
         trade.setExitPrice(closeOrder.getPrice());
         trade.setExitQuantity(closeOrder.getQuantity());
@@ -277,7 +332,7 @@ public class TradeRecordService {
         saveEvent(trade.getTradeId(), "CLOSE_PLACED", closeOrder);
 
         log.info("交易平倉紀錄: tradeId={} {} exitPrice={} 淨利={} 原因={}",
-                trade.getTradeId(), symbol, closeOrder.getPrice(), trade.getNetProfit(), exitReason);
+                trade.getTradeId(), trade.getSymbol(), closeOrder.getPrice(), trade.getNetProfit(), exitReason);
 
         return trade;
     }
@@ -334,6 +389,20 @@ public class TradeRecordService {
     public Double getEntryPrice(String symbol) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         return openTradeOpt.map(Trade::getEntryPrice).orElse(null);
+    }
+
+    /**
+     * CLOSE — 顯式 userId 版本（供廣播跟單使用）
+     */
+    @Transactional
+    public Trade recordClose(String symbol, OrderResult closeOrder, String exitReason, String userId) {
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol, userId);
+        if (openTradeOpt.isEmpty()) {
+            log.warn("找不到 OPEN 狀態的交易紀錄: {} userId={}", symbol, userId);
+            return null;
+        }
+        // 委託給內部邏輯（Trade 已找到，不需要再 resolve）
+        return doRecordClose(openTradeOpt.get(), closeOrder, exitReason);
     }
 
     /**
@@ -407,6 +476,34 @@ public class TradeRecordService {
         tradeEventRepository.save(event);
 
         log.info("交易取消紀錄: tradeId={} {}", trade.getTradeId(), symbol);
+    }
+
+    /**
+     * CANCEL — 顯式 userId 版本（供廣播跟單使用）
+     */
+    @Transactional
+    public void recordCancel(String symbol, String userId) {
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol, userId);
+        if (openTradeOpt.isEmpty()) {
+            log.warn("找不到 OPEN 狀態的交易紀錄: {} userId={}", symbol, userId);
+            return;
+        }
+
+        Trade trade = openTradeOpt.get();
+        trade.setStatus("CANCELLED");
+        trade.setExitReason("CANCEL");
+        tradeRepository.save(trade);
+
+        TradeEvent event = TradeEvent.builder()
+                .tradeId(trade.getTradeId())
+                .eventType("CANCEL")
+                .success(true)
+                .detail(toJson(Map.of("reason", "掛單取消", "userId", userId)))
+                .build();
+
+        tradeEventRepository.save(event);
+
+        log.info("交易取消紀錄: tradeId={} {} userId={}", trade.getTradeId(), symbol, userId);
     }
 
     /**
@@ -496,6 +593,16 @@ public class TradeRecordService {
     }
 
     /**
+     * 查詢所有 OPEN 交易 — 顯式 userId 版本
+     */
+    public List<Trade> findAllOpenTrades(String userId) {
+        if (multiUserConfig.isEnabled()) {
+            return tradeRepository.findByUserIdAndStatus(userId, "OPEN");
+        }
+        return tradeRepository.findAllOpenTrades();
+    }
+
+    /**
      * 依狀態查詢交易
      */
     public List<Trade> findByStatus(String status) {
@@ -518,16 +625,30 @@ public class TradeRecordService {
     }
 
     /**
-     * 查詢單筆交易
+     * 查詢單筆交易（多用戶模式下驗證歸屬權，防止跨用戶查詢）
      */
     public Optional<Trade> findById(String tradeId) {
-        return tradeRepository.findById(tradeId);
+        Optional<Trade> trade = tradeRepository.findById(tradeId);
+        if (multiUserConfig.isEnabled() && trade.isPresent()) {
+            String userId = getActiveUserId();
+            if (!userId.equals(trade.get().getUserId())) {
+                log.warn("跨用戶查詢拒絕: tradeId={} 歸屬={} 查詢者={}", tradeId, trade.get().getUserId(), userId);
+                return Optional.empty();
+            }
+        }
+        return trade;
     }
 
     /**
-     * 查詢某筆交易的所有事件
+     * 查詢某筆交易的所有事件（多用戶模式下先驗證交易歸屬權）
      */
     public List<TradeEvent> findEvents(String tradeId) {
+        if (multiUserConfig.isEnabled()) {
+            Optional<Trade> trade = findById(tradeId); // 已含 userId 檢查
+            if (trade.isEmpty()) {
+                return List.of();
+            }
+        }
         return tradeEventRepository.findByTradeIdOrderByTimestampAsc(tradeId);
     }
 
@@ -899,7 +1020,13 @@ public class TradeRecordService {
      */
     @Transactional
     public Map<String, Object> cleanupStaleTrades(java.util.function.Function<String, Double> positionChecker) {
-        List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
+        List<Trade> openTrades;
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            openTrades = tradeRepository.findByUserIdAndStatus(userId, "OPEN");
+        } else {
+            openTrades = tradeRepository.findByStatus("OPEN");
+        }
         int cleaned = 0;
         int skipped = 0;
         List<String> details = new ArrayList<>();
