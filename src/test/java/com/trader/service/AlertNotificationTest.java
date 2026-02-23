@@ -250,12 +250,12 @@ class AlertNotificationTest {
             when(mockCall1.execute()).thenThrow(new IOException("Connection reset"));
 
             Response successResponse = new Response.Builder()
-                    .request(new Request.Builder().url("https://fapi.binance.com/fapi/v1/order").build())
+                    .request(new Request.Builder().url("https://fapi.binance.com/fapi/v1/algoOrder").build())
                     .protocol(Protocol.HTTP_1_1)
                     .code(200)
                     .message("OK")
                     .body(ResponseBody.create(
-                            "{\"orderId\":999,\"symbol\":\"BTCUSDT\",\"side\":\"SELL\",\"type\":\"STOP_MARKET\",\"price\":\"0\",\"origQty\":\"0.250\"}",
+                            "{\"algoId\":999,\"clientAlgoId\":\"SL-test\",\"algoType\":\"CONDITIONAL\",\"orderType\":\"STOP_MARKET\",\"symbol\":\"BTCUSDT\",\"algoStatus\":\"NEW\",\"triggerPrice\":\"93000.0\"}",
                             MediaType.get("application/json")))
                     .build();
             when(mockCall2.execute()).thenReturn(successResponse);

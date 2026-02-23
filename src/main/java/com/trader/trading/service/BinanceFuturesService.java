@@ -269,33 +269,39 @@ public class BinanceFuturesService {
     }
 
     public OrderResult placeStopLoss(String symbol, String side, double stopPrice, double quantity) {
-        String endpoint = "/fapi/v1/order";
+        String endpoint = "/fapi/v1/algoOrder";
+        String formattedQty = formatQuantity(symbol, quantity);
         Map<String, String> params = new LinkedHashMap<>();
         params.put("symbol", symbol);
         params.put("side", side);
         params.put("type", "STOP_MARKET");
-        params.put("stopPrice", formatPrice(stopPrice));
-        params.put("quantity", formatQuantity(symbol, quantity));
-        params.put("newClientOrderId", generateClientOrderId("SL"));
+        params.put("algoType", "CONDITIONAL");
+        params.put("triggerPrice", formatPrice(stopPrice));
+        params.put("quantity", formattedQty);
+        params.put("clientAlgoId", generateClientOrderId("SL"));
 
-        log.info("設定止損: {} {} stopPrice={}", symbol, side, stopPrice);
-        String response = sendSignedPostWithRetry(endpoint, params);
-        return parseOrderResponse(response);
+        log.info("設定止損 (Algo): {} {} triggerPrice={}", symbol, side, stopPrice);
+        String response = sendSignedPostWithRetry(endpoint, params, "clientAlgoId");
+        return parseAlgoOrderResponse(response, symbol, side, "STOP_MARKET", stopPrice,
+                Double.parseDouble(formattedQty));
     }
 
     public OrderResult placeTakeProfit(String symbol, String side, double stopPrice, double quantity) {
-        String endpoint = "/fapi/v1/order";
+        String endpoint = "/fapi/v1/algoOrder";
+        String formattedQty = formatQuantity(symbol, quantity);
         Map<String, String> params = new LinkedHashMap<>();
         params.put("symbol", symbol);
         params.put("side", side);
         params.put("type", "TAKE_PROFIT_MARKET");
-        params.put("stopPrice", formatPrice(stopPrice));
-        params.put("quantity", formatQuantity(symbol, quantity));
-        params.put("newClientOrderId", generateClientOrderId("TP"));
+        params.put("algoType", "CONDITIONAL");
+        params.put("triggerPrice", formatPrice(stopPrice));
+        params.put("quantity", formattedQty);
+        params.put("clientAlgoId", generateClientOrderId("TP"));
 
-        log.info("設定止盈: {} {} stopPrice={}", symbol, side, stopPrice);
-        String response = sendSignedPostWithRetry(endpoint, params);
-        return parseOrderResponse(response);
+        log.info("設定止盈 (Algo): {} {} triggerPrice={}", symbol, side, stopPrice);
+        String response = sendSignedPostWithRetry(endpoint, params, "clientAlgoId");
+        return parseAlgoOrderResponse(response, symbol, side, "TAKE_PROFIT_MARKET", stopPrice,
+                Double.parseDouble(formattedQty));
     }
 
     public String cancelOrder(String symbol, long orderId) {
@@ -306,57 +312,80 @@ public class BinanceFuturesService {
         return sendSignedDelete(endpoint, params);
     }
 
+    /**
+     * 取消所有訂單：標準訂單 + Algo 訂單（SL/TP）
+     * 標準 allOpenOrders 不包含 Algo 訂單，需額外取消
+     */
     public String cancelAllOrders(String symbol) {
+        // 1. 取消標準訂單 (LIMIT 入場單等)
         String endpoint = "/fapi/v1/allOpenOrders";
         Map<String, String> params = new LinkedHashMap<>();
         params.put("symbol", symbol);
-        return sendSignedDelete(endpoint, params);
+        String result = sendSignedDelete(endpoint, params);
+
+        // 2. 取消 Algo 訂單 (SL/TP)
+        try {
+            cancelSLTPOrders(symbol);
+        } catch (Exception e) {
+            log.error("cancelAllOrders: 取消 Algo SL/TP 失敗: {}", e.getMessage());
+            discordWebhookService.sendNotification(
+                    "⚠️ Algo 訂單取消失敗",
+                    String.format("%s\n取消標準訂單成功，但 Algo SL/TP 取消失敗\n原因: %s\n請手動檢查",
+                            symbol, e.getMessage()),
+                    DiscordWebhookService.COLOR_YELLOW);
+        }
+
+        return result;
     }
 
     /**
-     * 只取消 STOP_MARKET 和 TAKE_PROFIT_MARKET 訂單，保留 LIMIT 入場單
+     * 只取消 STOP_MARKET 和 TAKE_PROFIT_MARKET Algo 訂單，保留 LIMIT 入場單
      * 用於 DCA 補倉時：需要更新 SL/TP 但不能取消已掛的入場單
      */
     public void cancelSLTPOrders(String symbol) {
-        String response = getOpenOrders(symbol);
+        String response = getOpenAlgoOrders(symbol);
         try {
-            JsonArray orders = gson.fromJson(response, JsonArray.class);
+            JsonArray orders = parseAlgoOrdersResponse(response);
+            if (orders == null || orders.isEmpty()) return;
+
             for (JsonElement elem : orders) {
                 JsonObject order = elem.getAsJsonObject();
-                String type = order.get("type").getAsString();
+                String type = order.has("orderType") ? order.get("orderType").getAsString() : "";
                 if ("STOP_MARKET".equals(type) || "TAKE_PROFIT_MARKET".equals(type)) {
-                    long orderId = order.get("orderId").getAsLong();
-                    log.info("DCA: 取消舊的 {} 訂單 {}", type, orderId);
-                    cancelOrder(symbol, orderId);
+                    long algoId = order.get("algoId").getAsLong();
+                    log.info("取消舊的 {} Algo 訂單 algoId={}", type, algoId);
+                    cancelAlgoOrder(symbol, algoId);
                 }
             }
         } catch (Exception e) {
-            log.error("取消 SL/TP 訂單失敗: {}", e.getMessage());
-            throw new RuntimeException("取消 SL/TP 訂單失敗: " + e.getMessage(), e);
+            log.error("取消 SL/TP Algo 訂單失敗: {}", e.getMessage());
+            throw new RuntimeException("取消 SL/TP Algo 訂單失敗: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 查詢當前掛單中的 SL/TP 價格
-     * @return double[2]: [0]=STOP_MARKET stopPrice, [1]=TAKE_PROFIT_MARKET stopPrice; 0 表示不存在
+     * 查詢當前 Algo 掛單中的 SL/TP 價格
+     * @return double[2]: [0]=STOP_MARKET triggerPrice, [1]=TAKE_PROFIT_MARKET triggerPrice; 0 表示不存在
      */
     public double[] getCurrentSLTPPrices(String symbol) {
         double slPrice = 0;
         double tpPrice = 0;
         try {
-            String response = getOpenOrders(symbol);
-            JsonArray orders = gson.fromJson(response, JsonArray.class);
-            for (JsonElement elem : orders) {
-                JsonObject order = elem.getAsJsonObject();
-                String type = order.get("type").getAsString();
-                if ("STOP_MARKET".equals(type)) {
-                    slPrice = order.get("stopPrice").getAsDouble();
-                } else if ("TAKE_PROFIT_MARKET".equals(type)) {
-                    tpPrice = order.get("stopPrice").getAsDouble();
+            String response = getOpenAlgoOrders(symbol);
+            JsonArray orders = parseAlgoOrdersResponse(response);
+            if (orders != null) {
+                for (JsonElement elem : orders) {
+                    JsonObject order = elem.getAsJsonObject();
+                    String type = order.has("orderType") ? order.get("orderType").getAsString() : "";
+                    if ("STOP_MARKET".equals(type)) {
+                        slPrice = Double.parseDouble(order.get("triggerPrice").getAsString());
+                    } else if ("TAKE_PROFIT_MARKET".equals(type)) {
+                        tpPrice = Double.parseDouble(order.get("triggerPrice").getAsString());
+                    }
                 }
             }
         } catch (Exception e) {
-            log.warn("查詢 SL/TP 價格失敗: {}", e.getMessage());
+            log.error("查詢 SL/TP 價格失敗: {}", e.getMessage());
         }
         return new double[]{slPrice, tpPrice};
     }
@@ -366,6 +395,30 @@ public class BinanceFuturesService {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("symbol", symbol);
         return sendSignedGet(endpoint, params);
+    }
+
+    /**
+     * 查詢 Algo 掛單（SL/TP 已遷移至 Algo Order API）
+     */
+    public String getOpenAlgoOrders(String symbol) {
+        String endpoint = "/fapi/v1/openAlgoOrders";
+        Map<String, String> params = new LinkedHashMap<>();
+        if (symbol != null) {
+            params.put("symbol", symbol);
+        }
+        params.put("algoType", "CONDITIONAL");
+        return sendSignedGet(endpoint, params);
+    }
+
+    /**
+     * 取消 Algo 訂單（SL/TP）
+     * Binance DELETE /fapi/v1/algoOrder 只需 algoId（或 clientAlgoId），不需 symbol
+     */
+    public String cancelAlgoOrder(String symbol, long algoId) {
+        String endpoint = "/fapi/v1/algoOrder";
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("algoId", String.valueOf(algoId));
+        return sendSignedDelete(endpoint, params);
     }
 
     // ==================== 新的交易流程（以損定倉） ====================
@@ -1189,6 +1242,81 @@ public class BinanceFuturesService {
         }
     }
 
+    /**
+     * 解析 Algo Order API 回應
+     * 成功回應格式（HTTP 200）: {"algoId":2146760, "clientAlgoId":"xxx", "algoType":"CONDITIONAL",
+     *   "orderType":"STOP_MARKET", "symbol":"BTCUSDT", "algoStatus":"NEW", "triggerPrice":"93000.0", ...}
+     * 失敗回應格式（HTTP 4xx）: {"code":-2021, "msg":"Order would immediately trigger."}
+     * 成功時沒有 code/msg 欄位；有 code 欄位代表失敗。
+     */
+    private OrderResult parseAlgoOrderResponse(String response, String symbol, String side,
+                                                String type, double triggerPrice, double quantity) {
+        try {
+            JsonObject json = gson.fromJson(response, JsonObject.class);
+
+            // 失敗判定：有 code 欄位且為負數 → API 錯誤
+            if (json.has("code")) {
+                int code = json.get("code").getAsInt();
+                String msg = json.has("msg") ? json.get("msg").getAsString() : "";
+                if (code < 0) {
+                    return OrderResult.fail("Algo order failed [" + code + "]: " + msg);
+                }
+            }
+
+            // 成功判定：有 algoId 欄位
+            if (!json.has("algoId")) {
+                return OrderResult.fail("Algo order response missing algoId: " + response);
+            }
+
+            String algoId = String.valueOf(json.get("algoId").getAsLong());
+
+            return OrderResult.builder()
+                    .success(true)
+                    .orderId(algoId)  // 用 orderId 欄位存放 algoId
+                    .symbol(symbol)
+                    .side(side)
+                    .type(type)
+                    .price(triggerPrice)
+                    .quantity(quantity)
+                    .rawResponse(response)
+                    .build();
+        } catch (Exception e) {
+            return OrderResult.fail("Failed to parse algo order response: " + response);
+        }
+    }
+
+    /**
+     * 解析 GET /fapi/v1/openAlgoOrders 的回應
+     * 成功時回傳直接 JSON 陣列 [{...}, {...}]（非包在 {"orders": [...]} 裡）
+     * 失敗時回傳 {"code":-xxx, "msg":"..."}
+     *
+     * @return JsonArray of orders, or null if empty/error
+     * @throws RuntimeException if Binance returns an API error
+     */
+    private JsonArray parseAlgoOrdersResponse(String response) {
+        JsonElement element = gson.fromJson(response, JsonElement.class);
+
+        // Binance 錯誤回應是 JsonObject: {"code":-1021, "msg":"..."}
+        if (element.isJsonObject()) {
+            JsonObject obj = element.getAsJsonObject();
+            if (obj.has("code") && obj.get("code").getAsInt() < 0) {
+                String msg = obj.has("msg") ? obj.get("msg").getAsString() : "";
+                throw new RuntimeException("查詢 Algo 訂單失敗 [" + obj.get("code").getAsInt() + "]: " + msg);
+            }
+            // 非預期的 object 格式，記錄並回傳 null
+            log.warn("openAlgoOrders 回傳非預期格式: {}", response);
+            return null;
+        }
+
+        // 正常回應是直接 JSON 陣列
+        if (element.isJsonArray()) {
+            return element.getAsJsonArray();
+        }
+
+        log.warn("openAlgoOrders 回傳無法解析: {}", response);
+        return null;
+    }
+
     // ==================== HTTP 請求方法 ====================
 
     private String sendPublicGet(String endpoint) {
@@ -1287,11 +1415,15 @@ public class BinanceFuturesService {
 
     /**
      * 帶 idempotent key 的下單重試（僅用於 SL/TP）
-     * 用 newClientOrderId 確保 Binance 不會重複成交
+     * 用 newClientOrderId/clientAlgoId 確保 Binance 不會重複成交
      * 只有 IOException（網路斷線/timeout）才重試，收到 HTTP 回應（含 4xx/5xx）不重試
      */
     private String sendSignedPostWithRetry(String endpoint, Map<String, String> params) {
-        String clientOrderId = params.get("newClientOrderId");
+        return sendSignedPostWithRetry(endpoint, params, "newClientOrderId");
+    }
+
+    private String sendSignedPostWithRetry(String endpoint, Map<String, String> params, String clientIdKey) {
+        String clientOrderId = params.get(clientIdKey);
         IOException lastException = null;
 
         for (int attempt = 0; attempt <= ORDER_MAX_RETRIES; attempt++) {

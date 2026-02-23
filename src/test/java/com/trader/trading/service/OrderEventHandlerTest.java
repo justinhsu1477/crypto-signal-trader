@@ -588,6 +588,489 @@ class OrderEventHandlerTest {
         }
     }
 
+    // ==================== ALGO_UPDATE 事件 ====================
+
+    @Nested
+    @DisplayName("ALGO_UPDATE — Algo 訂單狀態變更")
+    class AlgoUpdateTests {
+
+        @Test
+        @DisplayName("ALGO_UPDATE TRIGGERED STOP_MARKET → 暫存 SL_TRIGGERED hint")
+        void algoTriggeredSl_storesPendingHint() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED", 12345L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(event);
+
+            // 不應直接觸發 recordCloseFromStream（要等 ORDER_TRADE_UPDATE MARKET）
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+        }
+
+        @Test
+        @DisplayName("ALGO_UPDATE TRIGGERED TAKE_PROFIT_MARKET → 暫存 TP_TRIGGERED hint")
+        void algoTriggeredTp_storesPendingHint() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildAlgoUpdate("ETHUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED", 67890L, "TP-1700000-c3d4");
+            handler.handleAlgoUpdate(event);
+
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+        }
+
+        @Test
+        @DisplayName("ALGO_UPDATE CANCELED（仍有持倉）→ recordProtectionLost + 告警")
+        void algoCanceled_triggersProtectionLost() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // Binance 用美式拼法 CANCELED（單 L）
+            JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED", 12345L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(event);
+
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("12345"), eq("CANCELED"));
+
+            assertThat(lastTitle).contains("止損單被取消");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("ALGO_UPDATE EXPIRED（仍有持倉）→ recordProtectionLost + 告警")
+        void algoExpired_triggersProtectionLost() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildAlgoUpdate("ETHUSDT", "TAKE_PROFIT_MARKET", "EXPIRED", 67890L, "TP-1700000-c3d4");
+            handler.handleAlgoUpdate(event);
+
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("67890"), eq("EXPIRED"));
+
+            assertThat(lastTitle).contains("止盈單被取消");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_YELLOW);
+        }
+
+        @Test
+        @DisplayName("ALGO_UPDATE REJECTED（仍有持倉）→ 無條件 recordProtectionLost + 告警")
+        void algoRejected_triggersProtectionLost() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "REJECTED", 12345L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(event);
+
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("12345"), eq("REJECTED"));
+
+            assertThat(lastTitle).contains("止損單被取消");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("ALGO_UPDATE REJECTED 即使有 sibling hint 也要告警（非 OCO 行為）")
+        void algoRejected_alwaysAlerts_evenWithSibling() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // TP 已觸發（sibling hint 存在）
+            JsonObject tpTriggered = buildAlgoUpdate("BTCUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED",
+                    200L, "TP-1700000-c3d4", "77001");
+            handler.handleAlgoUpdate(tpTriggered);
+
+            // SL 被 REJECTED（而非 CANCELED）→ 無條件告警，不走 OCO 跳過
+            JsonObject slRejected = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "REJECTED",
+                    100L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(slRejected);
+
+            // REJECTED 應該無條件告警
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("100"), eq("REJECTED"));
+            assertThat(lastTitle).contains("止損單被取消");
+        }
+
+        @Test
+        @DisplayName("ALGO_UPDATE 缺少 'o' 欄位 → 安全忽略")
+        void algoUpdateMissingOrderField() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = new JsonObject();
+            event.addProperty("e", "ALGO_UPDATE");
+            // 沒有 "o" 欄位
+
+            assertThatCode(() -> handler.handleAlgoUpdate(event))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    // ==================== ALGO_UPDATE + ORDER_TRADE_UPDATE 整合 ====================
+
+    @Nested
+    @DisplayName("Algo 觸發 → MARKET 成交整合測試")
+    class AlgoMarketIntegration {
+
+        @Test
+        @DisplayName("TRIGGERED(SL) + orderId 精確匹配 MARKET FILLED → SL_TRIGGERED")
+        void algoSlTriggeredWithOrderIdMatch() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // ALGO_UPDATE TRIGGERED 帶 ai=999888777（觸發後 MARKET 單的 orderId）
+            JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
+                    12345L, "SL-1700000-a1b2", "999888777");
+            handler.handleAlgoUpdate(algoEvent);
+
+            // ORDER_TRADE_UPDATE MARKET FILLED，orderId=999888777 與 hint 的 ai 匹配
+            JsonObject marketEvent = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 999888777L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketEvent);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(93000.0), eq(0.5),
+                    eq(18.6), eq(-1000.0),
+                    eq("999888777"), eq("SL_TRIGGERED"),
+                    eq(1700000000000L));
+
+            assertThat(lastTitle).contains("止損觸發");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("TRIGGERED(TP) + orderId 精確匹配 MARKET FILLED → TP_TRIGGERED")
+        void algoTpTriggeredWithOrderIdMatch() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject algoEvent = buildAlgoUpdate("ETHUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED",
+                    67890L, "TP-1700000-c3d4", "111222333");
+            handler.handleAlgoUpdate(algoEvent);
+
+            JsonObject marketEvent = buildOrderTradeUpdate(
+                    "ETHUSDT", "MARKET", "FILLED", "BUY",
+                    3500.0, 1.0, 1.4, "USDT", 200.0, 111222333L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketEvent);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("ETHUSDT"), eq(3500.0), eq(1.0),
+                    eq(1.4), eq(200.0),
+                    eq("111222333"), eq("TP_TRIGGERED"),
+                    eq(1700000000000L));
+
+            assertThat(lastTitle).contains("止盈觸發");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_GREEN);
+        }
+
+        @Test
+        @DisplayName("TRIGGERED 但 MARKET orderId 不匹配（手動市價單）→ 不觸發平倉")
+        void algoTriggeredButOrderIdMismatch_noClose() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // ALGO_UPDATE 帶 ai=999888777
+            JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
+                    12345L, "SL-1700000-a1b2", "999888777");
+            handler.handleAlgoUpdate(algoEvent);
+
+            // 先到一個不同 orderId 的 MARKET FILLED（手動市價平倉）
+            JsonObject manualMarket = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93500.0, 0.3, 11.2, "USDT", -500.0, 111111111L, 1700000000000L);
+            handler.handleOrderTradeUpdate(manualMarket);
+
+            // 不應觸發平倉（orderId 不匹配）
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+        }
+
+        @Test
+        @DisplayName("TRIGGERED(ai 為空) → fallback 到 symbol 匹配")
+        void algoTriggeredEmptyAi_fallbackToSymbolMatch() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // ai 為空（罕見情況）
+            JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
+                    12345L, "SL-1700000-a1b2", "");
+            handler.handleAlgoUpdate(algoEvent);
+
+            // 任何同 symbol 的 MARKET FILLED 都會匹配（因為 ai 為空 → fallback）
+            JsonObject marketEvent = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 999888777L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketEvent);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), eq("SL_TRIGGERED"), anyLong());
+        }
+
+        @Test
+        @DisplayName("TRIGGERING 不寫入 hint → MARKET FILLED 不觸發平倉")
+        void triggeringDoesNotStoreHint() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // TRIGGERING（觸發中）不寫入 hint
+            JsonObject triggeringEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERING",
+                    12345L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(triggeringEvent);
+
+            // MARKET FILLED → 沒有 hint → 不觸發平倉
+            JsonObject marketEvent = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 999888777L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketEvent);
+
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+        }
+
+        @Test
+        @DisplayName("TRIGGERED → CANCELED → hint 被清除 → 後續 MARKET 不誤判")
+        void canceledClearsStaleHint() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // TRIGGERED 存入 hint
+            JsonObject triggeredEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
+                    12345L, "SL-1700000-a1b2", "999888777");
+            handler.handleAlgoUpdate(triggeredEvent);
+
+            // CANCELED 清除 stale hint
+            JsonObject canceledEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED",
+                    12345L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(canceledEvent);
+
+            // 後續 MARKET FILLED → hint 已被清除 → 不觸發平倉
+            JsonObject marketEvent = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 999888777L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketEvent);
+
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+        }
+
+        @Test
+        @DisplayName("MARKET FILLED with clientOrderId SL- 前綴 (fallback) → SL_TRIGGERED")
+        void marketFilledWithSlClientIdFallback() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // 沒有先收 ALGO_UPDATE，直接收 MARKET FILLED（with SL- clientOrderId）
+            JsonObject event = buildOrderTradeUpdateWithClientId(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 999888777L, 1700000000000L,
+                    "SL-1700000-a1b2");
+            handler.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(93000.0), eq(0.5),
+                    eq(18.6), eq(-1000.0),
+                    eq("999888777"), eq("SL_TRIGGERED"),
+                    eq(1700000000000L));
+        }
+
+        @Test
+        @DisplayName("MARKET FILLED with clientOrderId TP- 前綴 (fallback) → TP_TRIGGERED")
+        void marketFilledWithTpClientIdFallback() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildOrderTradeUpdateWithClientId(
+                    "ETHUSDT", "MARKET", "FILLED", "BUY",
+                    3500.0, 1.0, 1.4, "USDT", 200.0, 111222333L, 1700000000000L,
+                    "TP-1700000-c3d4");
+            handler.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("ETHUSDT"), eq(3500.0), eq(1.0),
+                    eq(1.4), eq(200.0),
+                    eq("111222333"), eq("TP_TRIGGERED"),
+                    eq(1700000000000L));
+        }
+
+        @Test
+        @DisplayName("MARKET FILLED 無 algo hint 且無 SL/TP 前綴 → 不觸發平倉")
+        void marketFilledNoAlgoHintNoPrefix() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildOrderTradeUpdateWithClientId(
+                    "BTCUSDT", "MARKET", "FILLED", "BUY",
+                    95000.0, 0.5, 9.5, "USDT", 0.0, 444555666L, 1700000000000L,
+                    "web_abc123");
+            handler.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+        }
+
+        @Test
+        @DisplayName("TP TRIGGERED → SL CANCELED(OCO 連帶) → MARKET FILLED → 仍正確記錄 TP_TRIGGERED 且不發假告警")
+        void tpTriggeredSlCanceledOcoRaceCondition() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // ① TP 觸發 (algoId=200, ai=77001)
+            JsonObject tpTriggered = buildAlgoUpdate("BTCUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED",
+                    200L, "TP-1700000-c3d4", "77001");
+            handler.handleAlgoUpdate(tpTriggered);
+
+            // ② SL 被 Binance 自動取消 (algoId=100, 不同 algo)
+            JsonObject slCanceled = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED",
+                    100L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(slCanceled);
+
+            // 不應發 SL 保護消失告警（因為同 symbol 有已觸發的 TP hint → OCO 連帶取消）
+            verify(tradeRecordService, never()).recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString());
+            assertThat(lastTitle).isNull();  // 無告警
+
+            // ③ TP 的 MARKET 單成交 (orderId=77001)
+            JsonObject marketFilled = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    98000.0, 0.5, 19.6, "USDT", 2500.0, 77001L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketFilled);
+
+            // 應正確記錄 TP_TRIGGERED（hint 沒被 SL CANCELED 誤刪）
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(98000.0), eq(0.5),
+                    eq(19.6), eq(2500.0),
+                    eq("77001"), eq("TP_TRIGGERED"),
+                    eq(1700000000000L));
+
+            assertThat(lastTitle).contains("止盈觸發");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_GREEN);
+        }
+
+        @Test
+        @DisplayName("SL TRIGGERED → TP CANCELED(OCO 連帶) → MARKET FILLED → 仍正確記錄 SL_TRIGGERED 且不發假告警")
+        void slTriggeredTpCanceledOcoRaceCondition() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // ① SL 觸發 (algoId=100, ai=88001)
+            JsonObject slTriggered = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
+                    100L, "SL-1700000-a1b2", "88001");
+            handler.handleAlgoUpdate(slTriggered);
+
+            // ② TP 被 Binance 自動取消 (algoId=200)
+            JsonObject tpCanceled = buildAlgoUpdate("BTCUSDT", "TAKE_PROFIT_MARKET", "CANCELED",
+                    200L, "TP-1700000-c3d4");
+            handler.handleAlgoUpdate(tpCanceled);
+
+            // 不應發告警
+            verify(tradeRecordService, never()).recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString());
+
+            // ③ SL 的 MARKET 單成交 (orderId=88001)
+            JsonObject marketFilled = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    91000.0, 0.5, 18.2, "USDT", -2000.0, 88001L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketFilled);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(91000.0), eq(0.5),
+                    eq(18.2), eq(-2000.0),
+                    eq("88001"), eq("SL_TRIGGERED"),
+                    eq(1700000000000L));
+
+            assertThat(lastTitle).contains("止損觸發");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("單獨 SL CANCELED（無 sibling hint）→ 應正常觸發保護消失告警")
+        void slCanceledAloneTriggersAlert() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // 單獨取消（非 OCO 連帶），沒有其他 sibling hint
+            JsonObject slCanceled = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED",
+                    100L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(slCanceled);
+
+            // 應觸發保護消失告警
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("100"), eq("CANCELED"));
+            assertThat(lastTitle).contains("止損單被取消");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("pending hint 消費後不重複使用")
+        void pendingHintConsumedOnce() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            // ALGO_UPDATE → 存入 hint（ai=999888777）
+            JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
+                    12345L, "SL-1700000-a1b2", "999888777");
+            handler.handleAlgoUpdate(algoEvent);
+
+            // 第一次 MARKET FILLED（orderId=999888777）→ 消費 hint
+            JsonObject market1 = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 999888777L, 1700000000000L);
+            handler.handleOrderTradeUpdate(market1);
+
+            // 第二次 MARKET FILLED（同 symbol，不同 orderId）→ 不應再觸發平倉
+            JsonObject market2 = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "BUY",
+                    95000.0, 0.5, 9.5, "USDT", 0.0, 444555666L, 1700000000000L);
+            handler.handleOrderTradeUpdate(market2);
+
+            // 只觸發一次 recordCloseFromStream
+            verify(tradeRecordService, times(1)).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+        }
+    }
+
     // ==================== 輔助方法 ====================
 
     private JsonObject buildOrderTradeUpdate(String symbol, String orderType, String orderStatus,
@@ -611,6 +1094,44 @@ class OrderEventHandlerTest {
 
         JsonObject event = new JsonObject();
         event.addProperty("e", "ORDER_TRADE_UPDATE");
+        event.add("o", order);
+
+        return event;
+    }
+
+    private JsonObject buildOrderTradeUpdateWithClientId(String symbol, String orderType, String orderStatus,
+                                                         String side, double avgPrice, double filledQty,
+                                                         double commission, String commissionAsset,
+                                                         double realizedProfit, long orderId,
+                                                         long transactionTime, String clientOrderId) {
+        JsonObject event = buildOrderTradeUpdate(symbol, orderType, orderStatus, side, avgPrice,
+                filledQty, commission, commissionAsset, realizedProfit, orderId, transactionTime);
+        // 加入 clientOrderId (c 欄位)
+        event.getAsJsonObject("o").addProperty("c", clientOrderId);
+        return event;
+    }
+
+    /**
+     * 建構 ALGO_UPDATE 事件（符合 Binance 實際格式）
+     * 欄位對照：s=symbol, o=orderType, X=algoStatus, aid=algoId, caid=clientAlgoId, ai=triggeredOrderId
+     */
+    private JsonObject buildAlgoUpdate(String symbol, String orderType, String algoStatus,
+                                        long algoId, String clientAlgoId) {
+        return buildAlgoUpdate(symbol, orderType, algoStatus, algoId, clientAlgoId, "");
+    }
+
+    private JsonObject buildAlgoUpdate(String symbol, String orderType, String algoStatus,
+                                        long algoId, String clientAlgoId, String triggeredOrderId) {
+        JsonObject order = new JsonObject();
+        order.addProperty("s", symbol);
+        order.addProperty("o", orderType);   // Binance 用 "o" 代表 orderType
+        order.addProperty("X", algoStatus);  // Binance 用 "X" 代表 algoStatus
+        order.addProperty("aid", algoId);    // Binance 用 "aid" 代表 algoId
+        order.addProperty("caid", clientAlgoId); // Binance 用 "caid" 代表 clientAlgoId
+        order.addProperty("ai", triggeredOrderId); // Binance 用 "ai" 代表觸發後的 MARKET 單 orderId
+
+        JsonObject event = new JsonObject();
+        event.addProperty("e", "ALGO_UPDATE");
         event.add("o", order);
 
         return event;

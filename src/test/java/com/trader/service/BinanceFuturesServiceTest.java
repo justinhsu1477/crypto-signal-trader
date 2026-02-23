@@ -359,8 +359,8 @@ class BinanceFuturesServiceTest {
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
-            // DCA 呼叫 cancelSLTPOrders（不是 cancelAllOrders）→ 內部呼叫 getOpenOrders
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            // DCA 呼叫 cancelSLTPOrders → 內部呼叫 getOpenAlgoOrders
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             OrderResult entryOrder = successOrder("DCA1", "BUY", 94000, 0.02);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.52);
@@ -411,7 +411,7 @@ class BinanceFuturesServiceTest {
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             OrderResult entryOrder = successOrder("DCA1", "BUY", 94000, 0.02);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.52);
@@ -479,8 +479,8 @@ class BinanceFuturesServiceTest {
             // 部分平倉後重掛 TP
             OrderResult tpOrder = successOrder("TP1", "SELL", 100000, 0.5);
             doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            // cancelSLTPOrders 內部需要 getOpenOrders
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            // cancelSLTPOrders 內部需要 getOpenAlgoOrders
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = buildCloseSignal(0.5);
             List<OrderResult> results = service.executeClose(signal);
