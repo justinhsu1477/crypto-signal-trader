@@ -36,6 +36,7 @@ const translations = {
     performance: { en: "Performance", "zh-TW": "績效", "zh-CN": "绩效" },
     trades: { en: "Trade History", "zh-TW": "交易紀錄", "zh-CN": "交易记录" },
     settings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置" },
+    referral: { en: "Referral", "zh-TW": "推薦綁定", "zh-CN": "推荐绑定" },
     logout: { en: "Logout", "zh-TW": "登出", "zh-CN": "退出登录" },
     features: { en: "Features", "zh-TW": "功能特色", "zh-CN": "功能特色" },
     pricing: { en: "Pricing", "zh-TW": "方案價格", "zh-CN": "方案价格" },
@@ -353,6 +354,92 @@ const translations = {
     availablePlans: { en: "Available Plans", "zh-TW": "可用方案", "zh-CN": "可用方案" },
     currentBadge: { en: "Current", "zh-TW": "目前", "zh-CN": "当前" },
     free: { en: "Free", "zh-TW": "免費", "zh-CN": "免费" },
+  },
+
+  // ─── referral ───
+  referral: {
+    title: { en: "Referral Binding", "zh-TW": "推薦綁定", "zh-CN": "推荐绑定" },
+    subtitle: {
+      en: "Complete the referral binding to start trading",
+      "zh-TW": "完成推薦碼綁定即可開始交易",
+      "zh-CN": "完成推荐码绑定即可开始交易",
+    },
+    // Steps
+    stepRegister: { en: "Register Binance", "zh-TW": "註冊幣安", "zh-CN": "注册币安" },
+    stepRegisterDesc: {
+      en: "Click the referral link below to register a Binance account",
+      "zh-TW": "點擊下方推薦連結註冊幣安帳號",
+      "zh-CN": "点击下方推荐链接注册币安账号",
+    },
+    stepSubmitUid: { en: "Submit UID", "zh-TW": "提交 UID", "zh-CN": "提交 UID" },
+    stepSubmitUidDesc: {
+      en: "Enter your Binance UID to bind your account",
+      "zh-TW": "輸入您的幣安 UID 綁定帳號",
+      "zh-CN": "输入您的币安 UID 绑定账号",
+    },
+    stepWait: { en: "Verification", "zh-TW": "等待驗證", "zh-CN": "等待验证" },
+    stepWaitDesc: {
+      en: "Admin will verify your referral binding",
+      "zh-TW": "管理員將驗證您的推薦綁定",
+      "zh-CN": "管理员将验证您的推荐绑定",
+    },
+    stepComplete: { en: "Start Trading", "zh-TW": "開始交易", "zh-CN": "开始交易" },
+    stepCompleteDesc: {
+      en: "Verification complete, enjoy all trading features",
+      "zh-TW": "驗證完成，即可使用所有交易功能",
+      "zh-CN": "验证完成，即可使用所有交易功能",
+    },
+    // Status badges
+    statusNotStarted: { en: "Not Started", "zh-TW": "未開始", "zh-CN": "未开始" },
+    statusPending: { en: "Pending", "zh-TW": "等待驗證中", "zh-CN": "等待验证中" },
+    statusVerified: { en: "Verified", "zh-TW": "已驗證", "zh-CN": "已验证" },
+    // Referral link section
+    referralLinkLabel: { en: "Referral Link", "zh-TW": "推薦連結", "zh-CN": "推荐链接" },
+    referralCodeLabel: { en: "Referral Code", "zh-TW": "推薦碼", "zh-CN": "推荐码" },
+    copyLink: { en: "Copy Link", "zh-TW": "複製連結", "zh-CN": "复制链接" },
+    copyCode: { en: "Copy", "zh-TW": "複製", "zh-CN": "复制" },
+    copied: { en: "Copied!", "zh-TW": "已複製！", "zh-CN": "已复制！" },
+    openBinance: { en: "Go to Binance", "zh-TW": "前往幣安註冊", "zh-CN": "前往币安注册" },
+    // UID form
+    uidLabel: { en: "Binance UID", "zh-TW": "幣安 UID", "zh-CN": "币安 UID" },
+    uidPlaceholder: { en: "Enter your Binance UID", "zh-TW": "輸入您的幣安 UID", "zh-CN": "输入您的币安 UID" },
+    uidHelp: {
+      en: "Find your UID in the Binance app: Profile > UID",
+      "zh-TW": "在幣安 App 中可找到 UID：個人資料 > UID",
+      "zh-CN": "在币安 App 中可找到 UID：个人资料 > UID",
+    },
+    submitUid: { en: "Submit UID", "zh-TW": "提交 UID", "zh-CN": "提交 UID" },
+    submitting: { en: "Submitting...", "zh-TW": "提交中...", "zh-CN": "提交中..." },
+    submitSuccess: {
+      en: "UID submitted, please wait for admin verification",
+      "zh-TW": "UID 提交成功，請等待管理員驗證",
+      "zh-CN": "UID 提交成功，请等待管理员验证",
+    },
+    uidRequired: { en: "Please enter your Binance UID", "zh-TW": "請輸入幣安 UID", "zh-CN": "请输入币安 UID" },
+    // Pending state
+    pendingTitle: { en: "Under Review", "zh-TW": "審核中", "zh-CN": "审核中" },
+    pendingMessage: {
+      en: "Your UID has been submitted. Admin will verify it shortly, usually within 24 hours.",
+      "zh-TW": "您的 UID 已提交，管理員將盡快驗證，通常在 24 小時內完成。",
+      "zh-CN": "您的 UID 已提交，管理员将尽快验证，通常在 24 小时内完成。",
+    },
+    submittedUid: { en: "Submitted UID", "zh-TW": "已提交的 UID", "zh-CN": "已提交的 UID" },
+    // Verified state
+    verifiedTitle: { en: "Verification Complete", "zh-TW": "驗證完成", "zh-CN": "验证完成" },
+    verifiedMessage: {
+      en: "Your referral binding is verified. You can now use all trading features.",
+      "zh-TW": "您的推薦綁定已驗證通過，可以使用所有交易功能。",
+      "zh-CN": "您的推荐绑定已验证通过，可以使用所有交易功能。",
+    },
+    verifiedAt: { en: "Verified at {time}", "zh-TW": "驗證時間：{time}", "zh-CN": "验证时间：{time}" },
+    goToDashboard: { en: "Go to Dashboard", "zh-TW": "前往總覽", "zh-CN": "前往总览" },
+    // 403 Banner
+    bannerMessage: {
+      en: "Please complete referral binding to use trading features",
+      "zh-TW": "請先完成推薦綁定才能使用交易功能",
+      "zh-CN": "请先完成推荐绑定才能使用交易功能",
+    },
+    bannerAction: { en: "Go to Referral", "zh-TW": "前往綁定", "zh-CN": "前往绑定" },
   },
 } as const;
 

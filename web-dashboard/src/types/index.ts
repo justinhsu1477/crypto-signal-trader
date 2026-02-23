@@ -367,3 +367,19 @@ export interface StreamStatus {
   listenKey: string | null;
   lastEventTime: string | null;
 }
+
+// ==================== Referral ====================
+
+export type ReferralStatusEnum = "NOT_STARTED" | "PENDING" | "VERIFIED";
+
+export interface ReferralStatusResponse {
+  status: ReferralStatusEnum;
+  exchangeUid: string | null;
+  verifiedAt: string | null;
+  referralLink: string;
+  referralCode: string;
+}
+
+export interface SubmitUidRequest {
+  exchangeUid: string;
+}
