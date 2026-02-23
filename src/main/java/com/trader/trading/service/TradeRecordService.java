@@ -1047,9 +1047,16 @@ public class TradeRecordService {
      * @param reason    取消原因 (CANCELED / EXPIRED)
      */
     @Transactional
-    public void recordProtectionLost(String symbol, String orderType, String orderId, String reason) {
+    /**
+     * 記錄保護消失事件
+     *
+     * @return true = 仍有 OPEN 持倉（真正失去保護，需緊急告警）；
+     *         false = 找不到 OPEN 持倉（倉位已平，屬正常連帶過期，不需告警）
+     */
+    public boolean recordProtectionLost(String symbol, String orderType, String orderId, String reason) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
+        boolean hasOpenTrade = openTradeOpt.isPresent();
 
         String eventType = "STOP_MARKET".equals(orderType) ? "SL_LOST" : "TP_LOST";
 
@@ -1059,12 +1066,20 @@ public class TradeRecordService {
                 .binanceOrderId(orderId)
                 .orderType(orderType)
                 .success(false)
-                .detail(toJson(Map.of("reason", reason, "order_type", orderType)))
+                .detail(toJson(Map.of("reason", reason, "order_type", orderType,
+                        "has_open_trade", hasOpenTrade)))
                 .build();
         tradeEventRepository.save(event);
 
-        log.warn("保護消失: tradeId={} {} {} orderId={} reason={}",
-                tradeId, symbol, eventType, orderId, reason);
+        if (hasOpenTrade) {
+            log.warn("保護消失: tradeId={} {} {} orderId={} reason={}",
+                    tradeId, symbol, eventType, orderId, reason);
+        } else {
+            log.info("保護單過期但倉位已平（正常）: {} {} orderId={} reason={}",
+                    symbol, eventType, orderId, reason);
+        }
+
+        return hasOpenTrade;
     }
 
     // ==================== 內部方法 ====================
