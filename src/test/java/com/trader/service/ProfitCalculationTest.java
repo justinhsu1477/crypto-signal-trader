@@ -212,6 +212,40 @@ class ProfitCalculationTest {
         }
 
         @Test
+        @DisplayName("exitPrice = 0 — 不計算（MARKET 單 bug 防護）")
+        void zeroExitPrice() throws Exception {
+            Trade trade = Trade.builder()
+                    .side("SHORT")
+                    .entryPrice(67800.0)
+                    .exitPrice(0.0)
+                    .entryQuantity(0.5)
+                    .build();
+
+            invokeCalculateProfit(createService(), trade);
+
+            // exitPrice=0 不應該計算出虛假盈虧
+            assertThat(trade.getGrossProfit()).isNull();
+            assertThat(trade.getCommission()).isNull();
+            assertThat(trade.getNetProfit()).isNull();
+        }
+
+        @Test
+        @DisplayName("exitPrice 為負數 — 不計算")
+        void negativeExitPrice() throws Exception {
+            Trade trade = Trade.builder()
+                    .side("LONG")
+                    .entryPrice(95000.0)
+                    .exitPrice(-1.0)
+                    .entryQuantity(0.5)
+                    .build();
+
+            invokeCalculateProfit(createService(), trade);
+
+            assertThat(trade.getGrossProfit()).isNull();
+            assertThat(trade.getNetProfit()).isNull();
+        }
+
+        @Test
         @DisplayName("大量交易 — ETH 做多, qty=1000")
         void largeQuantity() throws Exception {
             Trade trade = Trade.builder()
