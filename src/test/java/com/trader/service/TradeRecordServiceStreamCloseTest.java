@@ -49,7 +49,7 @@ class TradeRecordServiceStreamCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(openTrade));
 
             service.recordCloseFromStream(
                     "BTCUSDT", 93000.0, 0.5,
@@ -96,7 +96,7 @@ class TradeRecordServiceStreamCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(openTrade));
 
             service.recordCloseFromStream(
                     "BTCUSDT", 97000.0, 0.2,
@@ -128,7 +128,7 @@ class TradeRecordServiceStreamCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(openTrade));
 
             service.recordCloseFromStream(
                     "BTCUSDT", 98000.0, 0.5,
@@ -156,7 +156,7 @@ class TradeRecordServiceStreamCloseTest {
         @Test
         @DisplayName("找不到 OPEN Trade → 安全忽略，不 save")
         void noOpenTradeFound() {
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.empty());
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of());
 
             // 不該拋出例外
             service.recordCloseFromStream(
@@ -182,7 +182,7 @@ class TradeRecordServiceStreamCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(openTrade));
 
             service.recordCloseFromStream(
                     "BTCUSDT", 93000.0, 0.5,
@@ -207,7 +207,7 @@ class TradeRecordServiceStreamCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(openTrade));
 
             service.recordCloseFromStream(
                     "BTCUSDT", 93000.0, 0.5,
@@ -232,7 +232,7 @@ class TradeRecordServiceStreamCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(openTrade));
 
             service.recordCloseFromStream(
                     "BTCUSDT", 93000.0, 0.5,
