@@ -117,6 +117,21 @@ public class TradeRecordService {
         return tradeRepository.findOpenTrade(symbol);
     }
 
+    /**
+     * 查找 OPEN 或 PENDING_CLOSE 的交易（供 WebSocket 更新用）
+     * PENDING_CLOSE = MARKET 平倉單已送出但 exitPrice=0，等待 WebSocket 真實成交價
+     */
+    private Optional<Trade> resolveOpenOrPendingCloseTrade(String symbol) {
+        List<Trade> trades;
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            trades = tradeRepository.findUserOpenOrPendingCloseTrade(userId, symbol);
+        } else {
+            trades = tradeRepository.findOpenOrPendingCloseTrade(symbol);
+        }
+        return trades.isEmpty() ? Optional.empty() : Optional.of(trades.get(0));
+    }
+
     // ==================== 寫入操作 ====================
 
     /**
@@ -320,19 +335,27 @@ public class TradeRecordService {
         trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
         trade.setExitOrderId(closeOrder.getOrderId());
         trade.setExitReason(exitReason);
-        trade.setStatus("CLOSED");
 
-        // 計算盈虧（優先用 Binance 回傳的真實出場手續費）
-        double realExitCommission = closeOrder.getCommission() > 0 ? closeOrder.getCommission() : 0;
-        calculateProfit(trade, realExitCommission);
+        // MARKET 單可能 price=0（等 WebSocket 真實成交價更新）
+        // 若 exitPrice > 0 才標 CLOSED 並計算盈虧；否則標 PENDING_CLOSE 等 WebSocket 修正
+        if (closeOrder.getPrice() > 0) {
+            trade.setStatus("CLOSED");
+            double realExitCommission = closeOrder.getCommission() > 0 ? closeOrder.getCommission() : 0;
+            calculateProfit(trade, realExitCommission);
+        } else {
+            trade.setStatus("PENDING_CLOSE");
+            log.warn("平倉單 exitPrice=0（MARKET 單），暫標 PENDING_CLOSE 等待 WebSocket 更新: tradeId={} {}",
+                    trade.getTradeId(), trade.getSymbol());
+        }
 
         tradeRepository.save(trade);
 
         // 寫入 CLOSE_PLACED 事件
         saveEvent(trade.getTradeId(), "CLOSE_PLACED", closeOrder);
 
-        log.info("交易平倉紀錄: tradeId={} {} exitPrice={} 淨利={} 原因={}",
-                trade.getTradeId(), trade.getSymbol(), closeOrder.getPrice(), trade.getNetProfit(), exitReason);
+        log.info("交易平倉紀錄: tradeId={} {} exitPrice={} 淨利={} 狀態={} 原因={}",
+                trade.getTradeId(), trade.getSymbol(), closeOrder.getPrice(),
+                trade.getNetProfit(), trade.getStatus(), exitReason);
 
         return trade;
     }
@@ -917,9 +940,10 @@ public class TradeRecordService {
     public void recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
                                        double commission, double realizedProfit,
                                        String orderId, String exitReason, long transactionTime) {
-        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
+        // 查找 OPEN 或 PENDING_CLOSE 的交易（PENDING_CLOSE = MARKET 單 exitPrice=0 等 WebSocket 更新）
+        Optional<Trade> openTradeOpt = resolveOpenOrPendingCloseTrade(symbol);
         if (openTradeOpt.isEmpty()) {
-            log.warn("WebSocket 平倉事件但找不到 OPEN 交易: {} orderId={}", symbol, orderId);
+            log.warn("WebSocket 平倉事件但找不到 OPEN/PENDING_CLOSE 交易: {} orderId={}", symbol, orderId);
             return;
         }
 
@@ -1055,6 +1079,12 @@ public class TradeRecordService {
      */
     private void calculateProfit(Trade trade, double realExitCommission) {
         if (trade.getEntryPrice() == null || trade.getExitPrice() == null) {
+            return;
+        }
+        // 防止 exitPrice=0 導致計算出虛假盈虧（MARKET 單可能回傳 price=0）
+        if (trade.getExitPrice() <= 0) {
+            log.warn("exitPrice <= 0，跳過盈虧計算，等待 WebSocket 真實成交價: tradeId={} exitPrice={}",
+                    trade.getTradeId(), trade.getExitPrice());
             return;
         }
 

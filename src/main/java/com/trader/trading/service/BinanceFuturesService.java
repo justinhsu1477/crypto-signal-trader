@@ -1167,13 +1167,19 @@ public class BinanceFuturesService {
                 return OrderResult.fail(json.has("msg") ? json.get("msg").getAsString() : response);
             }
 
+            // MARKET 單 Binance 回傳 price=0，需用 avgPrice 取得實際成交價
+            double price = json.has("price") ? json.get("price").getAsDouble() : 0;
+            if (price == 0 && json.has("avgPrice")) {
+                price = json.get("avgPrice").getAsDouble();
+            }
+
             return OrderResult.builder()
                     .success(true)
                     .orderId(json.has("orderId") ? json.get("orderId").getAsString() : "")
                     .symbol(json.has("symbol") ? json.get("symbol").getAsString() : "")
                     .side(json.has("side") ? json.get("side").getAsString() : "")
                     .type(json.has("type") ? json.get("type").getAsString() : "")
-                    .price(json.has("price") ? json.get("price").getAsDouble() : 0)
+                    .price(price)
                     .quantity(json.has("origQty") ? json.get("origQty").getAsDouble() : 0)
                     .commission(json.has("cumCommission") ? json.get("cumCommission").getAsDouble() : 0)
                     .rawResponse(response)
