@@ -29,7 +29,7 @@ export default function RegisterPage() {
 
     try {
       await register({ name, email, password });
-      router.push("/login?registered=true");
+      router.push(`/verify-email?email=${encodeURIComponent(email)}`);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);

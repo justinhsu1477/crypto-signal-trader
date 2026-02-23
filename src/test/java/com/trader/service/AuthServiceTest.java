@@ -3,7 +3,9 @@ package com.trader.service;
 import com.trader.auth.dto.LoginRequest;
 import com.trader.auth.dto.LoginResponse;
 import com.trader.auth.dto.RegisterRequest;
+import com.trader.auth.exception.EmailNotVerifiedException;
 import com.trader.auth.service.AuthService;
+import com.trader.auth.service.EmailVerificationService;
 import com.trader.auth.service.JwtService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -25,6 +27,7 @@ class AuthServiceTest {
     private UserRepository userRepository;
     private PasswordEncoder passwordEncoder;
     private JwtService jwtService;
+    private EmailVerificationService emailVerificationService;
     private AuthService authService;
 
     @BeforeEach
@@ -32,7 +35,8 @@ class AuthServiceTest {
         userRepository = mock(UserRepository.class);
         passwordEncoder = mock(PasswordEncoder.class);
         jwtService = mock(JwtService.class);
-        authService = new AuthService(userRepository, passwordEncoder, jwtService);
+        emailVerificationService = mock(EmailVerificationService.class);
+        authService = new AuthService(userRepository, passwordEncoder, jwtService, emailVerificationService);
     }
 
     @Nested
@@ -65,6 +69,40 @@ class AuthServiceTest {
         }
 
         @Test
+        @DisplayName("註冊成功 → emailVerified=false")
+        void registerSuccess_setsEmailVerifiedFalse() {
+            RegisterRequest request = new RegisterRequest();
+            request.setEmail("test@example.com");
+            request.setPassword("password123");
+            request.setName("Test User");
+
+            when(userRepository.existsByEmail(anyString())).thenReturn(false);
+            when(passwordEncoder.encode(anyString())).thenReturn("hashed");
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            User result = authService.register(request);
+
+            assertThat(result.isEmailVerified()).isFalse();
+        }
+
+        @Test
+        @DisplayName("註冊成功 → 呼叫 emailVerificationService.generateAndSend()")
+        void registerSuccess_triggersOtpGeneration() {
+            RegisterRequest request = new RegisterRequest();
+            request.setEmail("test@example.com");
+            request.setPassword("password123");
+            request.setName("Test User");
+
+            when(userRepository.existsByEmail(anyString())).thenReturn(false);
+            when(passwordEncoder.encode(anyString())).thenReturn("hashed");
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            authService.register(request);
+
+            verify(emailVerificationService).generateAndSend("test@example.com");
+        }
+
+        @Test
         @DisplayName("Email 已被註冊 → 拋出 IllegalArgumentException")
         void registerDuplicateEmail_throwsException() {
             RegisterRequest request = new RegisterRequest();
@@ -78,6 +116,7 @@ class AuthServiceTest {
                     .hasMessageContaining("Email 已被註冊");
 
             verify(userRepository, never()).save(any());
+            verify(emailVerificationService, never()).generateAndSend(anyString());
         }
 
         @Test
@@ -116,6 +155,7 @@ class AuthServiceTest {
                     .name("Test User")
                     .role(User.Role.USER)
                     .enabled(true)
+                    .emailVerified(true)
                     .build();
 
             when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
@@ -135,6 +175,31 @@ class AuthServiceTest {
         }
 
         @Test
+        @DisplayName("Email 未驗證 → 拋出 EmailNotVerifiedException")
+        void loginEmailNotVerified_throwsEmailNotVerifiedException() {
+            LoginRequest request = new LoginRequest();
+            request.setEmail("unverified@example.com");
+            request.setPassword("password123");
+
+            User user = User.builder()
+                    .userId("unverified-uuid")
+                    .email("unverified@example.com")
+                    .passwordHash("$2a$10$hashedPassword")
+                    .enabled(true)
+                    .emailVerified(false)
+                    .build();
+
+            when(userRepository.findByEmail("unverified@example.com")).thenReturn(Optional.of(user));
+            when(passwordEncoder.matches("password123", "$2a$10$hashedPassword")).thenReturn(true);
+
+            assertThatThrownBy(() -> authService.login(request))
+                    .isInstanceOf(EmailNotVerifiedException.class)
+                    .hasMessage("EMAIL_NOT_VERIFIED");
+
+            verify(jwtService, never()).generateToken(anyString(), anyString());
+        }
+
+        @Test
         @DisplayName("密碼錯誤 → 拋出「帳號或密碼錯誤」")
         void loginWrongPassword_throwsException() {
             LoginRequest request = new LoginRequest();
@@ -146,6 +211,7 @@ class AuthServiceTest {
                     .email("test@example.com")
                     .passwordHash("$2a$10$hashedPassword")
                     .enabled(true)
+                    .emailVerified(true)
                     .build();
 
             when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
@@ -184,6 +250,7 @@ class AuthServiceTest {
                     .email("disabled@example.com")
                     .passwordHash("$2a$10$hashedPassword")
                     .enabled(false)
+                    .emailVerified(true)
                     .build();
 
             when(userRepository.findByEmail("disabled@example.com")).thenReturn(Optional.of(user));
@@ -212,6 +279,7 @@ class AuthServiceTest {
                     .userId("test-uuid")
                     .email("test@example.com")
                     .enabled(true)
+                    .emailVerified(true)
                     .build();
 
             when(userRepository.findById("test-uuid")).thenReturn(Optional.of(user));
@@ -263,6 +331,7 @@ class AuthServiceTest {
                     .userId("disabled-uuid")
                     .email("disabled@example.com")
                     .enabled(false)
+                    .emailVerified(true)
                     .build();
 
             when(userRepository.findById("disabled-uuid")).thenReturn(Optional.of(user));

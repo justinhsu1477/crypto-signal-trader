@@ -57,6 +57,11 @@ const translations = {
     registerNow: { en: "Register Now", "zh-TW": "立即註冊", "zh-CN": "立即注册" },
     freeRegister: { en: "Sign Up Free", "zh-TW": "免費註冊", "zh-CN": "免费注册" },
     signIn: { en: "Sign In", "zh-TW": "登入", "zh-CN": "登录" },
+    emailVerifiedSuccess: {
+      en: "Email verified successfully! Please sign in.",
+      "zh-TW": "Email 驗證成功！請登入。",
+      "zh-CN": "Email 验证成功！请登录。",
+    },
   },
 
   // ─── register ───
@@ -70,6 +75,48 @@ const translations = {
     registerFailed: { en: "Registration failed, please try again later", "zh-TW": "註冊失敗，請稍後再試", "zh-CN": "注册失败，请稍后再试" },
     hasAccount: { en: "Already have an account? ", "zh-TW": "已經有帳號？ ", "zh-CN": "已有账号？ " },
     backToLogin: { en: "Back to Sign In", "zh-TW": "返回登入", "zh-CN": "返回登录" },
+  },
+
+  // ─── verify email ───
+  verify: {
+    title: { en: "Verify Your Email", "zh-TW": "驗證您的信箱", "zh-CN": "验证您的邮箱" },
+    codeSent: {
+      en: "We've sent a verification code to {email}",
+      "zh-TW": "我們已發送驗證碼到 {email}",
+      "zh-CN": "我们已发送验证码到 {email}",
+    },
+    digit: { en: "Digit", "zh-TW": "第", "zh-CN": "第" },
+    enterCode: {
+      en: "Please enter the 6-digit code",
+      "zh-TW": "請輸入 6 位數驗證碼",
+      "zh-CN": "请输入 6 位数验证码",
+    },
+    verifyButton: { en: "Verify", "zh-TW": "驗證", "zh-CN": "验证" },
+    verifying: { en: "Verifying...", "zh-TW": "驗證中...", "zh-CN": "验证中..." },
+    verifyFailed: {
+      en: "Verification failed, please try again",
+      "zh-TW": "驗證失敗，請重試",
+      "zh-CN": "验证失败，请重试",
+    },
+    noCode: { en: "Didn't receive the code?", "zh-TW": "沒有收到驗證碼？", "zh-CN": "没有收到验证码？" },
+    resendCode: { en: "Resend Code", "zh-TW": "重新發送", "zh-CN": "重新发送" },
+    resendIn: {
+      en: "Resend in {seconds}s",
+      "zh-TW": "{seconds} 秒後可重新發送",
+      "zh-CN": "{seconds} 秒后可重新发送",
+    },
+    resendSuccess: {
+      en: "Verification code resent successfully",
+      "zh-TW": "驗證碼已重新發送",
+      "zh-CN": "验证码已重新发送",
+    },
+    resending: { en: "Resending...", "zh-TW": "發送中...", "zh-CN": "发送中..." },
+    resendFailed: {
+      en: "Failed to resend code, please try again later",
+      "zh-TW": "重新發送失敗，請稍後再試",
+      "zh-CN": "重新发送失败，请稍后再试",
+    },
+    backToRegister: { en: "Back to Register", "zh-TW": "返回註冊", "zh-CN": "返回注册" },
   },
 
   // ─── landing ───

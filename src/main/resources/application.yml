@@ -103,6 +103,15 @@ advisor:
   recent-trades-count: 10
   temperature-value: 0.7
 
+# ========== Email OTP 驗證 ==========
+email:
+  enabled: ${EMAIL_ENABLED:false}
+  resend-api-key: ${RESEND_API_KEY:}
+  from-address: ${EMAIL_FROM:noreply@hookfi.com}
+  otp-expiry-minutes: 10
+  max-attempts-per-code: 3
+  max-sends-per-hour: 5
+
 # ========== 推薦系統 ==========
 referral:
   default-exchange: BINANCE

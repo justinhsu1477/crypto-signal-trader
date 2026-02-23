@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth-context";
@@ -9,21 +9,31 @@ import { useT } from "@/lib/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
   const { t } = useT();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // 顯示「Email 驗證成功」提示
+  useEffect(() => {
+    if (searchParams.get("verified") === "true") {
+      setSuccess(t("login.emailVerifiedSuccess"));
+    }
+  }, [searchParams, t]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setIsLoading(true);
 
     try {
@@ -31,7 +41,18 @@ export default function LoginPage() {
       router.push("/");
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setError(err.message);
+        // 解析 EMAIL_NOT_VERIFIED 錯誤 → 導向驗證頁
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed.error === "EMAIL_NOT_VERIFIED") {
+            const redirectEmail = parsed.email || email;
+            router.push(`/verify-email?email=${encodeURIComponent(redirectEmail)}`);
+            return;
+          }
+          setError(parsed.error || parsed.message || err.message);
+        } catch {
+          setError(err.message);
+        }
       } else {
         setError(t("login.loginFailed"));
       }
@@ -67,6 +88,13 @@ export default function LoginPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {success && (
+          <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 text-sm text-emerald-400">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            {success}
+          </div>
+        )}
+
         {error && (
           <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-sm text-red-400">
             {error}
@@ -131,5 +159,13 @@ export default function LoginPage() {
         </p>
       </form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

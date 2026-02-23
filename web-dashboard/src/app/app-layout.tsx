@@ -9,7 +9,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AuthLayout } from "@/components/landing/auth-layout";
 
-const PUBLIC_PATHS = ["/login", "/register"];
+const PUBLIC_PATHS = ["/login", "/register", "/verify-email"];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
