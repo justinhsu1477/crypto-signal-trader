@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@ConfigurationPropertiesScan({"com.trader.shared.config", "com.trader.subscription.config", "com.trader.advisor.config", "com.trader.referral.config"})
+@ConfigurationPropertiesScan({"com.trader.shared.config", "com.trader.subscription.config", "com.trader.advisor.config", "com.trader.referral.config", "com.trader.auth.config"})
 @EnableScheduling
 @EnableAsync
 public class CryptoSignalTraderApplication {

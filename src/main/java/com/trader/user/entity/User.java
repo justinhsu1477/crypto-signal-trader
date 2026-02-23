@@ -36,6 +36,9 @@ public class User {
     private boolean enabled = true;
 
     @Builder.Default
+    private boolean emailVerified = true;
+
+    @Builder.Default
     private boolean autoTradeEnabled = true;
 
     private LocalDateTime createdAt;

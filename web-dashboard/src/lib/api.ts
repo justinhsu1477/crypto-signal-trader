@@ -25,6 +25,8 @@ import type {
   UpgradePlanRequest,
   ReferralStatusResponse,
   SubmitUidRequest,
+  VerifyEmailRequest,
+  ResendCodeRequest,
 } from "@/types";
 
 const BASE = "";  // 使用 Next.js rewrites proxy
@@ -176,6 +178,20 @@ export async function register(data: RegisterRequest): Promise<RegisterResponse>
 
 // refreshToken 已整合進 request() 的 401 自動重試機制
 // 不再需要外部呼叫
+
+export async function verifyEmail(data: VerifyEmailRequest): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/auth/verify-email", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function resendCode(data: ResendCodeRequest): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/auth/resend-code", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
 
 // ==================== User ====================
 

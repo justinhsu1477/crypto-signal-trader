@@ -23,6 +23,16 @@ export interface RegisterResponse {
   userId: string;
   email: string;
   message: string;
+  needsVerification: boolean;
+}
+
+export interface VerifyEmailRequest {
+  email: string;
+  code: string;
+}
+
+export interface ResendCodeRequest {
+  email: string;
 }
 
 // ==================== User ====================

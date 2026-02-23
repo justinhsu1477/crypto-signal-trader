@@ -3,6 +3,7 @@ package com.trader.auth.service;
 import com.trader.auth.dto.LoginRequest;
 import com.trader.auth.dto.LoginResponse;
 import com.trader.auth.dto.RegisterRequest;
+import com.trader.auth.exception.EmailNotVerifiedException;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final EmailVerificationService emailVerificationService;
 
     /**
      * 用戶註冊
@@ -44,10 +46,16 @@ public class AuthService {
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName())
+                .emailVerified(false)
                 .build();
 
-        log.info("用戶註冊成功: email={}", user.getEmail());
-        return userRepository.save(user);
+        userRepository.save(user);
+        log.info("用戶註冊成功（待驗證）: email={}", user.getEmail());
+
+        // 發送 OTP 驗證碼
+        emailVerificationService.generateAndSend(user.getEmail());
+
+        return user;
     }
 
     /**
@@ -68,6 +76,10 @@ public class AuthService {
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("帳號或密碼錯誤");
+        }
+
+        if (!user.isEmailVerified()) {
+            throw new EmailNotVerifiedException("EMAIL_NOT_VERIFIED");
         }
 
         String role = user.getRole().name();
