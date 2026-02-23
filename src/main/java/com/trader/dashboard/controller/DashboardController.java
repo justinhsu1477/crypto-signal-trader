@@ -243,9 +243,13 @@ public class DashboardController {
             @PathVariable String webhookId) {
         String userId = SecurityUtil.getCurrentUserId();
 
-        webhookService.disableWebhook(webhookId);
-
-        log.info("用戶 {} 停用 webhook: {}", userId, webhookId);
+        try {
+            webhookService.disableWebhook(userId, webhookId);
+        } catch (IllegalArgumentException e) {
+            log.warn("用戶 {} 停用 webhook 失敗: {}", userId, e.getMessage());
+            return ResponseEntity.status(403).body(Map.of(
+                    "error", "Webhook 不存在或無權操作"));
+        }
 
         return ResponseEntity.ok(Map.of(
                 "webhookId", webhookId,
@@ -261,9 +265,13 @@ public class DashboardController {
             @PathVariable String webhookId) {
         String userId = SecurityUtil.getCurrentUserId();
 
-        webhookService.deleteWebhook(webhookId);
-
-        log.info("用戶 {} 刪除 webhook: {}", userId, webhookId);
+        try {
+            webhookService.deleteWebhook(userId, webhookId);
+        } catch (IllegalArgumentException e) {
+            log.warn("用戶 {} 刪除 webhook 失敗: {}", userId, e.getMessage());
+            return ResponseEntity.status(403).body(Map.of(
+                    "error", "Webhook 不存在或無權操作"));
+        }
 
         return ResponseEntity.ok(Map.of(
                 "webhookId", webhookId,

@@ -25,4 +25,9 @@ public interface UserDiscordWebhookRepository extends JpaRepository<UserDiscordW
      * 按更新時間排序，取最新的已啟用 webhook
      */
     Optional<UserDiscordWebhook> findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc(String userId);
+
+    /**
+     * 用 webhookId + userId 查詢（所有權驗證用）
+     */
+    Optional<UserDiscordWebhook> findByWebhookIdAndUserId(String webhookId, String userId);
 }
