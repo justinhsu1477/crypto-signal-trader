@@ -313,4 +313,236 @@ class MultiUserDataStreamManagerTest {
                     .isEqualTo(BinanceUserDataStreamService.MAX_RECONNECT_ATTEMPTS);
         }
     }
+
+    // ==================== reconnect 修復驗證 ====================
+
+    @Nested
+    @DisplayName("reconnect — 重連邏輯（含修復）")
+    class ReconnectLogicTests {
+
+        @Test
+        @DisplayName("reconnect 用戶不在 activeStreams → 跳過不拋異常")
+        void reconnectNonExistentUserSkips() {
+            assertThatCode(() -> manager.reconnect("nonexistent"))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("reconnect 期間 API Key 已消失 → 移除 stream")
+        void reconnectApiKeyGoneRemovesStream() {
+            // 先把 context 手動放入 activeStreams
+            UserStreamContext context = new UserStreamContext("u1", "old-key", "old-secret");
+            manager.getActiveStreams().put("u1", context);
+
+            when(userApiKeyService.getUserBinanceKeys("u1")).thenReturn(Optional.empty());
+
+            manager.reconnect("u1");
+
+            assertThat(manager.getActiveStreams()).doesNotContainKey("u1");
+        }
+
+        @Test
+        @DisplayName("reconnect 期間 API Key 已更新 → context 使用新 key")
+        void reconnectWithUpdatedApiKey() {
+            UserStreamContext context = new UserStreamContext("u1", "old-key", "old-secret");
+            manager.getActiveStreams().put("u1", context);
+
+            when(userApiKeyService.getUserBinanceKeys("u1"))
+                    .thenReturn(Optional.of(new BinanceKeys("new-key", "new-secret")));
+
+            // createListenKey 會失敗（HTTP mock 未完整設定），但 context API Key 應已更新
+            manager.reconnect("u1");
+
+            assertThat(context.getApiKey()).isEqualTo("new-key");
+            assertThat(context.getSecretKey()).isEqualTo("new-secret");
+        }
+    }
+
+    // ==================== keepAliveAll ====================
+
+    @Nested
+    @DisplayName("keepAliveAll — listenKey 續命")
+    class KeepAliveTests {
+
+        @Test
+        @DisplayName("沒有 listenKey 的 context → 跳過")
+        void skipsContextWithoutListenKey() {
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            // listenKey = null（預設）
+            manager.getActiveStreams().put("u1", context);
+
+            assertThatCode(() -> manager.keepAliveAll())
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("keepalive 回 200 → 不觸發 reconnect")
+        void successfulKeepAliveDoesNotReconnect() {
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            context.setListenKey("test-listen-key");
+            manager.getActiveStreams().put("u1", context);
+
+            // 使用 spy 來驗證 keepAliveListenKey 的行為
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doReturn(200).when(spyManager).keepAliveListenKey(anyString(), anyString());
+
+            spyManager.keepAliveAll();
+
+            // 不應排程重連
+            assertThat((Object) context.getPendingReconnect()).isNull();
+        }
+
+        @Test
+        @DisplayName("keepalive 回 400 → 設 selfInitiatedClose + 觸發 reconnect")
+        void keepAlive400TriggersSelfInitiatedAndReconnect() {
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            context.setListenKey("test-listen-key");
+            manager.getActiveStreams().put("u1", context);
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doReturn(400).when(spyManager).keepAliveListenKey(anyString(), anyString());
+            doNothing().when(spyManager).scheduleReconnect(anyString(), any(UserStreamContext.class));
+
+            spyManager.keepAliveAll();
+
+            // Issue 3 修復：應先設 selfInitiatedClose
+            assertThat(context.isSelfInitiatedClose()).isTrue();
+            verify(spyManager).scheduleReconnect(eq("u1"), eq(context));
+        }
+
+        @Test
+        @DisplayName("keepalive 回 401 → 設 selfInitiatedClose + 觸發 reconnect")
+        void keepAlive401TriggersSelfInitiatedAndReconnect() {
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            context.setListenKey("test-listen-key");
+            manager.getActiveStreams().put("u1", context);
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doReturn(401).when(spyManager).keepAliveListenKey(anyString(), anyString());
+            doNothing().when(spyManager).scheduleReconnect(anyString(), any(UserStreamContext.class));
+
+            spyManager.keepAliveAll();
+
+            assertThat(context.isSelfInitiatedClose()).isTrue();
+            verify(spyManager).scheduleReconnect(eq("u1"), eq(context));
+        }
+
+        @Test
+        @DisplayName("keepalive 異常 → 不拋異常不 reconnect")
+        void keepAliveExceptionDoesNotThrow() {
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            context.setListenKey("test-listen-key");
+            manager.getActiveStreams().put("u1", context);
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doThrow(new RuntimeException("Network error"))
+                    .when(spyManager).keepAliveListenKey(anyString(), anyString());
+
+            assertThatCode(() -> spyManager.keepAliveAll())
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    // ==================== stopAllStreams 進階 ====================
+
+    @Nested
+    @DisplayName("stopAllStreams — 進階驗證")
+    class StopAllAdvanced {
+
+        @Test
+        @DisplayName("stopAllStreams 關閉 reconnect executor")
+        void stopsReconnectExecutor() {
+            // 先觸發 executor 建立
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            manager.scheduleReconnect("u1", context);
+
+            ScheduledExecutorService executor = manager.getReconnectExecutor();
+            assertThat(executor).isNotNull();
+            assertThat(executor.isShutdown()).isFalse();
+
+            manager.stopAllStreams();
+
+            // executor 應該被 shutdown
+            assertThat(manager.getReconnectExecutor()).isNull();
+        }
+
+        @Test
+        @DisplayName("stopAllStreams 後 startAllStreams 重置 shuttingDown")
+        void startAfterStopResetsShuttingDown() {
+            manager.stopAllStreams();
+            assertThat(manager.isShuttingDown()).isTrue();
+
+            when(userRepository.findAll()).thenReturn(List.of());
+            manager.startAllStreams();
+
+            assertThat(manager.isShuttingDown()).isFalse();
+        }
+    }
+
+    // ==================== startAllStreams 進階 ====================
+
+    @Nested
+    @DisplayName("startAllStreams — 進階驗證")
+    class StartAllAdvanced {
+
+        @Test
+        @DisplayName("單一用戶啟動失敗不影響其他用戶")
+        void oneUserFailureDoesNotAffectOthers() {
+            User user1 = User.builder().userId("u1").enabled(true).autoTradeEnabled(true).build();
+            User user2 = User.builder().userId("u2").enabled(true).autoTradeEnabled(true).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2));
+            when(userApiKeyService.hasApiKey("u1")).thenReturn(true);
+            when(userApiKeyService.hasApiKey("u2")).thenReturn(true);
+
+            // u1 取得 key 正常（但 createListenKey 仍會失敗 → 進 reconnect）
+            when(userApiKeyService.getUserBinanceKeys("u1"))
+                    .thenReturn(Optional.of(new BinanceKeys("key1", "secret1")));
+            // u2 取得 key 也正常
+            when(userApiKeyService.getUserBinanceKeys("u2"))
+                    .thenReturn(Optional.of(new BinanceKeys("key2", "secret2")));
+
+            manager.startAllStreams();
+
+            // 兩個都應該在 activeStreams（即使 createListenKey 失敗，也會放入 map + reconnect）
+            assertThat(manager.getActiveStreams()).containsKey("u1");
+            assertThat(manager.getActiveStreams()).containsKey("u2");
+        }
+    }
+
+    // ==================== 狀態查詢進階 ====================
+
+    @Nested
+    @DisplayName("狀態查詢 — 進階")
+    class StatusAdvanced {
+
+        @Test
+        @DisplayName("有 active streams 時 getAllStatus 包含每個用戶的 status")
+        void allStatusIncludesPerUserStatus() {
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            context.setConnected(true);
+            context.setListenKey("test-key");
+            manager.getActiveStreams().put("u1", context);
+
+            var status = manager.getAllStatus();
+
+            assertThat(status.get("totalStreams")).isEqualTo(1);
+            @SuppressWarnings("unchecked")
+            var streams = (java.util.Map<String, Object>) status.get("streams");
+            assertThat(streams).containsKey("u1");
+        }
+
+        @Test
+        @DisplayName("getUserStatus 存在的用戶回傳完整 status")
+        void userStatusFound() {
+            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            context.setConnected(true);
+            manager.getActiveStreams().put("u1", context);
+
+            var status = manager.getUserStatus("u1");
+
+            assertThat(status).containsEntry("userId", "u1");
+            assertThat(status).containsEntry("connected", true);
+        }
+    }
 }

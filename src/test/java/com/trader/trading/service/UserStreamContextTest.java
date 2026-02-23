@@ -2,6 +2,7 @@ package com.trader.trading.service;
 import org.junit.jupiter.api.*;
 
 import java.util.Map;
+import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -158,6 +159,148 @@ class UserStreamContextTest {
             assertThat(str).contains("user-1");
             assertThat(str).contains("connected=false");
             assertThat(str).contains("attempts=0");
+        }
+    }
+
+    // ==================== 新增覆蓋 ====================
+
+    @Nested
+    @DisplayName("updateApiKey — 憑證更新")
+    class UpdateApiKey {
+
+        @Test
+        @DisplayName("更新 apiKey 和 secretKey")
+        void updatesCredentials() {
+            context.updateApiKey("new-api-key", "new-secret-key");
+
+            assertThat(context.getApiKey()).isEqualTo("new-api-key");
+            assertThat(context.getSecretKey()).isEqualTo("new-secret-key");
+        }
+
+        @Test
+        @DisplayName("更新不影響 userId 和 createdAt")
+        void doesNotChangeImmutableFields() {
+            var createdAt = context.getCreatedAt();
+            context.updateApiKey("new-key", "new-secret");
+
+            assertThat(context.getUserId()).isEqualTo("user-1");
+            assertThat(context.getCreatedAt()).isEqualTo(createdAt);
+        }
+    }
+
+    @Nested
+    @DisplayName("cancelPendingReconnect — 排程取消")
+    class CancelPendingReconnect {
+
+        private ScheduledExecutorService scheduler;
+
+        @BeforeEach
+        void setUpScheduler() {
+            scheduler = Executors.newSingleThreadScheduledExecutor();
+        }
+
+        @AfterEach
+        void tearDown() {
+            scheduler.shutdownNow();
+        }
+
+        @Test
+        @DisplayName("有 pending 時取消成功")
+        void cancelsPendingFuture() {
+            ScheduledFuture<?> future = scheduler.schedule(() -> {}, 1, TimeUnit.HOURS);
+            context.setPendingReconnect(future);
+
+            assertThat(future.isCancelled()).isFalse();
+
+            context.cancelPendingReconnect();
+
+            assertThat(future.isCancelled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("沒有 pending（null）時不拋異常")
+        void noPendingDoesNotThrow() {
+            assertThatCode(() -> context.cancelPendingReconnect())
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("已完成的 pending → 不拋異常")
+        void alreadyDonePendingDoesNotThrow() throws Exception {
+            ScheduledFuture<?> future = scheduler.schedule(() -> {}, 0, TimeUnit.MILLISECONDS);
+            Thread.sleep(50);  // 等 task 完成
+
+            context.setPendingReconnect(future);
+
+            assertThatCode(() -> context.cancelPendingReconnect())
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("alertSent 狀態管理")
+    class AlertSent {
+
+        @Test
+        @DisplayName("setAlertSent(true) → isAlertSent()=true")
+        void setAndGet() {
+            context.setAlertSent(true);
+            assertThat(context.isAlertSent()).isTrue();
+
+            context.setAlertSent(false);
+            assertThat(context.isAlertSent()).isFalse();
+        }
+
+        @Test
+        @DisplayName("resetOnConnected 不重置 alertSent（由 onOpen 手動處理）")
+        void resetOnConnectedDoesNotResetAlertSent() {
+            context.setAlertSent(true);
+            context.resetOnConnected();
+
+            // alertSent 由 PerUserWebSocketListener.onOpen 手動處理
+            // resetOnConnected 不應自動重置它（保留給 onOpen 判斷是否要送恢復通知）
+            assertThat(context.isAlertSent()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("getStatus — 進階場景")
+    class StatusAdvanced {
+
+        @Test
+        @DisplayName("有 lastMessageTime 時 elapsedSeconds >= 0")
+        void elapsedSecondsPositiveWhenHasMessage() {
+            context.updateLastMessageTime();
+
+            Map<String, Object> status = context.getStatus();
+
+            long elapsed = (long) status.get("elapsedSeconds");
+            assertThat(elapsed).isGreaterThanOrEqualTo(0);
+        }
+
+        @Test
+        @DisplayName("沒有 lastMessageTime 時 elapsedSeconds = -1")
+        void elapsedSecondsNegativeWhenNoMessage() {
+            Map<String, Object> status = context.getStatus();
+
+            assertThat(status.get("elapsedSeconds")).isEqualTo(-1L);
+        }
+
+        @Test
+        @DisplayName("alertSent=true 時正確反映在 status")
+        void alertSentReflectedInStatus() {
+            context.setAlertSent(true);
+
+            assertThat(context.getStatus()).containsEntry("alertSent", true);
+        }
+
+        @Test
+        @DisplayName("reconnectAttempts 正確反映在 status")
+        void reconnectAttemptsReflectedInStatus() {
+            context.incrementReconnectAttempts();
+            context.incrementReconnectAttempts();
+
+            assertThat(context.getStatus()).containsEntry("reconnectAttempts", 2);
         }
     }
 }
