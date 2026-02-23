@@ -12,6 +12,8 @@ import com.trader.user.repository.UserRepository;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
 
+import org.springframework.dao.DataIntegrityViolationException;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -165,6 +167,21 @@ class ReferralServiceTest {
             assertThatThrownBy(() -> service.submitUid("user-1", "uid-123"))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("已通過驗證");
+        }
+
+        @Test
+        @DisplayName("並行提交觸發 DB unique constraint → IllegalArgumentException")
+        void concurrentSubmitCaught() {
+            when(linkRepository.existsByExchangeAndExchangeUid("BINANCE", "99887766"))
+                    .thenReturn(false);
+            when(linkRepository.findByUserIdAndExchange("user-1", "BINANCE"))
+                    .thenReturn(Optional.empty());
+            when(linkRepository.save(any()))
+                    .thenThrow(new DataIntegrityViolationException("unique constraint"));
+
+            assertThatThrownBy(() -> service.submitUid("user-1", "99887766"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("已被其他帳號綁定");
         }
 
         @Test

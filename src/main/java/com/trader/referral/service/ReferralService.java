@@ -12,6 +12,7 @@ import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -89,7 +90,12 @@ public class ReferralService {
         link.setExchangeUid(trimmedUid);
         link.setStatus(ReferralStatus.PENDING);
         link.setAdminNotes(null);  // 清空之前的拒絕備註
-        linkRepository.save(link);
+        try {
+            linkRepository.save(link);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("UID 並行提交衝突: userId={} uid={}", userId, trimmedUid, e);
+            throw new IllegalArgumentException("此交易所 UID 已被其他帳號綁定");
+        }
 
         log.info("用戶提交交易所 UID: userId={} exchange={} uid={}", userId, exchange, trimmedUid);
 
