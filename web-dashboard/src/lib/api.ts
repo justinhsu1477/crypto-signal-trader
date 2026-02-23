@@ -133,14 +133,14 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     throw new Error("Unauthorized");
   }
 
-  // 403 推薦碼未驗證 — dispatch event 讓 ReferralBanner 顯示
+  // 403 推薦碼未驗證 — 直接重導至 /referral（soft gate fallback）
   if (res.status === 403) {
     const body = await res.text();
     try {
       const parsed = JSON.parse(body);
       if (parsed.error === "REFERRAL_NOT_VERIFIED") {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("referral-not-verified"));
+        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/referral")) {
+          window.location.href = "/referral";
         }
         throw new Error("REFERRAL_NOT_VERIFIED");
       }

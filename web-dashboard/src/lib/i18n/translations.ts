@@ -433,13 +433,6 @@ const translations = {
     },
     verifiedAt: { en: "Verified at {time}", "zh-TW": "驗證時間：{time}", "zh-CN": "验证时间：{time}" },
     goToDashboard: { en: "Go to Dashboard", "zh-TW": "前往總覽", "zh-CN": "前往总览" },
-    // 403 Banner
-    bannerMessage: {
-      en: "Please complete referral binding to use trading features",
-      "zh-TW": "請先完成推薦綁定才能使用交易功能",
-      "zh-CN": "请先完成推荐绑定才能使用交易功能",
-    },
-    bannerAction: { en: "Go to Referral", "zh-TW": "前往綁定", "zh-CN": "前往绑定" },
   },
 } as const;
 

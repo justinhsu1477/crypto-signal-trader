@@ -4,7 +4,7 @@
  * 測試重點：
  * 1. Refresh Token 自動重試機制（401 → refresh → retry）
  * 2. Refresh 失敗 → 清除登入狀態 + redirect
- * 3. 403 REFERRAL_NOT_VERIFIED → dispatch CustomEvent
+ * 3. 403 REFERRAL_NOT_VERIFIED → redirect /referral
  * 4. 正常請求 + Authorization header
  * 5. 並行 401 的單例 refresh（防止重複呼叫）
  */
@@ -240,8 +240,15 @@ describe("401 Refresh Token 自動重試", () => {
 // ==================== 403 REFERRAL_NOT_VERIFIED ====================
 
 describe("403 REFERRAL_NOT_VERIFIED", () => {
-  it("dispatch CustomEvent + 拋出 Error", async () => {
+  it("redirect /referral + 拋出 Error", async () => {
     localStorage.setItem("token", "valid-jwt");
+
+    // 模擬在 dashboard 頁
+    Object.defineProperty(window.location, "pathname", {
+      value: "/",
+      writable: true,
+      configurable: true,
+    });
 
     mockFetch.mockReturnValueOnce(
       textResponse(
@@ -250,16 +257,37 @@ describe("403 REFERRAL_NOT_VERIFIED", () => {
       )
     );
 
-    const eventHandler = vi.fn();
-    window.addEventListener("referral-not-verified", eventHandler);
+    const api = await loadApi();
+    await expect(api.getDashboardOverview()).rejects.toThrow(
+      "REFERRAL_NOT_VERIFIED"
+    );
+
+    expect(window.location.href).toBe("/referral");
+  });
+
+  it("已在 /referral → 不重導，仍拋出 Error", async () => {
+    localStorage.setItem("token", "valid-jwt");
+
+    Object.defineProperty(window.location, "pathname", {
+      value: "/referral",
+      writable: true,
+      configurable: true,
+    });
+
+    mockFetch.mockReturnValueOnce(
+      textResponse(
+        JSON.stringify({ error: "REFERRAL_NOT_VERIFIED", message: "請先完成推薦碼驗證" }),
+        403
+      )
+    );
 
     const api = await loadApi();
     await expect(api.getDashboardOverview()).rejects.toThrow(
       "REFERRAL_NOT_VERIFIED"
     );
 
-    expect(eventHandler).toHaveBeenCalledTimes(1);
-    window.removeEventListener("referral-not-verified", eventHandler);
+    // 不應 redirect（已在 /referral）
+    expect(window.location.href).toBe("");
   });
 
   it("非 REFERRAL_NOT_VERIFIED 的 403 → 拋出一般錯誤", async () => {
@@ -269,15 +297,11 @@ describe("403 REFERRAL_NOT_VERIFIED", () => {
       textResponse("Forbidden", 403)
     );
 
-    const eventHandler = vi.fn();
-    window.addEventListener("referral-not-verified", eventHandler);
-
     const api = await loadApi();
     await expect(api.getDashboardOverview()).rejects.toThrow("Forbidden");
 
-    // 不 dispatch event
-    expect(eventHandler).not.toHaveBeenCalled();
-    window.removeEventListener("referral-not-verified", eventHandler);
+    // 不 redirect
+    expect(window.location.href).toBe("");
   });
 });
 
