@@ -246,6 +246,8 @@ public class MultiUserDataStreamManager {
                 int code = keepAliveListenKey(context.getApiKey(), context.getListenKey());
                 if (code == 400 || code == 401) {
                     log.warn("用戶 {} listenKey keepalive 失敗 ({}), 觸發重連", userId, code);
+                    // 先標記自發關閉，避免舊 listener 的 onClosed 觸發額外 reconnect
+                    context.setSelfInitiatedClose(true);
                     scheduleReconnect(userId, context);
                 }
             } catch (Exception e) {
@@ -369,6 +371,7 @@ public class MultiUserDataStreamManager {
                 WebSocket ws = wsClient.newWebSocket(request, new PerUserWebSocketListener(context));
                 context.setWebSocket(ws);
                 context.setSelfInitiatedClose(false);
+                context.resetReconnectAttempts();
 
                 log.info("用戶 {} 重連成功", userId);
             } catch (Exception e) {
@@ -432,8 +435,9 @@ public class MultiUserDataStreamManager {
                         log.debug("用戶 {} ACCOUNT_UPDATE received (ignored)", context.getUserId());
                         break;
                     case "listenKeyExpired":
-                        log.warn("用戶 {} ListenKey 已過期，觸發重連...", context.getUserId());
-                        reconnect(context.getUserId());
+                        log.warn("用戶 {} ListenKey 已過期，排程重連...", context.getUserId());
+                        context.resetReconnectAttempts();  // 過期是正常生命週期，不累積計數
+                        scheduleReconnect(context.getUserId(), context);
                         break;
                     default:
                         log.debug("用戶 {} unknown event: {}", context.getUserId(), eventType);
