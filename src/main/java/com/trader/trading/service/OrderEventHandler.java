@@ -165,10 +165,20 @@ public class OrderEventHandler {
 
         log.warn("{}{} 被{}: {} orderId={}", logPrefix, label, reason, symbol, orderId);
 
+        boolean hasOpenTrade;
         try {
-            tradeRecordService.recordProtectionLost(symbol, orderType, orderId, reason);
+            hasOpenTrade = tradeRecordService.recordProtectionLost(symbol, orderType, orderId, reason);
         } catch (Exception e) {
             log.error("{}記錄保護消失事件失敗: {}", logPrefix, e.getMessage());
+            // 查詢失敗時保守處理：假設仍有持倉，發送告警
+            hasOpenTrade = true;
+        }
+
+        if (!hasOpenTrade) {
+            // 倉位已平倉，SL/TP 過期屬正常連帶行為，不需發送緊急告警
+            log.info("{}{}單{}但倉位已平，跳過告警: {} orderId={}",
+                    logPrefix, label, reason, symbol, orderId);
+            return;
         }
 
         int color = isSL ? DiscordWebhookService.COLOR_RED : DiscordWebhookService.COLOR_YELLOW;
