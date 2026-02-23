@@ -112,8 +112,12 @@ class OrderEventHandlerTest {
     class ProtectionLost {
 
         @Test
-        @DisplayName("STOP_MARKET CANCELED → recordProtectionLost + 紅色告警")
+        @DisplayName("STOP_MARKET CANCELED（仍有持倉）→ recordProtectionLost + 紅色告警")
         void slCanceledTriggersRedAlert() {
+            // 模擬仍有 OPEN 持倉 → 應發告警
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
 
@@ -137,8 +141,11 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("TAKE_PROFIT_MARKET CANCELED → recordProtectionLost + 黃色告警")
+        @DisplayName("TAKE_PROFIT_MARKET CANCELED（仍有持倉）→ recordProtectionLost + 黃色告警")
         void tpCanceledTriggersYellowAlert() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
 
@@ -157,8 +164,11 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("STOP_MARKET EXPIRED → 與 CANCELED 同等處理（紅色告警）")
+        @DisplayName("STOP_MARKET EXPIRED（仍有持倉）→ 與 CANCELED 同等處理（紅色告警）")
         void slExpiredTriggersRedAlert() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
 
@@ -175,8 +185,11 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("TAKE_PROFIT_MARKET EXPIRED → 黃色告警")
+        @DisplayName("TAKE_PROFIT_MARKET EXPIRED（仍有持倉）→ 黃色告警")
         void tpExpiredTriggersYellowAlert() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
 
@@ -190,6 +203,52 @@ class OrderEventHandlerTest {
                     eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("444555666"), eq("EXPIRED"));
 
             assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_YELLOW);
+        }
+
+        @Test
+        @DisplayName("STOP_MARKET EXPIRED 但倉位已平 → 不發告警通知（正常連帶過期）")
+        void slExpiredAfterCloseNoAlarm() {
+            // 模擬倉位已平，recordProtectionLost 回傳 false
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(false);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "EXPIRED", "SELL",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 111222333L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // recordProtectionLost 仍被呼叫（事件仍需記錄到 DB）
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("111222333"), eq("EXPIRED"));
+
+            // 但不應發送任何通知
+            assertThat(lastTitle).isNull();
+            assertThat(lastMessage).isNull();
+        }
+
+        @Test
+        @DisplayName("TAKE_PROFIT_MARKET CANCELED 但倉位已平 → 不發告警通知")
+        void tpCanceledAfterCloseNoAlarm() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(false);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "ETHUSDT", "TAKE_PROFIT_MARKET", "CANCELED", "BUY",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 888999000L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("888999000"), eq("CANCELED"));
+
+            assertThat(lastTitle).isNull();
         }
     }
 
@@ -407,7 +466,7 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("recordProtectionLost 拋異常 → 仍發通知不傳播")
+        @DisplayName("recordProtectionLost 拋異常 → 保守假設有持倉，仍發通知不傳播")
         void protectionLostFailureStillNotifies() {
             doThrow(new RuntimeException("DB error"))
                     .when(tradeRecordService).recordProtectionLost(
@@ -423,7 +482,7 @@ class OrderEventHandlerTest {
             assertThatCode(() -> handler.handleOrderTradeUpdate(event))
                     .doesNotThrowAnyException();
 
-            // 即使 recordProtectionLost 失敗，通知仍應發出
+            // recordProtectionLost 拋異常 → 保守處理假設有持倉 → 仍發告警
             assertThat(lastTitle).contains("止損單被取消");
         }
 
