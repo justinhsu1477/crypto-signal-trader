@@ -257,7 +257,7 @@ class TradeRecordCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(trade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
 
             service.recordCloseFromStream("BTCUSDT", 97000.0, 0.5,
                     19.4, -1000.0, "123", "SL_TRIGGERED", 1700000000000L);
@@ -277,7 +277,7 @@ class TradeRecordCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(trade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
 
             // 出場 0.5 BTC < 1.0 * 0.999 = 0.999 → 部分平倉
             service.recordCloseFromStream("BTCUSDT", 96000.0, 0.5,
@@ -301,7 +301,7 @@ class TradeRecordCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(trade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
 
             // 出場 0.4999 BTC ≈ 0.5 * 0.9998 → 在 0.999 容差內 → 全平
             service.recordCloseFromStream("BTCUSDT", 96000.0, 0.4999,
@@ -322,7 +322,7 @@ class TradeRecordCloseTest {
                     .status("OPEN")
                     .build();
 
-            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(trade));
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
 
             // 出場 0.5 BTC = remainingQuantity → 全平
             service.recordCloseFromStream("BTCUSDT", 93000.0, 0.5,

@@ -208,6 +208,11 @@ class BinanceUserDataStreamServiceTest {
         @Test
         @DisplayName("STOP_MARKET CANCELED → 紅色告警 + recordProtectionLost")
         void slCanceledTriggersRedAlert() {
+            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 應發告警
+            when(tradeRecordService.recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("555666777"), eq("CANCELED")))
+                    .thenReturn(true);
+
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "CANCELED", "SELL",
                     0.0, 0.0, 0.0, "USDT", 0.0, 555666777L, 1700000000000L);
@@ -234,6 +239,11 @@ class BinanceUserDataStreamServiceTest {
         @Test
         @DisplayName("TAKE_PROFIT_MARKET CANCELED → 黃色告警 + recordProtectionLost")
         void tpCanceledTriggersYellowAlert() {
+            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 應發告警
+            when(tradeRecordService.recordProtectionLost(
+                    eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("888999000"), eq("CANCELED")))
+                    .thenReturn(true);
+
             JsonObject event = buildOrderTradeUpdate(
                     "ETHUSDT", "TAKE_PROFIT_MARKET", "CANCELED", "BUY",
                     0.0, 0.0, 0.0, "USDT", 0.0, 888999000L, 1700000000000L);
@@ -254,6 +264,11 @@ class BinanceUserDataStreamServiceTest {
         @Test
         @DisplayName("STOP_MARKET EXPIRED → 紅色告警（與 CANCELED 同等處理）")
         void slExpiredTriggersRedAlert() {
+            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 應發告警
+            when(tradeRecordService.recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("111222333"), eq("EXPIRED")))
+                    .thenReturn(true);
+
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "EXPIRED", "SELL",
                     0.0, 0.0, 0.0, "USDT", 0.0, 111222333L, 1700000000000L);
