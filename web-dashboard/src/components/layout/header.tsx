@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
 import { LanguageSwitcher } from "@/components/ui/language-switcher";
-import { LayoutDashboard, BarChart3, History, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, BarChart3, History, Link2, Settings, LogOut } from "lucide-react";
 import { useState } from "react";
 
 export function Header() {
@@ -22,6 +22,7 @@ export function Header() {
     { href: "/", label: t("nav.overview"), icon: LayoutDashboard },
     { href: "/performance", label: t("nav.performance"), icon: BarChart3 },
     { href: "/trades", label: t("nav.trades"), icon: History },
+    { href: "/referral", label: t("nav.referral"), icon: Link2 },
     { href: "/settings", label: t("nav.settings"), icon: Settings },
   ];
 
