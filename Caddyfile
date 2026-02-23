@@ -1,0 +1,8 @@
+:80 {
+    handle /api/* {
+        reverse_proxy trading-api:8080
+    }
+    handle {
+        reverse_proxy web-dashboard:3000
+    }
+}

@@ -33,9 +33,11 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 // 允許的源（origin）
                 .allowedOrigins(
-                        "http://localhost:3000",    // 開發環境 - Next.js dev server
-                        "http://localhost:3001",    // 開發環境 - Next.js 另一實例
-                        "http://127.0.0.1:3000",    // 同上（127.0.0.1 版本）
+                        "http://localhost",          // Caddy 反向代理（Cloud 部署）
+                        "http://localhost:3000",     // 開發環境 - Next.js dev server
+                        "http://localhost:3001",     // 開發環境 - Next.js 另一實例
+                        "http://127.0.0.1",          // Caddy（127.0.0.1 版本）
+                        "http://127.0.0.1:3000",
                         "http://127.0.0.1:3001"
                 )
                 // 允許的 HTTP 方法
@@ -59,6 +61,6 @@ public class CorsConfig implements WebMvcConfigurer {
                 // 預檢請求的快取時間（秒）
                 .maxAge(3600);
 
-        log.info("CORS 設定已啟用: localhost:3000, localhost:3001");
+        log.info("CORS 設定已啟用: localhost, localhost:3000, localhost:3001");
     }
 }
