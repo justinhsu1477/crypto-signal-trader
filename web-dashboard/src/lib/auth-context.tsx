@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { login as apiLogin, register as apiRegister } from "./api";
+import { clearReferralCache } from "./use-referral-guard";
 import type { LoginRequest, RegisterRequest } from "@/types";
 
 interface AuthState {
@@ -53,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("userId");
     localStorage.removeItem("email");
+    clearReferralCache();
     setState({ token: null, userId: null, email: null, isLoading: false });
   }, []);
 

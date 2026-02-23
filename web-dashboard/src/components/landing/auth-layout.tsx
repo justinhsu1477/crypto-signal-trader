@@ -30,7 +30,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
 
       <div className="relative z-10 flex min-h-screen flex-col lg:flex-row items-center justify-center gap-12 lg:gap-20 px-6 pt-24 pb-12 max-w-7xl mx-auto">
         <div className="flex-1 max-w-xl text-center lg:text-left">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-4 py-1.5 text-sm text-emerald-400 mb-6 animate-fade-in">
+          <div className="animate-fade-in inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-4 py-1.5 text-sm text-emerald-400 mb-6">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
@@ -38,19 +38,18 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
             {t("landing.statusBadge")}
           </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight animate-fade-in-up">
-            {t("landing.heroTitle1")}
-            <br />
+          <h1 className="animate-fade-in-up text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight">
+            {t("landing.heroTitle1")}{" "}
             <span className="bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400 bg-clip-text text-transparent">
               {t("landing.heroTitle2")}
             </span>
           </h1>
 
-          <p className="mt-5 text-lg text-muted-foreground leading-relaxed max-w-md mx-auto lg:mx-0 animate-fade-in-up animation-delay-200">
+          <p className="animate-fade-in-up animation-delay-200 mt-5 text-lg text-muted-foreground leading-relaxed max-w-md mx-auto lg:mx-0">
             {t("landing.heroDescription")}
           </p>
 
-          <div className="grid grid-cols-2 gap-3 mt-8 animate-fade-in-up animation-delay-400">
+          <div className="animate-fade-in-up animation-delay-400 grid grid-cols-2 gap-3 mt-8">
             {features.map((f) => (
               <div
                 key={f.title}
@@ -70,7 +69,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <div className="w-full max-w-[420px] animate-fade-in-up animation-delay-300">
+        <div className="animate-fade-in-up animation-delay-300 w-full max-w-[420px]">
           {children}
         </div>
       </div>
