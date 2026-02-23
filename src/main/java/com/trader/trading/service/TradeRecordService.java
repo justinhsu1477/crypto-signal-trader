@@ -614,11 +614,33 @@ public class TradeRecordService {
     }
 
     /**
+     * 依狀態查詢交易 — 顯式 userId 版本
+     * 供 DashboardService 等 REST API 層在無 ThreadLocal 時使用
+     */
+    public List<Trade> findByStatus(String status, String userId) {
+        if (multiUserConfig.isEnabled()) {
+            return tradeRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, status);
+        }
+        return tradeRepository.findByStatusOrderByCreatedAtDesc(status);
+    }
+
+    /**
      * 查詢所有交易（倒序）
      */
     public List<Trade> findAll() {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
+            return tradeRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        }
+        return tradeRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /**
+     * 查詢所有交易（倒序）— 顯式 userId 版本
+     * 供 DashboardService 等 REST API 層在無 ThreadLocal 時使用
+     */
+    public List<Trade> findAll(String userId) {
+        if (multiUserConfig.isEnabled()) {
             return tradeRepository.findByUserIdOrderByCreatedAtDesc(userId);
         }
         return tradeRepository.findAllByOrderByCreatedAtDesc();
@@ -694,6 +716,16 @@ public class TradeRecordService {
         LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
         LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
         return getStatsForDateRange(startOfToday, now);
+    }
+
+    /**
+     * 取得指定用戶的今日交易統計（explicit-userId 版本）
+     * 供 DashboardService 等 REST API 層在無 ThreadLocal 時使用
+     */
+    public Map<String, Object> getTodayStats(String userId) {
+        LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
+        LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
+        return getStatsForDateRange(startOfToday, now, userId);
     }
 
     /**
