@@ -32,6 +32,13 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     }
 
     /**
+     * 找某交易對 OPEN 或 PENDING_CLOSE 的交易（供 WebSocket 更新用）
+     * PENDING_CLOSE = MARKET 平倉單已送出但 exitPrice 尚未從 WebSocket 取得真實值
+     */
+    @Query("SELECT t FROM Trade t WHERE t.symbol = :symbol AND t.status IN ('OPEN', 'PENDING_CLOSE') ORDER BY t.updatedAt DESC")
+    List<Trade> findOpenOrPendingCloseTrade(@Param("symbol") String symbol);
+
+    /**
      * 查詢所有 OPEN 的交易（用於無幣種訊號的 fallback）
      */
     @Query("SELECT t FROM Trade t WHERE t.status = 'OPEN' ORDER BY t.updatedAt DESC")
@@ -153,6 +160,12 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
         List<Trade> openTrades = findByUserIdAndSymbolAndStatus(userId, symbol, "OPEN");
         return openTrades.isEmpty() ? Optional.empty() : Optional.of(openTrades.get(0));
     }
+
+    /**
+     * 找用戶某交易對 OPEN 或 PENDING_CLOSE 的交易（供 WebSocket 更新用）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.userId = :userId AND t.symbol = :symbol AND t.status IN ('OPEN', 'PENDING_CLOSE') ORDER BY t.updatedAt DESC")
+    List<Trade> findUserOpenOrPendingCloseTrade(@Param("userId") String userId, @Param("symbol") String symbol);
 
     /**
      * 統計用戶已平倉交易中獲利的筆數
