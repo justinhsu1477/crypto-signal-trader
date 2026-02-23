@@ -1,0 +1,59 @@
+# ========================================
+# Cloud 環境 — Caddy + Spring Boot + Dashboard（不含 Python Monitor）
+# ========================================
+# 使用方式:
+#   docker compose -f docker-compose.cloud.yml up -d --build
+#
+# Python Monitor 在本地直跑（不在 Docker 內），透過 Caddy :80 連 API
+# DB 使用 Neon 雲端，不需本地 PostgreSQL
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    depends_on:
+      trading-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  trading-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-api
+    expose:
+      - "8080"
+    env_file:
+      - .env.prod
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  web-dashboard:
+    build:
+      context: ./web-dashboard
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://trading-api:8080
+    container_name: web-dashboard
+    expose:
+      - "3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://trading-api:8080
+    depends_on:
+      trading-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
