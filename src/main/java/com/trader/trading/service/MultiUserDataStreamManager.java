@@ -105,20 +105,29 @@ public class MultiUserDataStreamManager {
     /**
      * 啟動所有符合條件的用戶 stream
      * 條件：enabled=true && autoTradeEnabled=true && 有 API Key
+     *
+     * 效能優化：一次 batch 查詢所有 API Key，避免 per-user 查詢 (N+1) 和
+     * hasApiKey + getUserBinanceKeys 的 dual lookup (2N → 1)
      */
     public void startAllStreams() {
         shuttingDown = false;
+
+        // Batch 查詢：一次取得所有 Binance API Key（解密後），避免 N+1 和 dual lookup
+        Map<String, BinanceKeys> allKeys = userApiKeyService.getAllBinanceKeys("BINANCE");
+
         List<User> eligibleUsers = userRepository.findAll().stream()
                 .filter(User::isEnabled)
                 .filter(User::isAutoTradeEnabled)
-                .filter(u -> userApiKeyService.hasApiKey(u.getUserId()))
+                .filter(u -> allKeys.containsKey(u.getUserId()))
                 .toList();
 
         log.info("多用戶 Data Stream 啟動: 找到 {} 個符合條件的用戶", eligibleUsers.size());
 
         for (User user : eligibleUsers) {
             try {
-                startUserStream(user.getUserId());
+                // 使用已預載的 keys，不再重複查 DB
+                BinanceKeys keys = allKeys.get(user.getUserId());
+                startUserStreamWithKeys(user.getUserId(), keys);
             } catch (Exception e) {
                 log.error("用戶 {} Stream 啟動失敗: {}", user.getUserId(), e.getMessage());
             }
@@ -129,7 +138,7 @@ public class MultiUserDataStreamManager {
     }
 
     /**
-     * 啟動單一用戶的 stream
+     * 啟動單一用戶的 stream（外部呼叫入口，會查 DB 取得 keys）
      */
     public void startUserStream(String userId) {
         if (activeStreams.containsKey(userId)) {
@@ -143,7 +152,19 @@ public class MultiUserDataStreamManager {
             return;
         }
 
-        BinanceKeys keys = keysOpt.get();
+        startUserStreamWithKeys(userId, keysOpt.get());
+    }
+
+    /**
+     * 啟動單一用戶的 stream（使用已預載的 keys，避免重複查 DB）
+     * 供 startAllStreams() batch 模式使用
+     */
+    private void startUserStreamWithKeys(String userId, BinanceKeys keys) {
+        if (activeStreams.containsKey(userId)) {
+            log.debug("用戶 {} 已有 active stream，跳過", userId);
+            return;
+        }
+
         UserStreamContext context = new UserStreamContext(userId, keys.apiKey(), keys.secretKey());
 
         try {

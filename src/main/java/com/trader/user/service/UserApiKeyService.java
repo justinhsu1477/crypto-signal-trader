@@ -7,7 +7,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 用戶 API Key 服務
@@ -64,5 +65,46 @@ public class UserApiKeyService {
      */
     public boolean hasApiKey(String userId) {
         return userApiKeyRepository.findByUserIdAndExchange(userId, "BINANCE").isPresent();
+    }
+
+    // ==================== Batch 方法（避免 N+1）====================
+
+    /**
+     * Batch 查詢：取得所有擁有指定交易所 API Key 的 userId Set
+     * 一次 SQL 查詢，O(1) 查找
+     *
+     * @param exchange 交易所名稱
+     * @return 擁有 API Key 的 userId 集合
+     */
+    public Set<String> getUserIdsWithApiKey(String exchange) {
+        return new HashSet<>(userApiKeyRepository.findUserIdsByExchange(exchange));
+    }
+
+    /**
+     * Batch 查詢 + 解密：取得指定交易所的所有用戶 API Key（解密後）
+     * 一次 SQL 查詢 + 批量解密，避免 hasApiKey + getUserBinanceKeys 的 dual lookup
+     *
+     * @param exchange 交易所名稱
+     * @return userId → BinanceKeys 的 Map，只包含解密成功且完整的記錄
+     */
+    public Map<String, BinanceKeys> getAllBinanceKeys(String exchange) {
+        List<UserApiKey> allKeys = userApiKeyRepository.findByExchange(exchange);
+        Map<String, BinanceKeys> result = new HashMap<>();
+
+        for (UserApiKey entity : allKeys) {
+            if (entity.getEncryptedApiKey() == null || entity.getEncryptedSecretKey() == null) {
+                log.warn("用戶 {} 的 {} API Key 不完整，跳過", entity.getUserId(), exchange);
+                continue;
+            }
+            try {
+                String apiKey = aesEncryptionUtil.decrypt(entity.getEncryptedApiKey());
+                String secretKey = aesEncryptionUtil.decrypt(entity.getEncryptedSecretKey());
+                result.put(entity.getUserId(), new BinanceKeys(apiKey, secretKey));
+            } catch (Exception e) {
+                log.error("用戶 {} API Key 解密失敗: {}", entity.getUserId(), e.getMessage());
+            }
+        }
+
+        return result;
     }
 }
