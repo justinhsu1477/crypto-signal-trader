@@ -354,23 +354,47 @@ class DashboardControllerTest {
         }
 
         @Test
-        @DisplayName("POST disable — 停用 webhook")
+        @DisplayName("POST disable — 停用 webhook（含 userId 所有權驗證）")
         void disableWebhook() {
             ResponseEntity<Map<String, Object>> response = controller.disableWebhook("wh-1");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
-            verify(webhookService).disableWebhook("wh-1");
+            verify(webhookService).disableWebhook("user-123", "wh-1");
             assertThat(response.getBody().get("message").toString()).contains("停用");
         }
 
         @Test
-        @DisplayName("DELETE — 刪除 webhook")
+        @DisplayName("POST disable — webhook 不屬於該用戶 — 403")
+        void disableWebhookNotOwned() {
+            doThrow(new IllegalArgumentException("Webhook 不存在或無權操作: webhookId=wh-other"))
+                    .when(webhookService).disableWebhook("user-123", "wh-other");
+
+            ResponseEntity<Map<String, Object>> response = controller.disableWebhook("wh-other");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(403);
+            assertThat(response.getBody().get("error").toString()).contains("無權操作");
+        }
+
+        @Test
+        @DisplayName("DELETE — 刪除 webhook（含 userId 所有權驗證）")
         void deleteWebhook() {
             ResponseEntity<Map<String, Object>> response = controller.deleteWebhook("wh-1");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
-            verify(webhookService).deleteWebhook("wh-1");
+            verify(webhookService).deleteWebhook("user-123", "wh-1");
             assertThat(response.getBody().get("message").toString()).contains("刪除");
+        }
+
+        @Test
+        @DisplayName("DELETE — webhook 不屬於該用戶 — 403")
+        void deleteWebhookNotOwned() {
+            doThrow(new IllegalArgumentException("Webhook 不存在或無權操作: webhookId=wh-other"))
+                    .when(webhookService).deleteWebhook("user-123", "wh-other");
+
+            ResponseEntity<Map<String, Object>> response = controller.deleteWebhook("wh-other");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(403);
+            assertThat(response.getBody().get("error").toString()).contains("無權操作");
         }
     }
 }

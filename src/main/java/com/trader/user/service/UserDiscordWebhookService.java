@@ -70,23 +70,31 @@ public class UserDiscordWebhookService {
     }
 
     /**
-     * 停用 webhook
+     * 停用 webhook（含所有權驗證）
+     *
+     * @throws IllegalArgumentException 若 webhook 不存在或不屬於該用戶
      */
-    public void disableWebhook(String webhookId) {
-        Optional<UserDiscordWebhook> webhook = webhookRepository.findById(webhookId);
-        if (webhook.isPresent()) {
-            UserDiscordWebhook w = webhook.get();
-            w.setEnabled(false);
-            webhookRepository.save(w);
-            log.info("停用 webhook: webhookId={}", webhookId);
-        }
+    public void disableWebhook(String userId, String webhookId) {
+        UserDiscordWebhook webhook = webhookRepository.findByWebhookIdAndUserId(webhookId, userId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Webhook 不存在或無權操作: webhookId=" + webhookId));
+
+        webhook.setEnabled(false);
+        webhookRepository.save(webhook);
+        log.info("停用 webhook: userId={} webhookId={}", userId, webhookId);
     }
 
     /**
-     * 刪除 webhook
+     * 刪除 webhook（含所有權驗證）
+     *
+     * @throws IllegalArgumentException 若 webhook 不存在或不屬於該用戶
      */
-    public void deleteWebhook(String webhookId) {
-        webhookRepository.deleteById(webhookId);
-        log.info("刪除 webhook: webhookId={}", webhookId);
+    public void deleteWebhook(String userId, String webhookId) {
+        UserDiscordWebhook webhook = webhookRepository.findByWebhookIdAndUserId(webhookId, userId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Webhook 不存在或無權操作: webhookId=" + webhookId));
+
+        webhookRepository.delete(webhook);
+        log.info("刪除 webhook: userId={} webhookId={}", userId, webhookId);
     }
 }
