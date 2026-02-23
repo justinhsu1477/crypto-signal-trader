@@ -103,6 +103,12 @@ advisor:
   recent-trades-count: 10
   temperature-value: 0.7
 
+# ========== 推薦系統 ==========
+referral:
+  default-exchange: BINANCE
+  referral-link: ${REFERRAL_LINK:https://www.binance.com/activity/referral-entry/CPA?ref=CPA_YOUR_CODE}
+  referral-code: ${REFERRAL_CODE:YOUR_CODE}
+
 logging:
   level:
     com.trader: DEBUG

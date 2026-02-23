@@ -1,6 +1,7 @@
 package com.trader.trading.service;
 
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.referral.repository.UserExchangeReferralLinkRepository;
 import com.trader.shared.model.TradeRequest;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -9,9 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -28,6 +27,7 @@ public class BroadcastTradeService {
     private final BinanceFuturesService binanceFuturesService;
     private final DiscordWebhookService discordWebhookService;
     private final UserApiKeyService userApiKeyService;
+    private final UserExchangeReferralLinkRepository referralLinkRepository;
     private final ExecutorService broadcastExecutor;
 
     private static final long TASK_TIMEOUT_SECONDS = 30;
@@ -37,11 +37,13 @@ public class BroadcastTradeService {
             BinanceFuturesService binanceFuturesService,
             DiscordWebhookService discordWebhookService,
             UserApiKeyService userApiKeyService,
+            UserExchangeReferralLinkRepository referralLinkRepository,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor) {
         this.userRepository = userRepository;
         this.binanceFuturesService = binanceFuturesService;
         this.discordWebhookService = discordWebhookService;
         this.userApiKeyService = userApiKeyService;
+        this.referralLinkRepository = referralLinkRepository;
         this.broadcastExecutor = broadcastExecutor;
     }
 
@@ -60,17 +62,31 @@ public class BroadcastTradeService {
                 .filter(User::isEnabled)
                 .toList();
 
-        // 過濾：只保留已設定 Binance API Key 的用戶
+        // Batch 查詢：一次取得所有已設定 API Key 的 userId（避免 N+1）
+        Set<String> userIdsWithApiKey = userApiKeyService.getUserIdsWithApiKey("BINANCE");
+
+        // Batch 查詢：一次取得所有已驗證推薦碼的 userId（避免 N+1）
+        Set<String> verifiedUserIds = new HashSet<>(
+                referralLinkRepository.findVerifiedUserIds("BINANCE"));
+
+        // 過濾：已設定 API Key + 已驗證推薦碼（全部用 Set.contains，O(1) 查找）
         List<User> activeUsers = enabledUsers.stream()
-                .filter(u -> userApiKeyService.hasApiKey(u.getUserId()))
+                .filter(u -> userIdsWithApiKey.contains(u.getUserId()))
+                .filter(u -> verifiedUserIds.contains(u.getUserId()))
                 .toList();
 
         int skippedCount = enabledUsers.size() - activeUsers.size();
         if (skippedCount > 0) {
-            log.warn("廣播跟單: {} 個用戶未設定 API Key，已跳過", skippedCount);
+            int noApiKey = (int) enabledUsers.stream()
+                    .filter(u -> !userIdsWithApiKey.contains(u.getUserId())).count();
+            int noReferral = (int) enabledUsers.stream()
+                    .filter(u -> userIdsWithApiKey.contains(u.getUserId()))
+                    .filter(u -> !verifiedUserIds.contains(u.getUserId())).count();
+            log.warn("廣播跟單: 跳過 {} 個用戶 (無 API Key: {}, 未驗證推薦碼: {})",
+                    skippedCount, noApiKey, noReferral);
         }
 
-        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過 {} 個無 API Key), action={} symbol={}",
+        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過 {}), action={} symbol={}",
                 activeUsers.size(), skippedCount, request.getAction(), request.getSymbol());
 
         if (activeUsers.isEmpty()) {
