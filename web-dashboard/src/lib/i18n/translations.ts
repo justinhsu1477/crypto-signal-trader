@@ -433,6 +433,18 @@ const translations = {
     },
     verifiedAt: { en: "Verified at {time}", "zh-TW": "驗證時間：{time}", "zh-CN": "验证时间：{time}" },
     goToDashboard: { en: "Go to Dashboard", "zh-TW": "前往總覽", "zh-CN": "前往总览" },
+    // Guard dialog
+    guardTitle: {
+      en: "Referral Binding Required",
+      "zh-TW": "尚未完成推薦碼綁定",
+      "zh-CN": "尚未完成推荐码绑定",
+    },
+    guardDescription: {
+      en: "Please complete your referral code binding before using trading features. Click the button below to get started.",
+      "zh-TW": "請先完成推薦碼綁定才能使用交易功能，點擊下方按鈕前往設定。",
+      "zh-CN": "请先完成推荐码绑定才能使用交易功能，点击下方按钮前往设置。",
+    },
+    guardAction: { en: "Go to Binding", "zh-TW": "前往綁定", "zh-CN": "前往绑定" },
   },
 } as const;
 

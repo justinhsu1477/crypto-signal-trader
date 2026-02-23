@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { getReferralStatus } from "./api";
 import type { ReferralStatusEnum } from "@/types";
 
 interface ReferralGuardState {
   isChecking: boolean;
   isVerified: boolean;
+  needsReferral: boolean;
 }
 
 // Module-level cache: survives re-renders but resets on full page reload.
@@ -21,15 +22,15 @@ export function clearReferralCache() {
 /**
  * Proactively checks referral status after auth is established.
  * - VERIFIED → cache + allow through
- * - NOT_STARTED / PENDING → redirect to /referral
+ * - NOT_STARTED / PENDING → needsReferral=true (let UI show dialog)
  * - On /referral page → skip check (prevent infinite loop)
  * - API error → fail-open (backend 403 is safety net)
  */
 export function useReferralGuard(): ReferralGuardState {
-  const router = useRouter();
   const pathname = usePathname();
   const [isChecking, setIsChecking] = useState(() => cachedStatus !== "VERIFIED");
   const [isVerified, setIsVerified] = useState(() => cachedStatus === "VERIFIED");
+  const [needsReferral, setNeedsReferral] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -40,7 +41,7 @@ export function useReferralGuard(): ReferralGuardState {
       return;
     }
 
-    // On /referral page — don't redirect (infinite loop prevention)
+    // On /referral page — don't check (infinite loop prevention)
     if (pathname === "/referral") {
       setIsChecking(false);
       return;
@@ -59,8 +60,9 @@ export function useReferralGuard(): ReferralGuardState {
           setIsVerified(true);
           setIsChecking(false);
         } else {
-          // NOT_STARTED or PENDING → redirect to /referral
-          router.replace("/referral");
+          // NOT_STARTED or PENDING → let ReferralGuard show dialog
+          setNeedsReferral(true);
+          setIsChecking(false);
         }
       } catch {
         // API failure → fail-open; backend 403 filter is the safety net
@@ -69,7 +71,7 @@ export function useReferralGuard(): ReferralGuardState {
     }
 
     check();
-  }, [router, pathname]);
+  }, [pathname]);
 
-  return { isChecking, isVerified };
+  return { isChecking, isVerified, needsReferral };
 }

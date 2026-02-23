@@ -2,11 +2,11 @@
  * useReferralGuard 測試
  *
  * 測試重點：
- * 1. VERIFIED → 不 redirect、isVerified=true
- * 2. NOT_STARTED → redirect /referral
- * 3. PENDING → redirect /referral
- * 4. pathname="/referral" → 不 redirect（防迴圈）
- * 5. API error → fail-open（不 redirect）
+ * 1. VERIFIED → isVerified=true, needsReferral=false
+ * 2. NOT_STARTED → needsReferral=true
+ * 3. PENDING → needsReferral=true
+ * 4. pathname="/referral" → 不檢查（防迴圈）
+ * 5. API error → fail-open（不阻擋）
  * 6. cache hit → 不重複呼叫 API
  * 7. clearReferralCache → 重置快取
  */
@@ -14,11 +14,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
 // ─── Mock next/navigation ───
-const mockReplace = vi.fn();
 let mockPathname = "/";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace }),
   usePathname: () => mockPathname,
 }));
 
@@ -41,7 +39,7 @@ beforeEach(() => {
 });
 
 describe("useReferralGuard", () => {
-  it("VERIFIED → isVerified=true, 不 redirect", async () => {
+  it("VERIFIED → isVerified=true, needsReferral=false", async () => {
     mockGetReferralStatus.mockResolvedValueOnce({ status: "VERIFIED" });
 
     const mod = await loadHook();
@@ -52,10 +50,10 @@ describe("useReferralGuard", () => {
     });
 
     expect(result.current.isVerified).toBe(true);
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(result.current.needsReferral).toBe(false);
   });
 
-  it("NOT_STARTED → redirect /referral", async () => {
+  it("NOT_STARTED → needsReferral=true", async () => {
     mockGetReferralStatus.mockResolvedValueOnce({
       status: "NOT_STARTED",
       exchangeUid: null,
@@ -68,15 +66,14 @@ describe("useReferralGuard", () => {
     const { result } = renderHook(() => mod.useReferralGuard());
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/referral");
+      expect(result.current.isChecking).toBe(false);
     });
 
-    // isChecking 保持 true（redirect 中）
-    expect(result.current.isChecking).toBe(true);
+    expect(result.current.needsReferral).toBe(true);
     expect(result.current.isVerified).toBe(false);
   });
 
-  it("PENDING → redirect /referral", async () => {
+  it("PENDING → needsReferral=true", async () => {
     mockGetReferralStatus.mockResolvedValueOnce({
       status: "PENDING",
       exchangeUid: "12345678",
@@ -86,14 +83,17 @@ describe("useReferralGuard", () => {
     });
 
     const mod = await loadHook();
-    renderHook(() => mod.useReferralGuard());
+    const { result } = renderHook(() => mod.useReferralGuard());
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/referral");
+      expect(result.current.isChecking).toBe(false);
     });
+
+    expect(result.current.needsReferral).toBe(true);
+    expect(result.current.isVerified).toBe(false);
   });
 
-  it("pathname=/referral → 不 redirect，isChecking=false", async () => {
+  it("pathname=/referral → 不檢查，isChecking=false", async () => {
     mockPathname = "/referral";
 
     const mod = await loadHook();
@@ -103,12 +103,12 @@ describe("useReferralGuard", () => {
       expect(result.current.isChecking).toBe(false);
     });
 
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(result.current.needsReferral).toBe(false);
     // 不呼叫 API
     expect(mockGetReferralStatus).not.toHaveBeenCalled();
   });
 
-  it("API error → fail-open（isChecking=false, 不 redirect）", async () => {
+  it("API error → fail-open（isChecking=false, needsReferral=false）", async () => {
     mockGetReferralStatus.mockRejectedValueOnce(new Error("Network Error"));
 
     const mod = await loadHook();
@@ -118,7 +118,7 @@ describe("useReferralGuard", () => {
       expect(result.current.isChecking).toBe(false);
     });
 
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(result.current.needsReferral).toBe(false);
   });
 
   it("cache hit VERIFIED → 不重複呼叫 API", async () => {
