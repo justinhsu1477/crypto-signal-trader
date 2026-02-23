@@ -2,6 +2,7 @@ package com.trader.auth.config;
 
 import com.trader.auth.filter.JwtAuthenticationFilter;
 import com.trader.auth.filter.MonitorApiKeyFilter;
+import com.trader.auth.filter.ReferralVerificationFilter;
 import com.trader.auth.handler.CustomAccessDeniedHandler;
 import com.trader.auth.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class AuthConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final MonitorApiKeyFilter monitorApiKeyFilter;
+    private final ReferralVerificationFilter referralVerificationFilter;
     private final CustomAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
 
@@ -76,6 +78,9 @@ public class AuthConfig {
                                 "/api/heartbeat"
                         ).authenticated()
 
+                        // === 推薦系統：需要 JWT（ReferralVerificationFilter 白名單放行） ===
+                        .requestMatchers("/api/referral/**").authenticated()
+
                         // === 受保護：SaaS 端點需要 JWT ===
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/dashboard/**").authenticated()
@@ -86,11 +91,13 @@ public class AuthConfig {
                         // === 其他：全部拒絕 ===
                         .anyRequest().denyAll()
                 )
-                // Filter 順序：API Key → JWT → Spring Security
+                // Filter 順序：API Key → JWT → Referral Verification → Spring Security
                 .addFilterBefore(monitorApiKeyFilter,
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(referralVerificationFilter,
+                        JwtAuthenticationFilter.class);
 
         return http.build();
     }

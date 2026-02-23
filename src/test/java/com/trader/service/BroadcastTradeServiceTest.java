@@ -1,6 +1,7 @@
 package com.trader.service;
 
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.referral.repository.UserExchangeReferralLinkRepository;
 import com.trader.shared.model.TradeRequest;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BroadcastTradeService;
@@ -9,8 +10,7 @@ import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.*;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.*;
@@ -29,6 +29,7 @@ class BroadcastTradeServiceTest {
     private BinanceFuturesService mockBinance;
     private DiscordWebhookService mockWebhook;
     private UserApiKeyService mockApiKey;
+    private UserExchangeReferralLinkRepository mockReferralRepo;
     private ExecutorService executor;
     private BroadcastTradeService service;
 
@@ -38,12 +39,21 @@ class BroadcastTradeServiceTest {
         mockBinance = mock(BinanceFuturesService.class);
         mockWebhook = mock(DiscordWebhookService.class);
         mockApiKey = mock(UserApiKeyService.class);
+        mockReferralRepo = mock(UserExchangeReferralLinkRepository.class);
+
+        // 預設：所有用戶都已驗證推薦碼（既有測試不受影響）
+        when(mockReferralRepo.findVerifiedUserIds("BINANCE"))
+                .thenReturn(List.of("u1", "u2", "u3", "u4", "u5"));
+
+        // 預設：所有用戶都有 API Key（既有測試不受影響）
+        when(mockApiKey.getUserIdsWithApiKey("BINANCE"))
+                .thenReturn(Set.of("u1", "u2", "u3", "u4", "u5"));
 
         // 用 2 線程的 pool — 小到可預測，又能測並行
         executor = Executors.newFixedThreadPool(2);
 
         service = new BroadcastTradeService(
-                mockUserRepo, mockBinance, mockWebhook, mockApiKey, executor);
+                mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockReferralRepo, executor);
     }
 
     @AfterEach
@@ -87,7 +97,7 @@ class BroadcastTradeServiceTest {
                     createUser("u2", true, true),
                     createUser("u3", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(true);
+            // 使用 setUp 預設的 getUserIdsWithApiKey mock（全部有 API Key）
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
 
@@ -103,7 +113,7 @@ class BroadcastTradeServiceTest {
                     createUser("u2", false, true),  // 關閉自動跟單
                     createUser("u3", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(true);
+            // 使用 setUp 預設的 getUserIdsWithApiKey mock
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
 
@@ -119,7 +129,7 @@ class BroadcastTradeServiceTest {
                     createUser("u1", true, true),
                     createUser("u2", true, false));  // 帳戶停用
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(true);
+            // 使用 setUp 預設的 getUserIdsWithApiKey mock
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
 
@@ -133,8 +143,9 @@ class BroadcastTradeServiceTest {
                     createUser("u1", true, true),
                     createUser("u2", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey("u1")).thenReturn(true);
-            when(mockApiKey.hasApiKey("u2")).thenReturn(false);  // 沒有 API Key
+            // 只有 u1 有 API Key，u2 沒有
+            when(mockApiKey.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(Set.of("u1"));
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
 
@@ -149,7 +160,9 @@ class BroadcastTradeServiceTest {
                     createUser("u1", true, true),
                     createUser("u2", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(false);
+            // 沒有任何用戶有 API Key
+            when(mockApiKey.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(Set.of());
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
 
@@ -184,7 +197,7 @@ class BroadcastTradeServiceTest {
                     createUser("u1", true, true),
                     createUser("u2", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(true);
+            // 使用 setUp 預設的 getUserIdsWithApiKey mock
 
             TradeRequest request = createEntryRequest();
             service.broadcastTrade(request);
@@ -201,7 +214,7 @@ class BroadcastTradeServiceTest {
                     createUser("u2", true, true),
                     createUser("u3", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(true);
+            // 使用 setUp 預設的 getUserIdsWithApiKey mock
 
             // u2 會拋異常
             doNothing().when(mockBinance).executeSignalForBroadcast(any(), eq("u1"));
@@ -228,7 +241,7 @@ class BroadcastTradeServiceTest {
         void successNotification() {
             List<User> users = List.of(createUser("u1", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(true);
+            // 使用 setUp 預設的 getUserIdsWithApiKey mock
 
             service.broadcastTrade(createEntryRequest());
 
@@ -244,7 +257,7 @@ class BroadcastTradeServiceTest {
         void failureNotification() {
             List<User> users = List.of(createUser("u1", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
-            when(mockApiKey.hasApiKey(anyString())).thenReturn(true);
+            // 使用 setUp 預設的 getUserIdsWithApiKey mock
 
             doThrow(new RuntimeException("Insufficient margin")).when(mockBinance)
                     .executeSignalForBroadcast(any(), eq("u1"));
