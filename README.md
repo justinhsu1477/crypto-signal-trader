@@ -99,12 +99,29 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db up -d --build
 ```
 
+### Cloud 部署（Caddy + API + Dashboard，Python 本地跑）
+
+```bash
+# 雲端 VM 或本機模擬
+docker compose -f docker-compose.cloud.yml up -d --build
+
+# Python Monitor 本地直跑（不在 Docker 內）
+cd discord-monitor
+python3 -m src.main --config config.yml
+# config.yml 的 api.base_url 指向 http://localhost 或 http://<VM-IP>
+```
+
 ### 驗證
 
 ```bash
+# Prod/Dev（直連 Spring Boot）
 curl http://localhost:8080/api/balance
 curl http://localhost:8080/api/monitor-status
 curl http://localhost:8080/api/stream-status
+
+# Cloud（透過 Caddy）
+curl http://localhost/api/health
+open http://localhost          # Dashboard
 ```
 
 ---
