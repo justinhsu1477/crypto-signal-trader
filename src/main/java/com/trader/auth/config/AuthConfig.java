@@ -25,7 +25,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  *
  * 路徑規則：
  * - /api/auth/** → 公開（登入、註冊、刷新 token）
- * - /api/heartbeat → 公開（健康檢查）
+ * - /api/heartbeat → 需要認證（Monitor API Key）
  * - /api/subscription/webhook → 公開（Stripe callback）
  * - trading 端點 → 需要認證（JWT 或 API Key）
  * - /api/user/**, /api/dashboard/** → 需要認證（JWT）
@@ -57,7 +57,6 @@ public class AuthConfig {
                         // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
-                        .requestMatchers("/api/heartbeat").permitAll()
                         .requestMatchers("/api/subscription/webhook").permitAll()
 
                         // === ADMIN 專用：需要 ADMIN 角色（JWT ADMIN 或 Monitor API Key） ===
@@ -73,7 +72,8 @@ public class AuthConfig {
                                 "/api/balance", "/api/positions",
                                 "/api/exchange-info", "/api/open-orders",
                                 "/api/monitor-status", "/api/stream-status",
-                                "/api/leverage", "/api/orders"
+                                "/api/leverage", "/api/orders",
+                                "/api/heartbeat"
                         ).authenticated()
 
                         // === 受保護：SaaS 端點需要 JWT ===
