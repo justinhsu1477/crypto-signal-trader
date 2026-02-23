@@ -6,17 +6,23 @@ import com.trader.notification.service.DiscordWebhookService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 共用的 ORDER_TRADE_UPDATE 事件處理邏輯
+ * 共用的 ORDER_TRADE_UPDATE / ALGO_UPDATE 事件處理邏輯
  *
  * 單用戶 (BinanceUserDataStreamService) 和多用戶 (MultiUserDataStreamManager)
- * 的 WebSocket Listener 都呼叫這裡，避免重複 150+ 行相同邏輯。
+ * 的 WebSocket Listener 都呼叫這裡，避免重複邏輯。
  *
  * 通知策略透過 NotificationSender 函式介面抽象：
  * - 單用戶版傳 sendNotification(title, msg, color)
  * - 多用戶版傳 sendNotificationToUser(userId, title, msg, color)
+ *
+ * Algo Order 遷移：
+ * Binance 已將 STOP_MARKET/TAKE_PROFIT_MARKET 遷至 Algo Order API，
+ * 觸發時先收到 ALGO_UPDATE (algoStatus=TRIGGERED)，再收到 ORDER_TRADE_UPDATE (type=MARKET)。
+ * 用 pendingAlgoTriggers 暫存 ALGO_UPDATE 的 exitReason，供後續 MARKET fill 使用。
  */
 @Slf4j
 public class OrderEventHandler {
@@ -26,6 +32,19 @@ public class OrderEventHandler {
     private final NotificationSender notificationSender;
     private final Gson gson;
     private final String logPrefix;  // 日誌前綴：空字串 or "用戶 {userId} "
+
+    /**
+     * Algo 觸發暫存資料：包含 exitReason、觸發後 MARKET 單 orderId、以及 symbol
+     * 用 algoId 為 key 存放，確保同 symbol 多張 algo（SL + TP）互不干擾
+     */
+    record AlgoTriggerHint(String symbol, String exitReason, String triggeredOrderId) {}
+
+    /**
+     * Algo 觸發暫存：ALGO_UPDATE TRIGGERED → 存入 {algoId → AlgoTriggerHint}
+     * ORDER_TRADE_UPDATE MARKET FILLED 時遍歷找 triggeredOrderId 精確匹配後 remove
+     * 用 algoId 而非 symbol 作為 key，避免 TP TRIGGERED + SL CANCELED 的 race condition
+     */
+    private final ConcurrentHashMap<String, AlgoTriggerHint> pendingAlgoTriggers = new ConcurrentHashMap<>();
 
     /**
      * 通知發送介面 — 解耦全局 vs per-user webhook
@@ -49,9 +68,10 @@ public class OrderEventHandler {
 
     /**
      * 處理 ORDER_TRADE_UPDATE 事件
-     * - FILLED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 記錄平倉
-     * - CANCELED / EXPIRED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 告警保護消失
-     * - PARTIALLY_FILLED 的 SL/TP → 告警 + 記錄事件
+     * - FILLED MARKET（由 Algo SL/TP 觸發）→ 透過 pendingAlgoTriggers 或 clientOrderId 前綴偵測 → 記錄平倉
+     * - FILLED STOP_MARKET / TAKE_PROFIT_MARKET → 記錄平倉（legacy，遷移前舊單相容）
+     * - CANCELED / EXPIRED 的 STOP_MARKET / TAKE_PROFIT_MARKET → 告警保護消失（legacy）
+     * - PARTIALLY_FILLED 的 SL/TP → 告警 + 記錄事件（legacy）
      */
     public void handleOrderTradeUpdate(JsonObject event) {
         JsonObject order = event.getAsJsonObject("o");
@@ -123,13 +143,131 @@ public class OrderEventHandler {
                         logPrefix, orderType, symbol, side, avgPrice, filledQty);
                 break;
 
-            case "MARKET":
-                log.info("{}{} 訂單成交: {} {} @ {} qty={}",
-                        logPrefix, orderType, symbol, side, avgPrice, filledQty);
+            case "MARKET": {
+                // Algo SL/TP 觸發後，Binance 以 MARKET 單成交
+                // 遍歷 pendingAlgoTriggers（key=algoId）找 triggeredOrderId 或 symbol 匹配
+                String algoExitReason = null;
+                String matchedAlgoId = null;
+                for (var entry : pendingAlgoTriggers.entrySet()) {
+                    AlgoTriggerHint hint = entry.getValue();
+                    if (!hint.symbol().equals(symbol)) continue;
+                    // 精確比對：ai 欄位 = MARKET 單的 orderId（i 欄位）
+                    // ai 為空（罕見）時 fallback 到 symbol 匹配
+                    if (hint.triggeredOrderId().isEmpty() || hint.triggeredOrderId().equals(orderId)) {
+                        matchedAlgoId = entry.getKey();
+                        algoExitReason = hint.exitReason();
+                        break;
+                    }
+                }
+                if (matchedAlgoId != null) {
+                    pendingAlgoTriggers.remove(matchedAlgoId);
+                }
+                if (algoExitReason == null) {
+                    // fallback: 用 clientOrderId 前綴判斷（SL-xxx / TP-xxx）
+                    String clientId = order.has("c") ? order.get("c").getAsString() : "";
+                    if (clientId.startsWith("SL-")) {
+                        algoExitReason = "SL_TRIGGERED";
+                    } else if (clientId.startsWith("TP-")) {
+                        algoExitReason = "TP_TRIGGERED";
+                    }
+                }
+                if (algoExitReason != null) {
+                    log.info("{}Algo {} 成交: {} @ {} qty={} commission={} rp={}",
+                            logPrefix, algoExitReason, symbol, avgPrice, filledQty, commission, realizedProfit);
+                    processStreamClose(symbol, avgPrice, filledQty, commission,
+                            realizedProfit, orderId, algoExitReason, transactionTime);
+                } else {
+                    log.info("{}{} 訂單成交: {} {} @ {} qty={}",
+                            logPrefix, orderType, symbol, side, avgPrice, filledQty);
+                }
                 break;
+            }
 
             default:
                 log.debug("{}非關注訂單類型: {} {}", logPrefix, orderType, symbol);
+        }
+    }
+
+    /**
+     * 處理 ALGO_UPDATE 事件
+     * Binance ALGO_UPDATE 欄位（在 "o" 物件內）：
+     *   s  = symbol
+     *   X  = algoStatus (NEW/CANCELED/TRIGGERING/TRIGGERED/FINISHED/EXPIRED/REJECTED)
+     *   o  = orderType (STOP_MARKET/TAKE_PROFIT_MARKET)
+     *   aid = algoId (數值)
+     *   caid = clientAlgoId (字串)
+     *   ai = 觸發後的實際 orderId（非 algoId）
+     *   tp = triggerPrice
+     *   rm = cancel/fail reason
+     *
+     * TRIGGERED → 暫存到 pendingAlgoTriggers，等後續 ORDER_TRADE_UPDATE MARKET FILLED 使用
+     * CANCELED/EXPIRED → 告警保護消失（OCO 連帶取消時跳過告警）
+     * REJECTED → 無條件告警保護消失（訂單從未生效）
+     */
+    public void handleAlgoUpdate(JsonObject event) {
+        JsonObject order = event.getAsJsonObject("o");
+        if (order == null) {
+            log.warn("{}ALGO_UPDATE missing 'o' field", logPrefix);
+            return;
+        }
+
+        String symbol = order.has("s") ? order.get("s").getAsString() : "";
+        String algoStatus = order.has("X") ? order.get("X").getAsString() : "";
+        String orderType = order.has("o") ? order.get("o").getAsString() : "";
+        String algoId = order.has("aid") ? String.valueOf(order.get("aid").getAsLong()) : "";
+        String clientAlgoId = order.has("caid") ? order.get("caid").getAsString() : "";
+
+        log.info("{}ALGO_UPDATE: {} {} algoStatus={} algoId={} clientAlgoId={}",
+                logPrefix, symbol, orderType, algoStatus, algoId, clientAlgoId);
+
+        switch (algoStatus) {
+            case "TRIGGERED": {
+                // SL/TP 已觸發 → 用 algoId 為 key 暫存 exitReason + 觸發後 MARKET 單的 orderId
+                String exitReason = "STOP_MARKET".equals(orderType) ? "SL_TRIGGERED" : "TP_TRIGGERED";
+                String triggeredOrderId = order.has("ai") ? order.get("ai").getAsString() : "";
+                pendingAlgoTriggers.put(algoId, new AlgoTriggerHint(symbol, exitReason, triggeredOrderId));
+                log.info("{}{} Algo 觸發: {} algoId={} triggeredOrderId={}",
+                        logPrefix, "SL_TRIGGERED".equals(exitReason) ? "止損" : "止盈",
+                        symbol, algoId, triggeredOrderId);
+                break;
+            }
+
+            case "TRIGGERING": {
+                // 觸發中（ai 尚未填入），僅 log，不寫入 hint
+                String label = "STOP_MARKET".equals(orderType) ? "止損" : "止盈";
+                log.info("{}{} Algo 觸發中: {} algoId={}", logPrefix, label, symbol, algoId);
+                break;
+            }
+
+            case "CANCELED":
+            case "EXPIRED":
+                // 只清除「這張 algo 自己」的 hint，不影響同 symbol 其他 algo
+                // 場景：TP TRIGGERED → SL CANCELED，不能把 TP 的 hint 清掉
+                pendingAlgoTriggers.remove(algoId);
+
+                // 檢查同 symbol 是否有已觸發的 hint（= OCO 連帶取消場景）
+                // 若有，表示另一邊正在成交，此取消是正常的連帶行為，不需要告警
+                boolean hasTriggeredSibling = pendingAlgoTriggers.values().stream()
+                        .anyMatch(h -> h.symbol().equals(symbol));
+                if (hasTriggeredSibling) {
+                    log.info("{}ALGO_UPDATE {} {} algoId={} — 同 symbol 有已觸發 hint，視為 OCO 連帶取消，跳過告警",
+                            logPrefix, algoStatus, symbol, algoId);
+                } else {
+                    handleProtectionLost(symbol, orderType, algoId, algoStatus);
+                }
+                break;
+
+            case "REJECTED":
+                // REJECTED = Binance 拒絕此 Algo 訂單（保證金不足、觸發價不合理等）
+                // 保護單從未生效，無條件告警（不走 OCO sibling 檢查）
+                pendingAlgoTriggers.remove(algoId);
+                log.error("{}ALGO_UPDATE REJECTED: {} {} algoId={} — Algo 訂單被拒絕",
+                        logPrefix, symbol, orderType, algoId);
+                handleProtectionLost(symbol, orderType, algoId, algoStatus);
+                break;
+
+            default:
+                log.debug("{}ALGO_UPDATE 非關注狀態: {} {} {}", logPrefix, symbol, orderType, algoStatus);
         }
     }
 

@@ -232,7 +232,7 @@ class TradeLifecycleTest {
             when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(0);
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             OrderResult dcaEntry = ok("DCA1", "BUY", 94000, 0.02);
             OrderResult dcaSl = ok("SL1", "SELL", 93000, 0.52);
@@ -381,7 +381,7 @@ class TradeLifecycleTest {
             when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(0);
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             OrderResult dcaEntry = ok("DCA1", "BUY", 94000, 0.02);
             OrderResult dcaSl = ok("SL1", "SELL", 93000, 0.52);

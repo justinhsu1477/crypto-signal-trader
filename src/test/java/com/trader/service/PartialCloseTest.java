@@ -92,7 +92,7 @@ class PartialCloseTest {
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -119,7 +119,7 @@ class PartialCloseTest {
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -147,7 +147,7 @@ class PartialCloseTest {
 
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -170,7 +170,7 @@ class PartialCloseTest {
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -196,7 +196,7 @@ class PartialCloseTest {
 
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -229,7 +229,7 @@ class PartialCloseTest {
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -256,7 +256,7 @@ class PartialCloseTest {
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -281,7 +281,7 @@ class PartialCloseTest {
 
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -318,7 +318,7 @@ class PartialCloseTest {
             doReturn(closeOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
             doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble());
             doReturn(tpOrder).when(service).placeTakeProfit(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenOrders(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")

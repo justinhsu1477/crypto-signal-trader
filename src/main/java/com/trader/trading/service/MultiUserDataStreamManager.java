@@ -452,6 +452,9 @@ public class MultiUserDataStreamManager {
                     case "ORDER_TRADE_UPDATE":
                         orderEventHandler.handleOrderTradeUpdate(json);
                         break;
+                    case "ALGO_UPDATE":
+                        orderEventHandler.handleAlgoUpdate(json);
+                        break;
                     case "ACCOUNT_UPDATE":
                         log.debug("用戶 {} ACCOUNT_UPDATE received (ignored)", context.getUserId());
                         break;
