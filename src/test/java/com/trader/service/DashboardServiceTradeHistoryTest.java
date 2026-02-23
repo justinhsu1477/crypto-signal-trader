@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * DashboardService — TradeHistory 端點測試
@@ -74,6 +74,25 @@ class DashboardServiceTradeHistoryTest {
         return trades;
     }
 
+    // ==================== userId 隔離驗證 ====================
+
+    @Nested
+    @DisplayName("userId 隔離 — findByStatus 帶正確 userId")
+    class UserIdIsolationTest {
+
+        @Test
+        @DisplayName("getTradeHistory — 用 user-xyz 呼叫 → findByStatus 帶 user-xyz")
+        void tradeHistoryPassesUserId() {
+            String userId = "user-xyz";
+            when(tradeRecordService.findByStatus("CLOSED", userId)).thenReturn(List.of());
+
+            dashboardService.getTradeHistory(userId, 0, 20);
+
+            verify(tradeRecordService).findByStatus("CLOSED", userId);
+            verify(tradeRecordService, never()).findByStatus("CLOSED");
+        }
+    }
+
     // ==================== 分頁邏輯 ====================
 
     @Nested
@@ -84,7 +103,7 @@ class DashboardServiceTradeHistoryTest {
         @DisplayName("50 筆交易, page=0, size=20 → 回傳前 20 筆, totalPages=3")
         void firstPage() {
             List<Trade> allTrades = createClosedTrades(50);
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(allTrades);
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(allTrades);
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 
@@ -99,7 +118,7 @@ class DashboardServiceTradeHistoryTest {
         @DisplayName("50 筆交易, page=2, size=20 → 回傳最後 10 筆")
         void lastPage() {
             List<Trade> allTrades = createClosedTrades(50);
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(allTrades);
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(allTrades);
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 2, 20);
 
@@ -112,7 +131,7 @@ class DashboardServiceTradeHistoryTest {
         @DisplayName("50 筆交易, page=5（超出範圍） → 回傳空列表")
         void pageOutOfRange() {
             List<Trade> allTrades = createClosedTrades(50);
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(allTrades);
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(allTrades);
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 5, 20);
 
@@ -124,7 +143,7 @@ class DashboardServiceTradeHistoryTest {
         @DisplayName("恰好整除 — 40 筆 / size=20 → totalPages=2")
         void exactDivision() {
             List<Trade> allTrades = createClosedTrades(40);
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(allTrades);
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(allTrades);
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 
@@ -136,7 +155,7 @@ class DashboardServiceTradeHistoryTest {
         @DisplayName("只有 1 筆 → totalPages=1, size=20")
         void singleTrade() {
             List<Trade> allTrades = createClosedTrades(1);
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(allTrades);
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(allTrades);
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 
@@ -149,7 +168,7 @@ class DashboardServiceTradeHistoryTest {
         @DisplayName("size=10 的分頁 — 25 筆 → totalPages=3")
         void customPageSize() {
             List<Trade> allTrades = createClosedTrades(25);
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(allTrades);
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(allTrades);
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 10);
 
@@ -168,7 +187,7 @@ class DashboardServiceTradeHistoryTest {
         @Test
         @DisplayName("無已平倉交易 → 空列表, totalPages=0, totalElements=0")
         void noClosedTrades() {
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(List.of());
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(List.of());
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 
@@ -207,7 +226,7 @@ class DashboardServiceTradeHistoryTest {
                     .status("CLOSED")
                     .build();
 
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(List.of(trade));
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(List.of(trade));
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 
@@ -240,7 +259,7 @@ class DashboardServiceTradeHistoryTest {
                     .status("CLOSED")
                     .build();
 
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(List.of(trade));
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(List.of(trade));
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 
@@ -259,7 +278,7 @@ class DashboardServiceTradeHistoryTest {
                     .status("CLOSED")
                     .build();
 
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(List.of(trade));
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(List.of(trade));
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 
@@ -284,7 +303,7 @@ class DashboardServiceTradeHistoryTest {
                     .status("CLOSED")
                     .build();
 
-            when(tradeRecordService.findByStatus("CLOSED")).thenReturn(List.of(trade));
+            when(tradeRecordService.findByStatus("CLOSED", "user-1")).thenReturn(List.of(trade));
 
             TradeHistoryResponse response = dashboardService.getTradeHistory("user-1", 0, 20);
 

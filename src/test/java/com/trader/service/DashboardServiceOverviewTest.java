@@ -65,6 +65,47 @@ class DashboardServiceOverviewTest {
                 tradeConfigResolver);
     }
 
+    // ==================== userId 隔離驗證 ====================
+
+    @Nested
+    @DisplayName("userId 隔離 — 所有 TradeRecordService 呼叫都傳入正確 userId")
+    class UserIdIsolationTest {
+
+        @Test
+        @DisplayName("getOverview — 用 user-abc 呼叫 → 所有內部查詢帶 user-abc")
+        void overviewPassesUserId() {
+            String userId = "user-abc";
+
+            // 設定 mock（只接受正確 userId 才回傳資料）
+            Map<String, Object> todayStats = new LinkedHashMap<>();
+            todayStats.put("trades", 1L);
+            todayStats.put("netProfit", 50.0);
+            when(tradeRecordService.getTodayStats(userId)).thenReturn(todayStats);
+            when(tradeRecordService.findAllOpenTrades(userId)).thenReturn(List.of());
+            when(tradeRecordService.getTodayRealizedLoss(userId)).thenReturn(-100.0);
+            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(subscriptionService.getStatus(userId)).thenReturn(
+                    SubscriptionStatusResponse.builder().status("NONE").active(false).build());
+
+            DashboardOverview overview = dashboardService.getOverview(userId);
+
+            // 驗證結果不是空的（確認 mock 有被正確呼叫）
+            assertThat(overview.getAccount().getTodayTradeCount()).isEqualTo(1);
+            assertThat(overview.getAccount().getTodayPnl()).isEqualTo(50.0);
+            assertThat(overview.getRiskBudget().getTodayLossUsed()).isEqualTo(100.0);
+
+            // 驗證呼叫帶正確 userId（不是無參數版本）
+            verify(tradeRecordService).getTodayStats(userId);
+            verify(tradeRecordService, times(2)).findAllOpenTrades(userId);  // buildAccountSummary + buildPositionList
+            verify(tradeRecordService).getTodayRealizedLoss(userId);
+
+            // 確保無參數版本從未被呼叫
+            verify(tradeRecordService, never()).getTodayStats();
+            verify(tradeRecordService, never()).findAllOpenTrades();
+            verify(tradeRecordService, never()).getTodayRealizedLoss();
+        }
+    }
+
     // ==================== AccountSummary ====================
 
     @Nested
@@ -81,7 +122,7 @@ class DashboardServiceOverviewTest {
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 3L);
             todayStats.put("netProfit", 150.75);
-            when(tradeRecordService.getTodayStats()).thenReturn(todayStats);
+            when(tradeRecordService.getTodayStats("user-1")).thenReturn(todayStats);
 
             // 設定 OPEN trades
             List<Trade> openTrades = List.of(
@@ -96,11 +137,11 @@ class DashboardServiceOverviewTest {
                             .sourceAuthorName("老王").entryTime(LocalDateTime.now())
                             .build()
             );
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(openTrades);
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(openTrades);
 
             // 設定風控
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(-300.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(-300.0);
 
             // 設定訂閱
             when(subscriptionService.getStatus("user-1")).thenReturn(
@@ -127,10 +168,10 @@ class DashboardServiceOverviewTest {
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);
-            when(tradeRecordService.getTodayStats()).thenReturn(todayStats);
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of());
+            when(tradeRecordService.getTodayStats("user-1")).thenReturn(todayStats);
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(List.of());
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(0.0);
             when(subscriptionService.getStatus("user-1")).thenReturn(
                     SubscriptionStatusResponse.builder().status("NONE").active(false).build());
 
@@ -148,10 +189,10 @@ class DashboardServiceOverviewTest {
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);
-            when(tradeRecordService.getTodayStats()).thenReturn(todayStats);
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of());
+            when(tradeRecordService.getTodayStats("user-1")).thenReturn(todayStats);
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(List.of());
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(0.0);
             when(subscriptionService.getStatus("user-1")).thenReturn(
                     SubscriptionStatusResponse.builder().status("NONE").active(false).build());
 
@@ -174,8 +215,8 @@ class DashboardServiceOverviewTest {
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);
-            when(tradeRecordService.getTodayStats()).thenReturn(todayStats);
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of());
+            when(tradeRecordService.getTodayStats("user-1")).thenReturn(todayStats);
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(List.of());
             when(subscriptionService.getStatus(anyString())).thenReturn(
                     SubscriptionStatusResponse.builder().status("NONE").active(false).build());
         }
@@ -185,7 +226,7 @@ class DashboardServiceOverviewTest {
         void riskBudgetNormal() {
             setupBasicMocks();
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(-300.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(-300.0);
 
             DashboardOverview overview = dashboardService.getOverview("user-1");
 
@@ -200,7 +241,7 @@ class DashboardServiceOverviewTest {
         void riskBudgetExact() {
             setupBasicMocks();
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(-2000.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(-2000.0);
 
             DashboardOverview overview = dashboardService.getOverview("user-1");
 
@@ -214,7 +255,7 @@ class DashboardServiceOverviewTest {
         void riskBudgetExceeded() {
             setupBasicMocks();
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(-2500.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(-2500.0);
 
             DashboardOverview overview = dashboardService.getOverview("user-1");
 
@@ -228,7 +269,7 @@ class DashboardServiceOverviewTest {
         void riskBudgetNoLoss() {
             setupBasicMocks();
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(0.0);
 
             DashboardOverview overview = dashboardService.getOverview("user-1");
 
@@ -249,10 +290,10 @@ class DashboardServiceOverviewTest {
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);
-            when(tradeRecordService.getTodayStats()).thenReturn(todayStats);
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of());
+            when(tradeRecordService.getTodayStats("user-1")).thenReturn(todayStats);
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(List.of());
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(0.0);
         }
 
         @Test
@@ -315,9 +356,9 @@ class DashboardServiceOverviewTest {
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);
-            when(tradeRecordService.getTodayStats()).thenReturn(todayStats);
+            when(tradeRecordService.getTodayStats("user-1")).thenReturn(todayStats);
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
-            when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
+            when(tradeRecordService.getTodayRealizedLoss("user-1")).thenReturn(0.0);
             when(subscriptionService.getStatus(anyString())).thenReturn(
                     SubscriptionStatusResponse.builder().status("NONE").active(false).build());
         }
@@ -344,7 +385,7 @@ class DashboardServiceOverviewTest {
                             .entryTime(entryTime.plusHours(1))
                             .build()
             );
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(openTrades);
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(openTrades);
 
             DashboardOverview overview = dashboardService.getOverview("user-1");
 
@@ -368,7 +409,7 @@ class DashboardServiceOverviewTest {
         @DisplayName("無持倉 → 空列表")
         void noPositions() {
             setupBasicMocksExceptOpenTrades();
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of());
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(List.of());
 
             DashboardOverview overview = dashboardService.getOverview("user-1");
 
@@ -387,7 +428,7 @@ class DashboardServiceOverviewTest {
                             .entryTime(LocalDateTime.now())
                             .build()
             );
-            when(tradeRecordService.findAllOpenTrades()).thenReturn(openTrades);
+            when(tradeRecordService.findAllOpenTrades("user-1")).thenReturn(openTrades);
 
             DashboardOverview overview = dashboardService.getOverview("user-1");
 

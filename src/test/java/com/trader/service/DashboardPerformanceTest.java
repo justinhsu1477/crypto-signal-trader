@@ -84,7 +84,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -150, -140, base.plusDays(4), base.plusDays(4).plusHours(2), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             PerformanceStats.Summary s = stats.getSummary();
@@ -109,7 +109,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 50, 60, base.plusDays(1), base.plusDays(1).plusHours(6), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSummary().getAvgHoldingHours()).isCloseTo(4.0, within(0.01));
@@ -135,7 +135,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 60, 70, base, base.plusHours(6), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSummary().getMaxConsecutiveWins()).isEqualTo(3);
@@ -152,7 +152,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 150, 160, base, base.plusHours(3), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSummary().getMaxConsecutiveWins()).isEqualTo(3);
@@ -179,7 +179,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -150, -140, base, base.plusDays(4), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSummary().getMaxDrawdown()).isCloseTo(-250.0, within(0.01));
@@ -198,7 +198,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusDays(2), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSummary().getMaxDrawdown()).isEqualTo(0.0);
@@ -224,7 +224,7 @@ class DashboardPerformanceTest {
                     closedTrade("ETHUSDT", "SHORT", 100, 110, base, base.plusHours(4), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSymbolStats()).hasSize(2);
@@ -257,7 +257,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -80, -70, base, base.plusHours(5), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             PerformanceStats.SideStats longStats = stats.getSideComparison().getLongStats();
@@ -294,7 +294,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 150, 160, base, base.plusHours(5), 2, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             PerformanceStats.DcaAnalysis dca = stats.getDcaAnalysis();
@@ -322,7 +322,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", -50, -40, base, base.plusDays(2), 0, "STOP_LOSS")    // Wednesday
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getDayOfWeekStats()).hasSize(7);
@@ -355,7 +355,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -300, -290, base, base.plusDays(1), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getPnlCurve()).hasSize(2);
@@ -376,7 +376,7 @@ class DashboardPerformanceTest {
         @Test
         @DisplayName("無交易資料 — 所有指標返回 0 或空列表")
         void emptyTrades() {
-            when(tradeRecordService.findAll()).thenReturn(List.of());
+            when(tradeRecordService.findAll("user1")).thenReturn(List.of());
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             PerformanceStats.Summary s = stats.getSummary();
@@ -417,7 +417,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -210, -200, base, base.plusHours(4), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSummary().getProfitFactor()).isCloseTo(2.0, within(0.01));
@@ -432,7 +432,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             // grossLosses = 0 → PF = 0（divide by zero protection）
@@ -448,7 +448,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -200, -180, base, base.plusHours(2), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSummary().getProfitFactor()).isEqualTo(0.0);
@@ -474,7 +474,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 300, 310, base, base.plusHours(6), 0, "FAIL_SAFE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getExitReasonBreakdown()).containsEntry("SIGNAL_CLOSE", 2L);
@@ -491,7 +491,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getExitReasonBreakdown()).containsEntry("SIGNAL_CLOSE", 1L);
@@ -516,7 +516,7 @@ class DashboardPerformanceTest {
                     closedTradeWithSource("ETHUSDT", "SHORT", 300, 310, base, base.plusHours(4), "老王")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSignalSourceRanking()).hasSize(2);
@@ -540,7 +540,7 @@ class DashboardPerformanceTest {
                     closedTradeWithSource("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), "陳哥")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSignalSourceRanking()).hasSize(1);
@@ -569,7 +569,7 @@ class DashboardPerformanceTest {
                             LocalDateTime.of(2026, 2, 5, 12, 0), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getMonthlyStats()).hasSize(2);
@@ -605,7 +605,7 @@ class DashboardPerformanceTest {
                             LocalDateTime.of(2026, 1, 19, 12, 0), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getWeeklyStats()).hasSize(2);
@@ -631,7 +631,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 100, 110, base, base.plusHours(3), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             PerformanceStats.Summary s = stats.getSummary();
@@ -655,7 +655,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -150, -140, base, base.plusHours(1), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             PerformanceStats.Summary s = stats.getSummary();
@@ -682,7 +682,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "LONG", 200, 210, base, base.plusHours(2), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             assertThat(stats.getSideComparison().getLongStats().getTrades()).isEqualTo(2);
@@ -700,7 +700,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", 200, 220, base, base.plusHours(3), 0, "SIGNAL_CLOSE")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             // LONG: grossWins=110, grossLosses=40 → PF = 110/40 = 2.75
@@ -731,7 +731,7 @@ class DashboardPerformanceTest {
                     closedTrade("BTCUSDT", "SHORT", -50, -45, base, base.plusHours(3), 0, "STOP_LOSS")
             );
 
-            when(tradeRecordService.findAll()).thenReturn(trades);
+            when(tradeRecordService.findAll("user1")).thenReturn(trades);
             PerformanceStats stats = dashboardService.getPerformance("user1", 365);
 
             // netProfit null 的 trade 不算 winning（netProfit > 0 是 false）

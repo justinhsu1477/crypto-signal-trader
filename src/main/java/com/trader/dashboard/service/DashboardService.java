@@ -64,19 +64,19 @@ public class DashboardService {
                 .orElse(false);
 
         return DashboardOverview.builder()
-                .account(buildAccountSummary())
+                .account(buildAccountSummary(userId))
                 .riskBudget(buildRiskBudget(userId))
                 .subscription(buildSubscriptionInfo(userId))
                 .autoTradeEnabled(autoTradeEnabled)
-                .positions(buildPositionList())
+                .positions(buildPositionList(userId))
                 .build();
     }
 
-    private DashboardOverview.AccountSummary buildAccountSummary() {
-        Map<String, Object> todayStats = tradeRecordService.getTodayStats();
+    private DashboardOverview.AccountSummary buildAccountSummary(String userId) {
+        Map<String, Object> todayStats = tradeRecordService.getTodayStats(userId);
         long todayTrades = (long) todayStats.get("trades");
         double todayPnl = (double) todayStats.get("netProfit");
-        List<Trade> openTrades = tradeRecordService.findAllOpenTrades();
+        List<Trade> openTrades = tradeRecordService.findAllOpenTrades(userId);
 
         double balance = 0;
         try {
@@ -96,7 +96,7 @@ public class DashboardService {
     private DashboardOverview.RiskBudget buildRiskBudget(String userId) {
         EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
         double dailyLimit = config.maxDailyLossUsdt();
-        double todayLoss = tradeRecordService.getTodayRealizedLoss(); // 負數
+        double todayLoss = tradeRecordService.getTodayRealizedLoss(userId); // 負數
         double lossUsed = Math.abs(todayLoss);
         double remaining = Math.max(0, dailyLimit - lossUsed);
 
@@ -124,8 +124,8 @@ public class DashboardService {
         }
     }
 
-    private List<DashboardOverview.OpenPositionSummary> buildPositionList() {
-        return tradeRecordService.findAllOpenTrades().stream()
+    private List<DashboardOverview.OpenPositionSummary> buildPositionList(String userId) {
+        return tradeRecordService.findAllOpenTrades(userId).stream()
                 .map(t -> DashboardOverview.OpenPositionSummary.builder()
                         .symbol(t.getSymbol())
                         .side(t.getSide())
@@ -147,7 +147,7 @@ public class DashboardService {
     public PerformanceStats getPerformance(String userId, int days) {
         LocalDateTime since = LocalDate.now(AppConstants.ZONE_ID).minusDays(days).atStartOfDay();
 
-        List<Trade> closedTrades = tradeRecordService.findAll().stream()
+        List<Trade> closedTrades = tradeRecordService.findAll(userId).stream()
                 .filter(t -> "CLOSED".equals(t.getStatus()))
                 .filter(t -> t.getExitTime() != null && t.getExitTime().isAfter(since))
                 .toList();
@@ -549,7 +549,7 @@ public class DashboardService {
      * 取得交易歷史（分頁）
      */
     public TradeHistoryResponse getTradeHistory(String userId, int page, int size) {
-        List<Trade> allClosed = tradeRecordService.findByStatus("CLOSED");
+        List<Trade> allClosed = tradeRecordService.findByStatus("CLOSED", userId);
 
         long totalElements = allClosed.size();
         int totalPages = (int) Math.ceil((double) totalElements / size);
