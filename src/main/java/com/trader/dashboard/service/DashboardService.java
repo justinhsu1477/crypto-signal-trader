@@ -645,6 +645,24 @@ public class DashboardService {
                 .mapToDouble(Trade::getNetProfit).average().orElse(0);
     }
 
+    /**
+     * 輕量用戶交易統計（僅查 DB，不呼叫 Binance API）
+     * 供 AdminDashboardController.getSystemOverview 使用
+     */
+    public Map<String, Object> getLightweightUserStats(String userId) {
+        Map<String, Object> todayStats = tradeRecordService.getTodayStats(userId);
+        List<Trade> openTrades = tradeRecordService.findAllOpenTrades(userId);
+        Map<String, Object> summary = tradeRecordService.getStatsSummary(userId);
+
+        return Map.of(
+                "openPositionCount", openTrades.size(),
+                "closedTradeCount", summary.get("closedTrades"),
+                "totalNetProfit", summary.get("totalNetProfit"),
+                "todayPnl", todayStats.get("netProfit"),
+                "todayTradeCount", todayStats.get("trades")
+        );
+    }
+
     private double round2(double value) {
         return Math.round(value * 100.0) / 100.0;
     }
