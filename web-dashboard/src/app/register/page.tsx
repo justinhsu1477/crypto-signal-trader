@@ -142,13 +142,13 @@ export default function RegisterPage() {
             className="mt-1 h-4 w-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/20 cursor-pointer accent-emerald-500"
           />
           <label htmlFor="agree-terms" className="text-xs text-zinc-400 leading-relaxed">
-            我已閱讀並同意{" "}
+            {t("register.agreeTermsPrefix")}
             <button
               type="button"
               onClick={() => setShowLegalDialog(true)}
               className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors"
             >
-              《服務條款與風險聲明》
+              {t("register.termsAndConditions")}
             </button>
           </label>
         </div>

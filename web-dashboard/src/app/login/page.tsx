@@ -49,7 +49,13 @@ function LoginForm() {
             router.push(`/verify-email?email=${encodeURIComponent(redirectEmail)}`);
             return;
           }
-          setError(parsed.error || parsed.message || err.message);
+          // 將後端中文錯誤訊息映射到 i18n
+          const backendError = parsed.error || parsed.message || err.message;
+          const errorI18nMap: Record<string, string> = {
+            "帳號或密碼錯誤": t("login.invalidCredentials"),
+            "帳號已停用": t("login.accountDisabled"),
+          };
+          setError(errorI18nMap[backendError] || backendError);
         } catch {
           setError(err.message);
         }
