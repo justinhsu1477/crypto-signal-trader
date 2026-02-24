@@ -6,29 +6,42 @@ Discord 交易訊號自動跟單系統 — 監聽 Discord 頻道訊號，AI 解�
 
 ## 系統架構
 
-```
-Discord Desktop (CDP 模式)
-    │  Chrome DevTools Protocol
-    ▼
-Python Monitor (discord-monitor/)
-    │  過濾頻道 → Gemini AI 解析 JSON（失敗 fallback regex）
-    │  心跳回報 → Java API（每 30 秒）
-    ▼
-Spring Boot API (Docker, port 8080)
-    │  風控檢查 → Binance 下單
-    │  → DCA 補倉 + 部分平倉 + SL/TP 保護
-    │  → Discord Webhook 通知（per-user）
-    │  → 訊號廣播跟單（多用戶模式）
-    ▼
-Binance Futures API
-    │
-    ▼
-WebSocket User Data Stream
-    → SL/TP 觸發 → 真實數據寫入 DB + PnL 通知
-    → SL 被取消 → Discord 告警（持倉裸奔）
+```mermaid
+graph TD
+    Discord["Discord Desktop<br/>(CDP 模式)"]
+    Monitor["Python Monitor<br/>Gemini AI 解析"]
+    API["Spring Boot API<br/>風控 + 下單 + 廣播跟單"]
+    Binance["Binance Futures API"]
+    WS["WebSocket User Data Stream<br/>SL/TP 觸發 → PnL 通知"]
+    DB[("Neon PostgreSQL<br/>(Singapore)")]
+    Webhook["Discord Webhook<br/>per-user 通知"]
 
-資料庫: Neon 雲端 PostgreSQL (Singapore)
-前端:   Web Dashboard (Next.js + shadcn/ui)
+    Discord -->|"CDP"| Monitor
+    Monitor -->|"解析後 JSON + 心跳"| API
+    API -->|"下單 / 查餘額"| Binance
+    Binance -->|"即時成交回報"| WS
+    WS -->|"寫入 DB + 通知"| API
+    API --> DB
+    API --> Webhook
+```
+
+### 雲端部署架構
+
+```mermaid
+graph LR
+    User["Browser"]
+    CF["Cloudflare<br/>DDoS + SSL"]
+    Caddy["Caddy<br/>反向代理"]
+    Dashboard["web-dashboard<br/>Next.js :3000"]
+    TradingAPI["trading-api<br/>Spring Boot :8080"]
+    DB[("Neon PostgreSQL")]
+    Monitor["Python Monitor<br/>(本地跑)"]
+
+    User -->|"HTTPS"| CF -->|"Origin Cert"| Caddy
+    Caddy -->|"/api/*"| TradingAPI
+    Caddy -->|"/*"| Dashboard
+    TradingAPI --> DB
+    Monitor -->|"HTTPS /api"| CF
 ```
 
 ## 模組架構
@@ -102,46 +115,14 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-d
 ### Cloud 部署（Caddy + API + Dashboard，Python 本地跑）
 
 ```bash
-# ===== 首次部署 / 全部重建 =====
+# 啟動（首次或重建）
 docker compose -f docker-compose.cloud.yml up -d --build
 
-# ===== 個別服務更新（推薦，避免不必要的重建） =====
-
-# 只改了前端 → 只重建 web-dashboard
-docker compose -f docker-compose.cloud.yml up -d --build web-dashboard
-
-# 只改了後端 → 只重建 trading-api
-docker compose -f docker-compose.cloud.yml up -d --build trading-api
-
-# 改了 Caddyfile → 只重建 caddy
-docker compose -f docker-compose.cloud.yml up -d --force-recreate caddy
-
-# ===== 停止 / 重啟 =====
-
-# 停止全部（保留容器）
-docker compose -f docker-compose.cloud.yml stop
-
-# 停止並移除容器 + 網路
+# 停止
 docker compose -f docker-compose.cloud.yml down
 
-# 重啟單一服務（不重建）
-docker compose -f docker-compose.cloud.yml restart trading-api
-
-# ===== 查看狀態 / Logs =====
-docker compose -f docker-compose.cloud.yml ps
-docker compose -f docker-compose.cloud.yml logs -f trading-api
-docker compose -f docker-compose.cloud.yml logs -f web-dashboard
-docker compose -f docker-compose.cloud.yml logs -f caddy
-```
-
-> **💡 提示：** `.dockerignore` 已排除 `web-dashboard/`，所以改前端不會觸發後端重建。
-> 但建議養成習慣用 `--build <service>` 只重建需要的服務。
-
-```bash
-# Python Monitor 本地直跑（不在 Docker 內）
-cd discord-monitor
-python3 -m src.main --config config.yml
-# config.yml 的 api.base_url 指向 https://hook-fi.com 或 http://<VM-IP>
+# Python Monitor（本地跑）
+cd discord-monitor && python3 -m src.main --config config.yml
 ```
 
 ### 驗證
