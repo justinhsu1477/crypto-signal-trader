@@ -6,10 +6,9 @@
 
 binance:
   futures:
-#    base-url: https://fapi.binance.com
-#    ws-base-url: wss://fstream.binance.com/ws/
-    base-url: https://testnet.binancefuture.com
-    ws-base-url: wss://testnet.binancefuture.com/ws/
+    base-url: https://fapi.binance.com
+    ws-base-url: wss://fstream.binance.com/ws/
+
 
 
 # logging 設定由 logback-spring.xml 統一管理
