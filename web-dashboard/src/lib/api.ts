@@ -162,15 +162,36 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 // ==================== Auth ====================
 
+/**
+ * 公開 API 請求（不含 401 token refresh 邏輯）
+ * 用於 login / register 等不需要 JWT 的端點，
+ * 避免帳密錯誤的 401 被誤判為 session 過期而重導頁面。
+ */
+async function publicRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((options.headers as Record<string, string>) || {}),
+  };
+
+  const res = await fetch(`${BASE}${url}`, { ...options, headers });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(body || `HTTP ${res.status}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
 export async function login(data: LoginRequest): Promise<LoginResponse> {
-  return request<LoginResponse>("/api/auth/login", {
+  return publicRequest<LoginResponse>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
 export async function register(data: RegisterRequest): Promise<RegisterResponse> {
-  return request<RegisterResponse>("/api/auth/register", {
+  return publicRequest<RegisterResponse>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -180,14 +201,14 @@ export async function register(data: RegisterRequest): Promise<RegisterResponse>
 // 不再需要外部呼叫
 
 export async function verifyEmail(data: VerifyEmailRequest): Promise<{ message: string }> {
-  return request<{ message: string }>("/api/auth/verify-email", {
+  return publicRequest<{ message: string }>("/api/auth/verify-email", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
 export async function resendCode(data: ResendCodeRequest): Promise<{ message: string }> {
-  return request<{ message: string }>("/api/auth/resend-code", {
+  return publicRequest<{ message: string }>("/api/auth/resend-code", {
     method: "POST",
     body: JSON.stringify(data),
   });
