@@ -4,9 +4,12 @@ import com.trader.advisor.config.AdvisorConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.RiskConfig;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,8 @@ public class AdvisorService {
     private final DiscordWebhookService webhookService;
     private final AdvisorConfig advisorConfig;
     private final RiskConfig riskConfig;
+    private final MultiUserConfig multiUserConfig;
+    private final UserApiKeyService userApiKeyService;
 
     // ─── System Prompt ───────────────────────────────────────────
 
@@ -104,10 +109,10 @@ public class AdvisorService {
         return sb.toString();
     }
 
-    /** 第 1 段：帳戶餘額 */
+    /** 第 1 段：帳戶餘額（多用戶模式下使用 per-user API Key） */
     private void appendBalance(StringBuilder sb) {
         try {
-            double balance = binanceFuturesService.getAvailableBalance();
+            double balance = executeBinanceCall(() -> binanceFuturesService.getAvailableBalance());
             sb.append("## 帳戶餘額\n");
             sb.append(String.format("可用餘額: %.2f USDT\n\n", balance));
         } catch (Exception e) {
@@ -133,9 +138,10 @@ public class AdvisorService {
                         t.getEntryPrice(), t.getEntryQuantity(),
                         t.getStopLoss() != null ? t.getStopLoss() : 0.0));
 
-                // 計算未實現盈虧
+                // 計算未實現盈虧（多用戶模式下使用 per-user API Key）
                 try {
-                    double markPrice = binanceFuturesService.getMarkPrice(t.getSymbol());
+                    double markPrice = executeBinanceCall(
+                            () -> binanceFuturesService.getMarkPrice(t.getSymbol()));
                     int direction = "LONG".equals(t.getSide()) ? 1 : -1;
                     double effectiveQty = t.getRemainingQuantity() != null
                             ? t.getRemainingQuantity() : t.getEntryQuantity();
@@ -254,5 +260,51 @@ public class AdvisorService {
                 "\uD83E\uDD16 AI 交易顧問",
                 content,
                 COLOR_PURPLE);
+    }
+
+    // ─── Per-User API Key 注入 ───────────────────────────────────
+
+    /**
+     * 執行需要 Binance API Key 的呼叫
+     * 多用戶模式下：使用當前排程用戶的 per-user API Key
+     * 單用戶模式下：直接使用全局 API Key（行為不變）
+     *
+     * 注意：多用戶模式下需要在外層先呼叫 setAdvisoryUserKeys() 設定用戶 Key。
+     * 若未設定，此處會 fallback 到全局 Key（等同單用戶行為）。
+     */
+    private <T> T executeBinanceCall(BinanceCallable<T> callable) {
+        if (!multiUserConfig.isEnabled()) {
+            // 單用戶模式 → 直接使用全局 API Key
+            return callable.call();
+        }
+        // 多用戶模式 → ThreadLocal 已由外層設定，直接呼叫
+        // 若外層未設定，BinanceFuturesService.getActiveApiKey() 會 fallback 到全局
+        return callable.call();
+    }
+
+    /**
+     * 為多用戶模式設定 Advisor 排程的用戶 API Key
+     * 外部排程器在遍歷用戶時呼叫此方法。
+     */
+    public void setAdvisoryUserKeys(String userId) {
+        if (!multiUserConfig.isEnabled()) return;
+        Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+        if (keysOpt.isPresent()) {
+            BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+        } else {
+            log.warn("Advisor: 用戶 {} 未設定 API Key，將 fallback 到全局 Key", userId);
+        }
+    }
+
+    /**
+     * 清除 Advisor 排程的用戶 API Key
+     */
+    public void clearAdvisoryUserKeys() {
+        BinanceFuturesService.clearCurrentUserKeys();
+    }
+
+    @FunctionalInterface
+    private interface BinanceCallable<T> {
+        T call();
     }
 }
