@@ -34,15 +34,12 @@ export function useReferralGuard(): ReferralGuardState {
   const hasFetched = useRef(false);
 
   useEffect(() => {
-    // Already verified from cache — skip
-    if (cachedStatus === "VERIFIED") {
-      setIsChecking(false);
-      setIsVerified(true);
-      return;
-    }
+    // Already verified from cache — initial state already handles this via useState initializer
+    if (cachedStatus === "VERIFIED") return;
 
     // On /referral page — don't check (infinite loop prevention)
     if (pathname === "/referral") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronous guard for routing edge case
       setIsChecking(false);
       return;
     }

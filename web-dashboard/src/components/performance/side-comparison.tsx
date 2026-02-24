@@ -32,6 +32,26 @@ function StatRow({ label, value }: StatRowProps) {
   );
 }
 
+function SideChartTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; payload: { name: string } }>;
+}) {
+  const { t } = useT();
+  if (!active || !payload?.length) return null;
+  const entry = payload[0];
+  return (
+    <div className="rounded-lg border bg-card p-3 shadow-md">
+      <p className="text-sm font-medium">{entry.payload.name}</p>
+      <p className="text-xs text-muted-foreground">
+        {`${t("performance.netProfit")}: ${entry.value.toFixed(2)} USDT`}
+      </p>
+    </div>
+  );
+}
+
 export function SideComparison({ data }: SideComparisonProps) {
   const { t } = useT();
   const { longStats, shortStats } = data;
@@ -42,25 +62,6 @@ export function SideComparison({ data }: SideComparisonProps) {
   ];
 
   const colors = ["#10b981", "#ef4444"];
-
-  function ChartTooltip({
-    active,
-    payload,
-  }: {
-    active?: boolean;
-    payload?: Array<{ value: number; payload: { name: string } }>;
-  }) {
-    if (!active || !payload?.length) return null;
-    const entry = payload[0];
-    return (
-      <div className="rounded-lg border bg-card p-3 shadow-md">
-        <p className="text-sm font-medium">{entry.payload.name}</p>
-        <p className="text-xs text-muted-foreground">
-          {`${t("performance.netProfit")}: ${entry.value.toFixed(2)} USDT`}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <Card>
@@ -103,7 +104,7 @@ export function SideComparison({ data }: SideComparisonProps) {
               tick={{ fontSize: 12 }}
               width={50}
             />
-            <Tooltip content={<ChartTooltip />} />
+            <Tooltip content={<SideChartTooltip />} />
             <Bar dataKey="netProfit" maxBarSize={30}>
               {chartData.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={colors[index]} />

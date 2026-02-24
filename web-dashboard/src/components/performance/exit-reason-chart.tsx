@@ -24,6 +24,26 @@ const COLOR_MAP: Record<string, string> = {
 
 const DEFAULT_COLOR = "#6b7280";
 
+function ExitReasonTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; payload: { percent: string } }>;
+}) {
+  const { t } = useT();
+  if (!active || !payload?.length) return null;
+  const entry = payload[0];
+  return (
+    <div className="rounded-lg border bg-card p-3 shadow-md">
+      <p className="text-sm font-medium">{entry.name}</p>
+      <p className="text-xs text-muted-foreground">
+        {t("performance.exitCount", { n: entry.value, pct: entry.payload.percent })}
+      </p>
+    </div>
+  );
+}
+
 export function ExitReasonChart({ data }: ExitReasonChartProps) {
   const { t } = useT();
 
@@ -43,25 +63,6 @@ export function ExitReasonChart({ data }: ExitReasonChartProps) {
     color: COLOR_MAP[reason] ?? DEFAULT_COLOR,
     percent: total > 0 ? ((count / total) * 100).toFixed(1) : "0",
   }));
-
-  function CustomTooltip({
-    active,
-    payload,
-  }: {
-    active?: boolean;
-    payload?: Array<{ name: string; value: number; payload: { percent: string } }>;
-  }) {
-    if (!active || !payload?.length) return null;
-    const entry = payload[0];
-    return (
-      <div className="rounded-lg border bg-card p-3 shadow-md">
-        <p className="text-sm font-medium">{entry.name}</p>
-        <p className="text-xs text-muted-foreground">
-          {t("performance.exitCount", { n: entry.value, pct: entry.payload.percent })}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <Card>
@@ -86,7 +87,7 @@ export function ExitReasonChart({ data }: ExitReasonChartProps) {
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<ExitReasonTooltip />} />
               <Legend
                 formatter={(value: string) => (
                   <span className="text-sm">{value}</span>

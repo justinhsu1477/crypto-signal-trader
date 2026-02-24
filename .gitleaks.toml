@@ -1,0 +1,18 @@
+# Gitleaks 設定
+# 排除測試用的假 key、範例設定、以及 lock 檔
+
+[extend]
+useDefault = true
+
+[allowlist]
+  description = "Global allowlist"
+
+  # 排除測試 / 設定範例中的假資料
+  paths = [
+    '''\.env\.example''',
+    '''src/test/.*''',
+    '''.*test.*\.java''',
+    '''.*Test\.java''',
+    '''package-lock\.json''',
+    '''\.gitleaks\.toml''',
+  ]

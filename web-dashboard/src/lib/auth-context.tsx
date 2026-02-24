@@ -28,11 +28,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: true,
   });
 
-  // 初始化時從 localStorage 讀取
+  // 初始化時從 localStorage 讀取（SSR 安全：必須在 useEffect 中存取 localStorage）
   useEffect(() => {
     const token = localStorage.getItem("token");
     const userId = localStorage.getItem("userId");
     const email = localStorage.getItem("email");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration: cannot read localStorage in initializer
     setState({ token, userId, email, isLoading: false });
   }, []);
 
