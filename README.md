@@ -102,13 +102,46 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-d
 ### Cloud 部署（Caddy + API + Dashboard，Python 本地跑）
 
 ```bash
-# 雲端 VM 或本機模擬
+# ===== 首次部署 / 全部重建 =====
 docker compose -f docker-compose.cloud.yml up -d --build
 
+# ===== 個別服務更新（推薦，避免不必要的重建） =====
+
+# 只改了前端 → 只重建 web-dashboard
+docker compose -f docker-compose.cloud.yml up -d --build web-dashboard
+
+# 只改了後端 → 只重建 trading-api
+docker compose -f docker-compose.cloud.yml up -d --build trading-api
+
+# 改了 Caddyfile → 只重建 caddy
+docker compose -f docker-compose.cloud.yml up -d --force-recreate caddy
+
+# ===== 停止 / 重啟 =====
+
+# 停止全部（保留容器）
+docker compose -f docker-compose.cloud.yml stop
+
+# 停止並移除容器 + 網路
+docker compose -f docker-compose.cloud.yml down
+
+# 重啟單一服務（不重建）
+docker compose -f docker-compose.cloud.yml restart trading-api
+
+# ===== 查看狀態 / Logs =====
+docker compose -f docker-compose.cloud.yml ps
+docker compose -f docker-compose.cloud.yml logs -f trading-api
+docker compose -f docker-compose.cloud.yml logs -f web-dashboard
+docker compose -f docker-compose.cloud.yml logs -f caddy
+```
+
+> **💡 提示：** `.dockerignore` 已排除 `web-dashboard/`，所以改前端不會觸發後端重建。
+> 但建議養成習慣用 `--build <service>` 只重建需要的服務。
+
+```bash
 # Python Monitor 本地直跑（不在 Docker 內）
 cd discord-monitor
 python3 -m src.main --config config.yml
-# config.yml 的 api.base_url 指向 http://localhost 或 http://<VM-IP>
+# config.yml 的 api.base_url 指向 https://hook-fi.com 或 http://<VM-IP>
 ```
 
 ### 驗證
@@ -429,4 +462,4 @@ Flyway 管理 schema 遷移（7 個版本），`ddl-auto: validate` 確保 entit
 | ✅ | Web Dashboard 前端 (Next.js + shadcn/ui) |
 | 📋 | RabbitMQ 非同步化（目前 Thread Pool 同步） |
 | 📋 | Per-user Binance WebSocket |
-| 📋 | VPS 部署（24/7 雲端運行） |
+| ✅ | VPS 部署（DigitalOcean + Caddy + Cloudflare） |
