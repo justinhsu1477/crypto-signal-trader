@@ -7,6 +7,7 @@ import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import org.junit.jupiter.api.*;
@@ -123,7 +124,8 @@ class DailyReportServiceTest {
             service = new DailyReportService(
                     tradeRecordService, webhookService, binanceFuturesService,
                     userDataStreamService, monitorHeartbeatService, riskConfig,
-                    multiUserConfig, userRepository, userApiKeyService, tradeConfigResolver);
+                    multiUserConfig, userRepository, userApiKeyService, tradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class));
 
             setupMonitorMocks();
         }
@@ -219,7 +221,8 @@ class DailyReportServiceTest {
             service = new DailyReportService(
                     tradeRecordService, webhookService, binanceFuturesService,
                     userDataStreamService, monitorHeartbeatService, riskConfig,
-                    multiUserConfig, userRepository, userApiKeyService, tradeConfigResolver);
+                    multiUserConfig, userRepository, userApiKeyService, tradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class));
 
             setupMonitorMocks();
         }
@@ -247,7 +250,7 @@ class DailyReportServiceTest {
 
             // per-user risk config
             EffectiveTradeConfig config = new EffectiveTradeConfig(
-                    0.2, 50000, 2000, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
             when(tradeConfigResolver.resolve(anyString())).thenReturn(config);
 
             service.sendDailyReport();
@@ -281,7 +284,7 @@ class DailyReportServiceTest {
             when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
 
             EffectiveTradeConfig config = new EffectiveTradeConfig(
-                    0.2, 50000, 2000, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
             when(tradeConfigResolver.resolve("user-A")).thenReturn(config);
 
             service.sendDailyReport();
@@ -318,7 +321,7 @@ class DailyReportServiceTest {
             when(userApiKeyService.getUserBinanceKeys("user-B")).thenReturn(Optional.empty());
 
             EffectiveTradeConfig config = new EffectiveTradeConfig(
-                    0.2, 50000, 2000, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
             when(tradeConfigResolver.resolve("user-B")).thenReturn(config);
 
             // 不應拋出異常
@@ -345,13 +348,13 @@ class DailyReportServiceTest {
             when(binanceFuturesService.getAvailableBalance()).thenReturn(8888.88);
 
             EffectiveTradeConfig config = new EffectiveTradeConfig(
-                    0.2, 50000, 2000, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
             when(tradeConfigResolver.resolve("user-A")).thenReturn(config);
 
             service.sendDailyReport();
 
-            // 驗證有查詢餘額
-            verify(binanceFuturesService).getAvailableBalance();
+            // 驗證有查詢餘額（appendBalanceForUser + appendRiskBudgetForUser 各一次）
+            verify(binanceFuturesService, times(2)).getAvailableBalance();
 
             // 驗證通知內容包含餘額
             ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
@@ -404,7 +407,7 @@ class DailyReportServiceTest {
 
             // per-user config: maxDailyLossUsdt = 1000（與全局 2000 不同）
             EffectiveTradeConfig config = new EffectiveTradeConfig(
-                    0.2, 50000, 1000, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+                    0.2, 50000, 1000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
             when(tradeConfigResolver.resolve("user-X")).thenReturn(config);
 
             service.sendDailyReport();

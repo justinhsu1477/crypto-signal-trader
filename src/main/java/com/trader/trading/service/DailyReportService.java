@@ -63,6 +63,7 @@ public class DailyReportService {
     private final UserRepository userRepository;
     private final UserApiKeyService userApiKeyService;
     private final TradeConfigResolver tradeConfigResolver;
+    private final StartOfDayBalanceCache startOfDayBalanceCache;
 
     public DailyReportService(TradeRecordService tradeRecordService,
                               DiscordWebhookService webhookService,
@@ -73,7 +74,8 @@ public class DailyReportService {
                               MultiUserConfig multiUserConfig,
                               UserRepository userRepository,
                               UserApiKeyService userApiKeyService,
-                              TradeConfigResolver tradeConfigResolver) {
+                              TradeConfigResolver tradeConfigResolver,
+                              StartOfDayBalanceCache startOfDayBalanceCache) {
         this.tradeRecordService = tradeRecordService;
         this.webhookService = webhookService;
         this.binanceFuturesService = binanceFuturesService;
@@ -84,6 +86,7 @@ public class DailyReportService {
         this.userRepository = userRepository;
         this.userApiKeyService = userApiKeyService;
         this.tradeConfigResolver = tradeConfigResolver;
+        this.startOfDayBalanceCache = startOfDayBalanceCache;
     }
 
     // ==================== 排程 1: 殭屍 Trade 清理 ====================
@@ -484,7 +487,11 @@ public class DailyReportService {
         sb.append("🛡️ 今日風控\n");
         try {
             double todayLoss = tradeRecordService.getTodayRealizedLoss(); // 負數
-            double maxDaily = riskConfig.getMaxDailyLossUsdt();
+            String userId = tradeRecordService.getActiveUserId();
+            double balance = binanceFuturesService.getAvailableBalance();
+            double sodBalance = startOfDayBalanceCache.getOrCompute(userId, () -> balance);
+            EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
+            double maxDaily = config.effectiveDailyLossLimit(sodBalance);
             appendRiskBudgetContent(sb, todayLoss, maxDaily);
         } catch (Exception e) {
             sb.append("風控狀態: 查詢失敗\n");
@@ -501,7 +508,27 @@ public class DailyReportService {
         try {
             double todayLoss = tradeRecordService.getTodayRealizedLoss(userId); // explicit-userId
             EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
-            double maxDaily = config.maxDailyLossUsdt();
+
+            // 取餘額需要 per-user API Key
+            double balance;
+            Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+            if (keysOpt.isPresent()) {
+                BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+                try {
+                    balance = binanceFuturesService.getAvailableBalance();
+                } catch (Exception e) {
+                    log.warn("用戶 {} 風控取餘額失敗: {}", userId, e.getMessage());
+                    balance = 0;
+                } finally {
+                    BinanceFuturesService.clearCurrentUserKeys();
+                }
+            } else {
+                balance = 0;
+            }
+
+            final double fetchedBalance = balance;
+            double sodBalance = startOfDayBalanceCache.getOrCompute(userId, () -> fetchedBalance);
+            double maxDaily = config.effectiveDailyLossLimit(sodBalance);
             appendRiskBudgetContent(sb, todayLoss, maxDaily);
         } catch (Exception e) {
             sb.append("風控狀態: 查詢失敗\n");

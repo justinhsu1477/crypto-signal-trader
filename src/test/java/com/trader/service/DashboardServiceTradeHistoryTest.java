@@ -10,6 +10,7 @@ import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,7 +52,8 @@ class DashboardServiceTradeHistoryTest {
 
         dashboardService = new DashboardService(
                 tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, userRepository,
-                Mockito.mock(TradeConfigResolver.class), multiUserConfig, userApiKeyService);
+                Mockito.mock(TradeConfigResolver.class), multiUserConfig, userApiKeyService,
+                Mockito.mock(StartOfDayBalanceCache.class));
     }
 
     /**

@@ -41,7 +41,7 @@ class SymbolFallbackTest {
     @BeforeEach
     void setUp() {
         RiskConfig riskConfig = new RiskConfig(
-                50000, 2000, true,
+                50000, 2000, 0.80, 0, true,
                 0.20, 3, 2.0, 20,
                 List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
@@ -52,7 +52,7 @@ class SymbolFallbackTest {
         TradeConfigResolver mockTradeConfigResolver = mock(TradeConfigResolver.class);
 
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
-                0.20, 50000, 2000, 3, 2.0, 20,
+                0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
                 List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
@@ -61,7 +61,7 @@ class SymbolFallbackTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver));
+                mockTradeConfigResolver, new StartOfDayBalanceCache()));
     }
 
     // ==================== CLOSE Symbol Fallback ====================

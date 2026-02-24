@@ -11,6 +11,7 @@ import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
@@ -54,6 +55,7 @@ public class DashboardService {
     private final TradeConfigResolver tradeConfigResolver;
     private final MultiUserConfig multiUserConfig;
     private final UserApiKeyService userApiKeyService;
+    private final StartOfDayBalanceCache startOfDayBalanceCache;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
@@ -121,18 +123,37 @@ public class DashboardService {
     }
 
     private DashboardOverview.RiskBudget buildRiskBudget(String userId) {
-        EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
-        double dailyLimit = config.maxDailyLossUsdt();
-        double todayLoss = tradeRecordService.getTodayRealizedLoss(userId); // 負數
-        double lossUsed = Math.abs(todayLoss);
-        double remaining = Math.max(0, dailyLimit - lossUsed);
+        try {
+            EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
+            double balance;
+            try {
+                balance = fetchBalanceWithUserKeys(userId);
+            } catch (Exception e) {
+                log.warn("風控預算取得餘額失敗: {}", e.getMessage());
+                balance = 0;
+            }
+            final double fetchedBalance = balance;
+            double sodBalance = startOfDayBalanceCache.getOrCompute(userId, () -> fetchedBalance);
+            double dailyLimit = config.effectiveDailyLossLimit(sodBalance);
+            double todayLoss = tradeRecordService.getTodayRealizedLoss(userId); // 負數
+            double lossUsed = Math.abs(todayLoss);
+            double remaining = Math.max(0, dailyLimit - lossUsed);
 
-        return DashboardOverview.RiskBudget.builder()
-                .dailyLossLimit(round2(dailyLimit))
-                .todayLossUsed(round2(lossUsed))
-                .remainingBudget(round2(remaining))
-                .circuitBreakerActive(lossUsed >= dailyLimit)
-                .build();
+            return DashboardOverview.RiskBudget.builder()
+                    .dailyLossLimit(round2(dailyLimit))
+                    .todayLossUsed(round2(lossUsed))
+                    .remainingBudget(round2(remaining))
+                    .circuitBreakerActive(lossUsed >= dailyLimit)
+                    .build();
+        } catch (Exception e) {
+            log.warn("風控預算建構失敗: {}", e.getMessage());
+            return DashboardOverview.RiskBudget.builder()
+                    .dailyLossLimit(0)
+                    .todayLossUsed(0)
+                    .remainingBudget(0)
+                    .circuitBreakerActive(false)
+                    .build();
+        }
     }
 
     private DashboardOverview.SubscriptionInfo buildSubscriptionInfo(String userId) {

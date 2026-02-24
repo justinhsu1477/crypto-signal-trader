@@ -12,6 +12,7 @@ import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -61,14 +62,15 @@ class DashboardServiceOverviewTest {
 
         // mock TradeConfigResolver — buildRiskBudget 會用到 resolve().maxDailyLossUsdt()
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
-                0.20, 50000, 2000, 3, 2.0, 20,
+                0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
                 java.util.List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
         );
         Mockito.when(tradeConfigResolver.resolve(Mockito.any())).thenReturn(defaultConfig);
 
         dashboardService = new DashboardService(
                 tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class),
-                tradeConfigResolver, multiUserConfig, userApiKeyService);
+                tradeConfigResolver, multiUserConfig, userApiKeyService,
+                Mockito.mock(StartOfDayBalanceCache.class));
     }
 
     // ==================== userId 隔離驗證 ====================
