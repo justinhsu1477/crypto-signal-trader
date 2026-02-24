@@ -1,0 +1,31 @@
+name: CD
+
+# ⚠️ 目前僅支援手動觸發，要開啟自動部署請取消下方註解
+# on:
+#   workflow_run:
+#     workflows: ["CI"]
+#     branches: [main]
+#     types: [completed]
+
+on:
+  workflow_dispatch:  # 手動觸發（GitHub Actions 頁面按 Run workflow）
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    # 如果改成 workflow_run 觸發，取消下方註解確保 CI 通過才部署
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: root
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            cd /root/crypto-signal-trader
+            git pull origin main
+            docker compose -f docker-compose.cloud.yml up -d --build
+            docker image prune -f

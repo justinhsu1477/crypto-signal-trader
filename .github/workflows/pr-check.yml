@@ -1,0 +1,43 @@
+name: PR Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-size:
+    name: PR Size Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR size
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)
+          LINES_CHANGED=$(git diff --stat origin/${{ github.base_ref }}...HEAD | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+          echo "📁 Changed files: $CHANGED_FILES"
+          echo "📝 Lines changed: $LINES_CHANGED"
+          if [ "$CHANGED_FILES" -gt 50 ]; then
+            echo "::warning::PR 改了 $CHANGED_FILES 個檔案，建議拆成更小的 PR"
+          fi
+          if [ "$LINES_CHANGED" -gt 1000 ]; then
+            echo "::warning::PR 改了 $LINES_CHANGED 行，建議拆成更小的 PR"
+          fi
+
+  commit-lint:
+    name: Commit Message Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages
+        run: |
+          git log origin/${{ github.base_ref }}..HEAD --pretty=format:"%s" | while read msg; do
+            if [ ${#msg} -lt 5 ]; then
+              echo "::warning::Commit message 太短: '$msg'"
+            fi
+          done
