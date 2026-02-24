@@ -1,4 +1,8 @@
-:80 {
+:443 {
+    tls /etc/caddy/certs/origin-cert.pem /etc/caddy/certs/origin-key.pem
+
+    encode zstd gzip
+
     # API 請求 → Spring Boot
     handle /api/* {
         reverse_proxy trading-api:8080
@@ -8,4 +12,9 @@
     handle {
         reverse_proxy web-dashboard:3000
     }
+}
+
+# HTTP → HTTPS 重導向（保險用，Cloudflare 已在前端做）
+:80 {
+    redir https://{host}{uri} permanent
 }

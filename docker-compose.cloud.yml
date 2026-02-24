@@ -4,7 +4,11 @@
 # 使用方式:
 #   docker compose -f docker-compose.cloud.yml up -d --build
 #
-# Python Monitor 在本地直跑（不在 Docker 內），透過 Caddy :80 連 API
+# SSL: Cloudflare Full (Strict) + Origin Certificate
+#   - certs/ 目錄需放入 origin-cert.pem 和 origin-key.pem
+#   - 詳見 certs/README.md
+#
+# Python Monitor 在本地直跑（不在 Docker 內），透過 Caddy :443 連 API
 # DB 使用 Neon 雲端，不需本地 PostgreSQL
 
 services:
@@ -16,6 +20,7 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./certs:/etc/caddy/certs:ro
       - caddy_data:/data
     depends_on:
       trading-api:
