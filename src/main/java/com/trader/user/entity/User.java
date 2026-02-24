@@ -41,6 +41,9 @@ public class User {
     @Builder.Default
     private boolean autoTradeEnabled = true;
 
+    @Builder.Default
+    private boolean discordNotificationEnabled = true;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

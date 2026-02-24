@@ -27,6 +27,9 @@ public class DashboardOverview {
     /** 自動跟單是否啟用 */
     private boolean autoTradeEnabled;
 
+    /** Discord 通知是否啟用 */
+    private boolean discordNotificationEnabled;
+
     /** 目前持倉列表 */
     private List<OpenPositionSummary> positions;
 

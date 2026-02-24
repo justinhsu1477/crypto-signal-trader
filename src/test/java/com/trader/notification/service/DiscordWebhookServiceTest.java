@@ -1,8 +1,10 @@
 package com.trader.notification.service;
 
 import com.trader.shared.config.WebhookConfig;
+import com.trader.user.entity.User;
 import com.trader.user.entity.UserDiscordWebhook;
 import com.trader.user.repository.UserDiscordWebhookRepository;
+import com.trader.user.repository.UserRepository;
 import okhttp3.*;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +26,7 @@ class DiscordWebhookServiceTest {
     private WebhookConfig webhookConfig;
     private WebhookConfig.PerUserSettings perUserSettings;
     private UserDiscordWebhookRepository userWebhookRepository;
+    private UserRepository userRepository;
     private DiscordWebhookService service;
     private Call mockCall;
 
@@ -33,12 +36,17 @@ class DiscordWebhookServiceTest {
         webhookConfig = mock(WebhookConfig.class);
         perUserSettings = mock(WebhookConfig.PerUserSettings.class);
         userWebhookRepository = mock(UserDiscordWebhookRepository.class);
+        userRepository = mock(UserRepository.class);
 
         when(webhookConfig.getPerUser()).thenReturn(perUserSettings);
         mockCall = mock(Call.class);
         when(httpClient.newCall(any())).thenReturn(mockCall);
 
-        service = new DiscordWebhookService(httpClient, webhookConfig, userWebhookRepository);
+        // 預設：用戶通知已啟用（既有測試不受影響）
+        when(userRepository.findById(any())).thenReturn(
+                Optional.of(User.builder().discordNotificationEnabled(true).build()));
+
+        service = new DiscordWebhookService(httpClient, webhookConfig, userWebhookRepository, userRepository);
     }
 
     // ==================== sendNotification ====================
@@ -206,6 +214,70 @@ class DiscordWebhookServiceTest {
             service.sendNotificationToUser("u99", "Title", "Message", DiscordWebhookService.COLOR_RED);
 
             verify(httpClient, never()).newCall(any());
+        }
+    }
+
+    // ==================== discordNotificationEnabled 主開關 ====================
+
+    @Nested
+    @DisplayName("sendNotificationToUser — discordNotificationEnabled 主開關")
+    class NotificationToggleTests {
+
+        @Test
+        @DisplayName("通知啟用 — 正常發送")
+        void enabledSendsNotification() {
+            User user = User.builder().userId("u1").discordNotificationEnabled(true).build();
+            when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+
+            when(perUserSettings.isEnabled()).thenReturn(true);
+            UserDiscordWebhook webhook = new UserDiscordWebhook();
+            webhook.setWebhookUrl("https://discord.com/api/webhooks/user/hook");
+            when(userWebhookRepository.findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc("u1"))
+                    .thenReturn(Optional.of(webhook));
+
+            service.sendNotificationToUser("u1", "Title", "Message", DiscordWebhookService.COLOR_GREEN);
+
+            verify(httpClient).newCall(any());
+        }
+
+        @Test
+        @DisplayName("通知關閉 — 不發送")
+        void disabledSkipsNotification() {
+            User user = User.builder().userId("u1").discordNotificationEnabled(false).build();
+            when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+
+            service.sendNotificationToUser("u1", "Title", "Message", DiscordWebhookService.COLOR_GREEN);
+
+            verify(httpClient, never()).newCall(any());
+            verify(userWebhookRepository, never()).findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc(any());
+        }
+
+        @Test
+        @DisplayName("用戶不存在 — 預設允許（保守策略）")
+        void userNotFoundDefaultsToEnabled() {
+            when(userRepository.findById("unknown")).thenReturn(Optional.empty());
+
+            when(perUserSettings.isEnabled()).thenReturn(true);
+            UserDiscordWebhook webhook = new UserDiscordWebhook();
+            webhook.setWebhookUrl("https://discord.com/api/webhooks/user/hook");
+            when(userWebhookRepository.findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc("unknown"))
+                    .thenReturn(Optional.of(webhook));
+
+            service.sendNotificationToUser("unknown", "Title", "Message", DiscordWebhookService.COLOR_GREEN);
+
+            verify(httpClient).newCall(any());
+        }
+
+        @Test
+        @DisplayName("通知關閉不影響全局 sendNotification")
+        void disabledDoesNotAffectGlobal() {
+            when(webhookConfig.isEnabled()).thenReturn(true);
+            when(webhookConfig.getUrl()).thenReturn("https://discord.com/api/webhooks/123/abc");
+
+            service.sendNotification("System Alert", "Critical!", DiscordWebhookService.COLOR_RED);
+
+            verify(httpClient).newCall(any());
+            verify(userRepository, never()).findById(any());
         }
     }
 }
