@@ -62,6 +62,16 @@ const translations = {
       "zh-TW": "Email 驗證成功！請登入。",
       "zh-CN": "Email 验证成功！请登录。",
     },
+    invalidCredentials: {
+      en: "Invalid email or password",
+      "zh-TW": "帳號或密碼錯誤",
+      "zh-CN": "账号或密码错误",
+    },
+    accountDisabled: {
+      en: "Account has been disabled",
+      "zh-TW": "帳號已停用",
+      "zh-CN": "账号已停用",
+    },
   },
 
   // ─── register ───
@@ -75,6 +85,12 @@ const translations = {
     registerFailed: { en: "Registration failed, please try again later", "zh-TW": "註冊失敗，請稍後再試", "zh-CN": "注册失败，请稍后再试" },
     hasAccount: { en: "Already have an account? ", "zh-TW": "已經有帳號？ ", "zh-CN": "已有账号？ " },
     backToLogin: { en: "Back to Sign In", "zh-TW": "返回登入", "zh-CN": "返回登录" },
+    agreeTermsPrefix: { en: "I have read and agree to the ", "zh-TW": "我已閱讀並同意 ", "zh-CN": "我已阅读并同意 " },
+    termsAndConditions: {
+      en: "Terms of Service & Risk Disclaimer",
+      "zh-TW": "《服務條款與風險聲明》",
+      "zh-CN": "《服务条款与风险声明》",
+    },
   },
 
   // ─── verify email ───
@@ -492,6 +508,178 @@ const translations = {
       "zh-CN": "请先完成推荐码绑定才能使用交易功能，点击下方按钮前往设置。",
     },
     guardAction: { en: "Go to Binding", "zh-TW": "前往綁定", "zh-CN": "前往绑定" },
+  },
+  // ─── legal disclaimer ───
+  legal: {
+    title: {
+      en: "Terms of Service & Risk Disclaimer",
+      "zh-TW": "服務條款與風險聲明",
+      "zh-CN": "服务条款与风险声明",
+    },
+    description: {
+      en: "Please read the following terms carefully. You must scroll to the bottom before agreeing.",
+      "zh-TW": "請仔細閱讀以下條款，滾動至底部後方可同意",
+      "zh-CN": "请仔细阅读以下条款，滚动至底部后方可同意",
+    },
+    scrollHint: {
+      en: "Please scroll down to read the full terms",
+      "zh-TW": "請向下滾動閱讀完整條款",
+      "zh-CN": "请向下滚动阅读完整条款",
+    },
+    disagree: { en: "Disagree", "zh-TW": "不同意", "zh-CN": "不同意" },
+    agreeAll: {
+      en: "I have read and agree to all terms",
+      "zh-TW": "我已閱讀並同意全部條款",
+      "zh-CN": "我已阅读并同意全部条款",
+    },
+    readFirst: {
+      en: "Please read the full terms first",
+      "zh-TW": "請先閱讀完整條款",
+      "zh-CN": "请先阅读完整条款",
+    },
+    // ── Risk Warning Section ──
+    riskTitle: {
+      en: "1. Investment Risk Warning",
+      "zh-TW": "一、投資風險警告",
+      "zh-CN": "一、投资风险警告",
+    },
+    risk1: {
+      en: "Cryptocurrency trading carries extremely high risk. Prices may fluctuate dramatically in a short period. You may lose part or all of your investment capital. Please only trade with funds you can afford to lose.",
+      "zh-TW": "加密貨幣交易具有極高風險，價格可能在短時間內劇烈波動。您可能損失部分或全部投資本金。請僅使用您能承受損失的閒置資金進行交易。",
+      "zh-CN": "加密货币交易具有极高风险，价格可能在短时间内剧烈波动。您可能损失部分或全部投资本金。请仅使用您能承受损失的闲置资金进行交易。",
+    },
+    risk2: {
+      en: "This platform offers leveraged trading (up to 20x). Leverage amplifies both profits and losses. Under extreme market conditions, your losses may exceed the initial margin.",
+      "zh-TW": "本平台提供槓桿交易功能（最高可達 20 倍），槓桿會同時放大收益與虧損。在極端市場條件下，您的損失可能超過初始保證金。",
+      "zh-CN": "本平台提供杠杆交易功能（最高可达 20 倍），杠杆会同时放大收益与亏损。在极端市场条件下，您的损失可能超过初始保证金。",
+    },
+    risk3: {
+      en: "Trading signals, AI analysis, and any market information provided by this platform do not constitute investment advice, financial advice, or trading recommendations. All trading decisions should be made by you and you bear full responsibility.",
+      "zh-TW": "本平台提供的交易訊號、AI 分析及任何市場資訊，均不構成投資建議、財務建議或交易推薦。所有交易決定應由您自行判斷並承擔全部責任。",
+      "zh-CN": "本平台提供的交易信号、AI 分析及任何市场资讯，均不构成投资建议、财务建议或交易推荐。所有交易决定应由您自行判断并承担全部责任。",
+    },
+    risk4: {
+      en: "Past trading performance does not represent future results. Any historical data, backtesting results, or performance statistics are for reference only and do not guarantee the same or similar results in the future.",
+      "zh-TW": "過去的交易績效不代表未來表現。任何歷史數據、回測結果或績效統計僅供參考，不保證未來能獲得相同或類似的結果。",
+      "zh-CN": "过去的交易绩效不代表未来表现。任何历史数据、回测结果或绩效统计仅供参考，不保证未来能获得相同或类似的结果。",
+    },
+    risk5: {
+      en: "The auto copy-trading system may fail to execute properly due to technical failures, network latency, API disconnection, exchange maintenance, or other unforeseen technical issues, resulting in failed orders, delayed execution, or abnormal trades.",
+      "zh-TW": "自動跟單交易系統可能因技術故障、網路延遲、API 斷線、交易所維護或其他不可預見的技術問題而無法正常執行，導致下單失敗、延遲成交或異常交易。",
+      "zh-CN": "自动跟单交易系统可能因技术故障、网络延迟、API 断线、交易所维护或其他不可预见的技术问题而无法正常执行，导致下单失败、延迟成交或异常交易。",
+    },
+    risk6: {
+      en: "Stop Loss and Take Profit orders are not guaranteed to execute at the set price. During extreme market volatility, slippage may occur, and the actual execution price may differ significantly from the preset price.",
+      "zh-TW": "止損（Stop Loss）與止盈（Take Profit）訂單不保證在設定價格成交。在市場劇烈波動時，可能出現滑點（Slippage），實際成交價格可能與預設價格有顯著差異。",
+      "zh-CN": "止损（Stop Loss）与止盈（Take Profit）订单不保证在设定价格成交。在市场剧烈波动时，可能出现滑点（Slippage），实际成交价格可能与预设价格有显著差异。",
+    },
+    // ── Terms of Service Section ──
+    termsTitle: {
+      en: "2. Terms of Service",
+      "zh-TW": "二、服務條款",
+      "zh-CN": "二、服务条款",
+    },
+    terms1Label: { en: "2.1 Age Restriction:", "zh-TW": "2.1 年齡限制：", "zh-CN": "2.1 年龄限制：" },
+    terms1Text: {
+      en: "You must be at least 18 years old (or the legal age of majority in your jurisdiction) to use this platform's services.",
+      "zh-TW": "您必須年滿 18 歲（或您所在司法管轄區的法定成年年齡）方可使用本平台服務。",
+      "zh-CN": "您必须年满 18 岁（或您所在司法管辖区的法定成年年龄）方可使用本平台服务。",
+    },
+    terms2Label: { en: "2.2 Regional Restrictions:", "zh-TW": "2.2 地區限制：", "zh-CN": "2.2 地区限制：" },
+    terms2Text: {
+      en: "Cryptocurrency trading may be restricted or prohibited in certain countries or regions. You are responsible for confirming whether the laws and regulations in your area permit the use of this platform's services and cryptocurrency trading.",
+      "zh-TW": "加密貨幣交易在某些國家或地區可能受到限制或禁止。您有責任確認您所在地區的法律法規是否允許使用本平台服務及進行加密貨幣交易。",
+      "zh-CN": "加密货币交易在某些国家或地区可能受到限制或禁止。您有责任确认您所在地区的法律法规是否允许使用本平台服务及进行加密货币交易。",
+    },
+    terms3Label: { en: "2.3 Regulatory Disclosure:", "zh-TW": "2.3 監管聲明：", "zh-CN": "2.3 监管声明：" },
+    terms3Text: {
+      en: "This platform is not a licensed financial institution and is not regulated by any national or regional financial regulatory authority (including but not limited to Taiwan's Financial Supervisory Commission). This platform does not provide regulated financial services.",
+      "zh-TW": "本平台並非持牌金融機構，不受任何國家或地區金融監管機構（包括但不限於台灣金融監督管理委員會）的監管。本平台不提供受監管的金融服務。",
+      "zh-CN": "本平台并非持牌金融机构，不受任何国家或地区金融监管机构（包括但不限于台湾金融监督管理委员会）的监管。本平台不提供受监管的金融服务。",
+    },
+    terms4Label: { en: "2.4 Account Responsibility:", "zh-TW": "2.4 帳號責任：", "zh-CN": "2.4 账号责任：" },
+    terms4Text: {
+      en: "You are responsible for safeguarding your account information and password. This platform assumes no liability for any losses caused by account theft or unauthorized use.",
+      "zh-TW": "您有責任妥善保管帳號資料及密碼。因帳號被盜用或未經授權使用所造成的任何損失，本平台概不負責。",
+      "zh-CN": "您有责任妥善保管账号资料及密码。因账号被盗用或未经授权使用所造成的任何损失，本平台概不负责。",
+    },
+    terms5Label: { en: "2.5 API Key Usage:", "zh-TW": "2.5 API Key 使用：", "zh-CN": "2.5 API Key 使用：" },
+    terms5Text: {
+      en: "Your exchange API Key is used solely for executing trade orders. It is strongly recommended that when setting up your API Key on the exchange, you only enable futures trading permissions, disable withdrawal permissions, and set IP whitelisting to reduce risk.",
+      "zh-TW": "您提供的交易所 API Key 僅用於執行交易指令。強烈建議您在交易所設定 API Key 時，僅開啟期貨交易權限，並關閉提幣權限，同時設定 IP 白名單以降低風險。",
+      "zh-CN": "您提供的交易所 API Key 仅用于执行交易指令。强烈建议您在交易所设定 API Key 时，仅开启期货交易权限，并关闭提币权限，同时设定 IP 白名单以降低风险。",
+    },
+    terms6Label: { en: "2.6 Limitation of Liability:", "zh-TW": "2.6 免責範圍：", "zh-CN": "2.6 免责范围：" },
+    terms6Text: {
+      en: "This platform is not liable for: (a) any trading losses caused by market volatility; (b) abnormal trade execution due to technical failures, system maintenance, or third-party service interruptions; (c) trading results affected by exchange rule changes; (d) losses resulting from incorrect trade parameter settings by the user.",
+      "zh-TW": "本平台不對以下情形承擔責任：（a）因市場波動造成的任何交易損失；（b）因技術故障、系統維護或第三方服務中斷導致的交易執行異常；（c）因交易所規則變更影響的交易結果；（d）因您未正確設定交易參數而產生的損失。",
+      "zh-CN": "本平台不对以下情形承担责任：（a）因市场波动造成的任何交易损失；（b）因技术故障、系统维护或第三方服务中断导致的交易执行异常；（c）因交易所规则变更影响的交易结果；（d）因您未正确设定交易参数而产生的损失。",
+    },
+    terms7Label: { en: "2.7 Service Changes:", "zh-TW": "2.7 服務變更：", "zh-CN": "2.7 服务变更：" },
+    terms7Text: {
+      en: "This platform reserves the right to modify, suspend, or terminate all or part of its services at any time without prior notice.",
+      "zh-TW": "本平台保留隨時修改、暫停或終止全部或部分服務的權利，且無需事先通知。",
+      "zh-CN": "本平台保留随时修改、暂停或终止全部或部分服务的权利，且无需事先通知。",
+    },
+    terms8Label: { en: "2.8 Account Termination:", "zh-TW": "2.8 帳號終止：", "zh-CN": "2.8 账号终止：" },
+    terms8Text: {
+      en: "This platform has the right to terminate your account under the following circumstances: violation of terms of service, fraudulent behavior, prolonged account inactivity, or as required by law.",
+      "zh-TW": "本平台有權在以下情形終止您的帳號：違反服務條款、從事欺詐行為、長期未使用帳號，或基於法律要求。",
+      "zh-CN": "本平台有权在以下情形终止您的账号：违反服务条款、从事欺诈行为、长期未使用账号，或基于法律要求。",
+    },
+    // ── Privacy Policy Section ──
+    privacyTitle: {
+      en: "3. Privacy Policy",
+      "zh-TW": "三、隱私權政策",
+      "zh-CN": "三、隐私权政策",
+    },
+    privacy1Label: { en: "3.1 Data Collection:", "zh-TW": "3.1 資料收集：", "zh-CN": "3.1 数据收集：" },
+    privacy1Text: {
+      en: "This platform collects the following data to provide services: email address, name, exchange API Key (encrypted storage), trading records, and system usage logs.",
+      "zh-TW": "本平台收集以下資料以提供服務：電子郵件地址、姓名、交易所 API Key（加密儲存）、交易紀錄及系統使用記錄。",
+      "zh-CN": "本平台收集以下数据以提供服务：电子邮件地址、姓名、交易所 API Key（加密存储）、交易记录及系统使用记录。",
+    },
+    privacy2Label: { en: "3.2 Data Encryption:", "zh-TW": "3.2 資料加密：", "zh-CN": "3.2 数据加密：" },
+    privacy2Text: {
+      en: "Your exchange API Key is stored using AES-256-GCM industrial-grade encryption. Each encryption uses a random initialization vector (IV), ensuring that even identical Keys appear as different ciphertext in the database.",
+      "zh-TW": "您的交易所 API Key 採用 AES-256-GCM 工業級加密標準儲存，每次加密使用隨機初始化向量（IV），確保即使相同的 Key 在資料庫中也呈現不同的密文。",
+      "zh-CN": "您的交易所 API Key 采用 AES-256-GCM 工业级加密标准存储，每次加密使用随机初始化向量（IV），确保即使相同的 Key 在数据库中也呈现不同的密文。",
+    },
+    privacy3Label: { en: "3.3 Data Usage:", "zh-TW": "3.3 資料使用：", "zh-CN": "3.3 数据使用：" },
+    privacy3Text: {
+      en: "Your data is used solely for: (a) providing and improving this platform's services; (b) executing trade orders; (c) sending system notifications and trading reports.",
+      "zh-TW": "您的資料僅用於：（a）提供及改善本平台服務；（b）執行交易指令；（c）發送系統通知及交易報告。",
+      "zh-CN": "您的数据仅用于：（a）提供及改善本平台服务；（b）执行交易指令；（c）发送系统通知及交易报告。",
+    },
+    privacy4Label: { en: "3.4 Third-Party Sharing:", "zh-TW": "3.4 第三方分享：", "zh-CN": "3.4 第三方分享：" },
+    privacy4Text: {
+      en: "This platform will not sell or share your personal data with any third party unless: (a) with your explicit consent; (b) as required by law or court order.",
+      "zh-TW": "本平台不會將您的個人資料出售或分享給任何第三方，除非：（a）獲得您的明確同意；（b）基於法律要求或司法命令。",
+      "zh-CN": "本平台不会将您的个人数据出售或分享给任何第三方，除非：（a）获得您的明确同意；（b）基于法律要求或司法命令。",
+    },
+    privacy5Label: { en: "3.5 Data Retention:", "zh-TW": "3.5 資料保留：", "zh-CN": "3.5 数据保留：" },
+    privacy5Text: {
+      en: "Your account data will be retained during the account's active period. After account deletion, related data will be removed from the system within a reasonable timeframe.",
+      "zh-TW": "您的帳號資料將在帳號存續期間保留。帳號刪除後，相關資料將在合理期限內從系統中移除。",
+      "zh-CN": "您的账号数据将在账号存续期间保留。账号删除后，相关数据将在合理期限内从系统中移除。",
+    },
+    privacy6Label: { en: "3.6 Cookies:", "zh-TW": "3.6 Cookie：", "zh-CN": "3.6 Cookie：" },
+    privacy6Text: {
+      en: "This platform uses essential Cookies and Local Storage to maintain your login status and preference settings. No third-party tracking Cookies are used.",
+      "zh-TW": "本平台使用必要的 Cookie 及 Local Storage 以維持您的登入狀態及偏好設定，不使用第三方追蹤 Cookie。",
+      "zh-CN": "本平台使用必要的 Cookie 及 Local Storage 以维持您的登录状态及偏好设置，不使用第三方追踪 Cookie。",
+    },
+    // ── Footer ──
+    lastUpdated: {
+      en: "Last updated: February 2025 | Version 1.0",
+      "zh-TW": "最後更新日期：2025 年 2 月 | 版本 1.0",
+      "zh-CN": "最后更新日期：2025 年 2 月 | 版本 1.0",
+    },
+    contactInfo: {
+      en: "If you have any questions about the above terms, please contact us at support@hook-fi.com.",
+      "zh-TW": "如您對以上條款有任何疑問，請透過 support@hook-fi.com 與我們聯繫。",
+      "zh-CN": "如您对以上条款有任何疑问，请通过 support@hook-fi.com 与我们联系。",
+    },
   },
 } as const;
 
