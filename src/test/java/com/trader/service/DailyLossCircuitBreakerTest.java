@@ -7,6 +7,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.service.*;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
@@ -38,7 +39,8 @@ class DailyLossCircuitBreakerTest {
     @BeforeEach
     void setUp() {
         RiskConfig riskConfig = new RiskConfig(
-                50000, 2000, true,
+                50000, 2000, 0.80, 0,
+                true,
                 0.20, 3, 2.0, 20,
                 List.of("BTCUSDT"), "BTCUSDT"
         );
@@ -50,7 +52,7 @@ class DailyLossCircuitBreakerTest {
 
         // 預設 config：maxDailyLoss = 2000
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
-                0.20, 50000, 2000, 3, 2.0, 20,
+                0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
                 List.of("BTCUSDT"), true, "BTCUSDT"
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
@@ -59,7 +61,7 @@ class DailyLossCircuitBreakerTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver));
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class)));
 
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
@@ -164,7 +166,7 @@ class DailyLossCircuitBreakerTest {
     void disabledWhenMaxDailyLossIsZero() {
         // 使用 maxDailyLoss=0 的 config
         EffectiveTradeConfig disabledConfig = new EffectiveTradeConfig(
-                0.20, 50000, 0, 3, 2.0, 20,
+                0.20, 50000, 0, 0.0, 0.0, 3, 2.0, 20,
                 List.of("BTCUSDT"), true, "BTCUSDT"
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(disabledConfig);

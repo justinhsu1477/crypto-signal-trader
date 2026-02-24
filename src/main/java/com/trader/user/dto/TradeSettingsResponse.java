@@ -21,6 +21,8 @@ public class TradeSettingsResponse {
     private List<String> allowedSymbols;
     private Double dailyLossLimitUsdt;
     private Double dcaRiskMultiplier;
+    private Double dailyLossPercent;
+    private Double maxPositionPercent;
     private boolean autoSlEnabled;
     private boolean autoTpEnabled;
     private String updatedAt;

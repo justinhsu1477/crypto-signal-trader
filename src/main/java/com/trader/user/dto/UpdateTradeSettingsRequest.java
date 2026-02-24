@@ -14,6 +14,8 @@ public class UpdateTradeSettingsRequest {
     private List<String> allowedSymbols;
     private Double dailyLossLimitUsdt;
     private Double dcaRiskMultiplier;
+    private Double dailyLossPercent;
+    private Double maxPositionPercent;
     private Boolean autoSlEnabled;
     private Boolean autoTpEnabled;
 }

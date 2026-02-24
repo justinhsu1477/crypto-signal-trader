@@ -44,6 +44,7 @@ public class BinanceFuturesService {
     private final SymbolLockRegistry symbolLockRegistry;
     private final UserApiKeyService userApiKeyService;
     private final TradeConfigResolver tradeConfigResolver;
+    private final StartOfDayBalanceCache startOfDayBalanceCache;
     private final Gson gson = new Gson();
 
     /**
@@ -65,7 +66,8 @@ public class BinanceFuturesService {
                                   ObjectMapper objectMapper,
                                   SymbolLockRegistry symbolLockRegistry,
                                   UserApiKeyService userApiKeyService,
-                                  TradeConfigResolver tradeConfigResolver) {
+                                  TradeConfigResolver tradeConfigResolver,
+                                  StartOfDayBalanceCache startOfDayBalanceCache) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
@@ -76,6 +78,7 @@ public class BinanceFuturesService {
         this.symbolLockRegistry = symbolLockRegistry;
         this.userApiKeyService = userApiKeyService;
         this.tradeConfigResolver = tradeConfigResolver;
+        this.startOfDayBalanceCache = startOfDayBalanceCache;
     }
 
     /**
@@ -488,12 +491,14 @@ public class BinanceFuturesService {
         double riskAmount = balance * config.riskPercent();
         log.info("帳戶餘額: {} USDT, 1R = {} USDT ({}%)", balance, riskAmount, config.riskPercent() * 100);
 
-        // 1c. 每日虧損熔斷（固定上限，不隨餘額縮水而變鬆）
+        // 1c. 每日虧損熔斷（動態百分比 + 絕對上限雙重保護）
+        String activeUserId = tradeRecordService.getActiveUserId();
+        double sodBalance = startOfDayBalanceCache.getOrCompute(activeUserId, () -> balance);
         double todayLoss = tradeRecordService.getTodayRealizedLoss();
-        double maxDailyLoss = config.maxDailyLossUsdt();
+        double maxDailyLoss = config.effectiveDailyLossLimit(sodBalance);
         if (maxDailyLoss > 0 && Math.abs(todayLoss) >= maxDailyLoss) {
-            String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT",
-                    todayLoss, maxDailyLoss);
+            String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT (SOD=%.0f × %.0f%% cap %.0f)",
+                    todayLoss, maxDailyLoss, sodBalance, config.dailyLossPercent() * 100, config.maxDailyLossUsdt());
             log.error(msg);
             discordWebhookService.sendNotification("🚨 每日虧損熔斷", msg, DiscordWebhookService.COLOR_RED);
             return List.of(OrderResult.fail("每日虧損已達上限，暫停交易"));
@@ -614,9 +619,9 @@ public class BinanceFuturesService {
             log.info("DCA 倉位計算: {}R = {} × {} = {} USDT", riskMultiplier, riskAmount, riskMultiplier, effectiveRiskAmount);
         }
 
-        // 7b. 名目價值上限 cap — 防止窄止損產生超大倉位
+        // 7b. 名目價值上限 cap — 防止窄止損產生超大倉位（動態百分比 + 絕對上限）
         double notional = entry * quantity;
-        double maxNotional = config.maxPositionUsdt();
+        double maxNotional = config.effectiveMaxPosition(balance);
         if (maxNotional > 0 && notional > maxNotional) {
             double cappedQty = maxNotional / entry;
             log.warn("倉位 cap 觸發: 原始數量={} (名目 {} USDT), 上限數量={} (名目 {} USDT)",

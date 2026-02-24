@@ -58,6 +58,8 @@ public class TradeConfigResolver {
                 riskConfig.getRiskPercent(),
                 riskConfig.getMaxPositionUsdt(),
                 riskConfig.getMaxDailyLossUsdt(),
+                riskConfig.getDailyLossPercent(),
+                riskConfig.getMaxPositionPercent(),
                 riskConfig.getMaxDcaPerSymbol(),
                 riskConfig.getDcaRiskMultiplier(),
                 riskConfig.getFixedLeverage(),
@@ -97,15 +99,25 @@ public class TradeConfigResolver {
                 ? userSettings.getMaxLeverage()
                 : riskConfig.getFixedLeverage();
 
+        double dailyLossPercent = userSettings.getDailyLossPercent() != null
+                ? userSettings.getDailyLossPercent()
+                : riskConfig.getDailyLossPercent();
+
+        double maxPositionPercent = userSettings.getMaxPositionPercent() != null
+                ? userSettings.getMaxPositionPercent()
+                : riskConfig.getMaxPositionPercent();
+
         List<String> allowedSymbols = parseAllowedSymbols(userSettings.getAllowedSymbols());
 
-        log.debug("Per-user config for {}: riskPercent={}, maxPos={}, maxDailyLoss={}, maxDca={}, leverage={}",
-                userId, riskPercent, maxPositionUsdt, maxDailyLossUsdt, maxDcaPerSymbol, fixedLeverage);
+        log.debug("Per-user config for {}: riskPercent={}, maxPos={}, maxDailyLoss={}, dailyLoss%={}, maxDca={}, leverage={}",
+                userId, riskPercent, maxPositionUsdt, maxDailyLossUsdt, dailyLossPercent, maxDcaPerSymbol, fixedLeverage);
 
         return new EffectiveTradeConfig(
                 riskPercent,
                 maxPositionUsdt,
                 maxDailyLossUsdt,
+                dailyLossPercent,
+                maxPositionPercent,
                 maxDcaPerSymbol,
                 dcaRiskMultiplier,
                 fixedLeverage,

@@ -38,7 +38,7 @@ class TradeConfigResolverTest {
     void setUp() {
         multiUserConfig = new MultiUserConfig();
         riskConfig = new RiskConfig(
-                50000, 2000, true,
+                50000, 2000, 0.80, 0, true,
                 0.20, 3, 2.0, 20,
                 List.of("BTCUSDT"), "BTCUSDT"
         );

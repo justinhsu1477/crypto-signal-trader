@@ -10,6 +10,7 @@ import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.SignalDeduplicationService;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
@@ -43,13 +44,14 @@ class SafetyCheckTest {
     void setUp() {
         // riskPercent=20%, maxDailyLossUsdt=2000
         riskConfig = new RiskConfig(
-                50000, 2000, true,
+                50000, 2000, 0.80, 0,
+                true,
                 0.20,   // riskPercent (20%)
                 3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
         mockTradeConfigResolver = mock(TradeConfigResolver.class);
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
-                0.20, 50000, 2000, 3, 2.0, 20,
+                0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
                 List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
@@ -65,7 +67,8 @@ class SafetyCheckTest {
             // 模擬 getPositions() 回傳無法解析的 response
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, null, null, null, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
             doReturn("invalid json response").when(service).getPositions();
 
             assertThatThrownBy(() -> service.getCurrentPositionAmount("BTCUSDT"))
@@ -81,7 +84,8 @@ class SafetyCheckTest {
             BinanceFuturesService service = new BinanceFuturesService(
                     null, new BinanceConfig("https://fake.test", null, "", ""),
                     riskConfig, null, null, null, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver);
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class));
 
             assertThatThrownBy(() -> service.getMarkPrice("BTCUSDT"))
                     .isInstanceOf(RuntimeException.class);
@@ -92,7 +96,8 @@ class SafetyCheckTest {
         void getActivePositionCountThrowsOnParseError() {
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, null, null, null, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
             doReturn("bad response").when(service).getPositions();
 
             assertThatThrownBy(() -> service.getActivePositionCount())
@@ -105,7 +110,8 @@ class SafetyCheckTest {
         void hasOpenEntryOrdersThrowsOnParseError() {
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, null, null, null, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
             doReturn("bad response").when(service).getOpenOrders(anyString());
 
             assertThatThrownBy(() -> service.hasOpenEntryOrders("BTCUSDT"))
@@ -127,7 +133,8 @@ class SafetyCheckTest {
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
 
             doReturn(1000.0).when(service).getAvailableBalance();
 
@@ -168,7 +175,8 @@ class SafetyCheckTest {
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
 
             // maxDailyLossUsdt = 2000 (固定值)
             // 今日虧損 5000 >= 2000 → 熔斷
@@ -206,7 +214,8 @@ class SafetyCheckTest {
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
 
             // maxDailyLossUsdt = 2000 (固定值)
             // 今日虧損 1000 < 2000 → 不觸發熔斷
@@ -252,7 +261,8 @@ class SafetyCheckTest {
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
 
             // 驗證 0 虧損不會觸發熔斷 (maxDailyLossUsdt > 0, |0| < 2000)
             assertThat(riskConfig.getRiskPercent()).isGreaterThan(0);
@@ -273,7 +283,8 @@ class SafetyCheckTest {
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
 
             // 餘額大幅縮水到 200 USDT，但熔斷上限仍然是固定 2000
             // 舊邏輯（動態）: maxDailyLoss = 200 * 0.20 * 10 = 400，|-1999| >= 400 → 會觸發熔斷
@@ -318,7 +329,8 @@ class SafetyCheckTest {
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver));
+                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class)));
 
             doReturn(5000.0).when(service).getAvailableBalance();
 

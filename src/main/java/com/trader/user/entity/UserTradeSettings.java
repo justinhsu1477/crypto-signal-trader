@@ -40,6 +40,12 @@ public class UserTradeSettings {
     /** DCA 風險倍數, null = 使用全局 RiskConfig 預設值 */
     private Double dcaRiskMultiplier;
 
+    /** 每日虧損百分比 (0.80 = 80%), null = 使用全局 RiskConfig 預設值 */
+    private Double dailyLossPercent;
+
+    /** 最大倉位百分比 (0.50 = 50%), null = 使用全局 RiskConfig 預設值 */
+    private Double maxPositionPercent;
+
     /** 自動止損開關 */
     @Builder.Default
     private boolean autoSlEnabled = true;

@@ -12,6 +12,8 @@ public class RiskConfig {
 
     private final double maxPositionUsdt;
     private final double maxDailyLossUsdt;
+    private final double dailyLossPercent;
+    private final double maxPositionPercent;
     private final boolean dedupEnabled;
     private final double riskPercent;
     private final int maxDcaPerSymbol;
@@ -23,6 +25,8 @@ public class RiskConfig {
     public RiskConfig(
             @DefaultValue("50000") double maxPositionUsdt,
             @DefaultValue("2000") double maxDailyLossUsdt,
+            @DefaultValue("0.80") double dailyLossPercent,
+            @DefaultValue("0") double maxPositionPercent,
             @DefaultValue("true") boolean dedupEnabled,
             @DefaultValue("0.20") double riskPercent,
             @DefaultValue("3") int maxDcaPerSymbol,
@@ -33,6 +37,8 @@ public class RiskConfig {
     ) {
         this.maxPositionUsdt = maxPositionUsdt;
         this.maxDailyLossUsdt = maxDailyLossUsdt;
+        this.dailyLossPercent = dailyLossPercent;
+        this.maxPositionPercent = maxPositionPercent;
         this.dedupEnabled = dedupEnabled;
         this.riskPercent = riskPercent;
         this.maxDcaPerSymbol = maxDcaPerSymbol;

@@ -2,6 +2,7 @@ package com.trader.service;
 
 import com.trader.shared.config.RiskConfig;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.SymbolLockRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,12 +29,13 @@ class PositionSizingTest {
         RiskConfig riskConfig = new RiskConfig(
                 50000,  // maxPositionUsdt
                 2000,   // maxDailyLossUsdt
+                0.80, 0,
                 true,
                 0.20,   // riskPercent (20%)
                 3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
         service = new BinanceFuturesService(null, null, riskConfig, null, null, null, null,
-                new SymbolLockRegistry(), null, null);
+                new SymbolLockRegistry(), null, null, null);
     }
 
     @Nested
@@ -118,10 +120,10 @@ class PositionSizingTest {
         void capDisabledWhenZero() {
             RiskConfig noCap = new RiskConfig(
                     0,  // maxPositionUsdt = 0 → 不啟用 cap
-                    2000, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT"), "BTCUSDT"
+                    2000, 0.80, 0, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT"), "BTCUSDT"
             );
             BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null, null,
-                    new SymbolLockRegistry(), null, null);
+                    new SymbolLockRegistry(), null, null, null);
             // 1R = 1000 × 0.20 = 200, riskDistance = 1, qty = 200
             double qty = svc.calculatePositionSize(1000, 95000, 94999);
             assertThat(qty).isEqualTo(200.0);
@@ -262,7 +264,7 @@ class PositionSizingTest {
         @DisplayName("白名單內的 symbol")
         void allowedSymbol() {
             RiskConfig config = new RiskConfig(
-                    50000, 2000, true, 0.20, 3, 2.0, 20,
+                    50000, 2000, 0.80, 0, true, 0.20, 3, 2.0, 20,
                     List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
             );
             assertThat(config.isSymbolAllowed("BTCUSDT")).isTrue();
@@ -273,7 +275,7 @@ class PositionSizingTest {
         @DisplayName("白名單外的 symbol")
         void disallowedSymbol() {
             RiskConfig config = new RiskConfig(
-                    50000, 2000, true, 0.20, 3, 2.0, 20,
+                    50000, 2000, 0.80, 0, true, 0.20, 3, 2.0, 20,
                     List.of("BTCUSDT"), "BTCUSDT"
             );
             assertThat(config.isSymbolAllowed("ETHUSDT")).isFalse();

@@ -8,6 +8,7 @@ import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.service.*;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
@@ -39,7 +40,8 @@ class AlgoOrderIntegrationTest {
     @BeforeEach
     void setUp() {
         RiskConfig riskConfig = new RiskConfig(
-                50000, 2000, true,
+                50000, 2000, 0.80, 0,
+                true,
                 0.20, 3, 2.0, 20,
                 List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
@@ -50,7 +52,7 @@ class AlgoOrderIntegrationTest {
         mockTradeConfigResolver = mock(TradeConfigResolver.class);
 
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
-                0.20, 50000, 2000, 3, 2.0, 20,
+                0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
                 List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
@@ -59,7 +61,7 @@ class AlgoOrderIntegrationTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver));
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class)));
 
         when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
@@ -892,7 +894,7 @@ class AlgoOrderIntegrationTest {
             doReturn(slOrder).when(service).placeStopLoss(eq("ETHUSDT"), anyString(), anyDouble(), anyDouble());
 
             EffectiveTradeConfig ethConfig = new EffectiveTradeConfig(
-                    0.20, 50000, 2000, 3, 2.0, 20,
+                    0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
                     List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
             );
             when(mockTradeConfigResolver.resolve(any())).thenReturn(ethConfig);

@@ -8,6 +8,7 @@ import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
+import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import org.junit.jupiter.api.*;
@@ -68,7 +69,8 @@ class DashboardServicePerUserKeyTest {
         dashboardService = new DashboardService(
                 tradeRecordService, subscriptionService, binanceFuturesService,
                 riskConfig, userRepository, tradeConfigResolver,
-                multiUserConfig, userApiKeyService);
+                multiUserConfig, userApiKeyService,
+                mock(StartOfDayBalanceCache.class));
     }
 
     @Nested
@@ -120,9 +122,9 @@ class DashboardServicePerUserKeyTest {
 
                 assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(8888.0);
 
-                // 驗證 per-user key 注入和清除
-                bfsMock.verify(() -> BinanceFuturesService.setCurrentUserKeys(userKeys));
-                bfsMock.verify(() -> BinanceFuturesService.clearCurrentUserKeys());
+                // 驗證 per-user key 注入和清除（account + riskBudget 各呼叫一次）
+                bfsMock.verify(() -> BinanceFuturesService.setCurrentUserKeys(userKeys), atLeast(1));
+                bfsMock.verify(() -> BinanceFuturesService.clearCurrentUserKeys(), atLeast(1));
             }
         }
 
@@ -150,9 +152,9 @@ class DashboardServicePerUserKeyTest {
 
                 assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(0.0);
 
-                // 即使 API 失敗，仍應清除 key
-                bfsMock.verify(() -> BinanceFuturesService.setCurrentUserKeys(userKeys));
-                bfsMock.verify(() -> BinanceFuturesService.clearCurrentUserKeys());
+                // 即使 API 失敗，仍應清除 key（account + riskBudget 各呼叫一次）
+                bfsMock.verify(() -> BinanceFuturesService.setCurrentUserKeys(userKeys), atLeast(1));
+                bfsMock.verify(() -> BinanceFuturesService.clearCurrentUserKeys(), atLeast(1));
             }
         }
     }
