@@ -1,6 +1,7 @@
 # Crypto Signal Trader — SaaS 產品化計畫
 
 > 前提：先用自己帳戶跑 1~3 個月，累積績效數據，確認勝率後再開始。
+> 架構北極星請先閱讀：`docs/saas-single-signal-source-principles.md`
 
 ---
 
