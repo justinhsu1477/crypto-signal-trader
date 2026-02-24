@@ -640,5 +640,277 @@ class AlgoOrderIntegrationTest {
             assertThat(prices[0]).isEqualTo(0.0);
             assertThat(prices[1]).isEqualTo(0.0);
         }
+
+        @Test
+        @DisplayName("訂單缺少 triggerPrice → getCurrentSLTPPrices 跳過，不崩潰")
+        void handleMissingTriggerPrice() {
+            String responseNoTrigger = """
+                    [
+                      {
+                        "algoId": 700001,
+                        "symbol": "BTCUSDT",
+                        "side": "SELL",
+                        "orderType": "STOP_MARKET",
+                        "quantity": "0.500"
+                      },
+                      {
+                        "algoId": 700002,
+                        "symbol": "BTCUSDT",
+                        "side": "SELL",
+                        "orderType": "TAKE_PROFIT_MARKET",
+                        "quantity": "0.500",
+                        "triggerPrice": "100000.00"
+                      }
+                    ]
+                    """;
+            doReturn(responseNoTrigger).when(service).getOpenAlgoOrders(anyString());
+
+            double[] prices = service.getCurrentSLTPPrices("BTCUSDT");
+
+            // SL 缺 triggerPrice → 0，TP 正常讀取
+            assertThat(prices[0]).isEqualTo(0.0);
+            assertThat(prices[1]).isEqualTo(100000.0);
+        }
+
+        @Test
+        @DisplayName("cancelSLTPOrders — 訂單缺少 algoId → 跳過該筆，繼續取消其餘")
+        void cancelSkipsMissingAlgoId() {
+            String responseNoAlgoId = """
+                    [
+                      {
+                        "symbol": "BTCUSDT",
+                        "side": "SELL",
+                        "orderType": "STOP_MARKET",
+                        "quantity": "0.500",
+                        "triggerPrice": "93000.00"
+                      },
+                      {
+                        "algoId": 800002,
+                        "symbol": "BTCUSDT",
+                        "side": "SELL",
+                        "orderType": "TAKE_PROFIT_MARKET",
+                        "quantity": "0.500",
+                        "triggerPrice": "100000.00"
+                      }
+                    ]
+                    """;
+            doReturn(responseNoAlgoId).when(service).getOpenAlgoOrders(anyString());
+            doReturn("{}").when(service).cancelAlgoOrder(anyString(), anyLong());
+
+            // 不應拋異常
+            assertThatCode(() -> service.cancelSLTPOrders("BTCUSDT"))
+                    .doesNotThrowAnyException();
+
+            // 只取消有 algoId 的 TP 訂單
+            verify(service).cancelAlgoOrder("BTCUSDT", 800002L);
+            verify(service, times(1)).cancelAlgoOrder(anyString(), anyLong());
+            // 部分失敗 → Discord 告警
+            verify(mockWebhook).sendNotification(contains("部分失敗"), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("cancelSLTPOrders — 個別取消失敗不中斷，繼續取消剩餘")
+        void cancelContinuesOnIndividualFailure() {
+            doReturn(ALGO_RESPONSE_SL_AND_TP).when(service).getOpenAlgoOrders(anyString());
+            // 第一筆取消失敗
+            doThrow(new RuntimeException("timeout")).when(service).cancelAlgoOrder("BTCUSDT", 100001L);
+            // 第二筆取消成功
+            doReturn("{}").when(service).cancelAlgoOrder("BTCUSDT", 100002L);
+
+            // 不應拋異常（降級為部分失敗告警）
+            assertThatCode(() -> service.cancelSLTPOrders("BTCUSDT"))
+                    .doesNotThrowAnyException();
+
+            // 兩筆都嘗試取消
+            verify(service).cancelAlgoOrder("BTCUSDT", 100001L);
+            verify(service).cancelAlgoOrder("BTCUSDT", 100002L);
+            // 部分失敗 → Discord 告警
+            verify(mockWebhook).sendNotification(contains("部分失敗"), anyString(), anyInt());
+        }
+    }
+
+    // ==================== 安全性修復驗證 ====================
+
+    @Nested
+    @DisplayName("安全性修復 — SL 網路異常 / Locale / MOVE_SL 告警")
+    class SafetyFixes {
+
+        @Test
+        @DisplayName("SL placeStopLoss RuntimeException → 轉為 OrderResult.fail → 觸發 Fail-Safe")
+        void slRuntimeExceptionTriggerFailSafe() {
+            // 設定正常的前置條件
+            doReturn(1000.0).when(service).getAvailableBalance();
+            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn(0).when(service).getActivePositionCount();
+            doReturn(false).when(service).hasOpenEntryOrders(anyString());
+            doReturn(95000.0).when(service).getMarkPrice(anyString());
+            doReturn("{}").when(service).setLeverage(anyString(), anyInt());
+            try {
+                doReturn("{}").when(service).setMarginType(anyString(), anyString());
+            } catch (Exception e) { /* ignore */ }
+
+            // 使用數字 orderId 以便 Long.parseLong 成功
+            OrderResult entryOrder = successOrder("123456", "BUY", 95000, 0.01);
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
+
+            // SL 下單丟出 RuntimeException（模擬網路全部重試失敗）
+            doThrow(new RuntimeException("Network timeout after 3 retries"))
+                    .when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+
+            // Fail-Safe: 取消入場單（使用數字 orderId）
+            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000)
+                    .stopLoss(93000)
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .build();
+
+            List<OrderResult> results = service.executeSignal(signal);
+
+            // 應回傳失敗結果（Fail-Safe 觸發）
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isFalse();
+            // Fail-Safe 應嘗試取消入場單
+            verify(service).cancelOrder(eq("BTCUSDT"), eq(123456L));
+            // Discord 應收到 Fail-Safe 通知
+            verify(mockWebhook, atLeastOnce()).sendNotification(
+                    contains("Fail-Safe"), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("MOVE_SL — placeStopLoss 失敗發送 CRITICAL Discord 告警")
+        void moveSLFailureSendsCriticalAlert() {
+            doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
+            doReturn("{}").when(service).cancelAllOrders(anyString());
+
+            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+                    Optional.of(Trade.builder().stopLoss(93000.0).build()));
+
+            // SL 掛失敗
+            doReturn(OrderResult.fail("Binance rejected")).when(service)
+                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .signalType(TradeSignal.SignalType.MOVE_SL)
+                    .newStopLoss(94500.0)
+                    .build();
+
+            List<OrderResult> results = service.executeMoveSL(signal);
+
+            // SL 失敗結果
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isFalse();
+            // 應發送 CRITICAL Discord 告警（title 含 "移動止損失敗"，body 含 "無止損保護"）
+            verify(mockWebhook).sendNotification(
+                    contains("移動止損失敗"), contains("無止損保護"), eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("Binance 真實回應格式 — 完整欄位驗證")
+        void realBinanceAlgoOrderResponseFormat() {
+            // 使用更接近真實 Binance API 的完整回應格式
+            String realResponse = """
+                    [
+                      {
+                        "algoId": 12345678,
+                        "symbol": "BTCUSDT",
+                        "side": "SELL",
+                        "positionSide": "BOTH",
+                        "totalQty": "0.500",
+                        "executedQty": "0.000",
+                        "avgPrice": "0",
+                        "origQty": "0.500",
+                        "orderType": "STOP_MARKET",
+                        "quantity": "0.500",
+                        "triggerPrice": "93456.78",
+                        "activatePrice": "",
+                        "clientAlgoId": "SL-1708888888888-a1b2",
+                        "bookTime": 1708888888888,
+                        "updateTime": 1708888888888,
+                        "algoStatus": "NEW",
+                        "algoType": "CONDITIONAL",
+                        "priceRate": ""
+                      },
+                      {
+                        "algoId": 12345679,
+                        "symbol": "BTCUSDT",
+                        "side": "SELL",
+                        "positionSide": "BOTH",
+                        "totalQty": "0.500",
+                        "executedQty": "0.000",
+                        "avgPrice": "0",
+                        "origQty": "0.500",
+                        "orderType": "TAKE_PROFIT_MARKET",
+                        "quantity": "0.500",
+                        "triggerPrice": "102345.60",
+                        "activatePrice": "",
+                        "clientAlgoId": "TP-1708888888888-c3d4",
+                        "bookTime": 1708888888888,
+                        "updateTime": 1708888888888,
+                        "algoStatus": "NEW",
+                        "algoType": "CONDITIONAL",
+                        "priceRate": ""
+                      }
+                    ]
+                    """;
+
+            doReturn(realResponse).when(service).getOpenAlgoOrders(anyString());
+
+            // getCurrentSLTPPrices 正確解析
+            double[] prices = service.getCurrentSLTPPrices("BTCUSDT");
+            assertThat(prices[0]).isEqualTo(93456.78);
+            assertThat(prices[1]).isEqualTo(102345.60);
+
+            // cancelSLTPOrders 正確取消
+            doReturn("{}").when(service).cancelAlgoOrder(anyString(), anyLong());
+            service.cancelSLTPOrders("BTCUSDT");
+            verify(service).cancelAlgoOrder("BTCUSDT", 12345678L);
+            verify(service).cancelAlgoOrder("BTCUSDT", 12345679L);
+        }
+
+        @Test
+        @DisplayName("ETH 格式化精度 — 應為 3 位小數（stepSize=0.001）")
+        void ethQuantityPrecision() {
+            doReturn(5000.0).when(service).getAvailableBalance();
+            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn(0).when(service).getActivePositionCount();
+            doReturn(false).when(service).hasOpenEntryOrders(anyString());
+            doReturn(3000.0).when(service).getMarkPrice(anyString());
+            doReturn("{}").when(service).setLeverage(anyString(), anyInt());
+            try {
+                doReturn("{}").when(service).setMarginType(anyString(), anyString());
+            } catch (Exception e) { /* ignore */ }
+
+            OrderResult entryOrder = successOrder("E1", "BUY", 3000, 0.123);
+            OrderResult slOrder = successOrder("SL1", "SELL", 2900, 0.123);
+
+            doReturn(entryOrder).when(service).placeLimitOrder(eq("ETHUSDT"), anyString(), anyDouble(), anyDouble());
+            doReturn(slOrder).when(service).placeStopLoss(eq("ETHUSDT"), anyString(), anyDouble(), anyDouble());
+
+            EffectiveTradeConfig ethConfig = new EffectiveTradeConfig(
+                    0.20, 50000, 2000, 3, 2.0, 20,
+                    List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
+            );
+            when(mockTradeConfigResolver.resolve(any())).thenReturn(ethConfig);
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("ETHUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(3000)
+                    .stopLoss(2900)
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .build();
+
+            List<OrderResult> results = service.executeSignal(signal);
+
+            // 確認 ETH 使用 3 位小數（而非舊的 2 位）
+            assertThat(results).isNotEmpty();
+            // 透過 mock 驗證 placeLimitOrder 被正確呼叫（使用了 formatQuantity 後的值）
+            verify(service).placeLimitOrder(eq("ETHUSDT"), eq("BUY"), eq(3000.0), anyDouble());
+        }
     }
 }

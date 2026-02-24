@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -348,14 +349,34 @@ public class BinanceFuturesService {
             JsonArray orders = parseAlgoOrdersResponse(response);
             if (orders == null || orders.isEmpty()) return;
 
+            int failCount = 0;
             for (JsonElement elem : orders) {
                 JsonObject order = elem.getAsJsonObject();
                 String type = order.has("orderType") ? order.get("orderType").getAsString() : "";
                 if ("STOP_MARKET".equals(type) || "TAKE_PROFIT_MARKET".equals(type)) {
+                    if (!order.has("algoId")) {
+                        log.warn("Algo 訂單缺少 algoId，跳過: {}", order);
+                        failCount++;
+                        continue;
+                    }
                     long algoId = order.get("algoId").getAsLong();
-                    log.info("取消舊的 {} Algo 訂單 algoId={}", type, algoId);
-                    cancelAlgoOrder(symbol, algoId);
+                    try {
+                        log.info("取消舊的 {} Algo 訂單 algoId={}", type, algoId);
+                        cancelAlgoOrder(symbol, algoId);
+                    } catch (Exception e) {
+                        log.error("取消 {} Algo 訂單 algoId={} 失敗: {}", type, algoId, e.getMessage());
+                        failCount++;
+                        // 繼續取消剩餘的訂單，不中斷
+                    }
                 }
+            }
+            if (failCount > 0) {
+                String msg = String.format("取消 SL/TP Algo 訂單部分失敗: %d 筆失敗", failCount);
+                log.error(msg);
+                discordWebhookService.sendNotification(
+                        "⚠️ SL/TP 取消部分失敗",
+                        String.format("%s\n%s\n請確認掛單狀態", symbol, msg),
+                        DiscordWebhookService.COLOR_YELLOW);
             }
         } catch (Exception e) {
             log.error("取消 SL/TP Algo 訂單失敗: {}", e.getMessage());
@@ -377,9 +398,9 @@ public class BinanceFuturesService {
                 for (JsonElement elem : orders) {
                     JsonObject order = elem.getAsJsonObject();
                     String type = order.has("orderType") ? order.get("orderType").getAsString() : "";
-                    if ("STOP_MARKET".equals(type)) {
+                    if ("STOP_MARKET".equals(type) && order.has("triggerPrice")) {
                         slPrice = Double.parseDouble(order.get("triggerPrice").getAsString());
-                    } else if ("TAKE_PROFIT_MARKET".equals(type)) {
+                    } else if ("TAKE_PROFIT_MARKET".equals(type) && order.has("triggerPrice")) {
                         tpPrice = Double.parseDouble(order.get("triggerPrice").getAsString());
                     }
                 }
@@ -655,19 +676,25 @@ public class BinanceFuturesService {
             log.info("DCA SL/TP 重掛: 舊持倉={}, 新掛單={}, 總數量={}", Math.abs(currentPosition), quantity, totalQty);
 
             // 掛新 SL（DCA 優先用 new_stop_loss，null 時保留現有 SL）
-            if (signal.getNewStopLoss() != null) {
-                slOrder = placeStopLoss(symbol, closeSide, signal.getNewStopLoss(), totalQty);
-            } else {
-                // 止損不變 — 取消舊 SL 後用原本的 SL 價格重掛（數量更新為 totalQty）
-                Double existingSl = tradeRecordService.findOpenTrade(symbol)
-                        .map(Trade::getStopLoss).orElse(null);
-                if (existingSl != null) {
-                    slOrder = placeStopLoss(symbol, closeSide, existingSl, totalQty);
-                    log.info("DCA 止損不變，用現有 SL {} 重掛（數量更新為 {}）", existingSl, totalQty);
+            // 網路異常時轉為 fail，確保觸發 Fail-Safe
+            try {
+                if (signal.getNewStopLoss() != null) {
+                    slOrder = placeStopLoss(symbol, closeSide, signal.getNewStopLoss(), totalQty);
                 } else {
-                    log.warn("DCA 無法找到現有 SL，跳過 SL 掛單");
-                    slOrder = OrderResult.fail("DCA 無現有 SL 可用");
+                    // 止損不變 — 取消舊 SL 後用原本的 SL 價格重掛（數量更新為 totalQty）
+                    Double existingSl = tradeRecordService.findOpenTrade(symbol)
+                            .map(Trade::getStopLoss).orElse(null);
+                    if (existingSl != null) {
+                        slOrder = placeStopLoss(symbol, closeSide, existingSl, totalQty);
+                        log.info("DCA 止損不變，用現有 SL {} 重掛（數量更新為 {}）", existingSl, totalQty);
+                    } else {
+                        log.warn("DCA 無法找到現有 SL，跳過 SL 掛單");
+                        slOrder = OrderResult.fail("DCA 無現有 SL 可用");
+                    }
                 }
+            } catch (RuntimeException e) {
+                log.error("DCA SL 下單異常（網路重試全部失敗）: {}", e.getMessage());
+                slOrder = OrderResult.fail("DCA SL 網路異常: " + e.getMessage());
             }
 
             // 掛新 TP（如果有）
@@ -682,8 +709,13 @@ public class BinanceFuturesService {
         } else {
             // 正常入場: SL/TP 按入場數量掛
 
-            // 9. 掛 STOP_MARKET 止損單
-            slOrder = placeStopLoss(symbol, closeSide, sl, quantity);
+            // 9. 掛 STOP_MARKET 止損單（網路異常時轉為 fail，確保觸發 Fail-Safe）
+            try {
+                slOrder = placeStopLoss(symbol, closeSide, sl, quantity);
+            } catch (RuntimeException e) {
+                log.error("SL 下單異常（網路重試全部失敗）: {}", e.getMessage());
+                slOrder = OrderResult.fail("SL 網路異常: " + e.getMessage());
+            }
 
             // 10. 掛 TAKE_PROFIT_MARKET 止盈單（如果訊號有給 TP）
             if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
@@ -1116,6 +1148,13 @@ public class BinanceFuturesService {
             } else {
                 tradeRecordService.recordOrderEvent(symbol, "MOVE_SL_FAILED", slOrder,
                         toJson(Map.of("old_sl", oldSl, "new_sl", newSl)));
+                // MOVE_SL 已取消舊 SL，新 SL 又失敗 → 裸倉！發送 CRITICAL 告警
+                discordWebhookService.sendNotification(
+                        "🚨 移動止損失敗 — 倉位無 SL 保護",
+                        String.format("%s 舊SL=%.2f 已被取消，新SL=%.2f 掛單失敗！\n持倉 %.4f 無止損保護\n原因: %s\n請立即手動設定 SL",
+                                symbol, oldSl, newSl, absPosition,
+                                slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown"),
+                        DiscordWebhookService.COLOR_RED);
             }
         }
 
@@ -1211,19 +1250,19 @@ public class BinanceFuturesService {
 
     private String formatPrice(double price) {
         if (price >= 1000) {
-            return String.format("%.1f", price);
+            return String.format(Locale.US, "%.1f", price);
         } else if (price >= 1) {
-            return String.format("%.2f", price);
+            return String.format(Locale.US, "%.2f", price);
         } else {
-            return String.format("%.4f", price);
+            return String.format(Locale.US, "%.4f", price);
         }
     }
 
     private String formatQuantity(String symbol, double quantity) {
-        if (symbol.startsWith("BTC")) {
-            return String.format("%.3f", quantity);
+        if (symbol.startsWith("BTC") || symbol.startsWith("ETH")) {
+            return String.format(Locale.US, "%.3f", quantity);
         } else {
-            return String.format("%.2f", quantity);
+            return String.format(Locale.US, "%.2f", quantity);
         }
     }
 
