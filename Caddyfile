@@ -1,7 +1,10 @@
 :80 {
+    # API 請求 → Spring Boot
     handle /api/* {
         reverse_proxy trading-api:8080
     }
+
+    # 其他 → Next.js Dashboard
     handle {
         reverse_proxy web-dashboard:3000
     }
