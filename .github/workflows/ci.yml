@@ -11,6 +11,24 @@ env:
   NODE_VERSION: '20'
 
 jobs:
+  # ============================================================
+  # 1. Secret 洩漏檢測（gitleaks）
+  # ============================================================
+  gitleaks:
+    name: Secret Leak Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # 2. Backend Build + Test + Coverage（JaCoCo）
+  # ============================================================
   backend:
     name: Backend Build & Test
     runs-on: ubuntu-latest
@@ -42,8 +60,21 @@ jobs:
           path: build/test-results/test/*.xml
           reporter: java-junit
 
+      - name: Coverage Report
+        if: success()
+        uses: madrapps/jacoco-report@v1.7.1
+        with:
+          paths: build/reports/jacoco/test/jacocoTestReport.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 50
+          title: "☂️ Test Coverage"
+          update-comment: true
+
+  # ============================================================
+  # 3. Frontend Build + ESLint
+  # ============================================================
   frontend:
-    name: Frontend Build
+    name: Frontend Lint & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +85,32 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web-dashboard/package-lock.json
 
-      - name: Install & Build
+      - name: Install
         working-directory: web-dashboard
-        run: |
-          npm ci
-          npm run build
+        run: npm ci
+
+      - name: ESLint
+        working-directory: web-dashboard
+        run: npm run lint
+
+      - name: Build
+        working-directory: web-dashboard
+        run: npm run build
+
+  # ============================================================
+  # 4. Docker Build 驗證（不 push，只確認能建成功）
+  # ============================================================
+  docker:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Backend Image
+        run: docker build -t crypto-trader-api:ci .
+
+      - name: Build Dashboard Image
+        run: docker build -t crypto-trader-web:ci ./web-dashboard
+
+      - name: Build Monitor Image
+        run: docker build -t crypto-trader-monitor:ci ./discord-monitor

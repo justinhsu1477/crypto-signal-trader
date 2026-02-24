@@ -28,10 +28,11 @@ const I18nContext = createContext<I18nContextType | null>(null);
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
 
-  // Read from localStorage on mount
+  // Read from localStorage on mount（SSR 安全：必須在 useEffect 中存取 localStorage）
   useEffect(() => {
     const stored = localStorage.getItem(I18N_STORAGE_KEY) as Locale | null;
     if (stored && locales.includes(stored)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration: cannot read localStorage in initializer
       setLocaleState(stored);
     }
   }, []);
