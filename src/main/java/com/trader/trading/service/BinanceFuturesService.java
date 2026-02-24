@@ -967,11 +967,26 @@ public class BinanceFuturesService {
                 tradeRecordService.recordOrderEvent(symbol,
                         newSl.isSuccess() ? "SL_REHUNG" : "SL_REHUNG_FAILED", newSl,
                         toJson(Map.of("sl_price", slToUse, "remaining_qty", remainingQty)));
+                if (!newSl.isSuccess()) {
+                    // SL 重掛 API 呼叫失敗 — 緊急告警
+                    discordWebhookService.sendNotification(
+                            "🚨 部分平倉後 SL 重掛 API 失敗",
+                            String.format("%s SL=%.2f 重掛失敗！剩餘倉位 %.4f 無保護\n原因: %s\n請立即手動設定 SL",
+                                    symbol, slToUse, remainingQty,
+                                    newSl.getErrorMessage() != null ? newSl.getErrorMessage() : "unknown"),
+                            DiscordWebhookService.COLOR_RED);
+                }
             } else {
                 log.error("⚠️ 部分平倉後未能重掛 SL！{} 剩餘 {} 裸奔中", symbol, remainingQty);
                 tradeRecordService.recordOrderEvent(symbol, "SL_REHUNG_FAILED", null,
                         toJson(Map.of("reason", "no_sl_price", "remaining_qty", remainingQty)));
                 results.add(OrderResult.fail("部分平倉後無法重掛 SL — 剩餘倉位無保護"));
+                // 緊急 Discord 告警 — 裸倉風險
+                discordWebhookService.sendNotification(
+                        "🚨 部分平倉後 SL 重掛失敗",
+                        String.format("%s 剩餘倉位 %.4f 無止損保護！\n請立即手動設定 SL",
+                                symbol, remainingQty),
+                        DiscordWebhookService.COLOR_RED);
             }
 
             // === TP 重掛邏輯 ===

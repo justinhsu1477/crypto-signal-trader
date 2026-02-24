@@ -1,66 +1,85 @@
 package com.trader.auth.config;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * CORS 跨域資源共享配置
  *
- * 允許前端（localhost:3000）訪問後端 API（localhost:8080）。
+ * 允許前端訪問後端 API。
  *
- * 為什麼需要？
- * - 瀏覽器的同源政策 (Same-Origin Policy)：
- *   http://localhost:3000 ≠ http://localhost:8080
- * - 不同端口被視為不同源，默認被瀏覽器阻止
+ * 配置方式：
+ * - 環境變數 CORS_ALLOWED_ORIGINS（逗號分隔）→ 優先使用
+ * - 預設：localhost:3000, localhost:3001（開發環境）
  *
- * 此配置後效果：
- * 1. 前端可以發送 HTTP 請求到後端
- * 2. 瀏覽器允許接收跨域回應
- * 3. OPTIONS 預檢請求自動通過
- *
- * 安全考慮：
- * - Dev: 允許 localhost:3000 和 localhost:3001
- * - Prod: 應限制為真實的前端域名（如 example.com）
+ * 正式環境範例：
+ *   CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
  */
 @Configuration
 @Slf4j
 public class CorsConfig implements WebMvcConfigurer {
 
+    @Value("${cors.allowed-origins:}")
+    private String corsAllowedOrigins;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        List<String> origins = resolveAllowedOrigins();
+
         registry.addMapping("/api/**")
-                // 允許的源（origin）
-                .allowedOrigins(
-                        "http://localhost",          // Caddy 反向代理（Cloud 部署）
-                        "http://localhost:3000",     // 開發環境 - Next.js dev server
-                        "http://localhost:3001",     // 開發環境 - Next.js 另一實例
-                        "http://127.0.0.1",          // Caddy（127.0.0.1 版本）
-                        "http://127.0.0.1:3000",
-                        "http://127.0.0.1:3001"
-                )
-                // 允許的 HTTP 方法
+                .allowedOrigins(origins.toArray(new String[0]))
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
-                // 允許的 request header
                 .allowedHeaders(
-                        "Authorization",            // JWT token
-                        "Content-Type",             // application/json
+                        "Authorization",
+                        "Content-Type",
                         "Accept",
                         "Origin",
                         "X-Requested-With",
                         "X-CSRF-TOKEN"
                 )
-                // 允許暴露給前端的 response header
                 .exposedHeaders(
-                        "Authorization",            // 新的 token（刷新後）
-                        "X-Total-Count"             // 分頁用的總數
+                        "Authorization",
+                        "X-Total-Count"
                 )
-                // 允許發送認證信息（如 Cookie）
                 .allowCredentials(true)
-                // 預檢請求的快取時間（秒）
                 .maxAge(3600);
 
-        log.info("CORS 設定已啟用: localhost, localhost:3000, localhost:3001");
+        log.info("CORS 設定已啟用: {}", origins);
+    }
+
+    private List<String> resolveAllowedOrigins() {
+        List<String> origins = new ArrayList<>();
+
+        // 1. 環境變數指定的域名（正式環境用）
+        if (corsAllowedOrigins != null && !corsAllowedOrigins.isBlank()) {
+            Arrays.stream(corsAllowedOrigins.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .forEach(origins::add);
+        }
+
+        // 2. 永遠包含開發環境域名（方便本地調試）
+        List<String> devOrigins = List.of(
+                "http://localhost",
+                "http://localhost:3000",
+                "http://localhost:3001",
+                "http://127.0.0.1",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:3001"
+        );
+        for (String dev : devOrigins) {
+            if (!origins.contains(dev)) {
+                origins.add(dev);
+            }
+        }
+
+        return origins;
     }
 }
