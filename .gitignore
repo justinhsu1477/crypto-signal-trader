@@ -5,6 +5,9 @@
 *.env.local
 discord-monitor/config.yml
 
+# === SSL Certificates (Cloudflare Origin Certificate) ===
+certs/
+
 # === Java / Gradle ===
 .gradle/
 build/
@@ -43,6 +46,9 @@ data/
 # === AI Tools ===
 .claude/
 .agents/
+
+# === Infra Docs (含機敏設定參考，不上傳) ===
+docs/基礎設施設定紀錄.md
 
 # === Temp / Export ===
 export.txt

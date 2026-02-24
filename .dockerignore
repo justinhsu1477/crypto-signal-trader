@@ -4,9 +4,12 @@
 .vscode
 .env
 .env.local
+.env.prod
 build/
 data/
 discord-monitor/
+web-dashboard/
+docs/
 *.log
 *.DS_Store
 *.iml
