@@ -9,9 +9,9 @@ discord-monitor/config.yml
 .gradle/
 build/
 bin/
-!gradle/wrapper/gradle-wrapper.jar
 *.class
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 
 # === IDE ===
