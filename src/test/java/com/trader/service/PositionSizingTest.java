@@ -240,9 +240,9 @@ class PositionSizingTest {
         }
 
         @Test
-        @DisplayName("其他幣種 → 2 位小數")
+        @DisplayName("其他幣種 → 2 位小數（ETH 為 3 位）")
         void otherQuantity() throws Exception {
-            assertThat(invokeFormatQuantity("ETHUSDT", 7.1428)).isEqualTo("7.14");
+            assertThat(invokeFormatQuantity("ETHUSDT", 7.1428)).isEqualTo("7.143");
             assertThat(invokeFormatQuantity("SOLUSDT", 100.0)).isEqualTo("100.00");
         }
 
