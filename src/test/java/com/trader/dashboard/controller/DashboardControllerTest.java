@@ -184,6 +184,88 @@ class DashboardControllerTest {
         }
     }
 
+    // ==================== Discord Notification Status ====================
+
+    @Nested
+    @DisplayName("discord-notification-status — Discord 通知開關")
+    class DiscordNotificationStatusTests {
+
+        @Test
+        @DisplayName("GET — 用戶存在 — 回傳狀態")
+        void getDiscordNotificationStatusFound() {
+            User user = User.builder().userId("user-123").discordNotificationEnabled(true).build();
+            when(userRepository.findById("user-123")).thenReturn(Optional.of(user));
+
+            ResponseEntity<Map<String, Object>> response = controller.getDiscordNotificationStatus();
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().get("discordNotificationEnabled")).isEqualTo(true);
+            assertThat(response.getBody().get("userId")).isEqualTo("user-123");
+        }
+
+        @Test
+        @DisplayName("GET — 用戶不存在 — 404")
+        void getDiscordNotificationStatusNotFound() {
+            when(userRepository.findById("user-123")).thenReturn(Optional.empty());
+
+            ResponseEntity<Map<String, Object>> response = controller.getDiscordNotificationStatus();
+
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+        }
+
+        @Test
+        @DisplayName("POST — 啟用 — 儲存並回傳")
+        void postEnableDiscordNotification() {
+            User user = User.builder().userId("user-123").discordNotificationEnabled(false).build();
+            when(userRepository.findById("user-123")).thenReturn(Optional.of(user));
+
+            ResponseEntity<Map<String, Object>> response =
+                    controller.updateDiscordNotificationStatus(Map.of("enabled", true));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().get("discordNotificationEnabled")).isEqualTo(true);
+            verify(userRepository).save(user);
+            assertThat(user.isDiscordNotificationEnabled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("POST — 停用 — 儲存並回傳")
+        void postDisableDiscordNotification() {
+            User user = User.builder().userId("user-123").discordNotificationEnabled(true).build();
+            when(userRepository.findById("user-123")).thenReturn(Optional.of(user));
+
+            ResponseEntity<Map<String, Object>> response =
+                    controller.updateDiscordNotificationStatus(Map.of("enabled", false));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().get("discordNotificationEnabled")).isEqualTo(false);
+            assertThat(response.getBody().get("message").toString()).contains("關閉");
+        }
+
+        @Test
+        @DisplayName("POST — enabled 為 null — 400")
+        void postNullEnabled() {
+            Map<String, Boolean> body = new HashMap<>();
+            body.put("enabled", null);
+
+            ResponseEntity<Map<String, Object>> response = controller.updateDiscordNotificationStatus(body);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            assertThat(response.getBody().get("error").toString()).contains("enabled");
+        }
+
+        @Test
+        @DisplayName("POST — 用戶不存在 — 404")
+        void postUserNotFound() {
+            when(userRepository.findById("user-123")).thenReturn(Optional.empty());
+
+            ResponseEntity<Map<String, Object>> response =
+                    controller.updateDiscordNotificationStatus(Map.of("enabled", true));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+        }
+    }
+
     // ==================== Trade Settings ====================
 
     @Nested

@@ -131,6 +131,61 @@ public class DashboardController {
                 "message", enabled ? "已啟用自動跟單" : "已關閉自動跟單"));
     }
 
+    // ==================== Discord 通知開關 ====================
+
+    /**
+     * 查詢 Discord 通知開關狀態
+     * GET /api/dashboard/discord-notification-status
+     *
+     * 回傳：{ "userId": "...", "discordNotificationEnabled": true/false }
+     */
+    @GetMapping("/discord-notification-status")
+    public ResponseEntity<Map<String, Object>> getDiscordNotificationStatus() {
+        String userId = SecurityUtil.getCurrentUserId();
+        var user = userRepository.findById(userId);
+        if (user.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of(
+                "userId", userId,
+                "discordNotificationEnabled", user.get().isDiscordNotificationEnabled()));
+    }
+
+    /**
+     * 更新 Discord 通知開關
+     * POST /api/dashboard/discord-notification-status
+     * Body: { "enabled": true/false }
+     *
+     * 回傳：{ "discordNotificationEnabled": true/false, "message": "已更新" }
+     */
+    @PostMapping("/discord-notification-status")
+    public ResponseEntity<Map<String, Object>> updateDiscordNotificationStatus(
+            @RequestBody Map<String, Boolean> body) {
+        String userId = SecurityUtil.getCurrentUserId();
+        Boolean enabled = body.get("enabled");
+
+        if (enabled == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "enabled 欄位不可為空"));
+        }
+
+        var user = userRepository.findById(userId);
+        if (user.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        var userEntity = user.get();
+        userEntity.setDiscordNotificationEnabled(enabled);
+        userRepository.save(userEntity);
+
+        log.info("用戶 {} Discord 通知設定已更新: {}", userId, enabled);
+
+        return ResponseEntity.ok(Map.of(
+                "userId", userId,
+                "discordNotificationEnabled", enabled,
+                "message", enabled ? "已啟用 Discord 通知" : "已關閉 Discord 通知"));
+    }
+
     // ==================== 交易參數管理 ====================
 
     /**

@@ -66,15 +66,16 @@ public class DashboardService {
      * 取得首頁摘要（帳戶、風控、訂閱、持倉、自動跟單狀態）
      */
     public DashboardOverview getOverview(String userId) {
-        boolean autoTradeEnabled = userRepository.findById(userId)
-                .map(u -> u.isAutoTradeEnabled())
-                .orElse(false);
+        var userOpt = userRepository.findById(userId);
+        boolean autoTradeEnabled = userOpt.map(u -> u.isAutoTradeEnabled()).orElse(false);
+        boolean discordNotificationEnabled = userOpt.map(u -> u.isDiscordNotificationEnabled()).orElse(true);
 
         return DashboardOverview.builder()
                 .account(buildAccountSummary(userId))
                 .riskBudget(buildRiskBudget(userId))
                 .subscription(buildSubscriptionInfo(userId))
                 .autoTradeEnabled(autoTradeEnabled)
+                .discordNotificationEnabled(discordNotificationEnabled)
                 .positions(buildPositionList(userId))
                 .build();
     }
