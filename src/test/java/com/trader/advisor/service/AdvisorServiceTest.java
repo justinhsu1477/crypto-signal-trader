@@ -3,9 +3,11 @@ package com.trader.advisor.service;
 import com.trader.advisor.config.AdvisorConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.config.RiskConfig;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
 
@@ -28,6 +30,8 @@ class AdvisorServiceTest {
     private DiscordWebhookService webhookService;
     private AdvisorConfig advisorConfig;
     private RiskConfig riskConfig;
+    private MultiUserConfig multiUserConfig;
+    private UserApiKeyService userApiKeyService;
     private AdvisorService advisorService;
 
     @BeforeEach
@@ -38,6 +42,8 @@ class AdvisorServiceTest {
         webhookService = mock(DiscordWebhookService.class);
         advisorConfig = mock(AdvisorConfig.class);
         riskConfig = mock(RiskConfig.class);
+        multiUserConfig = new MultiUserConfig(); // 預設 enabled=false（單用戶）
+        userApiKeyService = mock(UserApiKeyService.class);
 
         // 預設 config
         when(advisorConfig.getRecentTradesCount()).thenReturn(10);
@@ -48,7 +54,8 @@ class AdvisorServiceTest {
 
         advisorService = new AdvisorService(
                 geminiService, binanceFuturesService, tradeRecordService,
-                webhookService, advisorConfig, riskConfig);
+                webhookService, advisorConfig, riskConfig,
+                multiUserConfig, userApiKeyService);
     }
 
     @Nested

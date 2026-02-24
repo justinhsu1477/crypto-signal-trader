@@ -9,10 +9,13 @@ import com.trader.subscription.dto.SubscriptionStatusResponse;
 import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
+import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,6 +52,8 @@ public class DashboardService {
     private final RiskConfig riskConfig;
     private final UserRepository userRepository;
     private final TradeConfigResolver tradeConfigResolver;
+    private final MultiUserConfig multiUserConfig;
+    private final UserApiKeyService userApiKeyService;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
@@ -80,7 +85,7 @@ public class DashboardService {
 
         double balance = 0;
         try {
-            balance = binanceFuturesService.getAvailableBalance();
+            balance = fetchBalanceWithUserKeys(userId);
         } catch (Exception e) {
             log.warn("取得餘額失敗: {}", e.getMessage());
         }
@@ -91,6 +96,28 @@ public class DashboardService {
                 .todayPnl(round2(todayPnl))
                 .todayTradeCount((int) todayTrades)
                 .build();
+    }
+
+    /**
+     * 取得帳戶餘額（多用戶模式下使用 per-user API Key）
+     * 單用戶模式直接使用全局 API Key，行為不變。
+     */
+    private double fetchBalanceWithUserKeys(String userId) {
+        if (multiUserConfig.isEnabled()) {
+            Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+            if (keysOpt.isEmpty()) {
+                log.warn("用戶 {} 未設定 API Key，無法查詢帳戶餘額", userId);
+                return 0;
+            }
+            BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+            try {
+                return binanceFuturesService.getAvailableBalance();
+            } finally {
+                BinanceFuturesService.clearCurrentUserKeys();
+            }
+        }
+        // 單用戶模式 → 直接使用全局 API Key
+        return binanceFuturesService.getAvailableBalance();
     }
 
     private DashboardOverview.RiskBudget buildRiskBudget(String userId) {

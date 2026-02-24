@@ -7,8 +7,10 @@ import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.TradeConfigResolver;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
+import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,6 +34,8 @@ class DashboardPerformanceTest {
 
     private DashboardService dashboardService;
     private TradeRecordService tradeRecordService;
+    private MultiUserConfig multiUserConfig;
+    private UserApiKeyService userApiKeyService;
 
     @BeforeEach
     void setUp() {
@@ -39,10 +43,12 @@ class DashboardPerformanceTest {
         SubscriptionService subscriptionService = Mockito.mock(SubscriptionService.class);
         BinanceFuturesService binanceFuturesService = Mockito.mock(BinanceFuturesService.class);
         RiskConfig riskConfig = Mockito.mock(RiskConfig.class);
+        multiUserConfig = new MultiUserConfig(); // default enabled=false
+        userApiKeyService = Mockito.mock(UserApiKeyService.class);
 
         dashboardService = new DashboardService(
                 tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class),
-                Mockito.mock(TradeConfigResolver.class));
+                Mockito.mock(TradeConfigResolver.class), multiUserConfig, userApiKeyService);
     }
 
     /**
