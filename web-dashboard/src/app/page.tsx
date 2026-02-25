@@ -6,6 +6,7 @@ import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { RiskBudgetCard } from "@/components/dashboard/risk-budget";
 import { PositionsTable } from "@/components/dashboard/positions-table";
 import { SystemStatus } from "@/components/dashboard/system-status";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useT } from "@/lib/i18n/i18n-context";
 import type { DashboardOverview } from "@/types";
 
@@ -48,12 +49,18 @@ export default function HomePage() {
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold tracking-tight">{t("dashboard.title")}</h1>
-      <KpiCards data={data} />
-      <div className="grid gap-4 md:grid-cols-2">
-        <RiskBudgetCard data={data.riskBudget} />
-        <SystemStatus circuitBreakerActive={data.riskBudget.circuitBreakerActive} />
-      </div>
-      <PositionsTable positions={data.positions} />
+      <ErrorBoundary>
+        <KpiCards data={data} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <div className="grid gap-4 md:grid-cols-2">
+          <RiskBudgetCard data={data.riskBudget} />
+          <SystemStatus circuitBreakerActive={data.riskBudget.circuitBreakerActive} />
+        </div>
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <PositionsTable positions={data.positions} />
+      </ErrorBoundary>
     </div>
   );
 }
