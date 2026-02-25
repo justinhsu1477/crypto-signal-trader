@@ -27,8 +27,17 @@ public class PaymentHistory {
     /** 關聯的訂閱 ID (nullable) */
     private Long subscriptionId;
 
-    /** Stripe PaymentIntent ID (pi_xxx) */
+    /** Stripe PaymentIntent ID (pi_xxx) — 保留向下相容 */
     private String stripePaymentIntentId;
+
+    /** 鏈上交易 Hash（USDT TRC20） */
+    private String txHash;
+
+    /** 區塊鏈網路（TRC20） */
+    private String network;
+
+    /** 收款錢包地址 */
+    private String walletAddress;
 
     /** 金額 */
     private Double amount;

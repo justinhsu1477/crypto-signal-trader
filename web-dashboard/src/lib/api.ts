@@ -23,6 +23,7 @@ import type {
   PlanInfo,
   SubscriptionStatusDetail,
   UpgradePlanRequest,
+  CryptoCheckoutInfo,
   ReferralStatusResponse,
   SubmitUidRequest,
   VerifyEmailRequest,
@@ -353,12 +354,21 @@ export async function upgradeSubscription(
   });
 }
 
-export async function getCheckoutUrl(
+export async function getCheckoutInfo(
   planId: string
-): Promise<{ checkoutUrl: string }> {
-  return request<{ checkoutUrl: string }>("/api/subscription/checkout", {
+): Promise<CryptoCheckoutInfo> {
+  return request<CryptoCheckoutInfo>("/api/subscription/checkout", {
     method: "POST",
     body: JSON.stringify({ planId }),
+  });
+}
+
+export async function submitPayment(
+  data: { planId: string; txHash: string }
+): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>("/api/subscription/submit-payment", {
+    method: "POST",
+    body: JSON.stringify(data),
   });
 }
 

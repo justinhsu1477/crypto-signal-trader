@@ -59,7 +59,7 @@ public class AuthConfig {
                         // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/health", "/api/health/deep").permitAll()
-                        .requestMatchers("/api/subscription/webhook").permitAll()
+                        // Stripe webhook 已移除（改用 USDT TRC20 付款）
 
                         // === ADMIN 專用：需要 ADMIN 角色（JWT ADMIN 或 Monitor API Key） ===
                         .requestMatchers(

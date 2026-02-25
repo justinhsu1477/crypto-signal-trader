@@ -48,6 +48,9 @@ public class Plan {
     @Column(length = 500)
     private String stripePaymentLinkUrl;
 
+    /** USDT 價格 */
+    private Double priceUsdt;
+
     @Builder.Default
     private boolean active = true;
 

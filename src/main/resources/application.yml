@@ -83,6 +83,16 @@ stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder}
 
+# ========== USDT TRC20 加密貨幣收款 ==========
+crypto:
+  payment:
+    enabled: ${CRYPTO_PAYMENT_ENABLED:true}
+    network: TRC20
+    wallet-address: ${CRYPTO_WALLET_ADDRESS:}
+    trongrid-api-key: ${TRONGRID_API_KEY:}
+    confirmation-blocks: 20
+    subscription-days: 30
+
 jwt:
   secret: ${JWT_SECRET:default-dev-secret-change-in-production-must-be-at-least-256-bits-long}
   expiration-ms: 86400000         # 24h
