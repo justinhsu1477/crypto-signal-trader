@@ -112,7 +112,7 @@ public class SubscriptionService {
         Plan plan = planRepository.findByPlanIdAndActiveTrue(planId)
                 .orElseThrow(() -> new IllegalArgumentException("方案不存在: " + planId));
 
-        if (plan.getPriceUsdt() == null || plan.getPriceUsdt() <= 0) {
+        if (plan.getPriceUsdt() == null || plan.getPriceUsdt().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("方案 " + planId + " 無需付款");
         }
 
@@ -139,7 +139,7 @@ public class SubscriptionService {
         Plan plan = planRepository.findByPlanIdAndActiveTrue(planId)
                 .orElseThrow(() -> new IllegalArgumentException("方案不存在: " + planId));
 
-        if (plan.getPriceUsdt() == null || plan.getPriceUsdt() <= 0) {
+        if (plan.getPriceUsdt() == null || plan.getPriceUsdt().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("此方案為免費方案，無需付款");
         }
 
@@ -148,9 +148,8 @@ public class SubscriptionService {
             throw new IllegalArgumentException("此交易 Hash 已經使用過");
         }
 
-        // 3. TronGrid 鏈上驗證
-        BigDecimal expectedAmount = BigDecimal.valueOf(plan.getPriceUsdt());
-        TronService.VerificationResult result = tronService.verifyTransaction(txHash, expectedAmount);
+        // 3. TronGrid 鏈上驗證 — priceUsdt 已是 BigDecimal，直接傳入
+        TronService.VerificationResult result = tronService.verifyTransaction(txHash, plan.getPriceUsdt());
 
         if (!result.success()) {
             // 記錄失敗的付款嘗試
@@ -198,9 +197,9 @@ public class SubscriptionService {
             log.info("新訂閱已建立: userId={}, plan={}, end={}", userId, planId, sub.getCurrentPeriodEnd());
         }
 
-        // 5. 記錄成功的付款歷史
+        // 5. 記錄成功的付款歷史 — 使用鏈上實際金額
         savePaymentHistory(userId, sub.getId(), txHash,
-                result.amount().doubleValue(), "USDT", "succeeded");
+                result.amount(), "USDT", "succeeded");
 
         return String.format("付款驗證成功！%s 方案已開通至 %s",
                 plan.getName(), sub.getCurrentPeriodEnd().toLocalDate());
@@ -295,7 +294,7 @@ public class SubscriptionService {
     }
 
     private void savePaymentHistory(String userId, Long subscriptionId,
-                                    String txHash, Double amount,
+                                    String txHash, BigDecimal amount,
                                     String currency, String status) {
         PaymentHistory payment = PaymentHistory.builder()
                 .userId(userId)
