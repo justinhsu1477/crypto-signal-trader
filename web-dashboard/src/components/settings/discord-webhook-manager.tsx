@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import { useT } from "@/lib/i18n/i18n-context";
 
 interface DiscordWebhookManagerProps {
@@ -33,10 +34,6 @@ export function DiscordWebhookManager({
   const [webhookName, setWebhookName] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
 
   // Fetch webhooks
   useEffect(() => {
@@ -78,33 +75,29 @@ export function DiscordWebhookManager({
   // Handle create webhook
   async function handleCreateWebhook() {
     if (!webhookUrl.trim()) {
-      setMessage({ type: "error", text: t("settings.webhookUrlRequired") });
+      toast.error(t("settings.webhookUrlRequired"));
       return;
     }
 
     if (!webhookUrl.startsWith("https://discord.com/api/webhooks/")) {
-      setMessage({ type: "error", text: t("settings.invalidWebhookUrl") });
+      toast.error(t("settings.invalidWebhookUrl"));
       return;
     }
 
     setSaving(true);
-    setMessage(null);
     try {
       const result = await createDiscordWebhook({
         webhookUrl: webhookUrl.trim(),
         name: webhookName.trim() || "Discord Webhook",
       });
 
-      setMessage({ type: "success", text: result.message });
+      toast.success(result.message);
       setWebhookName("");
       setWebhookUrl("");
 
       await refreshWebhooks();
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -116,10 +109,7 @@ export function DiscordWebhookManager({
       await disableDiscordWebhook(webhookId);
       await refreshWebhooks();
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     }
   }
 
@@ -130,10 +120,7 @@ export function DiscordWebhookManager({
         await deleteDiscordWebhook(webhookId);
         await refreshWebhooks();
       } catch (err) {
-        setMessage({
-          type: "error",
-          text: err instanceof Error ? err.message : t("common.saveFailed"),
-        });
+        toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
       }
     }
   }
@@ -253,18 +240,6 @@ export function DiscordWebhookManager({
                 />
               </div>
             </div>
-
-            {message && (
-              <p
-                className={`text-sm ${
-                  message.type === "success"
-                    ? "text-emerald-500"
-                    : "text-red-500"
-                }`}
-              >
-                {message.text}
-              </p>
-            )}
 
             <Button onClick={handleCreateWebhook} disabled={saving}>
               {saving ? t("common.saving") : t("settings.addWebhook")}
