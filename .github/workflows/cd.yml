@@ -1,24 +1,23 @@
 name: CD
 
-# ⚠️ 目前僅支援手動觸發，要開啟自動部署請取消下方註解
-# on:
-#   workflow_run:
-#     workflows: ["CI"]
-#     branches: [main]
-#     types: [completed]
-
 on:
-  workflow_dispatch:  # 手動觸發（GitHub Actions 頁面按 Run workflow）
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:  # 保留手動觸發（GitHub Actions 頁面按 Run workflow）
 
 jobs:
   deploy:
-    name: Deploy to Production
+    name: 🚀 部署到正式環境
     runs-on: ubuntu-latest
-    # 如果改成 workflow_run 觸發，取消下方註解確保 CI 通過才部署
-    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # workflow_run 觸發時，只在 CI 全部通過才部署
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
-      - name: Deploy via SSH
+      - name: 透過 SSH 部署
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DROPLET_HOST }}
