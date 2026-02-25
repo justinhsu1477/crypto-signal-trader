@@ -72,7 +72,7 @@ class TradeRecordServiceEventTest {
         }
 
         @Test
-        @DisplayName("無 OPEN Trade 時 — tradeId 為 UNKNOWN")
+        @DisplayName("無 OPEN Trade 時 — tradeId 為 null（FK 允許 null）")
         void withoutOpenTrade() {
             when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.empty());
 
@@ -84,7 +84,7 @@ class TradeRecordServiceEventTest {
             verify(tradeEventRepository).save(captor.capture());
 
             TradeEvent saved = captor.getValue();
-            assertThat(saved.getTradeId()).isEqualTo("UNKNOWN");
+            assertThat(saved.getTradeId()).isNull();
             assertThat(saved.getEventType()).isEqualTo("CLOSE_FAILED");
             assertThat(saved.getSuccess()).isFalse();
         }
