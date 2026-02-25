@@ -61,7 +61,7 @@ class AlgoOrderIntegrationTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class)));
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
         when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);

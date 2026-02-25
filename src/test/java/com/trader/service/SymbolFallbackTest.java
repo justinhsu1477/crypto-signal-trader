@@ -61,7 +61,7 @@ class SymbolFallbackTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, new StartOfDayBalanceCache()));
+                mockTradeConfigResolver, new StartOfDayBalanceCache(), new com.trader.shared.util.BinanceApiRateLimiter()));
     }
 
     // ==================== CLOSE Symbol Fallback ====================
