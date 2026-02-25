@@ -18,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,6 +41,8 @@ class SubscriptionServiceTest {
     private static final String TX_HASH = "abc123def456";
     private static final String WALLET_ADDRESS = "TTestWallet";
     private static final String NETWORK = "TRC20";
+    /** 與 SubscriptionService 一致的時區 */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Taipei");
 
     @BeforeEach
     void setUp() {
@@ -84,7 +87,7 @@ class SubscriptionServiceTest {
                 .userId(userId)
                 .planId(planId)
                 .status(Subscription.Status.ACTIVE)
-                .currentPeriodStart(LocalDateTime.now().minusDays(30))
+                .currentPeriodStart(LocalDateTime.now(ZONE).minusDays(30))
                 .currentPeriodEnd(end)
                 .build();
     }
@@ -129,7 +132,7 @@ class SubscriptionServiceTest {
             Plan pro = buildPlan("pro", "Pro", 49.0);
             when(planRepository.findByActiveTrue()).thenReturn(List.of(basic, pro));
 
-            Subscription sub = buildActiveSub(USER_ID, "pro", LocalDateTime.now().plusDays(15));
+            Subscription sub = buildActiveSub(USER_ID, "pro", LocalDateTime.now(ZONE).plusDays(15));
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
 
             List<PlanResponse> result = service.getPlans(USER_ID);
@@ -160,7 +163,7 @@ class SubscriptionServiceTest {
         @Test
         @DisplayName("有有效訂閱時回傳完整狀態資訊")
         void activeSubReturnsFullStatus() {
-            LocalDateTime endDate = LocalDateTime.now().plusDays(15);
+            LocalDateTime endDate = LocalDateTime.now(ZONE).plusDays(15);
             Subscription sub = buildActiveSub(USER_ID, "pro", endDate);
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
 
@@ -191,7 +194,7 @@ class SubscriptionServiceTest {
         @Test
         @DisplayName("Plan 不存在時使用 planId 作為 planName fallback")
         void planNotFoundUsesPlanIdAsFallback() {
-            Subscription sub = buildActiveSub(USER_ID, "unknown-plan", LocalDateTime.now().plusDays(10));
+            Subscription sub = buildActiveSub(USER_ID, "unknown-plan", LocalDateTime.now(ZONE).plusDays(10));
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
             when(planRepository.findById("unknown-plan")).thenReturn(Optional.empty());
 
@@ -210,7 +213,7 @@ class SubscriptionServiceTest {
         @Test
         @DisplayName("有有效訂閱時回傳 true")
         void hasActiveSubReturnsTrue() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now().plusDays(10));
+            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(10));
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
 
             assertThat(service.isUserActive(USER_ID)).isTrue();
@@ -477,9 +480,9 @@ class SubscriptionServiceTest {
             @Test
             @DisplayName("新訂閱的 currentPeriodEnd 約為 now + 30 天")
             void newSubEndDateIsNowPlus30Days() {
-                LocalDateTime before = LocalDateTime.now().plusDays(29);
+                LocalDateTime before = LocalDateTime.now(ZONE).plusDays(29);
                 service.submitPayment(USER_ID, "basic", TX_HASH);
-                LocalDateTime after = LocalDateTime.now().plusDays(31);
+                LocalDateTime after = LocalDateTime.now(ZONE).plusDays(31);
 
                 ArgumentCaptor<Subscription> captor = ArgumentCaptor.forClass(Subscription.class);
                 verify(subscriptionRepository).save(captor.capture());
@@ -536,7 +539,7 @@ class SubscriptionServiceTest {
             @Test
             @DisplayName("currentEnd 在未來時，newEnd = currentEnd + 30 天")
             void futureEndExtendsFromCurrentEnd() {
-                LocalDateTime futureEnd = LocalDateTime.now().plusDays(10);
+                LocalDateTime futureEnd = LocalDateTime.now(ZONE).plusDays(10);
                 Subscription existing = buildActiveSub(USER_ID, "basic", futureEnd);
                 Plan basic = buildPlan("basic", "Basic", 19.0);
 
@@ -561,7 +564,7 @@ class SubscriptionServiceTest {
             @Test
             @DisplayName("currentEnd 已過期時，newEnd = now + 30 天")
             void pastEndStartsFromNow() {
-                LocalDateTime pastEnd = LocalDateTime.now().minusDays(5);
+                LocalDateTime pastEnd = LocalDateTime.now(ZONE).minusDays(5);
                 Subscription existing = buildActiveSub(USER_ID, "basic", pastEnd);
                 Plan basic = buildPlan("basic", "Basic", 19.0);
 
@@ -571,9 +574,9 @@ class SubscriptionServiceTest {
                 when(tronService.verifyTransaction(eq(TX_HASH), any(BigDecimal.class)))
                         .thenReturn(successResult(19.0));
 
-                LocalDateTime before = LocalDateTime.now().plusDays(29);
+                LocalDateTime before = LocalDateTime.now(ZONE).plusDays(29);
                 service.submitPayment(USER_ID, "basic", TX_HASH);
-                LocalDateTime after = LocalDateTime.now().plusDays(31);
+                LocalDateTime after = LocalDateTime.now(ZONE).plusDays(31);
 
                 ArgumentCaptor<Subscription> captor = ArgumentCaptor.forClass(Subscription.class);
                 verify(subscriptionRepository).save(captor.capture());
@@ -595,9 +598,9 @@ class SubscriptionServiceTest {
                 when(tronService.verifyTransaction(eq(TX_HASH), any(BigDecimal.class)))
                         .thenReturn(successResult(19.0));
 
-                LocalDateTime before = LocalDateTime.now().plusDays(29);
+                LocalDateTime before = LocalDateTime.now(ZONE).plusDays(29);
                 service.submitPayment(USER_ID, "basic", TX_HASH);
-                LocalDateTime after = LocalDateTime.now().plusDays(31);
+                LocalDateTime after = LocalDateTime.now(ZONE).plusDays(31);
 
                 ArgumentCaptor<Subscription> captor = ArgumentCaptor.forClass(Subscription.class);
                 verify(subscriptionRepository).save(captor.capture());
@@ -610,7 +613,7 @@ class SubscriptionServiceTest {
             @Test
             @DisplayName("續約時更新 planId 為新方案")
             void renewalUpdatesPlanId() {
-                LocalDateTime futureEnd = LocalDateTime.now().plusDays(10);
+                LocalDateTime futureEnd = LocalDateTime.now(ZONE).plusDays(10);
                 Subscription existing = buildActiveSub(USER_ID, "basic", futureEnd);
                 Plan pro = buildPlan("pro", "Pro", 49.0);
 
@@ -684,12 +687,12 @@ class SubscriptionServiceTest {
         @Test
         @DisplayName("有有效訂閱時標記為 CANCELLED 並設定結束時間為現在")
         void activeSubMarkedCancelled() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now().plusDays(15));
+            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(15));
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
 
-            LocalDateTime before = LocalDateTime.now().minusSeconds(1);
+            LocalDateTime before = LocalDateTime.now(ZONE).minusSeconds(1);
             service.cancel(USER_ID);
-            LocalDateTime after = LocalDateTime.now().plusSeconds(1);
+            LocalDateTime after = LocalDateTime.now(ZONE).plusSeconds(1);
 
             ArgumentCaptor<Subscription> captor = ArgumentCaptor.forClass(Subscription.class);
             verify(subscriptionRepository).save(captor.capture());
@@ -720,7 +723,7 @@ class SubscriptionServiceTest {
         @Test
         @DisplayName("成功升級方案後更新 planId")
         void successfulUpgradeUpdatesPlanId() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now().plusDays(15));
+            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(15));
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
             Plan pro = buildPlan("pro", "Pro", 49.0);
             when(planRepository.findByPlanIdAndActiveTrue("pro")).thenReturn(Optional.of(pro));
@@ -745,7 +748,7 @@ class SubscriptionServiceTest {
         @Test
         @DisplayName("目標方案不存在時拋出 IllegalArgumentException")
         void planNotFoundThrows() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now().plusDays(15));
+            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(15));
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
             when(planRepository.findByPlanIdAndActiveTrue("nonexistent")).thenReturn(Optional.empty());
 
@@ -757,7 +760,7 @@ class SubscriptionServiceTest {
         @Test
         @DisplayName("已經是同方案時拋出 IllegalArgumentException")
         void samePlanThrows() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now().plusDays(15));
+            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(15));
             when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
             Plan basic = buildPlan("basic", "Basic", 19.0);
             when(planRepository.findByPlanIdAndActiveTrue("basic")).thenReturn(Optional.of(basic));
@@ -780,7 +783,7 @@ class SubscriptionServiceTest {
             Subscription expired = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().minusDays(1))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).minusDays(1))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(expired));
 
@@ -797,7 +800,7 @@ class SubscriptionServiceTest {
             Subscription active = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().plusDays(10))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).plusDays(10))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(active));
 
@@ -813,7 +816,7 @@ class SubscriptionServiceTest {
             Subscription cancelled = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.CANCELLED)
-                    .currentPeriodEnd(LocalDateTime.now().minusDays(1))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).minusDays(1))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(cancelled));
 
@@ -829,17 +832,17 @@ class SubscriptionServiceTest {
             Subscription expired1 = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().minusDays(1))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).minusDays(1))
                     .build();
             Subscription expired2 = Subscription.builder()
                     .id(2L).userId("u2").planId("pro")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().minusDays(3))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).minusDays(3))
                     .build();
             Subscription active = Subscription.builder()
                     .id(3L).userId("u3").planId("basic")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().plusDays(10))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).plusDays(10))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(expired1, expired2, active));
 
@@ -863,7 +866,7 @@ class SubscriptionServiceTest {
             Subscription expiringSoon = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().plusDays(2))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).plusDays(2))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(expiringSoon));
 
@@ -879,7 +882,7 @@ class SubscriptionServiceTest {
             Subscription farAway = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().plusDays(15))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).plusDays(15))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(farAway));
 
@@ -894,7 +897,7 @@ class SubscriptionServiceTest {
             Subscription past = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.ACTIVE)
-                    .currentPeriodEnd(LocalDateTime.now().minusDays(1))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).minusDays(1))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(past));
 
@@ -909,7 +912,7 @@ class SubscriptionServiceTest {
             Subscription cancelled = Subscription.builder()
                     .id(1L).userId("u1").planId("basic")
                     .status(Subscription.Status.CANCELLED)
-                    .currentPeriodEnd(LocalDateTime.now().plusDays(2))
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).plusDays(2))
                     .build();
             when(subscriptionRepository.findAll()).thenReturn(List.of(cancelled));
 
