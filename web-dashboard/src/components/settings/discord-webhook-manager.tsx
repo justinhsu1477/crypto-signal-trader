@@ -63,7 +63,7 @@ export function DiscordWebhookManager({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onWebhooksChange, t]);
 
   async function refreshWebhooks() {
     const data = await getDiscordWebhooks();

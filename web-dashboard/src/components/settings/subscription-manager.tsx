@@ -69,7 +69,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onStatusChange, t]);
 
   // Handlers
   async function handleCancel() {

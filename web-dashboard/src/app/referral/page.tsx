@@ -21,7 +21,6 @@ import {
   Check,
   ExternalLink,
   Loader2,
-  AlertCircle,
 } from "lucide-react";
 
 // ─── Step indicator helpers ───
