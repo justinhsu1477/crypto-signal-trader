@@ -23,7 +23,14 @@ export function PublicNavbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-black/60 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         {/* Logo */}
-        <Link href="/login" className="flex items-center gap-2.5 group">
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+          className="flex items-center gap-2.5 group cursor-pointer"
+        >
           <Image
             src="/logo.jpg"
             alt="HookFi"
@@ -34,7 +41,7 @@ export function PublicNavbar() {
           <span className="text-lg font-bold tracking-tight">
             HookFi
           </span>
-        </Link>
+        </a>
 
         {/* Center links */}
         <div className="hidden md:flex items-center gap-1">
