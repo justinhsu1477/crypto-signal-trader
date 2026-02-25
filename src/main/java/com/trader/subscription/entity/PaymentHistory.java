@@ -4,6 +4,7 @@ import com.trader.shared.config.AppConstants;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -40,7 +41,8 @@ public class PaymentHistory {
     private String walletAddress;
 
     /** 金額 */
-    private Double amount;
+    @Column(columnDefinition = "DECIMAL(10,2)")
+    private BigDecimal amount;
 
     /** 幣別 */
     @Builder.Default

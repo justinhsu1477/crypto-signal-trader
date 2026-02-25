@@ -3,6 +3,8 @@ package com.trader.subscription.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 /**
  * 方案列表 — 單個方案的回應 DTO
  *
@@ -17,7 +19,7 @@ public class PlanResponse {
 
     private String planId;
     private String name;
-    private Double priceMonthly;
+    private BigDecimal priceMonthly;
 
     /** 最大同時持倉數 */
     private Integer maxPositions;
@@ -32,7 +34,7 @@ public class PlanResponse {
     private Double maxRiskPercent;
 
     /** USDT 價格 */
-    private Double priceUsdt;
+    private BigDecimal priceUsdt;
 
     /** Stripe Payment Link URL — 前端開新分頁到此 URL 付款（已棄用） */
     private String paymentLinkUrl;

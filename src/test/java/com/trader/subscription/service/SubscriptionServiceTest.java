@@ -68,11 +68,12 @@ class SubscriptionServiceTest {
     // ==================== 工具方法 ====================
 
     private Plan buildPlan(String planId, String name, Double priceUsdt) {
+        BigDecimal price = priceUsdt != null ? BigDecimal.valueOf(priceUsdt) : null;
         return Plan.builder()
                 .planId(planId)
                 .name(name)
-                .priceUsdt(priceUsdt)
-                .priceMonthly(priceUsdt)
+                .priceUsdt(price)
+                .priceMonthly(price)
                 .maxPositions(5)
                 .maxSymbols(10)
                 .dcaLayersAllowed(3)
@@ -117,7 +118,7 @@ class SubscriptionServiceTest {
             assertThat(result).hasSize(2);
             assertThat(result.get(0).getPlanId()).isEqualTo("basic");
             assertThat(result.get(0).getName()).isEqualTo("Basic");
-            assertThat(result.get(0).getPriceUsdt()).isEqualTo(19.0);
+            assertThat(result.get(0).getPriceUsdt()).isEqualByComparingTo(BigDecimal.valueOf(19.0));
             assertThat(result.get(0).getMaxPositions()).isEqualTo(5);
             assertThat(result.get(0).getMaxSymbols()).isEqualTo(10);
             assertThat(result.get(0).getDcaLayersAllowed()).isEqualTo(3);
@@ -244,7 +245,7 @@ class SubscriptionServiceTest {
 
             assertThat(resp.getPlanId()).isEqualTo("basic");
             assertThat(resp.getPlanName()).isEqualTo("Basic");
-            assertThat(resp.getAmountUsdt()).isEqualTo(19.0);
+            assertThat(resp.getAmountUsdt()).isEqualByComparingTo(BigDecimal.valueOf(19.0));
             assertThat(resp.getWalletAddress()).isEqualTo(WALLET_ADDRESS);
             assertThat(resp.getNetwork()).isEqualTo(NETWORK);
         }
@@ -380,7 +381,7 @@ class SubscriptionServiceTest {
                 assertThat(saved.getSubscriptionId()).isNull();
                 assertThat(saved.getUserId()).isEqualTo(USER_ID);
                 assertThat(saved.getTxHash()).isEqualTo(TX_HASH);
-                assertThat(saved.getAmount()).isEqualTo(19.0);
+                assertThat(saved.getAmount()).isEqualByComparingTo(BigDecimal.valueOf(19.0));
                 assertThat(saved.getCurrency()).isEqualTo("USDT");
                 assertThat(saved.getNetwork()).isEqualTo(NETWORK);
                 assertThat(saved.getWalletAddress()).isEqualTo(WALLET_ADDRESS);
@@ -389,12 +390,12 @@ class SubscriptionServiceTest {
         }
 
         @Nested
-        @DisplayName("金額轉換 Double -> BigDecimal")
-        class AmountConversion {
+        @DisplayName("金額精度驗證")
+        class AmountPrecision {
 
             @Test
-            @DisplayName("priceUsdt=19.0 時 TronService 收到 BigDecimal.valueOf(19.0)")
-            void price19ConvertedCorrectly() {
+            @DisplayName("priceUsdt=19.0 時 TronService 收到正確的 BigDecimal")
+            void price19PassedCorrectly() {
                 Plan basic = buildPlan("basic", "Basic", 19.0);
                 when(planRepository.findByPlanIdAndActiveTrue("basic")).thenReturn(Optional.of(basic));
                 when(paymentHistoryRepository.findByTxHash(TX_HASH)).thenReturn(Optional.empty());
@@ -410,8 +411,8 @@ class SubscriptionServiceTest {
             }
 
             @Test
-            @DisplayName("priceUsdt=49.0 時 TronService 收到 BigDecimal.valueOf(49.0)")
-            void price49ConvertedCorrectly() {
+            @DisplayName("priceUsdt=49.0 時 TronService 收到正確的 BigDecimal")
+            void price49PassedCorrectly() {
                 Plan pro = buildPlan("pro", "Pro", 49.0);
                 when(planRepository.findByPlanIdAndActiveTrue("pro")).thenReturn(Optional.of(pro));
                 when(paymentHistoryRepository.findByTxHash(TX_HASH)).thenReturn(Optional.empty());
@@ -427,7 +428,7 @@ class SubscriptionServiceTest {
             }
 
             @Test
-            @DisplayName("Double -> BigDecimal 轉換無浮點精度損失")
+            @DisplayName("BigDecimal 精度保持正確（19.99 不因浮點損失）")
             void noFloatingPointPrecisionLoss() {
                 Plan plan = buildPlan("test", "Test", 19.99);
                 when(planRepository.findByPlanIdAndActiveTrue("test")).thenReturn(Optional.of(plan));
@@ -652,8 +653,8 @@ class SubscriptionServiceTest {
                 ArgumentCaptor<PaymentHistory> captor = ArgumentCaptor.forClass(PaymentHistory.class);
                 verify(paymentHistoryRepository).save(captor.capture());
 
-                // Payment amount should be the on-chain amount (result.amount().doubleValue())
-                assertThat(captor.getValue().getAmount()).isEqualTo(19.0);
+                // Payment amount should be the on-chain amount
+                assertThat(captor.getValue().getAmount()).isEqualByComparingTo(BigDecimal.valueOf(19.0));
             }
 
             @Test
@@ -673,7 +674,7 @@ class SubscriptionServiceTest {
                 verify(paymentHistoryRepository).save(captor.capture());
 
                 // Should record 25.0 (actual on-chain amount), not 19.0 (plan price)
-                assertThat(captor.getValue().getAmount()).isEqualTo(25.0);
+                assertThat(captor.getValue().getAmount()).isEqualByComparingTo(BigDecimal.valueOf(25.0));
             }
         }
     }

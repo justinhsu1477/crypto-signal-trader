@@ -8,6 +8,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -55,8 +56,8 @@ class SubscriptionControllerTest {
         @DisplayName("returns plan list from service")
         void returnsPlanList() {
             List<PlanResponse> plans = List.of(
-                    PlanResponse.builder().planId("free").name("Free").priceMonthly(0.0).current(true).build(),
-                    PlanResponse.builder().planId("basic").name("Basic").priceMonthly(19.0).current(false).build());
+                    PlanResponse.builder().planId("free").name("Free").priceMonthly(BigDecimal.ZERO).current(true).build(),
+                    PlanResponse.builder().planId("basic").name("Basic").priceMonthly(BigDecimal.valueOf(19.0)).current(false).build());
             when(subscriptionService.getPlans(USER_ID)).thenReturn(plans);
 
             ResponseEntity<List<PlanResponse>> response = controller.getPlans();
@@ -91,7 +92,7 @@ class SubscriptionControllerTest {
             CryptoCheckoutResponse checkoutResponse = CryptoCheckoutResponse.builder()
                     .planId("basic")
                     .planName("Basic")
-                    .amountUsdt(19.0)
+                    .amountUsdt(BigDecimal.valueOf(19.0))
                     .walletAddress("TTestWallet123")
                     .network("TRC20")
                     .build();
@@ -104,7 +105,7 @@ class SubscriptionControllerTest {
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody().getWalletAddress()).isEqualTo("TTestWallet123");
-            assertThat(response.getBody().getAmountUsdt()).isEqualTo(19.0);
+            assertThat(response.getBody().getAmountUsdt()).isEqualByComparingTo(BigDecimal.valueOf(19.0));
             verify(subscriptionService).getCheckoutInfo(USER_ID, "basic");
         }
 

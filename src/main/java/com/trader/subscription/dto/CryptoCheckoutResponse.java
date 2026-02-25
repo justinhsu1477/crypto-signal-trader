@@ -3,6 +3,8 @@ package com.trader.subscription.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 /**
  * USDT 付款資訊回應
  *
@@ -13,7 +15,7 @@ import lombok.Data;
 public class CryptoCheckoutResponse {
     private String planId;
     private String planName;
-    private Double amountUsdt;
+    private BigDecimal amountUsdt;
     private String walletAddress;
     private String network;
 }

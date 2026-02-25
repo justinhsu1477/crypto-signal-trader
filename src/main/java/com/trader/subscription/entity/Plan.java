@@ -4,6 +4,7 @@ import com.trader.shared.config.AppConstants;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -22,8 +23,11 @@ public class Plan {
     @Column(nullable = false)
     private String name;
 
-    private Double priceMonthly;
-    private Double priceYearly;
+    @Column(columnDefinition = "DECIMAL(10,2)")
+    private BigDecimal priceMonthly;
+
+    @Column(columnDefinition = "DECIMAL(10,2)")
+    private BigDecimal priceYearly;
 
     /** 最大同時持倉數 */
     private Integer maxPositions;
@@ -49,7 +53,8 @@ public class Plan {
     private String stripePaymentLinkUrl;
 
     /** USDT 價格 */
-    private Double priceUsdt;
+    @Column(columnDefinition = "DECIMAL(10,2)")
+    private BigDecimal priceUsdt;
 
     @Builder.Default
     private boolean active = true;
