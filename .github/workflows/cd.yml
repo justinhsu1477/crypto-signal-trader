@@ -7,6 +7,10 @@ on:
     types: [completed]
   workflow_dispatch:  # 保留手動觸發（GitHub Actions 頁面按 Run workflow）
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true  # 新部署自動取消舊的，避免同時跑
+
 jobs:
   deploy:
     name: 🚀 部署到正式環境
