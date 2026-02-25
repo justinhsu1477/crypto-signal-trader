@@ -70,9 +70,17 @@ public class DashboardService {
         boolean autoTradeEnabled = userOpt.map(u -> u.isAutoTradeEnabled()).orElse(false);
         boolean discordNotificationEnabled = userOpt.map(u -> u.isDiscordNotificationEnabled()).orElse(true);
 
+        // 一次取得餘額，避免重複呼叫 Binance API（account + riskBudget 共用）
+        double balance = 0;
+        try {
+            balance = fetchBalanceWithUserKeys(userId);
+        } catch (Exception e) {
+            log.error("用戶 {} 取得餘額失敗: {}", userId, e.getMessage(), e);
+        }
+
         return DashboardOverview.builder()
-                .account(buildAccountSummary(userId))
-                .riskBudget(buildRiskBudget(userId))
+                .account(buildAccountSummary(userId, balance))
+                .riskBudget(buildRiskBudget(userId, balance))
                 .subscription(buildSubscriptionInfo(userId))
                 .autoTradeEnabled(autoTradeEnabled)
                 .discordNotificationEnabled(discordNotificationEnabled)
@@ -80,21 +88,14 @@ public class DashboardService {
                 .build();
     }
 
-    private DashboardOverview.AccountSummary buildAccountSummary(String userId) {
+    private DashboardOverview.AccountSummary buildAccountSummary(String userId, double cachedBalance) {
         Map<String, Object> todayStats = tradeRecordService.getTodayStats(userId);
         long todayTrades = (long) todayStats.get("trades");
         double todayPnl = (double) todayStats.get("netProfit");
         List<Trade> openTrades = tradeRecordService.findAllOpenTrades(userId);
 
-        double balance = 0;
-        try {
-            balance = fetchBalanceWithUserKeys(userId);
-        } catch (Exception e) {
-            log.warn("取得餘額失敗: {}", e.getMessage());
-        }
-
         return DashboardOverview.AccountSummary.builder()
-                .availableBalance(round2(balance))
+                .availableBalance(round2(cachedBalance))
                 .openPositionCount(openTrades.size())
                 .todayPnl(round2(todayPnl))
                 .todayTradeCount((int) todayTrades)
@@ -109,12 +110,15 @@ public class DashboardService {
         if (multiUserConfig.isEnabled()) {
             Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
             if (keysOpt.isEmpty()) {
-                log.warn("用戶 {} 未設定 API Key，無法查詢帳戶餘額", userId);
+                log.warn("用戶 {} 未設定 Binance API Key，無法查詢帳戶餘額", userId);
                 return 0;
             }
+            log.debug("用戶 {} 查詢帳戶餘額（per-user key）", userId);
             BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
             try {
-                return binanceFuturesService.getAvailableBalance();
+                double balance = binanceFuturesService.getAvailableBalance();
+                log.debug("用戶 {} 餘額查詢成功: {} USDT", userId, balance);
+                return balance;
             } finally {
                 BinanceFuturesService.clearCurrentUserKeys();
             }
@@ -123,17 +127,10 @@ public class DashboardService {
         return binanceFuturesService.getAvailableBalance();
     }
 
-    private DashboardOverview.RiskBudget buildRiskBudget(String userId) {
+    private DashboardOverview.RiskBudget buildRiskBudget(String userId, double cachedBalance) {
         try {
             EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
-            double balance;
-            try {
-                balance = fetchBalanceWithUserKeys(userId);
-            } catch (Exception e) {
-                log.warn("風控預算取得餘額失敗: {}", e.getMessage());
-                balance = 0;
-            }
-            final double fetchedBalance = balance;
+            final double fetchedBalance = cachedBalance;
             double sodBalance = startOfDayBalanceCache.getOrCompute(userId, () -> fetchedBalance);
             double dailyLimit = config.effectiveDailyLossLimit(sodBalance);
             double todayLoss = tradeRecordService.getTodayRealizedLoss(userId); // 負數

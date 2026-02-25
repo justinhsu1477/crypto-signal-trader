@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import { useT } from "@/lib/i18n/i18n-context";
 
 export function TradeSettingsForm() {
@@ -29,10 +30,6 @@ export function TradeSettingsForm() {
 
   // Save state
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
 
   // Fetch settings on mount
   useEffect(() => {
@@ -95,7 +92,6 @@ export function TradeSettingsForm() {
 
   async function handleSave() {
     setSaving(true);
-    setMessage(null);
     try {
       const riskVal = parseFloat(riskPercent);
       const leverageVal = parseInt(maxLeverage, 10);
@@ -151,12 +147,9 @@ export function TradeSettingsForm() {
         autoTpEnabled,
       });
 
-      setMessage({ type: "success", text: t("common.saveSuccess") });
+      toast.success(t("common.saveSuccess"));
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -341,17 +334,6 @@ export function TradeSettingsForm() {
         </div>
         <Switch checked={autoTpEnabled} onCheckedChange={setAutoTpEnabled} />
       </div>
-
-      {/* Message */}
-      {message && (
-        <p
-          className={`text-sm ${
-            message.type === "success" ? "text-emerald-500" : "text-red-500"
-          }`}
-        >
-          {message.text}
-        </p>
-      )}
 
       {/* Save Button */}
       <Button onClick={handleSave} disabled={saving} className="w-full max-w-[200px]">

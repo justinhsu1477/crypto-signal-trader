@@ -9,6 +9,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AuthLayout } from "@/components/landing/auth-layout";
 import { ErrorBoundary, PageErrorFallback } from "@/components/ui/error-boundary";
+import { Toaster } from "sonner";
 
 const PUBLIC_PATHS = ["/login", "/register", "/verify-email"];
 
@@ -18,6 +19,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <ErrorBoundary fallback={<PageErrorFallback />}>
+      <Toaster richColors position="top-right" theme="dark" />
       <AuthProvider>
         <I18nProvider>
           {isPublicPage ? (

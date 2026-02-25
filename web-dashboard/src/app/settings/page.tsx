@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,10 +54,6 @@ export default function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [secretKeyInput, setSecretKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
 
   // ─── Auto Trade state ───
   const [autoTradeStatus, setAutoTradeStatus] =
@@ -186,30 +183,23 @@ export default function SettingsPage() {
   // ─── Handlers ───
   async function handleSaveApiKey() {
     if (!apiKeyInput.trim() || !secretKeyInput.trim()) {
-      setSaveMessage({ type: "error", text: t("settings.fillRequired") });
+      toast.error(t("settings.fillRequired"));
       return;
     }
     setSaving(true);
-    setSaveMessage(null);
     try {
       const result = await saveApiKey({
         exchange,
         apiKey: apiKeyInput.trim(),
         secretKey: secretKeyInput.trim(),
       });
-      setSaveMessage({
-        type: "success",
-        text: result.message || t("common.saveSuccess"),
-      });
+      toast.success(result.message || t("common.saveSuccess"));
       setApiKeyInput("");
       setSecretKeyInput("");
       const updatedKeys = await getApiKeys();
       setApiKeys(updatedKeys);
     } catch (err) {
-      setSaveMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -220,12 +210,9 @@ export default function SettingsPage() {
     try {
       const result = await updateAutoTradeStatus(enabled);
       setAutoTradeStatus(result);
-      setSaveMessage({ type: "success", text: result.message });
+      toast.success(result.message);
     } catch (err) {
-      setSaveMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
       setAutoTradeStatus((prev) =>
         prev ? { ...prev, autoTradeEnabled: !enabled } : null
       );
@@ -416,18 +403,6 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-
-              {saveMessage && (
-                <p
-                  className={`text-sm ${
-                    saveMessage.type === "success"
-                      ? "text-emerald-500"
-                      : "text-red-500"
-                  }`}
-                >
-                  {saveMessage.text}
-                </p>
-              )}
 
               <Button onClick={handleSaveApiKey} disabled={saving}>
                 {saving ? t("common.saving") : t("settings.saveApiKey")}

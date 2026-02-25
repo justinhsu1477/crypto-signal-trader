@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 import { Crown, Zap, Shield, Check } from "lucide-react";
 
 interface SubscriptionManagerProps {
@@ -38,10 +39,6 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
   // Fetch data
@@ -77,10 +74,9 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
   // Handlers
   async function handleCancel() {
     setActionLoading(true);
-    setMessage(null);
     try {
       await cancelSubscription();
-      setMessage({ type: "success", text: t("settings.cancelSuccess") });
+      toast.success(t("settings.cancelSuccess"));
       setCancelDialogOpen(false);
       // Refresh status
       const newStatus = await getSubscriptionStatus();
@@ -89,10 +85,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
       const newPlans = await getSubscriptionPlans();
       setPlans(newPlans);
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setActionLoading(false);
     }
@@ -100,10 +93,9 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
 
   async function handleUpgrade(planId: string) {
     setActionLoading(true);
-    setMessage(null);
     try {
       await upgradeSubscription({ planId });
-      setMessage({ type: "success", text: t("settings.upgradeSuccess") });
+      toast.success(t("settings.upgradeSuccess"));
       // Refresh
       const newStatus = await getSubscriptionStatus();
       setStatus(newStatus);
@@ -111,10 +103,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
       const newPlans = await getSubscriptionPlans();
       setPlans(newPlans);
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setActionLoading(false);
     }
@@ -131,10 +120,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
       const { checkoutUrl } = await getCheckoutUrl(plan.planId);
       window.open(checkoutUrl, "_blank");
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : t("common.saveFailed"),
-      });
+      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setActionLoading(false);
     }
@@ -272,17 +258,6 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
           </Button>
         )}
       </div>
-
-      {/* Message */}
-      {message && (
-        <p
-          className={`text-sm ${
-            message.type === "success" ? "text-emerald-500" : "text-red-500"
-          }`}
-        >
-          {message.text}
-        </p>
-      )}
 
       <Separator />
 
