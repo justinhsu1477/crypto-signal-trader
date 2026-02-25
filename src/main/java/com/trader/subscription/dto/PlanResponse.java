@@ -31,7 +31,10 @@ public class PlanResponse {
     /** 最大風險比例 */
     private Double maxRiskPercent;
 
-    /** Stripe Payment Link URL — 前端開新分頁到此 URL 付款 */
+    /** USDT 價格 */
+    private Double priceUsdt;
+
+    /** Stripe Payment Link URL — 前端開新分頁到此 URL 付款（已棄用） */
     private String paymentLinkUrl;
 
     /** 此方案是否為用戶目前使用的方案 */

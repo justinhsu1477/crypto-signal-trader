@@ -341,6 +341,7 @@ export interface PlanInfo {
   planId: string;
   name: string;
   priceMonthly: number;
+  priceUsdt: number | null;
   maxPositions: number;
   maxSymbols: number;
   dcaLayersAllowed: number;
@@ -355,12 +356,19 @@ export interface SubscriptionStatusDetail {
   status: string;
   currentPeriodEnd: string | null;
   active: boolean;
-  stripeSubscriptionId: string | null;
-  stripeCustomerId: string | null;
+  network: string | null;
 }
 
 export interface UpgradePlanRequest {
   planId: string;
+}
+
+export interface CryptoCheckoutInfo {
+  planId: string;
+  planName: string;
+  amountUsdt: number;
+  walletAddress: string;
+  network: string;
 }
 
 // ==================== System Status ====================

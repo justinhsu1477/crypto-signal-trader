@@ -1,13 +1,7 @@
 package com.trader.subscription.service;
 
-import com.stripe.exception.SignatureVerificationException;
-import com.stripe.exception.StripeException;
-import com.stripe.model.*;
-import com.stripe.model.checkout.Session;
-import com.stripe.net.Webhook;
-import com.stripe.param.SubscriptionCancelParams;
-import com.stripe.param.SubscriptionUpdateParams;
-import com.trader.subscription.config.StripeConfig;
+import com.trader.subscription.config.CryptoPaymentConfig;
+import com.trader.subscription.dto.CryptoCheckoutResponse;
 import com.trader.subscription.dto.PlanResponse;
 import com.trader.subscription.dto.SubscriptionStatusResponse;
 import com.trader.subscription.entity.PaymentHistory;
@@ -21,24 +15,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
- * Stripe 訂閱服務
+ * 訂閱服務 — USDT TRC20 加密貨幣付款
  *
  * 負責：
- * 1. 查詢可用方案 + Payment Link URL
- * 2. 處理 Stripe Webhook 回調（付款成功/失敗/取消/更新）
- * 3. 查詢用戶訂閱狀態
- * 4. 取消訂閱（立即停止）
- * 5. 升級/降級方案
- *
- * 付款流程使用 Stripe Payment Links（不用 Checkout Session API）
+ * 1. 查詢可用方案
+ * 2. 提供收款錢包地址 + USDT 金額
+ * 3. 驗證用戶提交的 txHash（透過 TronService）
+ * 4. 查詢/取消訂閱
+ * 5. 升級方案
  */
 @Slf4j
 @Service
@@ -48,17 +39,15 @@ public class SubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final PlanRepository planRepository;
     private final PaymentHistoryRepository paymentHistoryRepository;
-    private final StripeConfig stripeConfig;
+    private final CryptoPaymentConfig cryptoConfig;
+    private final TronService tronService;
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Taipei");
 
     // ===================== 查詢方法 =====================
 
     /**
-     * 取得所有可用方案（含 Payment Link URL）
-     *
-     * @param userId 當前用戶 ID（用來標記 current 方案）
-     * @return 方案列表
+     * 取得所有可用方案
      */
     public List<PlanResponse> getPlans(String userId) {
         List<Plan> plans = planRepository.findByActiveTrue();
@@ -69,11 +58,11 @@ public class SubscriptionService {
                         .planId(plan.getPlanId())
                         .name(plan.getName())
                         .priceMonthly(plan.getPriceMonthly())
+                        .priceUsdt(plan.getPriceUsdt())
                         .maxPositions(plan.getMaxPositions())
                         .maxSymbols(plan.getMaxSymbols())
                         .dcaLayersAllowed(plan.getDcaLayersAllowed())
                         .maxRiskPercent(plan.getMaxRiskPercent())
-                        .paymentLinkUrl(buildPaymentLinkUrl(plan, userId))
                         .current(plan.getPlanId().equals(currentPlanId))
                         .build())
                 .toList();
@@ -102,8 +91,6 @@ public class SubscriptionService {
                 .status(sub.getStatus().name())
                 .currentPeriodEnd(sub.getCurrentPeriodEnd())
                 .active(true)
-                .stripeSubscriptionId(sub.getStripeSubscriptionId())
-                .stripeCustomerId(sub.getStripeCustomerId())
                 .build();
     }
 
@@ -114,98 +101,133 @@ public class SubscriptionService {
         return subscriptionRepository.findActiveByUserId(userId).isPresent();
     }
 
+    // ===================== USDT 付款流程 =====================
+
     /**
-     * 取得 Payment Link URL（含 client_reference_id）
+     * 取得付款資訊（錢包地址 + USDT 金額）
      *
-     * @param userId 用戶 ID
-     * @param planId 方案 ID
-     * @return Payment Link URL，前端開新分頁到此 URL 付款
+     * 前端顯示此資訊讓用戶轉帳
      */
-    public String getPaymentLinkUrl(String userId, String planId) {
+    public CryptoCheckoutResponse getCheckoutInfo(String userId, String planId) {
         Plan plan = planRepository.findByPlanIdAndActiveTrue(planId)
                 .orElseThrow(() -> new IllegalArgumentException("方案不存在: " + planId));
 
-        if (plan.getStripePaymentLinkUrl() == null || plan.getStripePaymentLinkUrl().isBlank()) {
-            throw new IllegalStateException("方案 " + planId + " 尚未設定 Stripe Payment Link");
+        if (plan.getPriceUsdt() == null || plan.getPriceUsdt() <= 0) {
+            throw new IllegalStateException("方案 " + planId + " 無需付款");
         }
 
-        return buildPaymentLinkUrl(plan, userId);
+        return CryptoCheckoutResponse.builder()
+                .planId(plan.getPlanId())
+                .planName(plan.getName())
+                .amountUsdt(plan.getPriceUsdt())
+                .walletAddress(cryptoConfig.getWalletAddress())
+                .network(cryptoConfig.getNetwork())
+                .build();
     }
 
-    // ===================== Webhook 處理 =====================
-
     /**
-     * 處理 Stripe Webhook 事件
+     * 用戶提交 txHash 進行付款驗證
      *
-     * 事件路由：
-     * - checkout.session.completed → 建立 Subscription (ACTIVE) + PaymentHistory
-     * - invoice.payment_succeeded  → 更新 currentPeriodEnd + PaymentHistory
-     * - invoice.payment_failed     → status = PAST_DUE
-     * - customer.subscription.deleted → status = CANCELLED
-     * - customer.subscription.updated → 更新 planId
+     * 流程：
+     * 1. 檢查 txHash 是否已使用（防重複）
+     * 2. 呼叫 TronService 驗證鏈上交易
+     * 3. 驗證通過 → 建立/延長訂閱 + 記錄付款歷史
      */
     @Transactional
-    public void handleStripeWebhook(String payload, String sigHeader) {
-        Event event;
-        try {
-            event = Webhook.constructEvent(payload, sigHeader, stripeConfig.getWebhookSecret());
-        } catch (SignatureVerificationException e) {
-            log.error("Stripe Webhook 簽名驗證失敗: {}", e.getMessage());
-            throw new IllegalArgumentException("Webhook 簽名驗證失敗", e);
+    public String submitPayment(String userId, String planId, String txHash) {
+        // 1. 驗證方案
+        Plan plan = planRepository.findByPlanIdAndActiveTrue(planId)
+                .orElseThrow(() -> new IllegalArgumentException("方案不存在: " + planId));
+
+        if (plan.getPriceUsdt() == null || plan.getPriceUsdt() <= 0) {
+            throw new IllegalStateException("此方案為免費方案，無需付款");
         }
 
-        String eventType = event.getType();
-        log.info("收到 Stripe Webhook 事件: {} (id={})", eventType, event.getId());
-
-        switch (eventType) {
-            case "checkout.session.completed" -> handleCheckoutCompleted(event);
-            case "invoice.payment_succeeded" -> handleInvoicePaymentSucceeded(event);
-            case "invoice.payment_failed" -> handleInvoicePaymentFailed(event);
-            case "customer.subscription.deleted" -> handleSubscriptionDeleted(event);
-            case "customer.subscription.updated" -> handleSubscriptionUpdated(event);
-            default -> log.debug("忽略未處理的事件類型: {}", eventType);
+        // 2. 檢查 txHash 是否已使用
+        if (paymentHistoryRepository.findByTxHash(txHash).isPresent()) {
+            throw new IllegalArgumentException("此交易 Hash 已經使用過");
         }
+
+        // 3. TronGrid 鏈上驗證
+        BigDecimal expectedAmount = BigDecimal.valueOf(plan.getPriceUsdt());
+        TronService.VerificationResult result = tronService.verifyTransaction(txHash, expectedAmount);
+
+        if (!result.success()) {
+            // 記錄失敗的付款嘗試
+            savePaymentHistory(userId, null, txHash, plan.getPriceUsdt(), "USDT", "failed");
+            throw new IllegalStateException(result.message());
+        }
+
+        // 4. 驗證通過 → 建立/延長訂閱
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        int days = cryptoConfig.getSubscriptionDays();
+
+        Subscription sub = subscriptionRepository.findActiveByUserId(userId)
+                .orElse(null);
+
+        if (sub != null) {
+            // 已有訂閱 → 延長或升級
+            LocalDateTime currentEnd = sub.getCurrentPeriodEnd();
+            LocalDateTime newEnd;
+
+            if (currentEnd != null && currentEnd.isAfter(now)) {
+                // 尚未到期 → 從到期日延長
+                newEnd = currentEnd.plusDays(days);
+            } else {
+                // 已過期 → 從今天開始
+                newEnd = now.plusDays(days);
+            }
+
+            sub.setPlanId(planId);
+            sub.setStatus(Subscription.Status.ACTIVE);
+            sub.setCurrentPeriodEnd(newEnd);
+            subscriptionRepository.save(sub);
+
+            log.info("訂閱已延長: userId={}, plan={}, newEnd={}", userId, planId, newEnd);
+        } else {
+            // 新訂閱
+            sub = Subscription.builder()
+                    .userId(userId)
+                    .planId(planId)
+                    .status(Subscription.Status.ACTIVE)
+                    .currentPeriodStart(now)
+                    .currentPeriodEnd(now.plusDays(days))
+                    .build();
+            subscriptionRepository.save(sub);
+
+            log.info("新訂閱已建立: userId={}, plan={}, end={}", userId, planId, sub.getCurrentPeriodEnd());
+        }
+
+        // 5. 記錄成功的付款歷史
+        savePaymentHistory(userId, sub.getId(), txHash,
+                result.amount().doubleValue(), "USDT", "succeeded");
+
+        return String.format("付款驗證成功！%s 方案已開通至 %s",
+                plan.getName(), sub.getCurrentPeriodEnd().toLocalDate());
     }
 
     // ===================== 取消 / 升級 =====================
 
     /**
      * 取消訂閱（立即停止）
-     *
-     * 呼叫 Stripe API 立即取消 + 更新 DB 狀態
      */
     @Transactional
     public void cancel(String userId) {
         Subscription sub = subscriptionRepository.findActiveByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException("用戶沒有有效訂閱"));
 
-        // 呼叫 Stripe API 立即取消
-        try {
-            com.stripe.model.Subscription stripeSub =
-                    com.stripe.model.Subscription.retrieve(sub.getStripeSubscriptionId());
-
-            stripeSub.cancel(SubscriptionCancelParams.builder().build());
-
-            log.info("已透過 Stripe API 立即取消訂閱: userId={}, subId={}",
-                    userId, sub.getStripeSubscriptionId());
-        } catch (StripeException e) {
-            log.error("Stripe 取消訂閱失敗: userId={}, error={}", userId, e.getMessage());
-            throw new RuntimeException("取消訂閱失敗，請稍後再試", e);
-        }
-
-        // 更新 DB 狀態
         sub.setStatus(Subscription.Status.CANCELLED);
         sub.setCurrentPeriodEnd(LocalDateTime.now(ZONE));
         subscriptionRepository.save(sub);
 
-        log.info("訂閱已立即取消: userId={}", userId);
+        log.info("訂閱已取消: userId={}", userId);
     }
 
     /**
-     * 升級/降級方案
+     * 升級方案
      *
-     * 使用 Stripe API 更新 Subscription 的 Price，
-     * 升級立即生效（proration），降級下期生效。
+     * 直接更新方案等級，剩餘天數保留。
+     * 如需付差價，後續版本再實作。
      */
     @Transactional
     public void upgrade(String userId, String newPlanId) {
@@ -215,271 +237,74 @@ public class SubscriptionService {
         Plan newPlan = planRepository.findByPlanIdAndActiveTrue(newPlanId)
                 .orElseThrow(() -> new IllegalArgumentException("方案不存在: " + newPlanId));
 
-        if (newPlan.getStripePriceId() == null || newPlan.getStripePriceId().isBlank()) {
-            throw new IllegalStateException("方案 " + newPlanId + " 尚未設定 Stripe Price ID");
-        }
-
         if (sub.getPlanId().equals(newPlanId)) {
             throw new IllegalArgumentException("已經是此方案，無需變更");
         }
 
-        try {
-            com.stripe.model.Subscription stripeSub =
-                    com.stripe.model.Subscription.retrieve(sub.getStripeSubscriptionId());
-
-            // 取得目前 subscription 的第一個 item
-            SubscriptionItem currentItem = stripeSub.getItems().getData().get(0);
-
-            SubscriptionUpdateParams params = SubscriptionUpdateParams.builder()
-                    .addItem(SubscriptionUpdateParams.Item.builder()
-                            .setId(currentItem.getId())
-                            .setPrice(newPlan.getStripePriceId())
-                            .build())
-                    .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.CREATE_PRORATIONS)
-                    .build();
-
-            stripeSub.update(params);
-
-            log.info("已透過 Stripe API 更新方案: userId={}, {} → {}",
-                    userId, sub.getPlanId(), newPlanId);
-        } catch (StripeException e) {
-            log.error("Stripe 升級方案失敗: userId={}, error={}", userId, e.getMessage());
-            throw new RuntimeException("升級方案失敗，請稍後再試", e);
-        }
-
-        // 更新 DB
+        String oldPlanId = sub.getPlanId();
         sub.setPlanId(newPlanId);
         subscriptionRepository.save(sub);
 
-        log.info("方案已更新: userId={}, newPlan={}", userId, newPlanId);
+        log.info("方案已升級: userId={}, {} → {}", userId, oldPlanId, newPlanId);
     }
 
-    // ===================== Webhook 內部處理 =====================
+    // ===================== 排程用方法 =====================
 
     /**
-     * checkout.session.completed
-     * 用戶完成 Payment Link 付款 → 建立訂閱紀錄
+     * 檢查並標記到期訂閱
      */
-    private void handleCheckoutCompleted(Event event) {
-        Session session = (Session) event.getDataObjectDeserializer()
-                .getObject().orElse(null);
-        if (session == null) {
-            log.warn("checkout.session.completed: 無法解析 Session 物件");
-            return;
-        }
+    @Transactional
+    public List<Subscription> expireOverdueSubscriptions() {
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        List<Subscription> activeSubs = subscriptionRepository.findAll().stream()
+                .filter(s -> s.getStatus() == Subscription.Status.ACTIVE)
+                .filter(s -> s.getCurrentPeriodEnd() != null && s.getCurrentPeriodEnd().isBefore(now))
+                .toList();
 
-        String userId = session.getClientReferenceId();
-        String stripeCustomerId = session.getCustomer();
-        String stripeSubscriptionId = session.getSubscription();
-
-        if (userId == null || userId.isBlank()) {
-            log.warn("checkout.session.completed: client_reference_id 為空，無法對應用戶");
-            return;
-        }
-
-        // 幂等保護：檢查是否已存在
-        if (stripeSubscriptionId != null
-                && subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId).isPresent()) {
-            log.info("checkout.session.completed: 訂閱已存在，跳過 (subId={})", stripeSubscriptionId);
-            return;
-        }
-
-        // 從 Stripe Subscription 取得 Price ID → 對應 Plan
-        String planId = resolvePlanIdFromStripeSubscription(stripeSubscriptionId);
-
-        Subscription sub = Subscription.builder()
-                .userId(userId)
-                .stripeCustomerId(stripeCustomerId)
-                .stripeSubscriptionId(stripeSubscriptionId)
-                .planId(planId)
-                .status(Subscription.Status.ACTIVE)
-                .currentPeriodStart(LocalDateTime.now(ZONE))
-                .build();
-
-        // 從 Stripe 取得 period end
-        setCurrentPeriodEndFromStripe(sub, stripeSubscriptionId);
-
-        subscriptionRepository.save(sub);
-
-        // 記錄付款歷史
-        savePaymentHistory(userId, sub.getId(), session.getPaymentIntent(),
-                session.getAmountTotal(), session.getCurrency(), "succeeded");
-
-        log.info("新訂閱已建立: userId={}, plan={}, stripeSubId={}",
-                userId, planId, stripeSubscriptionId);
-    }
-
-    /**
-     * invoice.payment_succeeded
-     * 續費成功 → 更新 currentPeriodEnd + 記錄 PaymentHistory
-     */
-    private void handleInvoicePaymentSucceeded(Event event) {
-        Invoice invoice = (Invoice) event.getDataObjectDeserializer()
-                .getObject().orElse(null);
-        if (invoice == null) return;
-
-        String stripeSubId = invoice.getSubscription();
-        if (stripeSubId == null) return;
-
-        subscriptionRepository.findByStripeSubscriptionId(stripeSubId).ifPresent(sub -> {
-            sub.setStatus(Subscription.Status.ACTIVE);
-            setCurrentPeriodEndFromStripe(sub, stripeSubId);
-            subscriptionRepository.save(sub);
-
-            savePaymentHistory(sub.getUserId(), sub.getId(),
-                    invoice.getPaymentIntent(),
-                    invoice.getAmountPaid(), invoice.getCurrency(), "succeeded");
-
-            log.info("續費成功: userId={}, subId={}", sub.getUserId(), stripeSubId);
-        });
-    }
-
-    /**
-     * invoice.payment_failed
-     * 扣款失敗 → 標記 PAST_DUE
-     */
-    private void handleInvoicePaymentFailed(Event event) {
-        Invoice invoice = (Invoice) event.getDataObjectDeserializer()
-                .getObject().orElse(null);
-        if (invoice == null) return;
-
-        String stripeSubId = invoice.getSubscription();
-        if (stripeSubId == null) return;
-
-        subscriptionRepository.findByStripeSubscriptionId(stripeSubId).ifPresent(sub -> {
-            sub.setStatus(Subscription.Status.PAST_DUE);
-            subscriptionRepository.save(sub);
-
-            savePaymentHistory(sub.getUserId(), sub.getId(),
-                    invoice.getPaymentIntent(),
-                    invoice.getAmountDue(), invoice.getCurrency(), "failed");
-
-            log.warn("扣款失敗，標記 PAST_DUE: userId={}, subId={}", sub.getUserId(), stripeSubId);
-        });
-    }
-
-    /**
-     * customer.subscription.deleted
-     * Stripe 側取消 → 標記 CANCELLED
-     */
-    private void handleSubscriptionDeleted(Event event) {
-        com.stripe.model.Subscription stripeSub =
-                (com.stripe.model.Subscription) event.getDataObjectDeserializer()
-                        .getObject().orElse(null);
-        if (stripeSub == null) return;
-
-        subscriptionRepository.findByStripeSubscriptionId(stripeSub.getId()).ifPresent(sub -> {
+        for (Subscription sub : activeSubs) {
             sub.setStatus(Subscription.Status.CANCELLED);
-            sub.setCurrentPeriodEnd(LocalDateTime.now(ZONE));
             subscriptionRepository.save(sub);
-            log.info("訂閱已由 Stripe 側取消: userId={}, subId={}", sub.getUserId(), stripeSub.getId());
-        });
+            log.info("訂閱已到期: userId={}, plan={}, endDate={}",
+                    sub.getUserId(), sub.getPlanId(), sub.getCurrentPeriodEnd());
+        }
+
+        return activeSubs;
     }
 
     /**
-     * customer.subscription.updated
-     * 方案變更（升降級）→ 更新 planId
+     * 查詢即將到期的訂閱（N 天內）
      */
-    private void handleSubscriptionUpdated(Event event) {
-        com.stripe.model.Subscription stripeSub =
-                (com.stripe.model.Subscription) event.getDataObjectDeserializer()
-                        .getObject().orElse(null);
-        if (stripeSub == null) return;
+    public List<Subscription> findExpiringSubscriptions(int withinDays) {
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        LocalDateTime deadline = now.plusDays(withinDays);
 
-        subscriptionRepository.findByStripeSubscriptionId(stripeSub.getId()).ifPresent(sub -> {
-            // 取得新的 Price ID → 對應 Plan
-            if (!stripeSub.getItems().getData().isEmpty()) {
-                String newPriceId = stripeSub.getItems().getData().get(0).getPrice().getId();
-                planRepository.findByStripePriceId(newPriceId).ifPresent(plan -> {
-                    String oldPlanId = sub.getPlanId();
-                    sub.setPlanId(plan.getPlanId());
-                    subscriptionRepository.save(sub);
-                    log.info("方案已由 Stripe 更新: userId={}, {} → {}",
-                            sub.getUserId(), oldPlanId, plan.getPlanId());
-                });
-            }
-
-            // 更新期間
-            setCurrentPeriodEndFromStripe(sub, stripeSub.getId());
-            subscriptionRepository.save(sub);
-        });
+        return subscriptionRepository.findAll().stream()
+                .filter(s -> s.getStatus() == Subscription.Status.ACTIVE)
+                .filter(s -> s.getCurrentPeriodEnd() != null)
+                .filter(s -> s.getCurrentPeriodEnd().isAfter(now)
+                        && s.getCurrentPeriodEnd().isBefore(deadline))
+                .toList();
     }
 
     // ===================== 工具方法 =====================
 
-    /**
-     * 組裝 Payment Link URL + client_reference_id
-     */
-    private String buildPaymentLinkUrl(Plan plan, String userId) {
-        if (plan.getStripePaymentLinkUrl() == null || plan.getStripePaymentLinkUrl().isBlank()) {
-            return null;
-        }
-        String separator = plan.getStripePaymentLinkUrl().contains("?") ? "&" : "?";
-        return plan.getStripePaymentLinkUrl() + separator + "client_reference_id=" + userId;
-    }
-
-    /**
-     * 取得用戶目前的 planId
-     */
     private String getCurrentPlanId(String userId) {
         return subscriptionRepository.findActiveByUserId(userId)
                 .map(Subscription::getPlanId)
                 .orElse("free");
     }
 
-    /**
-     * 從 Stripe Subscription 解析 Price ID → 對應本地 Plan
-     */
-    private String resolvePlanIdFromStripeSubscription(String stripeSubscriptionId) {
-        if (stripeSubscriptionId == null) return "free";
-
-        try {
-            com.stripe.model.Subscription stripeSub =
-                    com.stripe.model.Subscription.retrieve(stripeSubscriptionId);
-            if (!stripeSub.getItems().getData().isEmpty()) {
-                String priceId = stripeSub.getItems().getData().get(0).getPrice().getId();
-                return planRepository.findByStripePriceId(priceId)
-                        .map(Plan::getPlanId)
-                        .orElse("basic"); // fallback
-            }
-        } catch (StripeException e) {
-            log.warn("無法從 Stripe 解析 planId: {}", e.getMessage());
-        }
-        return "basic";
-    }
-
-    /**
-     * 從 Stripe API 取得 currentPeriodEnd 並設定到 Subscription
-     */
-    private void setCurrentPeriodEndFromStripe(Subscription sub, String stripeSubscriptionId) {
-        if (stripeSubscriptionId == null) return;
-
-        try {
-            com.stripe.model.Subscription stripeSub =
-                    com.stripe.model.Subscription.retrieve(stripeSubscriptionId);
-            if (stripeSub.getCurrentPeriodEnd() != null) {
-                sub.setCurrentPeriodEnd(
-                        LocalDateTime.ofInstant(
-                                Instant.ofEpochSecond(stripeSub.getCurrentPeriodEnd()),
-                                ZONE));
-            }
-        } catch (StripeException e) {
-            log.warn("無法從 Stripe 取得 currentPeriodEnd: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * 儲存付款歷史
-     */
     private void savePaymentHistory(String userId, Long subscriptionId,
-                                    String paymentIntentId, Long amountCents,
+                                    String txHash, Double amount,
                                     String currency, String status) {
         PaymentHistory payment = PaymentHistory.builder()
                 .userId(userId)
                 .subscriptionId(subscriptionId)
-                .stripePaymentIntentId(paymentIntentId)
-                .amount(amountCents != null ? amountCents / 100.0 : null)
-                .currency(currency != null ? currency.toUpperCase() : "USD")
+                .txHash(txHash)
+                .network(cryptoConfig.getNetwork())
+                .walletAddress(cryptoConfig.getWalletAddress())
+                .amount(amount)
+                .currency(currency)
                 .status(status)
                 .paidAt("succeeded".equals(status) ? LocalDateTime.now(ZONE) : null)
                 .build();

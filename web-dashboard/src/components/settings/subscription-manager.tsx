@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PlanInfo, SubscriptionStatusDetail } from "@/types";
+import type { PlanInfo, SubscriptionStatusDetail, CryptoCheckoutInfo } from "@/types";
 import {
   getSubscriptionPlans,
   getSubscriptionStatus,
   cancelSubscription,
   upgradeSubscription,
-  getCheckoutUrl,
+  getCheckoutInfo,
+  submitPayment,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -15,6 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Crown, Zap, Shield, Check } from "lucide-react";
+import { Crown, Zap, Shield, Check, Copy, Wallet } from "lucide-react";
 
 interface SubscriptionManagerProps {
   onStatusChange?: (active: boolean) => void;
@@ -40,6 +43,12 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+
+  // USDT Payment Dialog
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [checkoutInfo, setCheckoutInfo] = useState<CryptoCheckoutInfo | null>(null);
+  const [txHash, setTxHash] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
   // Fetch data
   useEffect(() => {
@@ -78,7 +87,6 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
       await cancelSubscription();
       toast.success(t("settings.cancelSuccess"));
       setCancelDialogOpen(false);
-      // Refresh status
       const newStatus = await getSubscriptionStatus();
       setStatus(newStatus);
       onStatusChange?.(newStatus.active);
@@ -96,7 +104,6 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
     try {
       await upgradeSubscription({ planId });
       toast.success(t("settings.upgradeSuccess"));
-      // Refresh
       const newStatus = await getSubscriptionStatus();
       setStatus(newStatus);
       onStatusChange?.(newStatus.active);
@@ -110,20 +117,52 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
   }
 
   async function handleSubscribe(plan: PlanInfo) {
-    if (plan.paymentLinkUrl) {
-      window.open(plan.paymentLinkUrl, "_blank");
-      return;
-    }
-    // Fallback: use checkout API
+    // 取得付款資訊
     setActionLoading(true);
     try {
-      const { checkoutUrl } = await getCheckoutUrl(plan.planId);
-      window.open(checkoutUrl, "_blank");
+      const info = await getCheckoutInfo(plan.planId);
+      setCheckoutInfo(info);
+      setTxHash("");
+      setPaymentDialogOpen(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setActionLoading(false);
     }
+  }
+
+  async function handleSubmitPayment() {
+    if (!checkoutInfo || !txHash.trim()) {
+      toast.error("請輸入交易 Hash");
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      const result = await submitPayment({
+        planId: checkoutInfo.planId,
+        txHash: txHash.trim(),
+      });
+      toast.success(result.message);
+      setPaymentDialogOpen(false);
+      setTxHash("");
+      setCheckoutInfo(null);
+      // Refresh
+      const newStatus = await getSubscriptionStatus();
+      setStatus(newStatus);
+      onStatusChange?.(newStatus.active);
+      const newPlans = await getSubscriptionPlans();
+      setPlans(newPlans);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "驗證失敗");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text);
+    toast.success("已複製到剪貼簿");
   }
 
   // Status badge
@@ -181,8 +220,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
     const isUpgrade = plan.priceMonthly > currentPrice;
 
     if (!isActive || status?.status === "NONE" || status?.status === "CANCELLED") {
-      // No active subscription → subscribe
-      if (plan.priceMonthly === 0) return null; // Free plan, no action needed
+      if (plan.priceMonthly === 0) return null;
       return (
         <Button
           size="sm"
@@ -190,13 +228,13 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
           onClick={() => handleSubscribe(plan)}
           disabled={actionLoading}
         >
+          <Wallet className="h-4 w-4 mr-1" />
           {t("settings.subscribe")}
         </Button>
       );
     }
 
-    // Active subscription → upgrade/downgrade
-    if (plan.priceMonthly === 0) return null; // Can't switch to free, must cancel
+    if (plan.priceMonthly === 0) return null;
     return (
       <Button
         size="sm"
@@ -288,11 +326,11 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
                 </div>
                 <div className="mt-2">
                   <span className="text-2xl font-bold">
-                    {plan.priceMonthly === 0
-                      ? t("settings.free")
-                      : `$${plan.priceMonthly}`}
+                    {plan.priceUsdt != null && plan.priceUsdt > 0
+                      ? `${plan.priceUsdt} USDT`
+                      : t("settings.free")}
                   </span>
-                  {plan.priceMonthly > 0 && (
+                  {plan.priceUsdt != null && plan.priceUsdt > 0 && (
                     <span className="text-sm text-muted-foreground">
                       {t("settings.perMonth")}
                     </span>
@@ -341,6 +379,92 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
           ))}
         </div>
       </div>
+
+      {/* USDT Payment Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              USDT 付款
+            </DialogTitle>
+            <DialogDescription>
+              請轉帳以下金額到指定錢包地址，完成後貼上交易 Hash
+            </DialogDescription>
+          </DialogHeader>
+
+          {checkoutInfo && (
+            <div className="space-y-4">
+              {/* Plan info */}
+              <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                <span className="text-sm text-muted-foreground">方案</span>
+                <span className="font-semibold">{checkoutInfo.planName}</span>
+              </div>
+
+              {/* Amount */}
+              <div className="flex justify-between items-center p-3 bg-emerald-500/10 rounded-lg">
+                <span className="text-sm text-muted-foreground">金額</span>
+                <span className="text-lg font-bold text-emerald-500">
+                  {checkoutInfo.amountUsdt} USDT
+                </span>
+              </div>
+
+              {/* Network */}
+              <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                <span className="text-sm text-muted-foreground">網路</span>
+                <Badge variant="outline">{checkoutInfo.network}</Badge>
+              </div>
+
+              {/* Wallet address */}
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">收款地址</Label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 p-2 bg-muted rounded text-xs break-all font-mono">
+                    {checkoutInfo.walletAddress}
+                  </code>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => copyToClipboard(checkoutInfo.walletAddress)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* TX Hash input */}
+              <div className="space-y-2">
+                <Label htmlFor="txHash">交易 Hash（付款完成後貼上）</Label>
+                <Input
+                  id="txHash"
+                  placeholder="例如: a1b2c3d4e5f6..."
+                  value={txHash}
+                  onChange={(e) => setTxHash(e.target.value)}
+                  disabled={verifying}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setPaymentDialogOpen(false)}
+              disabled={verifying}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={handleSubmitPayment}
+              disabled={verifying || !txHash.trim()}
+            >
+              {verifying ? "驗證中..." : "提交驗證"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel Confirmation Dialog */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
