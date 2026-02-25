@@ -28,6 +28,7 @@ services:
     restart: unless-stopped
 
   trading-api:
+    image: ghcr.io/justinhsu1477/crypto-signal-trader/trading-api:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -45,6 +46,7 @@ services:
     restart: unless-stopped
 
   web-dashboard:
+    image: ghcr.io/justinhsu1477/crypto-signal-trader/web-dashboard:latest
     build:
       context: ./web-dashboard
       dockerfile: Dockerfile
