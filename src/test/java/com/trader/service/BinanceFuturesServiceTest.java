@@ -62,7 +62,7 @@ class BinanceFuturesServiceTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class)));
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
         // 通用 mock — 大部分測試需要的基礎環境
         when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");

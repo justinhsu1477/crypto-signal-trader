@@ -14,6 +14,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.shared.util.BinanceApiRateLimiter;
 import com.trader.shared.util.BinanceSignatureUtil;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
@@ -45,6 +46,7 @@ public class BinanceFuturesService {
     private final UserApiKeyService userApiKeyService;
     private final TradeConfigResolver tradeConfigResolver;
     private final StartOfDayBalanceCache startOfDayBalanceCache;
+    private final BinanceApiRateLimiter binanceApiRateLimiter;
     private final Gson gson = new Gson();
 
     /**
@@ -67,7 +69,8 @@ public class BinanceFuturesService {
                                   SymbolLockRegistry symbolLockRegistry,
                                   UserApiKeyService userApiKeyService,
                                   TradeConfigResolver tradeConfigResolver,
-                                  StartOfDayBalanceCache startOfDayBalanceCache) {
+                                  StartOfDayBalanceCache startOfDayBalanceCache,
+                                  BinanceApiRateLimiter binanceApiRateLimiter) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
@@ -79,6 +82,7 @@ public class BinanceFuturesService {
         this.userApiKeyService = userApiKeyService;
         this.tradeConfigResolver = tradeConfigResolver;
         this.startOfDayBalanceCache = startOfDayBalanceCache;
+        this.binanceApiRateLimiter = binanceApiRateLimiter;
     }
 
     /**
@@ -1487,6 +1491,9 @@ public class BinanceFuturesService {
 
         for (int attempt = 0; attempt <= ORDER_MAX_RETRIES; attempt++) {
             try {
+                // Rate limit 檢查
+                binanceApiRateLimiter.acquire();
+
                 String queryString = buildSignedQueryString(params);
                 String url = binanceConfig.getBaseUrl() + endpoint;
                 RequestBody body = RequestBody.create(
@@ -1497,6 +1504,14 @@ public class BinanceFuturesService {
                         .build();
 
                 try (Response response = httpClient.newCall(request).execute()) {
+                    // 更新 Binance 回報的實際 weight
+                    String usedWeight = response.header("X-MBX-USED-WEIGHT-1M");
+                    if (usedWeight != null) {
+                        try {
+                            binanceApiRateLimiter.updateFromHeader(Integer.parseInt(usedWeight));
+                        } catch (NumberFormatException ignored) {}
+                    }
+
                     String responseBody = response.body() != null ? response.body().string() : "";
                     if (!response.isSuccessful()) {
                         log.error("Binance API error: {} - {}", response.code(), responseBody);
@@ -1542,7 +1557,20 @@ public class BinanceFuturesService {
     }
 
     private String executeRequest(Request request) {
+        // Rate limit 檢查（防止超過 Binance 2400 weight/min 限制）
+        binanceApiRateLimiter.acquire();
+
         try (Response response = httpClient.newCall(request).execute()) {
+            // 從 Binance 回應 Header 更新實際 weight（比本地計數更準確）
+            String usedWeight = response.header("X-MBX-USED-WEIGHT-1M");
+            if (usedWeight != null) {
+                try {
+                    binanceApiRateLimiter.updateFromHeader(Integer.parseInt(usedWeight));
+                } catch (NumberFormatException ignored) {
+                    // header 格式異常，忽略
+                }
+            }
+
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
                 log.error("Binance API error: {} {} - {}", request.method(), request.url().encodedPath(), body);

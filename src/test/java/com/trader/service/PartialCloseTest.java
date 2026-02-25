@@ -59,7 +59,7 @@ class PartialCloseTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class)));
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
     }
 
     private void setupCloseBaseMocks(double positionAmt, double oldSl, double oldTp) {

@@ -50,6 +50,7 @@ public class ReferralVerificationFilter extends OncePerRequestFilter {
             "/api/auth/**",
             "/api/referral/**",
             "/api/health",
+            "/api/health/deep",
             "/api/user/profile",
             "/api/subscription/**"
     );

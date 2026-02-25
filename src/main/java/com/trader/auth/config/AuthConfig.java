@@ -58,7 +58,7 @@ public class AuthConfig {
                 .authorizeHttpRequests(auth -> auth
                         // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/health").permitAll()
+                        .requestMatchers("/api/health", "/api/health/deep").permitAll()
                         .requestMatchers("/api/subscription/webhook").permitAll()
 
                         // === ADMIN 專用：需要 ADMIN 角色（JWT ADMIN 或 Monitor API Key） ===
