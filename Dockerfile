@@ -2,6 +2,9 @@
 FROM gradle:8.13-jdk17 AS builder
 WORKDIR /app
 
+# 限制 Gradle JVM 記憶體，避免在小機器 OOM
+ENV GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx512m -Dorg.gradle.workers.max=2"
+
 # Copy Gradle build files first for layer caching
 COPY build.gradle settings.gradle ./
 COPY gradle/ gradle/
