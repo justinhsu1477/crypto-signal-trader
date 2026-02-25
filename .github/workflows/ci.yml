@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 env:
   JAVA_VERSION: '17'
   NODE_VERSION: '20'
@@ -98,7 +103,31 @@ jobs:
         run: npm run build
 
   # ============================================================
-  # 4. Docker Build 驗證（不 push，只確認能建成功）
+  # 4. Python Monitor Test
+  # ============================================================
+  monitor:
+    name: Monitor Test (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: discord-monitor
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: discord-monitor/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+  # ============================================================
+  # 5. Docker Build 驗證（不 push，只確認能建成功）
   # ============================================================
   docker:
     name: Docker Build Check
