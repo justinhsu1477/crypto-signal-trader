@@ -538,7 +538,7 @@ public class TradeRecordService {
     @Transactional
     public void recordFailSafe(String symbol, String detail) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
-        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
+        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse(null);
 
         TradeEvent event = TradeEvent.builder()
                 .tradeId(tradeId)
@@ -556,7 +556,7 @@ public class TradeRecordService {
      * 通用事件紀錄 — 記錄任何訂單操作的結果（成功或失敗）
      * 適用於不需要更動 Trade 主紀錄，只需新增 TradeEvent 的場景
      *
-     * @param symbol    交易對（用於查找 tradeId；若無 OPEN Trade 則用 "UNKNOWN"）
+     * @param symbol    交易對（用於查找 tradeId；若無 OPEN Trade 則為 null）
      * @param eventType 事件類型（如 ENTRY_FAILED, CLOSE_FAILED, TP_PLACED 等）
      * @param order     OrderResult（可為 null，null 時只記 eventType + detail）
      * @param detail    補充描述（JSON 或文字，可為 null）
@@ -564,7 +564,7 @@ public class TradeRecordService {
     @Transactional
     public void recordOrderEvent(String symbol, String eventType, OrderResult order, String detail) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
-        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
+        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse(null);
 
         TradeEvent.TradeEventBuilder builder = TradeEvent.builder()
                 .tradeId(tradeId)
@@ -1055,7 +1055,7 @@ public class TradeRecordService {
      */
     public boolean recordProtectionLost(String symbol, String orderType, String orderId, String reason) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
-        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse("UNKNOWN");
+        String tradeId = openTradeOpt.map(Trade::getTradeId).orElse(null);
         boolean hasOpenTrade = openTradeOpt.isPresent();
 
         String eventType = "STOP_MARKET".equals(orderType) ? "SL_LOST" : "TP_LOST";
