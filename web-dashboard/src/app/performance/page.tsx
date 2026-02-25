@@ -11,6 +11,7 @@ import { SignalRanking } from "@/components/performance/signal-ranking";
 import { TimeStats } from "@/components/performance/time-stats";
 import { DayOfWeekChart } from "@/components/performance/day-of-week-chart";
 import { DcaAnalysis } from "@/components/performance/dca-analysis";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useT } from "@/lib/i18n/i18n-context";
 import type { PerformanceStats } from "@/types";
 
@@ -95,34 +96,46 @@ export default function PerformancePage() {
       </div>
 
       {/* Summary Cards */}
-      <SummaryCards summary={data.summary} />
+      <ErrorBoundary>
+        <SummaryCards summary={data.summary} />
+      </ErrorBoundary>
 
       {/* PnL Chart */}
-      <PnlChart data={data.pnlCurve} />
+      <ErrorBoundary>
+        <PnlChart data={data.pnlCurve} />
+      </ErrorBoundary>
 
       {/* Symbol Stats + Side Comparison */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SymbolStats data={data.symbolStats} />
-        <SideComparison data={data.sideComparison} />
-      </div>
+      <ErrorBoundary>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <SymbolStats data={data.symbolStats} />
+          <SideComparison data={data.sideComparison} />
+        </div>
+      </ErrorBoundary>
 
       {/* Exit Reason + Signal Ranking */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ExitReasonChart data={data.exitReasonBreakdown} />
-        <SignalRanking data={data.signalSourceRanking} />
-      </div>
+      <ErrorBoundary>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ExitReasonChart data={data.exitReasonBreakdown} />
+          <SignalRanking data={data.signalSourceRanking} />
+        </div>
+      </ErrorBoundary>
 
       {/* Time Stats */}
-      <TimeStats
-        weeklyStats={data.weeklyStats}
-        monthlyStats={data.monthlyStats}
-      />
+      <ErrorBoundary>
+        <TimeStats
+          weeklyStats={data.weeklyStats}
+          monthlyStats={data.monthlyStats}
+        />
+      </ErrorBoundary>
 
       {/* Day of Week + DCA Analysis */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <DayOfWeekChart data={data.dayOfWeekStats} />
-        <DcaAnalysis data={data.dcaAnalysis} />
-      </div>
+      <ErrorBoundary>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <DayOfWeekChart data={data.dayOfWeekStats} />
+          <DcaAnalysis data={data.dcaAnalysis} />
+        </div>
+      </ErrorBoundary>
     </div>
   );
 }
