@@ -7,6 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -187,14 +188,20 @@ public class MonitorHeartbeatService {
         boolean isOnline = last != null
                 && elapsed <= HEARTBEAT_TIMEOUT_SECONDS
                 && "connected".equals(lastStatus);
-        return Map.of(
-                "lastHeartbeat", last != null ? last.toString() : "never",
-                "elapsedSeconds", elapsed,
-                "online", isOnline,
-                "monitorStatus", lastStatus,
-                "aiStatus", lastAiStatus,
-                "alertSent", alertSent
-        );
+
+        Map<String, Object> status = new LinkedHashMap<>();
+        // 前端期望的欄位
+        status.put("monitorConnected", isOnline);
+        status.put("lastHeartbeat", last != null ? last.toString() : null);
+        status.put("secondsSinceLastHeartbeat", elapsed >= 0 ? elapsed : null);
+        status.put("aiParserAvailable", "active".equals(lastAiStatus));
+        // 後端內部 / debug 用
+        status.put("online", isOnline);
+        status.put("elapsedSeconds", elapsed);
+        status.put("monitorStatus", lastStatus);
+        status.put("aiStatus", lastAiStatus);
+        status.put("alertSent", alertSent);
+        return status;
     }
 
     // ==================== AI Token 用量 ====================

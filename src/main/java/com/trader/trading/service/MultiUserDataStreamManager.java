@@ -518,6 +518,12 @@ public class MultiUserDataStreamManager {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("mode", "multi-user");
         result.put("totalStreams", activeStreams.size());
+
+        // 前端期望頂層 "connected" — 任一用戶 stream 連上即為 true
+        boolean anyConnected = activeStreams.values().stream()
+                .anyMatch(UserStreamContext::isConnected);
+        result.put("connected", anyConnected);
+
         result.put("shuttingDown", shuttingDown);
 
         Map<String, Object> streams = new LinkedHashMap<>();
