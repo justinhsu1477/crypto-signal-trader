@@ -117,12 +117,20 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ── Landing section scroll offset for fixed navbar ── */
+.scroll-mt-nav {
+  scroll-margin-top: 80px;
 }
 
 /* ── Landing page CSS animations ── */

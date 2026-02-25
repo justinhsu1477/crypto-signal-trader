@@ -3,6 +3,10 @@
 import Image from "next/image";
 import { PublicNavbar } from "./public-navbar";
 import { CryptoBackground } from "./crypto-background";
+import { FeaturesSection } from "./features-section";
+import { PricingSection } from "./pricing-section";
+import { AboutSection } from "./about-section";
+import { ContactSection } from "./contact-section";
 import { BarChart3, Shield, Zap, Bot } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-context";
 
@@ -73,6 +77,11 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </div>
+
+      <FeaturesSection />
+      <PricingSection />
+      <AboutSection />
+      <ContactSection />
 
       <div className="relative z-10 border-t border-white/5 py-6 text-center text-xs text-muted-foreground">
         <div className="flex items-center justify-center gap-1.5">
