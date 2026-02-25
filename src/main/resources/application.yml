@@ -36,6 +36,7 @@ spring:
       minimum-idle: 5
       connection-timeout: 10000     # 10 秒等不到連線就失敗
       idle-timeout: 300000          # 閒置 5 分鐘回收
+      keepalive-time: 120000        # 每 2 分鐘探測，防止 Neon 斷閒置連線
   jpa:
     hibernate:
       ddl-auto: validate
@@ -95,7 +96,7 @@ crypto:
 
 jwt:
   secret: ${JWT_SECRET:default-dev-secret-change-in-production-must-be-at-least-256-bits-long}
-  expiration-ms: 86400000         # 24h
+  expiration-ms: 1800000           # 30 分鐘（交易平台安全標準）
   refresh-expiration-ms: 604800000  # 7 days
 
 encryption:

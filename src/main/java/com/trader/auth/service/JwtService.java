@@ -34,7 +34,7 @@ public class JwtService {
     }
 
     /**
-     * 生成 JWT Token（24h）
+     * 生成 JWT Access Token（30 分鐘）
      *
      * @param userId 用戶 ID
      * @param role   用戶角色 (USER / ADMIN)

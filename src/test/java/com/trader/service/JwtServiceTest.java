@@ -18,7 +18,7 @@ class JwtServiceTest {
         jwtService = new JwtService();
         ReflectionTestUtils.setField(jwtService, "secret",
                 "test-secret-key-that-is-at-least-256-bits-long-for-hmac-sha256");
-        ReflectionTestUtils.setField(jwtService, "expirationMs", 86400000L);
+        ReflectionTestUtils.setField(jwtService, "expirationMs", 1800000L);
         ReflectionTestUtils.setField(jwtService, "refreshExpirationMs", 604800000L);
     }
 
@@ -190,7 +190,7 @@ class JwtServiceTest {
         @Test
         @DisplayName("回傳設定的過期時間")
         void returnsConfiguredExpiration() {
-            assertThat(jwtService.getExpirationMs()).isEqualTo(86400000L);
+            assertThat(jwtService.getExpirationMs()).isEqualTo(1800000L);
         }
     }
 

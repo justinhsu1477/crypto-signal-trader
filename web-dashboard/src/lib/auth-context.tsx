@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { login as apiLogin, register as apiRegister } from "./api";
 import { clearReferralCache } from "./use-referral-guard";
+import { useIdleLogout } from "./use-idle-logout";
 import type { LoginRequest, RegisterRequest } from "@/types";
 
 interface AuthState {
@@ -58,6 +59,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearReferralCache();
     setState({ token: null, userId: null, email: null, isLoading: false });
   }, []);
+
+  // 30 分鐘無操作自動登出
+  useIdleLogout(state.token, logout);
 
   return (
     <AuthContext.Provider value={{ ...state, login, register, logout }}>
