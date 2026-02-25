@@ -76,16 +76,23 @@ class SignalRouter:
         if self.author_ids and msg.get("author_id", "") not in self.author_ids:
             return
 
-        # Build content (message text + embeds combined)
+        # Build content — 回覆訊息只用 content，跳過 embeds（避免引用的舊訊號混入）
+        is_reply = msg.get("has_reference", False)
         parts = []
         content_text = msg.get("content", "")
         if content_text:
             parts.append(content_text)
-        for embed in msg.get("embeds", []):
-            if embed.get("title"):
-                parts.append(embed["title"])
-            if embed.get("description"):
-                parts.append(embed["description"])
+
+        if not is_reply:
+            for embed in msg.get("embeds", []):
+                if embed.get("title"):
+                    parts.append(embed["title"])
+                if embed.get("description"):
+                    parts.append(embed["description"])
+        else:
+            ref_preview = msg.get("referenced_content", "")[:80].replace("\n", " | ")
+            logger.info("⤵️ Reply detected, ignoring referenced content: %s", ref_preview)
+
         content = "\n".join(parts)
 
         if not content.strip():

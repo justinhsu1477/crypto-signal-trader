@@ -246,3 +246,47 @@ class TestValidateSymbol:
     def test_unknown_action(self):
         parsed = {"action": "FOOBAR", "symbol": "BTCUSDT"}
         assert AiSignalParser._validate(None, parsed) is False
+
+
+class TestPickBestFromList:
+    """_pick_best_from_list() 優先級測試。"""
+
+    def test_entry_beats_close(self):
+        """ENTRY 優先級高於 CLOSE（原始設計：ENTRY=5, CLOSE=4）。"""
+        items = [
+            {"action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG", "entry_price": 63200, "stop_loss": 61500},
+            {"action": "CLOSE", "symbol": "BTCUSDT"},
+        ]
+        result = AiSignalParser._pick_best_from_list(None, items)
+        assert result["action"] == "ENTRY"
+
+    def test_single_entry_still_picked(self):
+        """只有 ENTRY 時應正常選取。"""
+        items = [
+            {"action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT", "entry_price": 88700},
+        ]
+        result = AiSignalParser._pick_best_from_list(None, items)
+        assert result["action"] == "ENTRY"
+        assert result["symbol"] == "BTCUSDT"
+
+    def test_single_close_still_picked(self):
+        """只有 CLOSE 時應正常選取。"""
+        items = [
+            {"action": "CLOSE", "symbol": "BTCUSDT"},
+        ]
+        result = AiSignalParser._pick_best_from_list(None, items)
+        assert result["action"] == "CLOSE"
+
+    def test_empty_list_returns_none(self):
+        """空陣列應回傳 None。"""
+        result = AiSignalParser._pick_best_from_list(None, [])
+        assert result is None
+
+    def test_entry_beats_info(self):
+        """ENTRY 優先級高於 INFO。"""
+        items = [
+            {"action": "INFO"},
+            {"action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG", "entry_price": 63200},
+        ]
+        result = AiSignalParser._pick_best_from_list(None, items)
+        assert result["action"] == "ENTRY"

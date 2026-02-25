@@ -123,7 +123,9 @@ INJECT_JS = """
                         title: e.title || '',
                         description: e.description || ''
                     };
-                })
+                }),
+                has_reference: !!msg.message_reference,
+                referenced_content: (msg.referenced_message && msg.referenced_message.content) || ''
             };
             window.__signalMonitorQueue.push(JSON.stringify(data));
             // Keep queue bounded
