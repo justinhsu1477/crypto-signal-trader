@@ -214,12 +214,15 @@ class MonitorHeartbeatServiceTest {
     class GetStatusTests {
 
         @Test
-        @DisplayName("從未收到心跳 — lastHeartbeat=never, online=false")
+        @DisplayName("從未收到心跳 — lastHeartbeat=null, online=false")
         void neverReceived() {
             Map<String, Object> status = service.getStatus();
 
-            assertThat(status.get("lastHeartbeat")).isEqualTo("never");
+            assertThat(status.get("lastHeartbeat")).isNull();
             assertThat(status.get("online")).isEqualTo(false);
+            assertThat(status.get("monitorConnected")).isEqualTo(false);
+            assertThat(status.get("secondsSinceLastHeartbeat")).isNull();
+            assertThat(status.get("aiParserAvailable")).isEqualTo(false);
             assertThat(status.get("monitorStatus")).isEqualTo("unknown");
             assertThat(status.get("aiStatus")).isEqualTo("unknown");
         }
@@ -232,6 +235,8 @@ class MonitorHeartbeatServiceTest {
             Map<String, Object> status = service.getStatus();
 
             assertThat(status.get("online")).isEqualTo(true);
+            assertThat(status.get("monitorConnected")).isEqualTo(true);
+            assertThat(status.get("aiParserAvailable")).isEqualTo(true);
             assertThat(status.get("monitorStatus")).isEqualTo("connected");
             assertThat(status.get("aiStatus")).isEqualTo("active");
             assertThat(status.get("alertSent")).isEqualTo(false);
