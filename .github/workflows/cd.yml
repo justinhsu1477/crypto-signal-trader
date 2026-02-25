@@ -1,11 +1,14 @@
 name: CD
 
+# ⚠️ 目前僅支援手動觸發，要開啟自動部署請取消下方註解
+# on:
+#   workflow_run:
+#     workflows: ["CI"]
+#     branches: [main]
+#     types: [completed]
+
 on:
-  workflow_run:
-    workflows: ["CI"]
-    branches: [main]
-    types: [completed]
-  workflow_dispatch:  # 保留手動觸發（GitHub Actions 頁面按 Run workflow）
+  workflow_dispatch:  # 手動觸發（GitHub Actions 頁面按 Run workflow）
 
 concurrency:
   group: deploy-production
