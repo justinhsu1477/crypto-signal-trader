@@ -55,7 +55,7 @@ export default function PerformancePage() {
     return () => {
       cancelled = true;
     };
-  }, [days]);
+  }, [days, t]);
 
   if (loading) {
     return (

@@ -69,7 +69,7 @@ export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
     return () => {
       cancelled = true;
     };
-  }, [tradeId]);
+  }, [tradeId, t]);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

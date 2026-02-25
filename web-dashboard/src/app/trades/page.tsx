@@ -42,7 +42,7 @@ export default function TradesPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, size]);
+  }, [page, size, t]);
 
   return (
     <div className="space-y-6">

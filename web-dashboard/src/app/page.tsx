@@ -28,7 +28,7 @@ export default function HomePage() {
       }
     }
     fetchOverview();
-  }, []);
+  }, [t]);
 
   if (loading) {
     return (
