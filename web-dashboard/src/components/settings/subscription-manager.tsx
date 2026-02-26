@@ -133,7 +133,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
 
   async function handleSubmitPayment() {
     if (!checkoutInfo || !txHash.trim()) {
-      toast.error("請輸入交易 Hash");
+      toast.error(t("settings.paymentTxRequired"));
       return;
     }
 
@@ -154,7 +154,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
       const newPlans = await getSubscriptionPlans();
       setPlans(newPlans);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "驗證失敗");
+      toast.error(err instanceof Error ? err.message : t("settings.paymentFailed"));
     } finally {
       setVerifying(false);
     }
@@ -162,7 +162,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
-    toast.success("已複製到剪貼簿");
+    toast.success(t("settings.paymentCopied"));
   }
 
   // Status badge
@@ -386,10 +386,10 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wallet className="h-5 w-5" />
-              USDT 付款
+              {t("settings.paymentTitle")}
             </DialogTitle>
             <DialogDescription>
-              請轉帳以下金額到指定錢包地址，完成後貼上交易 Hash
+              {t("settings.paymentDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -397,13 +397,13 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
             <div className="space-y-4">
               {/* Plan info */}
               <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                <span className="text-sm text-muted-foreground">方案</span>
+                <span className="text-sm text-muted-foreground">{t("settings.paymentPlan")}</span>
                 <span className="font-semibold">{checkoutInfo.planName}</span>
               </div>
 
               {/* Amount */}
               <div className="flex justify-between items-center p-3 bg-emerald-500/10 rounded-lg">
-                <span className="text-sm text-muted-foreground">金額</span>
+                <span className="text-sm text-muted-foreground">{t("settings.paymentAmount")}</span>
                 <span className="text-lg font-bold text-emerald-500">
                   {checkoutInfo.amountUsdt} USDT
                 </span>
@@ -411,13 +411,13 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
 
               {/* Network */}
               <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                <span className="text-sm text-muted-foreground">網路</span>
+                <span className="text-sm text-muted-foreground">{t("settings.paymentNetwork")}</span>
                 <Badge variant="outline">{checkoutInfo.network}</Badge>
               </div>
 
               {/* Wallet address */}
               <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">收款地址</Label>
+                <Label className="text-sm text-muted-foreground">{t("settings.paymentAddress")}</Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 p-2 bg-muted rounded text-xs break-all font-mono">
                     {checkoutInfo.walletAddress}
@@ -436,10 +436,10 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
 
               {/* TX Hash input */}
               <div className="space-y-2">
-                <Label htmlFor="txHash">交易 Hash（付款完成後貼上）</Label>
+                <Label htmlFor="txHash">{t("settings.paymentTxHash")}</Label>
                 <Input
                   id="txHash"
-                  placeholder="例如: a1b2c3d4e5f6..."
+                  placeholder={t("settings.paymentTxPlaceholder")}
                   value={txHash}
                   onChange={(e) => setTxHash(e.target.value)}
                   disabled={verifying}
@@ -460,7 +460,7 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
               onClick={handleSubmitPayment}
               disabled={verifying || !txHash.trim()}
             >
-              {verifying ? "驗證中..." : "提交驗證"}
+              {verifying ? t("settings.paymentVerifying") : t("settings.paymentSubmit")}
             </Button>
           </DialogFooter>
         </DialogContent>

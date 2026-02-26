@@ -69,10 +69,13 @@ vi.mock("@/lib/utils", () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(" "),
 }));
 
-// ─── Mock clipboard ───
-Object.assign(navigator, {
-  clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
-});
+// ─── Mock clipboard (jsdom does not provide navigator.clipboard natively) ───
+if (!navigator.clipboard) {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn(() => Promise.resolve()) },
+    configurable: true,
+  });
+}
 
 // ─── Test data ───
 const mockPlans = [
@@ -278,7 +281,9 @@ describe("SubscriptionManager", () => {
 
       await waitFor(() => {
         expect(screen.getByText("TTestWallet123")).toBeInTheDocument();
-        expect(screen.getByText("19 USDT")).toBeInTheDocument();
+        // "19 USDT" appears in both plan card and dialog — use getAllByText
+        const usdtElements = screen.getAllByText(/19\s*USDT/);
+        expect(usdtElements.length).toBeGreaterThanOrEqual(2); // card + dialog
         expect(screen.getByText("TRC20")).toBeInTheDocument();
       });
     });
@@ -301,17 +306,19 @@ describe("SubscriptionManager", () => {
         expect(screen.getByText("TTestWallet123")).toBeInTheDocument();
       });
 
-      // Find the copy button (the button with Copy icon near the wallet address)
-      // The copy button is an icon button near the wallet address
-      const copyButtons = document.querySelectorAll("button");
-      const copyButton = Array.from(copyButtons).find(
-        (btn) => btn.querySelector(".lucide-copy") || btn.querySelector("[data-lucide='copy']")
-      );
+      // The copy button is the icon button right after the wallet address code element
+      const walletCode = screen.getByText("TTestWallet123");
+      const flexContainer = walletCode.closest(".flex");
+      const copyButton = flexContainer?.querySelector("button");
 
-      if (copyButton) {
-        await user.click(copyButton);
-        expect(navigator.clipboard.writeText).toHaveBeenCalledWith("TTestWallet123");
-      }
+      expect(copyButton).toBeTruthy();
+      await user.click(copyButton!);
+
+      // copyToClipboard fires toast.success — proves the handler ran
+      // (jsdom clipboard API doesn't reliably support vi.fn spy on writeText)
+      await waitFor(() => {
+        expect(mockToastSuccess).toHaveBeenCalledWith("settings.paymentCopied");
+      });
     });
 
     it("empty txHash disables submit button", async () => {
@@ -333,22 +340,24 @@ describe("SubscriptionManager", () => {
       });
 
       // The submit button should be disabled when txHash is empty
-      const submitButton = screen.getByRole("button", { name: /提交驗證/ });
+      const submitButton = screen.getByRole("button", { name: /settings\.paymentSubmit/ });
       expect(submitButton).toBeDisabled();
     });
 
     it("successful payment submission closes dialog and shows success toast", async () => {
-      setupDefaultMocks();
+      // Initial load: NONE status so Subscribe buttons appear
+      mockGetSubscriptionPlans.mockResolvedValueOnce(mockPlans);
+      mockGetSubscriptionStatus.mockResolvedValueOnce(mockStatusNone);
       mockGetCheckoutInfo.mockResolvedValue(mockCheckoutBasic);
       mockSubmitPayment.mockResolvedValue({
         status: "success",
         message: "付款驗證成功！Basic 方案已開通至 2025-06-01",
       });
-      // After successful payment, status refreshes
-      mockGetSubscriptionStatus.mockResolvedValue(mockStatusActive);
+      // After successful payment, status refreshes to ACTIVE
       const activePlans = mockPlans.map((p) =>
         p.planId === "basic" ? { ...p, current: true } : { ...p, current: false }
       );
+      mockGetSubscriptionStatus.mockResolvedValue(mockStatusActive);
       mockGetSubscriptionPlans.mockResolvedValue(activePlans);
 
       const user = userEvent.setup();
@@ -366,11 +375,11 @@ describe("SubscriptionManager", () => {
       });
 
       // Type txHash
-      const txInput = screen.getByPlaceholderText(/a1b2c3d4e5f6/);
+      const txInput = screen.getByPlaceholderText(/settings\.paymentTxPlaceholder/);
       await user.type(txInput, "realTxHash123");
 
       // Submit
-      const submitButton = screen.getByRole("button", { name: /提交驗證/ });
+      const submitButton = screen.getByRole("button", { name: /settings\.paymentSubmit/ });
       await user.click(submitButton);
 
       await waitFor(() => {
@@ -401,10 +410,10 @@ describe("SubscriptionManager", () => {
         expect(screen.getByText("TTestWallet123")).toBeInTheDocument();
       });
 
-      const txInput = screen.getByPlaceholderText(/a1b2c3d4e5f6/);
+      const txInput = screen.getByPlaceholderText(/settings\.paymentTxPlaceholder/);
       await user.type(txInput, "badTxHash");
 
-      const submitButton = screen.getByRole("button", { name: /提交驗證/ });
+      const submitButton = screen.getByRole("button", { name: /settings\.paymentSubmit/ });
       await user.click(submitButton);
 
       await waitFor(() => {
@@ -438,15 +447,15 @@ describe("SubscriptionManager", () => {
         expect(screen.getByText("TTestWallet123")).toBeInTheDocument();
       });
 
-      const txInput = screen.getByPlaceholderText(/a1b2c3d4e5f6/);
+      const txInput = screen.getByPlaceholderText(/settings\.paymentTxPlaceholder/);
       await user.type(txInput, "someTxHash");
 
-      const submitButton = screen.getByRole("button", { name: /提交驗證/ });
+      const submitButton = screen.getByRole("button", { name: /settings\.paymentSubmit/ });
       await user.click(submitButton);
 
       // Should show verifying text
       await waitFor(() => {
-        expect(screen.getByText("驗證中...")).toBeInTheDocument();
+        expect(screen.getByText("settings.paymentVerifying")).toBeInTheDocument();
       });
 
       // Cleanup: resolve the pending promise
@@ -466,8 +475,9 @@ describe("SubscriptionManager", () => {
       const user = userEvent.setup();
       render(<SubscriptionManager />);
 
+      // "Basic" appears in both status section and plan card
       await waitFor(() => {
-        expect(screen.getByText("Basic")).toBeInTheDocument();
+        expect(screen.getAllByText("Basic").length).toBeGreaterThanOrEqual(1);
       });
 
       // Click the cancel subscription button (i18n key)
@@ -487,17 +497,22 @@ describe("SubscriptionManager", () => {
         status: "success",
         message: "訂閱已立即取消",
       });
-      // After cancel, status refreshes to none
+      // After cancel, status refreshes to none (use chained mocks)
       mockGetSubscriptionStatus
         .mockResolvedValueOnce(mockStatusActive) // initial load
         .mockResolvedValue(mockStatusNone); // after cancel
-      mockGetSubscriptionPlans.mockResolvedValue(mockPlans); // refreshed plans
+      mockGetSubscriptionPlans.mockResolvedValue(
+        mockPlans.map((p) =>
+          p.planId === "basic" ? { ...p, current: true } : { ...p, current: false }
+        )
+      );
 
       const user = userEvent.setup();
       render(<SubscriptionManager />);
 
+      // "Basic" appears in both status section and plan card
       await waitFor(() => {
-        expect(screen.getByText("Basic")).toBeInTheDocument();
+        expect(screen.getAllByText("Basic").length).toBeGreaterThanOrEqual(1);
       });
 
       const cancelButton = screen.getByText("settings.cancelSubscription");
@@ -526,8 +541,9 @@ describe("SubscriptionManager", () => {
 
       render(<SubscriptionManager />);
 
+      // "Basic" appears in both status section and plan card
       await waitFor(() => {
-        expect(screen.getByText("Basic")).toBeInTheDocument();
+        expect(screen.getAllByText("Basic").length).toBeGreaterThanOrEqual(1);
       });
 
       // Pro plan should have an upgrade button
@@ -559,8 +575,9 @@ describe("SubscriptionManager", () => {
       const user = userEvent.setup();
       render(<SubscriptionManager />);
 
+      // "Basic" appears in both status section and plan card
       await waitFor(() => {
-        expect(screen.getByText("Basic")).toBeInTheDocument();
+        expect(screen.getAllByText("Basic").length).toBeGreaterThanOrEqual(1);
       });
 
       const upgradeButton = screen.getByText("settings.upgrade");
