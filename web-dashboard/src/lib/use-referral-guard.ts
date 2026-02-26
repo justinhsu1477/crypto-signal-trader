@@ -36,19 +36,14 @@ export function useReferralGuard(role?: string | null): ReferralGuardState {
   const hasFetched = useRef(false);
 
   useEffect(() => {
-    // ADMIN role — skip referral check entirely (backend already bypasses)
-    if (isAdmin) {
-      setIsVerified(true);
-      setIsChecking(false);
-      return;
-    }
+    // ADMIN role — skip referral check entirely (useState initializers already set correct state)
+    if (isAdmin) return;
 
     // Already verified from cache — initial state already handles this via useState initializer
     if (cachedStatus === "VERIFIED") return;
 
     // On /referral page — don't check (infinite loop prevention)
     if (pathname === "/referral") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronous guard for routing edge case
       setIsChecking(false);
       return;
     }
@@ -77,7 +72,7 @@ export function useReferralGuard(role?: string | null): ReferralGuardState {
     }
 
     check();
-  }, [pathname]);
+  }, [pathname, isAdmin]);
 
   return { isChecking, isVerified, needsReferral };
 }
