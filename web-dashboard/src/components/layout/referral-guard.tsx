@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { useReferralGuard } from "@/lib/use-referral-guard";
+import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +16,8 @@ import {
 } from "@/components/ui/dialog";
 
 export function ReferralGuard({ children }: { children: React.ReactNode }) {
-  const { isChecking, needsReferral } = useReferralGuard();
+  const { role } = useAuth();
+  const { isChecking, needsReferral } = useReferralGuard(role);
   const { t } = useT();
   const router = useRouter();
 
