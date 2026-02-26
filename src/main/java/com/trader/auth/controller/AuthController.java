@@ -4,16 +4,20 @@ import com.trader.auth.dto.*;
 import com.trader.auth.exception.EmailNotVerifiedException;
 import com.trader.auth.service.AuthService;
 import com.trader.auth.service.EmailVerificationService;
+import com.trader.auth.service.JwtService;
+import com.trader.auth.util.CookieUtil;
 import com.trader.shared.dto.ErrorResponse;
 import com.trader.shared.service.AuditService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,13 +33,11 @@ public class AuthController {
     private final AuditService auditService;
     private final EmailVerificationService emailVerificationService;
     private final UserRepository userRepository;
+    private final JwtService jwtService;
 
     /**
      * 用戶註冊
      * POST /api/auth/register
-     * Body: {@link RegisterRequest}
-     *
-     * @return {@link RegisterResponse}
      */
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
@@ -51,7 +53,6 @@ public class AuthController {
             return ResponseEntity.badRequest()
                     .body(ErrorResponse.builder().error(e.getMessage()).build());
         } catch (IllegalStateException e) {
-            // Rate limit（發送過於頻繁）
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(ErrorResponse.builder().error(e.getMessage()).build());
         }
@@ -60,19 +61,24 @@ public class AuthController {
     /**
      * 用戶登入
      * POST /api/auth/login
-     * Body: {@link LoginRequest}
      *
-     * @return {@link LoginResponse}
+     * Token 改為 HttpOnly Cookie 回傳，Response Body 不再包含 token/refreshToken。
      */
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request,
-                                   HttpServletRequest httpRequest) {
+                                   HttpServletRequest httpRequest,
+                                   HttpServletResponse httpResponse) {
         String clientIp = getClientIp(httpRequest);
 
         try {
             LoginResponse response = authService.login(request);
 
-            // 登入成功：記錄審計日誌
+            // 設定 HttpOnly Cookie
+            CookieUtil.addAccessTokenCookie(httpResponse, response.getToken(),
+                    jwtService.getExpirationMs() / 1000);
+            CookieUtil.addRefreshTokenCookie(httpResponse, response.getRefreshToken(),
+                    jwtService.getRefreshExpirationMs() / 1000);
+
             auditService.log(
                     response.getUserId(),
                     "LOGIN",
@@ -82,15 +88,18 @@ public class AuthController {
                     "Email: " + request.getEmail()
             );
 
-            return ResponseEntity.ok(response);
+            // Response Body 不再回傳 token — 改用 Cookie
+            return ResponseEntity.ok(Map.of(
+                    "userId", response.getUserId(),
+                    "email", response.getEmail(),
+                    "role", response.getRole(),
+                    "expiresIn", jwtService.getExpirationMs() / 1000
+            ));
         } catch (EmailNotVerifiedException e) {
-            // Email 未驗證 → 403，前端導向驗證頁
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "EMAIL_NOT_VERIFIED", "email", request.getEmail()));
         } catch (IllegalArgumentException e) {
-            // 登入失敗：記錄審計日誌（用於防暴力破解）
             auditService.logFailedAuth(request.getEmail(), clientIp, e.getMessage());
-
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ErrorResponse.builder().error(e.getMessage()).build());
         }
@@ -99,7 +108,6 @@ public class AuthController {
     /**
      * 驗證 Email OTP
      * POST /api/auth/verify-email
-     * Body: {@link VerifyEmailRequest}
      */
     @PostMapping("/verify-email")
     @Transactional
@@ -107,7 +115,6 @@ public class AuthController {
         try {
             emailVerificationService.verifyCode(request.getEmail(), request.getCode());
 
-            // 驗證通過 → emailVerified = true
             User user = userRepository.findByEmail(request.getEmail())
                     .orElseThrow(() -> new IllegalArgumentException("找不到此 Email 的帳號"));
             user.setEmailVerified(true);
@@ -124,7 +131,6 @@ public class AuthController {
     /**
      * 重新發送 OTP 驗證碼
      * POST /api/auth/resend-code
-     * Body: {@link ResendCodeRequest}
      */
     @PostMapping("/resend-code")
     public ResponseEntity<?> resendCode(@Valid @RequestBody ResendCodeRequest request) {
@@ -143,19 +149,31 @@ public class AuthController {
     /**
      * 刷新 Token
      * POST /api/auth/refresh
-     * Body: {@link RefreshTokenRequest}
      *
-     * @return {@link LoginResponse}（新的 token pair）
+     * 改為從 HttpOnly Cookie 讀取 Refresh Token（不再從 Request Body）。
+     * 成功後設定新的 Cookie pair。
      */
     @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenRequest request,
-                                          HttpServletRequest httpRequest) {
+    public ResponseEntity<?> refreshToken(HttpServletRequest httpRequest,
+                                          HttpServletResponse httpResponse) {
         String clientIp = getClientIp(httpRequest);
 
-        try {
-            LoginResponse response = authService.refreshToken(request.getRefreshToken());
+        // 從 Cookie 讀取 Refresh Token
+        String refreshToken = CookieUtil.extractRefreshToken(httpRequest);
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ErrorResponse.builder().error("缺少 Refresh Token").build());
+        }
 
-            // Token 刷新成功
+        try {
+            LoginResponse response = authService.refreshToken(refreshToken);
+
+            // 設定新的 HttpOnly Cookie
+            CookieUtil.addAccessTokenCookie(httpResponse, response.getToken(),
+                    jwtService.getExpirationMs() / 1000);
+            CookieUtil.addRefreshTokenCookie(httpResponse, response.getRefreshToken(),
+                    jwtService.getRefreshExpirationMs() / 1000);
+
             auditService.log(
                     response.getUserId(),
                     "REFRESH_TOKEN",
@@ -165,17 +183,18 @@ public class AuthController {
                     ""
             );
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of(
+                    "userId", response.getUserId(),
+                    "email", response.getEmail(),
+                    "role", response.getRole(),
+                    "expiresIn", jwtService.getExpirationMs() / 1000
+            ));
         } catch (IllegalArgumentException e) {
-            // Token 刷新失敗（通常是 refresh token 過期或無效）
-            auditService.log(
-                    null,
-                    "REFRESH_TOKEN",
-                    "/api/auth/refresh",
-                    "FAILED",
-                    clientIp,
-                    e.getMessage()
-            );
+            auditService.log(null, "REFRESH_TOKEN", "/api/auth/refresh",
+                    "FAILED", clientIp, e.getMessage());
+
+            // 清除無效的 Cookie
+            CookieUtil.clearAuthCookies(httpResponse);
 
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ErrorResponse.builder().error(e.getMessage()).build());
@@ -183,20 +202,66 @@ public class AuthController {
     }
 
     /**
-     * 從客戶端 IP（支援代理）
+     * 登出
+     * POST /api/auth/logout
+     *
+     * 清除 HttpOnly Cookie，結束 session。
      */
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest httpRequest,
+                                    HttpServletResponse httpResponse) {
+        CookieUtil.clearAuthCookies(httpResponse);
+
+        String clientIp = getClientIp(httpRequest);
+        Authentication auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        String userId = (auth != null && auth.getPrincipal() instanceof String)
+                ? (String) auth.getPrincipal() : null;
+
+        if (userId != null) {
+            auditService.log(userId, "LOGOUT", "/api/auth/logout", "SUCCESS", clientIp, "");
+        }
+
+        return ResponseEntity.ok(Map.of("message", "登出成功"));
+    }
+
+    /**
+     * 取得當前登入用戶資訊
+     * GET /api/auth/me
+     *
+     * 前端改用 HttpOnly Cookie 後無法讀取 JWT，
+     * 需要此端點在頁面載入時確認登入狀態。
+     */
+    @GetMapping("/me")
+    public ResponseEntity<?> me(Authentication authentication) {
+        if (authentication == null || authentication.getPrincipal() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ErrorResponse.builder().error("未登入").build());
+        }
+
+        String userId = (String) authentication.getPrincipal();
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ErrorResponse.builder().error("用戶不存在").build());
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "userId", user.getUserId(),
+                "email", user.getEmail(),
+                "role", user.getRole().name()
+        ));
+    }
+
     private String getClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isEmpty()) {
             return forwarded.split(",")[0].trim();
         }
-
         String realIp = request.getHeader("X-Real-IP");
         if (realIp != null && !realIp.isEmpty()) {
             return realIp;
         }
-
         return request.getRemoteAddr();
     }
-
 }

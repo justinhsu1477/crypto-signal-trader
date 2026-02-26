@@ -1,6 +1,7 @@
 package com.trader.auth.filter;
 
 import com.trader.auth.service.JwtService;
+import com.trader.auth.util.CookieUtil;
 import com.trader.trading.service.TradeRecordService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -21,8 +22,8 @@ import java.util.List;
 /**
  * JWT 認證過濾器
  *
- * 從 Authorization: Bearer {token} 標頭中提取 JWT，
- * 驗證後設定 Spring Security Context + ThreadLocal userId。
+ * 優先從 Authorization: Bearer {token} 標頭提取 JWT（向後相容 Monitor API），
+ * 若無 header，則 fallback 從 HttpOnly Cookie 提取（前端 Dashboard 使用）。
  */
 @Slf4j
 @Component
@@ -37,10 +38,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                      FilterChain filterChain)
             throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
+        String token = null;
+        String authSource = null;
 
+        // 1. 優先從 Authorization header 讀取（Monitor API / 向後相容）
+        String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
+            token = authHeader.substring(7);
+            authSource = "header";
+        }
+
+        // 2. Fallback: 從 HttpOnly Cookie 讀取（前端 Dashboard）
+        if (token == null) {
+            token = CookieUtil.extractAccessToken(request);
+            if (token != null) {
+                authSource = "cookie";
+            }
+        }
+
+        // 3. 驗證 Token
+        if (token != null) {
             try {
                 if (jwtService.validateToken(token)) {
                     String userId = jwtService.extractUserId(token);
@@ -48,8 +65,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
-                                    userId,     // principal = userId
-                                    null,       // credentials
+                                    userId,
+                                    null,
                                     List.of(new SimpleGrantedAuthority("ROLE_" + role))
                             );
                     authentication.setDetails(
@@ -57,10 +74,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                     TradeRecordService.setCurrentUserId(userId);
-                    log.debug("JWT 認證成功: userId={} role={}", userId, role);
+                    log.debug("JWT 認證成功 ({}): userId={} role={}", authSource, userId, role);
                 }
             } catch (Exception e) {
-                log.warn("JWT 處理失敗: {}", e.getMessage());
+                log.warn("JWT 處理失敗 ({}): {}", authSource, e.getMessage());
             }
         }
 

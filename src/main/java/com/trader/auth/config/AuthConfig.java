@@ -56,19 +56,20 @@ public class AuthConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        // === Auth 端點：me 和 logout 需要認證 ===
+                        .requestMatchers("/api/auth/me", "/api/auth/logout").authenticated()
                         // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/health", "/api/health/deep").permitAll()
-                        // Stripe webhook 已移除（改用 USDT TRC20 付款）
 
-                        // === ADMIN 專用：需要 ADMIN 角色（JWT ADMIN 或 Monitor API Key） ===
+                        // === ADMIN 專用 ===
                         .requestMatchers(
                                 "/api/execute-signal", "/api/broadcast-trade",
                                 "/api/parse-signal"
                         ).hasRole("ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                        // === 受保護：需要 JWT 或 Monitor API Key（任何角色） ===
+                        // === 受保護：需要 JWT 或 Monitor API Key ===
                         .requestMatchers(
                                 "/api/execute-trade",
                                 "/api/balance", "/api/positions",
@@ -78,17 +79,13 @@ public class AuthConfig {
                                 "/api/heartbeat"
                         ).authenticated()
 
-                        // === 推薦系統：需要 JWT（ReferralVerificationFilter 白名單放行） ===
                         .requestMatchers("/api/referral/**").authenticated()
-
-                        // === 受保護：SaaS 端點需要 JWT ===
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/dashboard/**").authenticated()
                         .requestMatchers("/api/subscription/**").authenticated()
                         .requestMatchers("/api/trades/**").authenticated()
                         .requestMatchers("/api/stats/**").authenticated()
 
-                        // === 其他：全部拒絕 ===
                         .anyRequest().denyAll()
                 )
                 // Filter 順序：API Key → JWT → Referral Verification → Spring Security

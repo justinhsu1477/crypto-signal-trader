@@ -14,10 +14,10 @@ const EVENTS: (keyof DocumentEventMap)[] = [
 /**
  * 閒置自動登出 hook
  *
- * 偵測 30 分鐘無滑鼠/鍵盤/觸控操作，自動清除 token 並踢回登入頁。
+ * 偵測 30 分鐘無滑鼠/鍵盤/觸控操作，自動呼叫 logout（清除 HttpOnly Cookie）並踢回登入頁。
  * 僅在使用者已登入時啟用。
  */
-export function useIdleLogout(token: string | null, logout: () => void) {
+export function useIdleLogout(isAuthenticated: boolean, logout: () => void) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetTimer = useCallback(() => {
@@ -32,7 +32,7 @@ export function useIdleLogout(token: string | null, logout: () => void) {
 
   useEffect(() => {
     // 未登入不啟動
-    if (!token) return;
+    if (!isAuthenticated) return;
 
     resetTimer();
 
@@ -46,5 +46,5 @@ export function useIdleLogout(token: string | null, logout: () => void) {
         document.removeEventListener(event, resetTimer);
       }
     };
-  }, [token, resetTimer]);
+  }, [isAuthenticated, resetTimer]);
 }

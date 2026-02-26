@@ -12,11 +12,10 @@ export interface RegisterRequest {
 }
 
 export interface LoginResponse {
-  token: string;
-  refreshToken: string;
-  expiresIn: number;
   userId: string;
   email: string;
+  role: string;
+  expiresIn: number;
 }
 
 export interface RegisterResponse {
