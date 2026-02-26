@@ -6,6 +6,7 @@ import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.notification.service.DiscordWebhookService;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserDiscordWebhookService;
 import com.trader.user.service.UserTradeSettingsService;
@@ -37,6 +38,7 @@ class DashboardControllerTest {
     private UserRepository userRepository;
     private UserDiscordWebhookService webhookService;
     private UserTradeSettingsService tradeSettingsService;
+    private DiscordWebhookService discordWebhookService;
     private DashboardController controller;
 
     @BeforeEach
@@ -45,7 +47,8 @@ class DashboardControllerTest {
         userRepository = mock(UserRepository.class);
         webhookService = mock(UserDiscordWebhookService.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
-        controller = new DashboardController(dashboardService, userRepository, webhookService, tradeSettingsService);
+        discordWebhookService = mock(DiscordWebhookService.class);
+        controller = new DashboardController(dashboardService, userRepository, webhookService, tradeSettingsService, discordWebhookService);
     }
 
     // ==================== /overview ====================

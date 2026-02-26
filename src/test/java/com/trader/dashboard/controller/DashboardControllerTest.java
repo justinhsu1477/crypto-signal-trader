@@ -11,6 +11,7 @@ import com.trader.user.dto.UpdateTradeSettingsRequest;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserDiscordWebhook;
 import com.trader.user.entity.UserTradeSettings;
+import com.trader.notification.service.DiscordWebhookService;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserDiscordWebhookService;
 import com.trader.user.service.UserTradeSettingsService;
@@ -35,6 +36,7 @@ class DashboardControllerTest {
     private UserRepository userRepository;
     private UserDiscordWebhookService webhookService;
     private UserTradeSettingsService tradeSettingsService;
+    private DiscordWebhookService discordWebhookService;
     private DashboardController controller;
     private MockedStatic<SecurityUtil> securityUtil;
 
@@ -44,7 +46,8 @@ class DashboardControllerTest {
         userRepository = mock(UserRepository.class);
         webhookService = mock(UserDiscordWebhookService.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
-        controller = new DashboardController(dashboardService, userRepository, webhookService, tradeSettingsService);
+        discordWebhookService = mock(DiscordWebhookService.class);
+        controller = new DashboardController(dashboardService, userRepository, webhookService, tradeSettingsService, discordWebhookService);
         securityUtil = mockStatic(SecurityUtil.class);
         securityUtil.when(SecurityUtil::getCurrentUserId).thenReturn("user-123");
     }
