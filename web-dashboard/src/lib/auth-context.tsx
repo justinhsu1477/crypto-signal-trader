@@ -10,6 +10,7 @@ interface AuthState {
   isAuthenticated: boolean;
   userId: string | null;
   email: string | null;
+  role: string | null;
   isLoading: boolean;
 }
 
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
     userId: null,
     email: null,
+    role: null,
     isLoading: true,
   });
 
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isAuthenticated: true,
           userId: user.userId,
           email: user.email,
+          role: user.role ?? null,
           isLoading: false,
         });
       } catch {
@@ -48,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isAuthenticated: false,
           userId: null,
           email: null,
+          role: null,
           isLoading: false,
         });
       }
@@ -62,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: true,
       userId: res.userId,
       email: res.email,
+      role: res.role ?? null,
       isLoading: false,
     });
   }, []);
@@ -78,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: false,
       userId: null,
       email: null,
+      role: null,
       isLoading: false,
     });
   }, []);

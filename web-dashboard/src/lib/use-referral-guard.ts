@@ -24,16 +24,25 @@ export function clearReferralCache() {
  * - VERIFIED → cache + allow through
  * - NOT_STARTED / PENDING → needsReferral=true (let UI show dialog)
  * - On /referral page → skip check (prevent infinite loop)
+ * - ADMIN role → skip check entirely (backend already bypasses)
  * - API error → fail-open (backend 403 is safety net)
  */
-export function useReferralGuard(): ReferralGuardState {
+export function useReferralGuard(role?: string | null): ReferralGuardState {
   const pathname = usePathname();
-  const [isChecking, setIsChecking] = useState(() => cachedStatus !== "VERIFIED");
-  const [isVerified, setIsVerified] = useState(() => cachedStatus === "VERIFIED");
+  const isAdmin = role === "ADMIN";
+  const [isChecking, setIsChecking] = useState(() => isAdmin || cachedStatus === "VERIFIED" ? false : true);
+  const [isVerified, setIsVerified] = useState(() => isAdmin || cachedStatus === "VERIFIED");
   const [needsReferral, setNeedsReferral] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
+    // ADMIN role — skip referral check entirely (backend already bypasses)
+    if (isAdmin) {
+      setIsVerified(true);
+      setIsChecking(false);
+      return;
+    }
+
     // Already verified from cache — initial state already handles this via useState initializer
     if (cachedStatus === "VERIFIED") return;
 
