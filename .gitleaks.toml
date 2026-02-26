@@ -15,4 +15,6 @@ useDefault = true
     '''.*Test\.java''',
     '''package-lock\.json''',
     '''\.gitleaks\.toml''',
+    # CookieUtil: ACCESS_TOKEN / REFRESH_TOKEN 是 Cookie 名稱常數，非真實密鑰
+    '''.*CookieUtil\.java''',
   ]
