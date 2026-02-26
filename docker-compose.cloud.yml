@@ -2,7 +2,9 @@
 # Cloud 環境 — Caddy + Spring Boot + Dashboard（不含 Python Monitor）
 # ========================================
 # 使用方式:
-#   docker compose -f docker-compose.cloud.yml up -d --build
+#   docker compose -f docker-compose.cloud.yml up -d
+#
+# Image 由 GitHub Actions CD 自動建構推送到 GHCR，VM 只需 pull + restart
 #
 # SSL: Cloudflare Full (Strict) + Origin Certificate
 #   - certs/ 目錄需放入 origin-cert.pem 和 origin-key.pem
@@ -29,9 +31,6 @@ services:
 
   trading-api:
     image: ghcr.io/justinhsu1477/crypto-signal-trader/trading-api:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: trading-api
     expose:
       - "8080"
@@ -47,11 +46,6 @@ services:
 
   web-dashboard:
     image: ghcr.io/justinhsu1477/crypto-signal-trader/web-dashboard:latest
-    build:
-      context: ./web-dashboard
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: http://trading-api:8080
     container_name: web-dashboard
     expose:
       - "3000"
