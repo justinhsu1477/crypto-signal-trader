@@ -261,10 +261,31 @@ const translations = {
       "zh-TW": "我們注重質量而非數量 — 連接經過精心篩選的訊號來源，並對每筆交易施加機構級風險管理。技術優先的理念意味著持續提升執行速度、風控能力和分析工具。",
       "zh-CN": "我们注重质量而非数量 — 连接经过精心筛选的信号来源，并对每笔交易施加机构级风险管理。技术优先的理念意味着持续提升执行速度、风控能力和分析工具。",
     },
-    aboutStat247: { en: "Automated Trading", "zh-TW": "全自動交易", "zh-CN": "全自动交易" },
-    aboutStatEncryption: { en: "Military-Grade Encryption", "zh-TW": "軍事級加密", "zh-CN": "军事级加密" },
-    aboutStatMetrics: { en: "Performance Metrics", "zh-TW": "績效指標", "zh-CN": "绩效指标" },
-    aboutStatSpeed: { en: "Signal Execution", "zh-TW": "訊號執行速度", "zh-CN": "信号执行速度" },
+    // ── Stats bar section ──
+    statsBarTrades: { en: "Total Trades Executed", "zh-TW": "累計執行交易", "zh-CN": "累计执行交易" },
+    statsBarWinRate: { en: "Average Win Rate", "zh-TW": "平均勝率", "zh-CN": "平均胜率" },
+    statsBarTraders: { en: "Active Traders", "zh-TW": "活躍交易者", "zh-CN": "活跃交易者" },
+    statsBarSpeed: { en: "Signal Execution", "zh-TW": "訊號執行速度", "zh-CN": "信号执行速度" },
+    // ── About section — trust badges ──
+    aboutTrustNonCustodial: { en: "Non-Custodial", "zh-TW": "非託管架構", "zh-CN": "非托管架构" },
+    aboutTrustEncrypted: { en: "AES-256 Encrypted", "zh-TW": "AES-256 加密", "zh-CN": "AES-256 加密" },
+    aboutTrustBinance: { en: "Binance Integration", "zh-TW": "幣安整合", "zh-CN": "币安集成" },
+    aboutTrustUptime: { en: "24/7 Uptime", "zh-TW": "全天候運行", "zh-CN": "全天候运行" },
+    // ── About section — testimonials ──
+    aboutTestimonial1: {
+      en: "HookFi completely changed my trading routine. I set it up once and it handles everything while I focus on strategy.",
+      "zh-TW": "HookFi 徹底改變了我的交易方式。設定一次後它自動處理一切，讓我專注在策略研究上。",
+      "zh-CN": "HookFi 彻底改变了我的交易方式。设定一次后它自动处理一切，让我专注在策略研究上。",
+    },
+    aboutTestimonialName1: { en: "Alex T.", "zh-TW": "Alex T.", "zh-CN": "Alex T." },
+    aboutTestimonialRole1: { en: "Crypto Trader", "zh-TW": "加密貨幣交易者", "zh-CN": "加密货币交易者" },
+    aboutTestimonial2: {
+      en: "The risk management features are what sold me. Daily loss limits and automatic stop-loss give me peace of mind.",
+      "zh-TW": "風控功能讓我完全信服。每日虧損上限與自動止損讓我安心交易。",
+      "zh-CN": "风控功能让我完全信服。每日亏损上限与自动止损让我安心交易。",
+    },
+    aboutTestimonialName2: { en: "Sarah K.", "zh-TW": "Sarah K.", "zh-CN": "Sarah K." },
+    aboutTestimonialRole2: { en: "DeFi Investor", "zh-TW": "DeFi 投資者", "zh-CN": "DeFi 投资者" },
     // ── Contact section ──
     contactBadge: { en: "Get in Touch", "zh-TW": "聯繫我們", "zh-CN": "联系我们" },
     contactTitle: { en: "Have Questions? We're Here to Help", "zh-TW": "有問題嗎？我們隨時為您服務", "zh-CN": "有问题吗？我们随时为您服务" },
