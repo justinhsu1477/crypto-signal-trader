@@ -192,9 +192,10 @@ export async function resendCode(data: ResendCodeRequest): Promise<{ message: st
 /**
  * 取得當前登入用戶資訊（從 HttpOnly Cookie 認證）
  * 前端在頁面載入時呼叫，確認登入狀態。
+ * 用 publicRequest 而非 request：未登入時不觸發 401 redirect，避免公開頁面 reload loop。
  */
 export async function fetchCurrentUser(): Promise<{ userId: string; email: string; role: string }> {
-  return request<{ userId: string; email: string; role: string }>("/api/auth/me");
+  return publicRequest<{ userId: string; email: string; role: string }>("/api/auth/me");
 }
 
 /**

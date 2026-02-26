@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter, usePathname } from "next/navigation";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -16,7 +16,16 @@ interface PricingTier {
 }
 
 export function PricingSection() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { t } = useT();
+
+  function handleCta() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (pathname !== "/register") {
+      router.push("/register");
+    }
+  }
 
   const tiers: PricingTier[] = [
     {
@@ -122,14 +131,14 @@ export function PricingSection() {
               </ul>
 
               <Button
-                asChild
+                onClick={handleCta}
                 className={`w-full ${
                   tier.highlighted
                     ? "bg-emerald-600 hover:bg-emerald-500 text-white"
                     : "bg-white/5 hover:bg-white/10 text-foreground"
                 }`}
               >
-                <Link href="/register">{t(tier.ctaKey)}</Link>
+                {t(tier.ctaKey)}
               </Button>
             </div>
           ))}
