@@ -117,10 +117,11 @@ public class BroadcastTradeService {
                     discordWebhookService.sendNotificationToUser(
                             user.getUserId(),
                             "✅ 廣播跟單已執行",
-                            String.format("%s %s\n入場: %s\n訊號來源: 廣播",
+                            String.format("%s %s\n入場: %s\n用戶: %s\n訊號來源: 廣播",
                                     request.getSymbol(),
                                     request.getSide(),
-                                    request.getEntryPrice()),
+                                    request.getEntryPrice(),
+                                    user.getUserId()),
                             DiscordWebhookService.COLOR_GREEN);
                 } catch (Exception e) {
                     failCount.incrementAndGet();
@@ -130,8 +131,9 @@ public class BroadcastTradeService {
                     discordWebhookService.sendNotificationToUser(
                             user.getUserId(),
                             "❌ 廣播跟單失敗",
-                            String.format("%s\n錯誤: %s",
+                            String.format("%s\n用戶: %s\n錯誤: %s",
                                     request.getSymbol(),
+                                    user.getUserId(),
                                     e.getMessage()),
                             DiscordWebhookService.COLOR_RED);
                 }

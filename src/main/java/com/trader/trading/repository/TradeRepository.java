@@ -131,6 +131,21 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' ORDER BY t.exitTime DESC")
     List<Trade> findAllClosedTradesDesc();
 
+    /**
+     * 找某交易對最近被啟動對帳 CANCELLED 的交易（fallback：被誤標時可恢復）
+     * 只找 4 小時內且 exitReason = STALE_CLEANUP_STARTUP 的交易，按更新時間倒序
+     */
+    @Query("SELECT t FROM Trade t WHERE t.symbol = :symbol AND t.status = 'CANCELLED' " +
+           "AND t.exitReason = 'STALE_CLEANUP_STARTUP' AND t.updatedAt >= :since ORDER BY t.updatedAt DESC")
+    List<Trade> findRecentlyStaleCleanedTrades(@Param("symbol") String symbol, @Param("since") LocalDateTime since);
+
+    /**
+     * 找用戶某交易對最近被啟動對帳 CANCELLED 的交易
+     */
+    @Query("SELECT t FROM Trade t WHERE t.userId = :userId AND t.symbol = :symbol AND t.status = 'CANCELLED' " +
+           "AND t.exitReason = 'STALE_CLEANUP_STARTUP' AND t.updatedAt >= :since ORDER BY t.updatedAt DESC")
+    List<Trade> findUserRecentlyStaleCleanedTrades(@Param("userId") String userId, @Param("symbol") String symbol, @Param("since") LocalDateTime since);
+
     // ========== userId 相關查詢（多用戶支援） ==========
 
     /**
