@@ -133,4 +133,10 @@ public class JwtService {
     public long getExpirationMs() {
         return expirationMs;
     }
+    /**
+     * 取得 Refresh Token 過期時間（毫秒）
+     */
+    public long getRefreshExpirationMs() {
+        return refreshExpirationMs;
+    }
 }

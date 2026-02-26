@@ -97,7 +97,7 @@ crypto:
 jwt:
   secret: ${JWT_SECRET:default-dev-secret-change-in-production-must-be-at-least-256-bits-long}
   expiration-ms: 1800000           # 30 分鐘（交易平台安全標準）
-  refresh-expiration-ms: 604800000  # 7 days
+  refresh-expiration-ms: 259200000  # 3 days
 
 encryption:
   aes-key: ${AES_ENCRYPTION_KEY:default-aes-key-change-in-prod!!}

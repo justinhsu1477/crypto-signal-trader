@@ -35,65 +35,43 @@ const BASE = "";  // 使用 Next.js rewrites proxy
 // 防止多個並行請求同時觸發 refresh
 let refreshPromise: Promise<boolean> | null = null;
 
-function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("token");
-}
+/**
+ * 嘗試用 HttpOnly Cookie 中的 Refresh Token 取得新的 Access Token
+ * 使用單例模式：多個並行 401 只觸發一次 refresh
+ */
+async function tryRefreshToken(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",  // Cookie 自動帶上
+      headers: { "Content-Type": "application/json" },
+    });
 
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("refreshToken");
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 function clearAuthAndRedirect(): void {
   if (typeof window !== "undefined") {
-    localStorage.removeItem("token");
-    localStorage.removeItem("refreshToken");
     localStorage.removeItem("userId");
     localStorage.removeItem("email");
     window.location.href = "/login";
   }
 }
 
-/**
- * 嘗試用 refreshToken 取得新的 access token
- * 使用單例模式：多個並行 401 只觸發一次 refresh
- */
-async function tryRefreshToken(): Promise<boolean> {
-  const rt = getRefreshToken();
-  if (!rt) return false;
-
-  try {
-    const res = await fetch(`${BASE}/api/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: rt }),
-    });
-
-    if (!res.ok) return false;
-
-    const data = await res.json();
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("refreshToken", data.refreshToken);
-    if (data.userId) localStorage.setItem("userId", data.userId);
-    if (data.email) localStorage.setItem("email", data.email);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...((options.headers as Record<string, string>) || {}),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
-  const res = await fetch(`${BASE}${url}`, { ...options, headers });
+  const res = await fetch(`${BASE}${url}`, {
+    ...options,
+    headers,
+    credentials: "include",  // HttpOnly Cookie 自動帶上
+  });
 
   if (res.status === 401) {
     // 嘗試 refresh token（單例模式，防止並行重複 refresh）
@@ -105,16 +83,12 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     const refreshed = await refreshPromise;
 
     if (refreshed) {
-      // Refresh 成功 → 用新 token 重試原始請求
-      const newToken = getToken();
-      const retryHeaders: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...((options.headers as Record<string, string>) || {}),
-      };
-      if (newToken) {
-        retryHeaders["Authorization"] = `Bearer ${newToken}`;
-      }
-      const retryRes = await fetch(`${BASE}${url}`, { ...options, headers: retryHeaders });
+      // Refresh 成功 → 重試原始請求（Cookie 已自動更新）
+      const retryRes = await fetch(`${BASE}${url}`, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
 
       if (retryRes.ok) {
         return retryRes.json() as Promise<T>;
@@ -126,7 +100,6 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
         throw new Error("Unauthorized");
       }
 
-      // 其他錯誤照常處理（繼續往下走 403 / !res.ok 邏輯）
       const body = await retryRes.text();
       throw new Error(body || `HTTP ${retryRes.status}`);
     }
@@ -165,8 +138,8 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 /**
  * 公開 API 請求（不含 401 token refresh 邏輯）
- * 用於 login / register 等不需要 JWT 的端點，
- * 避免帳密錯誤的 401 被誤判為 session 過期而重導頁面。
+ * 用於 login / register 等不需要 JWT 的端點。
+ * 仍帶 credentials: "include" 以接收 Set-Cookie。
  */
 async function publicRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
@@ -174,7 +147,11 @@ async function publicRequest<T>(url: string, options: RequestInit = {}): Promise
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  const res = await fetch(`${BASE}${url}`, { ...options, headers });
+  const res = await fetch(`${BASE}${url}`, {
+    ...options,
+    headers,
+    credentials: "include",  // 接收 Set-Cookie
+  });
 
   if (!res.ok) {
     const body = await res.text();
@@ -198,9 +175,6 @@ export async function register(data: RegisterRequest): Promise<RegisterResponse>
   });
 }
 
-// refreshToken 已整合進 request() 的 401 自動重試機制
-// 不再需要外部呼叫
-
 export async function verifyEmail(data: VerifyEmailRequest): Promise<{ message: string }> {
   return publicRequest<{ message: string }>("/api/auth/verify-email", {
     method: "POST",
@@ -213,6 +187,28 @@ export async function resendCode(data: ResendCodeRequest): Promise<{ message: st
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+/**
+ * 取得當前登入用戶資訊（從 HttpOnly Cookie 認證）
+ * 前端在頁面載入時呼叫，確認登入狀態。
+ */
+export async function fetchCurrentUser(): Promise<{ userId: string; email: string; role: string }> {
+  return request<{ userId: string; email: string; role: string }>("/api/auth/me");
+}
+
+/**
+ * 登出（清除 HttpOnly Cookie）
+ */
+export async function apiLogout(): Promise<void> {
+  try {
+    await fetch(`${BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // 即使 API 失敗也要清除本地狀態
+  }
 }
 
 // ==================== User ====================

@@ -2,10 +2,10 @@
  * api.ts 測試
  *
  * 測試重點：
- * 1. Refresh Token 自動重試機制（401 → refresh → retry）
- * 2. Refresh 失敗 → 清除登入狀態 + redirect
- * 3. 403 REFERRAL_NOT_VERIFIED → redirect /referral
- * 4. 正常請求 + Authorization header
+ * 1. HttpOnly Cookie 認證：credentials: "include" 帶上
+ * 2. Refresh Token 自動重試機制（401 → refresh → retry）
+ * 3. Refresh 失敗 → 清除登入狀態 + redirect
+ * 4. 403 REFERRAL_NOT_VERIFIED → redirect /referral
  * 5. 並行 401 的單例 refresh（防止重複呼叫）
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -29,6 +29,7 @@ beforeEach(() => {
   // @ts-expect-error -- mock location.href
   delete window.location;
   window.location = { ...originalLocation, href: "" } as Location;
+  localStorage.clear();
 });
 
 function jsonResponse(data: unknown, status = 200) {
@@ -52,8 +53,7 @@ function textResponse(body: string, status: number) {
 // ==================== Normal Request ====================
 
 describe("正常請求", () => {
-  it("帶 Authorization header", async () => {
-    localStorage.setItem("token", "my-jwt");
+  it("帶 credentials: include（HttpOnly Cookie 自動帶上）", async () => {
     mockFetch.mockReturnValueOnce(
       jsonResponse({ id: "u1", email: "test@test.com" })
     );
@@ -65,26 +65,22 @@ describe("正常請求", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/user/me",
       expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer my-jwt",
-        }),
+        credentials: "include",
       })
     );
   });
 
-  it("無 token 時不帶 Authorization", async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ id: "anon" }));
+  it("不帶 Authorization header（改用 Cookie）", async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: "u1" }));
 
     const api = await loadApi();
-    const result = await api.getUserProfile();
+    await api.getUserProfile();
 
-    expect(result).toEqual({ id: "anon" });
     const headers = mockFetch.mock.calls[0][1].headers;
     expect(headers.Authorization).toBeUndefined();
   });
 
   it("非 ok 回應 → 拋出 Error（含 body）", async () => {
-    localStorage.setItem("token", "my-jwt");
     mockFetch.mockReturnValueOnce(
       textResponse("Server Error", 500)
     );
@@ -98,22 +94,14 @@ describe("正常請求", () => {
 
 describe("401 Refresh Token 自動重試", () => {
   it("refresh 成功 → 重試原始請求", async () => {
-    localStorage.setItem("token", "expired-jwt");
-    localStorage.setItem("refreshToken", "valid-refresh");
-
     // 第 1 次呼叫 getUserProfile → 401
     mockFetch.mockReturnValueOnce(
       textResponse("", 401)
     );
 
-    // 第 2 次呼叫 /api/auth/refresh → 成功
+    // 第 2 次呼叫 /api/auth/refresh → 成功（Cookie 由 Set-Cookie 自動更新）
     mockFetch.mockReturnValueOnce(
-      jsonResponse({
-        token: "new-jwt",
-        refreshToken: "new-refresh",
-        userId: "u1",
-        email: "test@test.com",
-      })
+      jsonResponse({ userId: "u1", email: "test@test.com", role: "USER" })
     );
 
     // 第 3 次：重試 getUserProfile → 成功
@@ -126,23 +114,22 @@ describe("401 Refresh Token 自動重試", () => {
 
     expect(result).toEqual({ id: "u1", email: "test@test.com" });
 
-    // 驗證 token 已更新
-    expect(localStorage.getItem("token")).toBe("new-jwt");
-    expect(localStorage.getItem("refreshToken")).toBe("new-refresh");
-    expect(localStorage.getItem("userId")).toBe("u1");
-    expect(localStorage.getItem("email")).toBe("test@test.com");
+    // refresh 呼叫也帶 credentials: include
+    const refreshCall = mockFetch.mock.calls[1];
+    expect(refreshCall[0]).toBe("/api/auth/refresh");
+    expect(refreshCall[1]).toMatchObject({
+      method: "POST",
+      credentials: "include",
+    });
 
-    // 第三次呼叫用新 token
-    const retryHeaders = mockFetch.mock.calls[2][1].headers;
-    expect(retryHeaders.Authorization).toBe("Bearer new-jwt");
+    // 重試也帶 credentials: include
+    expect(mockFetch.mock.calls[2][1].credentials).toBe("include");
 
     // 不應 redirect
     expect(window.location.href).toBe("");
   });
 
   it("refresh 失敗 → 清除登入 + redirect /login", async () => {
-    localStorage.setItem("token", "expired-jwt");
-    localStorage.setItem("refreshToken", "invalid-refresh");
     localStorage.setItem("userId", "u1");
     localStorage.setItem("email", "test@test.com");
 
@@ -155,9 +142,7 @@ describe("401 Refresh Token 自動重試", () => {
     const api = await loadApi();
     await expect(api.getUserProfile()).rejects.toThrow("Unauthorized");
 
-    // localStorage 全部清除
-    expect(localStorage.getItem("token")).toBeNull();
-    expect(localStorage.getItem("refreshToken")).toBeNull();
+    // localStorage userId/email 已清除
     expect(localStorage.getItem("userId")).toBeNull();
     expect(localStorage.getItem("email")).toBeNull();
 
@@ -165,30 +150,12 @@ describe("401 Refresh Token 自動重試", () => {
     expect(window.location.href).toBe("/login");
   });
 
-  it("無 refreshToken → 直接清除登入 + redirect", async () => {
-    localStorage.setItem("token", "expired-jwt");
-    // 不設 refreshToken
-
-    // 呼叫 → 401
-    mockFetch.mockReturnValueOnce(textResponse("", 401));
-
-    const api = await loadApi();
-    await expect(api.getUserProfile()).rejects.toThrow("Unauthorized");
-
-    expect(window.location.href).toBe("/login");
-    // 只呼叫一次 fetch（不嘗試 refresh）
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
   it("refresh 成功但重試仍 401 → 清除登入 + redirect", async () => {
-    localStorage.setItem("token", "expired-jwt");
-    localStorage.setItem("refreshToken", "valid-refresh");
-
     // 第 1 次 → 401
     mockFetch.mockReturnValueOnce(textResponse("", 401));
     // refresh 成功
     mockFetch.mockReturnValueOnce(
-      jsonResponse({ token: "new-jwt", refreshToken: "new-refresh" })
+      jsonResponse({ userId: "u1", email: "test@test.com", role: "USER" })
     );
     // 重試仍 401
     mockFetch.mockReturnValueOnce(textResponse("", 401));
@@ -199,16 +166,13 @@ describe("401 Refresh Token 自動重試", () => {
   });
 
   it("並行 401 只觸發一次 refresh", async () => {
-    localStorage.setItem("token", "expired-jwt");
-    localStorage.setItem("refreshToken", "valid-refresh");
-
     // 兩個並行請求都返回 401
     mockFetch.mockReturnValueOnce(textResponse("", 401)); // getUserProfile
     mockFetch.mockReturnValueOnce(textResponse("", 401)); // getApiKeys
 
     // 只觸發一次 refresh
     mockFetch.mockReturnValueOnce(
-      jsonResponse({ token: "new-jwt", refreshToken: "new-refresh" })
+      jsonResponse({ userId: "u1", email: "test@test.com", role: "USER" })
     );
 
     // 兩個重試都成功
@@ -241,8 +205,6 @@ describe("401 Refresh Token 自動重試", () => {
 
 describe("403 REFERRAL_NOT_VERIFIED", () => {
   it("redirect /referral + 拋出 Error", async () => {
-    localStorage.setItem("token", "valid-jwt");
-
     // 模擬在 dashboard 頁
     Object.defineProperty(window.location, "pathname", {
       value: "/",
@@ -266,8 +228,6 @@ describe("403 REFERRAL_NOT_VERIFIED", () => {
   });
 
   it("已在 /referral → 不重導，仍拋出 Error", async () => {
-    localStorage.setItem("token", "valid-jwt");
-
     Object.defineProperty(window.location, "pathname", {
       value: "/referral",
       writable: true,
@@ -291,8 +251,6 @@ describe("403 REFERRAL_NOT_VERIFIED", () => {
   });
 
   it("非 REFERRAL_NOT_VERIFIED 的 403 → 拋出一般錯誤", async () => {
-    localStorage.setItem("token", "valid-jwt");
-
     mockFetch.mockReturnValueOnce(
       textResponse("Forbidden", 403)
     );
@@ -309,8 +267,6 @@ describe("403 REFERRAL_NOT_VERIFIED", () => {
 
 describe("Referral API 函式", () => {
   it("getReferralStatus → GET /api/referral/status", async () => {
-    localStorage.setItem("token", "my-jwt");
-
     const mockData = {
       status: "NOT_STARTED",
       exchangeUid: null,
@@ -326,13 +282,11 @@ describe("Referral API 函式", () => {
     expect(result).toEqual(mockData);
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/referral/status",
-      expect.anything()
+      expect.objectContaining({ credentials: "include" })
     );
   });
 
   it("submitReferralUid → POST /api/referral/submit-uid", async () => {
-    localStorage.setItem("token", "my-jwt");
-
     const mockData = {
       status: "PENDING",
       exchangeUid: "12345678",
@@ -349,11 +303,11 @@ describe("Referral API 函式", () => {
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/referral/submit-uid");
     expect(opts.method).toBe("POST");
+    expect(opts.credentials).toBe("include");
     expect(JSON.parse(opts.body)).toEqual({ exchangeUid: "12345678" });
   });
 
   it("getReferralProgram → GET /api/referral/program", async () => {
-    localStorage.setItem("token", "my-jwt");
     mockFetch.mockReturnValueOnce(jsonResponse({ referralCode: "XYZ" }));
 
     const api = await loadApi();
@@ -361,7 +315,58 @@ describe("Referral API 函式", () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/referral/program",
-      expect.anything()
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+});
+
+// ==================== Auth Functions ====================
+
+describe("Auth API 函式", () => {
+  it("login → POST /api/auth/login（帶 credentials: include 接收 Set-Cookie）", async () => {
+    mockFetch.mockReturnValueOnce(
+      jsonResponse({ userId: "u1", email: "test@test.com", role: "USER", expiresIn: 1800 })
+    );
+
+    const api = await loadApi();
+    const result = await api.login({ email: "test@test.com", password: "pw" });
+
+    expect(result).toEqual({
+      userId: "u1",
+      email: "test@test.com",
+      role: "USER",
+      expiresIn: 1800,
+    });
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/auth/login");
+    expect(opts.credentials).toBe("include");
+  });
+
+  it("apiLogout → POST /api/auth/logout", async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ message: "登出成功" }));
+
+    const api = await loadApi();
+    await api.apiLogout();
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/auth/logout");
+    expect(opts.method).toBe("POST");
+    expect(opts.credentials).toBe("include");
+  });
+
+  it("fetchCurrentUser → GET /api/auth/me", async () => {
+    mockFetch.mockReturnValueOnce(
+      jsonResponse({ userId: "u1", email: "test@test.com", role: "USER" })
+    );
+
+    const api = await loadApi();
+    const result = await api.fetchCurrentUser();
+
+    expect(result).toEqual({ userId: "u1", email: "test@test.com", role: "USER" });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/auth/me",
+      expect.objectContaining({ credentials: "include" })
     );
   });
 });
