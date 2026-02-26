@@ -1,7 +1,18 @@
 "use client";
 
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu } from "lucide-react";
+import {
+  Menu,
+  LayoutDashboard,
+  BarChart3,
+  History,
+  Link2,
+  Settings,
+  LogOut,
+  Monitor,
+  Users,
+  ClipboardCheck,
+} from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -9,12 +20,11 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
 import { LanguageSwitcher } from "@/components/ui/language-switcher";
-import { LayoutDashboard, BarChart3, History, Link2, Settings, LogOut } from "lucide-react";
 import { useState } from "react";
 
 export function Header() {
   const pathname = usePathname();
-  const { logout, email } = useAuth();
+  const { logout, email, role } = useAuth();
   const { t } = useT();
   const [open, setOpen] = useState(false);
 
@@ -25,6 +35,14 @@ export function Header() {
     { href: "/referral", label: t("nav.referral"), icon: Link2 },
     { href: "/settings", label: t("nav.settings"), icon: Settings },
   ];
+
+  const adminItems = [
+    { href: "/admin", label: t("nav.adminOverview"), icon: Monitor },
+    { href: "/admin/users", label: t("nav.adminUsers"), icon: Users },
+    { href: "/admin/referrals", label: t("nav.adminReferrals"), icon: ClipboardCheck },
+  ];
+
+  const isAdmin = role === "ADMIN";
 
   return (
     <header className="md:hidden sticky top-0 z-50 flex items-center justify-between px-4 py-3 bg-card border-b border-border">
@@ -66,6 +84,36 @@ export function Header() {
                   </Link>
                 );
               })}
+
+              {/* Admin Section */}
+              {isAdmin && (
+                <>
+                  <div className="pt-4 pb-1 px-3">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                      {t("nav.adminSection")}
+                    </span>
+                  </div>
+                  {adminItems.map((item) => {
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                          isActive
+                            ? "bg-purple-500/20 text-purple-400"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                        )}
+                      >
+                        <item.icon className="h-5 w-5" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </>
+              )}
             </nav>
             <div className="absolute bottom-0 left-0 right-0 border-t border-border px-3 py-4">
               <div className="px-3 mb-2 text-xs text-muted-foreground truncate">

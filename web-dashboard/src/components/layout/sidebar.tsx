@@ -11,6 +11,9 @@ import {
   Link2,
   Settings,
   LogOut,
+  Monitor,
+  Users,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -18,7 +21,7 @@ import { LanguageSwitcher } from "@/components/ui/language-switcher";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { logout, email } = useAuth();
+  const { logout, email, role } = useAuth();
   const { t } = useT();
 
   const navItems = [
@@ -28,6 +31,14 @@ export function Sidebar() {
     { href: "/referral", label: t("nav.referral"), icon: Link2 },
     { href: "/settings", label: t("nav.settings"), icon: Settings },
   ];
+
+  const adminItems = [
+    { href: "/admin", label: t("nav.adminOverview"), icon: Monitor },
+    { href: "/admin/users", label: t("nav.adminUsers"), icon: Users },
+    { href: "/admin/referrals", label: t("nav.adminReferrals"), icon: ClipboardCheck },
+  ];
+
+  const isAdmin = role === "ADMIN";
 
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-card border-r border-border">
@@ -44,7 +55,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -63,6 +74,35 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Admin Section */}
+        {isAdmin && (
+          <>
+            <div className="pt-4 pb-1 px-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                {t("nav.adminSection")}
+              </span>
+            </div>
+            {adminItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-purple-500/20 text-purple-400"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* User & Logout */}
