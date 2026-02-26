@@ -269,6 +269,7 @@ public class BinanceFuturesService {
         params.put("symbol", symbol);
         params.put("side", side);
         params.put("type", "MARKET");
+        params.put("newOrderRespType", "RESULT"); // 回傳成交結果含 avgPrice（預設 ACK 不回傳）
         params.put("quantity", formatQuantity(symbol, quantity));
 
         log.info("下市價單: {} {} {}", symbol, side, quantity);
@@ -1287,6 +1288,18 @@ public class BinanceFuturesService {
             double price = json.has("price") ? json.get("price").getAsDouble() : 0;
             if (price == 0 && json.has("avgPrice")) {
                 price = json.get("avgPrice").getAsDouble();
+            }
+            // 最後嘗試從 fills 陣列計算加權均價（RESULT 模式回傳）
+            if (price == 0 && json.has("fills") && json.getAsJsonArray("fills").size() > 0) {
+                double totalQty = 0, totalNotional = 0;
+                for (var fill : json.getAsJsonArray("fills")) {
+                    JsonObject f = fill.getAsJsonObject();
+                    double fPrice = f.get("price").getAsDouble();
+                    double fQty = f.get("qty").getAsDouble();
+                    totalQty += fQty;
+                    totalNotional += fPrice * fQty;
+                }
+                if (totalQty > 0) price = totalNotional / totalQty;
             }
 
             return OrderResult.builder()

@@ -400,3 +400,68 @@ export interface ReferralStatusResponse {
 export interface SubmitUidRequest {
   exchangeUid: string;
 }
+
+// ==================== Admin ====================
+
+export interface AdminSystemOverview {
+  totalUsers: number;
+  activeUsers: number;
+  usersWithOpenPositions: number;
+  totalOpenPositions: number;
+  totalClosedTrades: number;
+  totalNetProfit: number;
+  todayNetProfit: number;
+  todayTradeCount: number;
+  userSummaries: UserTradingSummary[];
+}
+
+export interface UserTradingSummary {
+  userId: string;
+  email: string;
+  name: string;
+  enabled: boolean;
+  autoTradeEnabled: boolean;
+  openPositionCount: number;
+  closedTradeCount: number;
+  totalNetProfit: number;
+  todayPnl: number;
+  todayTradeCount: number;
+}
+
+export interface AdminUserListResponse {
+  users: AdminUserSummary[];
+  totalUsers: number;
+  activeUsers: number;
+  adminUsers: number;
+}
+
+export interface AdminUserSummary {
+  userId: string;
+  email: string;
+  name: string;
+  role: string;
+  enabled: boolean;
+  emailVerified: boolean;
+  autoTradeEnabled: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface AdminUpdateUserRequest {
+  enabled?: boolean;
+  autoTradeEnabled?: boolean;
+  role?: string;
+}
+
+export interface AdminPendingReferral {
+  userId: string;
+  email: string;
+  exchangeUid: string;
+  submittedAt: string;
+}
+
+export interface AdminVerifyRequest {
+  userId: string;
+  approved: boolean;
+  notes?: string;
+}

@@ -542,8 +542,10 @@ public class TradeController {
         sb.append(symbol).append("\n");
         for (OrderResult r : results) {
             if (r.isSuccess()) {
+                String priceStr = r.getPrice() > 0
+                        ? String.format("%.2f", r.getPrice()) : "market";
                 sb.append("✓ 平倉 qty=").append(r.getQuantity())
-                        .append(" price=").append(r.getPrice()).append("\n");
+                        .append(" price=").append(priceStr).append("\n");
                 // 顯示 PnL（由 recordClose 回填）
                 if (r.getTotalCommission() != null) {
                     sb.append(String.format("手續費: %.2f USDT\n", r.getTotalCommission()));

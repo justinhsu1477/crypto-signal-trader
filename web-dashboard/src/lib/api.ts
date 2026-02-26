@@ -387,3 +387,45 @@ export async function submitReferralUid(
 export async function getReferralProgram(): Promise<ReferralStatusResponse> {
   return request<ReferralStatusResponse>("/api/referral/program");
 }
+
+// ==================== Admin ====================
+
+import type {
+  AdminSystemOverview,
+  AdminUserListResponse,
+  AdminUserSummary,
+  AdminUpdateUserRequest,
+  AdminPendingReferral,
+  AdminVerifyRequest,
+} from "@/types";
+
+export async function getAdminSystemOverview(): Promise<AdminSystemOverview> {
+  return request<AdminSystemOverview>("/api/admin/dashboard/system-overview");
+}
+
+export async function getAdminUsers(): Promise<AdminUserListResponse> {
+  return request<AdminUserListResponse>("/api/admin/users");
+}
+
+export async function updateAdminUser(
+  userId: string,
+  data: AdminUpdateUserRequest
+): Promise<{ message: string; user: AdminUserSummary }> {
+  return request<{ message: string; user: AdminUserSummary }>(
+    `/api/admin/users/${userId}`,
+    { method: "PUT", body: JSON.stringify(data) }
+  );
+}
+
+export async function getAdminPendingReferrals(): Promise<AdminPendingReferral[]> {
+  return request<AdminPendingReferral[]>("/api/admin/referral/pending");
+}
+
+export async function adminVerifyReferral(
+  data: AdminVerifyRequest
+): Promise<{ message: string; userId: string }> {
+  return request<{ message: string; userId: string }>(
+    "/api/admin/referral/verify",
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
