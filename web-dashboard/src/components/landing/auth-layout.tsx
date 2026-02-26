@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { PublicNavbar } from "./public-navbar";
 import { CryptoBackground } from "./crypto-background";
+import { StatsBarSection } from "./stats-bar-section";
 import { FeaturesSection } from "./features-section";
 import { PricingSection } from "./pricing-section";
 import { AboutSection } from "./about-section";
@@ -78,6 +79,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
+      <StatsBarSection />
       <FeaturesSection />
       <PricingSection />
       <AboutSection />
