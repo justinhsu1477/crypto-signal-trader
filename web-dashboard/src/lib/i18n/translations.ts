@@ -524,6 +524,29 @@ const translations = {
     availablePlans: { en: "Available Plans", "zh-TW": "可用方案", "zh-CN": "可用方案" },
     currentBadge: { en: "Current", "zh-TW": "目前", "zh-CN": "当前" },
     free: { en: "Free", "zh-TW": "免費", "zh-CN": "免费" },
+
+    // USDT 付款對話框
+    paymentTitle: { en: "USDT Payment", "zh-TW": "USDT 付款", "zh-CN": "USDT 付款" },
+    paymentDescription: {
+      en: "Please transfer the amount below to the specified wallet address, then paste the transaction hash",
+      "zh-TW": "請轉帳以下金額到指定錢包地址，完成後貼上交易 Hash",
+      "zh-CN": "请转账以下金额到指定钱包地址，完成后粘贴交易 Hash",
+    },
+    paymentPlan: { en: "Plan", "zh-TW": "方案", "zh-CN": "方案" },
+    paymentAmount: { en: "Amount", "zh-TW": "金額", "zh-CN": "金额" },
+    paymentNetwork: { en: "Network", "zh-TW": "網路", "zh-CN": "网络" },
+    paymentAddress: { en: "Receiving Address", "zh-TW": "收款地址", "zh-CN": "收款地址" },
+    paymentTxHash: {
+      en: "Transaction Hash (paste after payment)",
+      "zh-TW": "交易 Hash（付款完成後貼上）",
+      "zh-CN": "交易 Hash（付款完成后粘贴）",
+    },
+    paymentTxPlaceholder: { en: "e.g. a1b2c3d4e5f6...", "zh-TW": "例如: a1b2c3d4e5f6...", "zh-CN": "例如: a1b2c3d4e5f6..." },
+    paymentSubmit: { en: "Submit Verification", "zh-TW": "提交驗證", "zh-CN": "提交验证" },
+    paymentVerifying: { en: "Verifying...", "zh-TW": "驗證中...", "zh-CN": "验证中..." },
+    paymentTxRequired: { en: "Please enter the transaction hash", "zh-TW": "請輸入交易 Hash", "zh-CN": "请输入交易 Hash" },
+    paymentFailed: { en: "Verification failed", "zh-TW": "驗證失敗", "zh-CN": "验证失败" },
+    paymentCopied: { en: "Copied to clipboard", "zh-TW": "已複製到剪貼簿", "zh-CN": "已复制到剪贴板" },
   },
 
   // ─── referral ───
