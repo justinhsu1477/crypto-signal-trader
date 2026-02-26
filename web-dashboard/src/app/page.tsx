@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getDashboardOverview } from "@/lib/api";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { RiskBudgetCard } from "@/components/dashboard/risk-budget";
@@ -8,13 +9,23 @@ import { PositionsTable } from "@/components/dashboard/positions-table";
 import { SystemStatus } from "@/components/dashboard/system-status";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useT } from "@/lib/i18n/i18n-context";
+import { useAuth } from "@/lib/auth-context";
 import type { DashboardOverview } from "@/types";
 
 export default function HomePage() {
   const { t } = useT();
+  const { role } = useAuth();
+  const router = useRouter();
   const [data, setData] = useState<DashboardOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ADMIN users → redirect to admin dashboard
+  useEffect(() => {
+    if (role === "ADMIN") {
+      router.replace("/admin");
+    }
+  }, [role, router]);
 
   useEffect(() => {
     async function fetchOverview() {

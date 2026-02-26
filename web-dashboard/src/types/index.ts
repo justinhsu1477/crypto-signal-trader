@@ -465,3 +465,35 @@ export interface AdminVerifyRequest {
   approved: boolean;
   notes?: string;
 }
+
+// ==================== System Health ====================
+
+export interface SystemHealthResponse {
+  status: string;
+  database: {
+    status: string;
+    latencyMs: number;
+    error?: string;
+  };
+  binanceApi: {
+    status: string;
+    weightUsed: number;
+    weightRemaining: number;
+    usagePercent: string;
+    warning?: string;
+  };
+}
+
+export interface StreamStatusResponse {
+  mode: string;
+  connected: boolean;
+  totalStreams: number;
+  shuttingDown: boolean;
+  streams: Record<string, {
+    userId: string;
+    connected: boolean;
+    listenKey: string | null;
+    lastEventTime: string | null;
+    reconnectCount: number;
+  }>;
+}
