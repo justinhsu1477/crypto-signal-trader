@@ -30,49 +30,47 @@ export function clearReferralCache() {
 export function useReferralGuard(role?: string | null): ReferralGuardState {
   const pathname = usePathname();
   const isAdmin = role === "ADMIN";
-  const [isChecking, setIsChecking] = useState(() => isAdmin || cachedStatus === "VERIFIED" ? false : true);
+  const isReferralPage = pathname === "/referral";
+  const shouldSkipCheck = isAdmin || cachedStatus === "VERIFIED" || isReferralPage;
+  const [isChecking, setIsChecking] = useState(() => !shouldSkipCheck);
   const [isVerified, setIsVerified] = useState(() => isAdmin || cachedStatus === "VERIFIED");
   const [needsReferral, setNeedsReferral] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
-    // ADMIN role — skip referral check entirely (useState initializers already set correct state)
-    if (isAdmin) return;
-
-    // Already verified from cache — initial state already handles this via useState initializer
-    if (cachedStatus === "VERIFIED") return;
-
-    // On /referral page — don't check (infinite loop prevention)
-    if (pathname === "/referral") {
-      setIsChecking(false);
-      return;
-    }
+    // Skip cases: ADMIN, already verified, or on /referral page
+    // (useState initializers already set correct initial state for these)
+    if (shouldSkipCheck) return;
 
     // Prevent double-fetch in React strict mode
     if (hasFetched.current) return;
     hasFetched.current = true;
 
+    let cancelled = false;
+
     async function check() {
       try {
         const result = await getReferralStatus();
+        if (cancelled) return;
         cachedStatus = result.status;
 
         if (result.status === "VERIFIED") {
           setIsVerified(true);
-          setIsChecking(false);
         } else {
           // NOT_STARTED or PENDING → let ReferralGuard show dialog
           setNeedsReferral(true);
-          setIsChecking(false);
         }
       } catch {
         // API failure → fail-open; backend 403 filter is the safety net
-        setIsChecking(false);
+      } finally {
+        if (!cancelled) setIsChecking(false);
       }
     }
 
     check();
-  }, [pathname, isAdmin]);
+
+    return () => { cancelled = true; };
+  }, [shouldSkipCheck]);
 
   return { isChecking, isVerified, needsReferral };
 }
