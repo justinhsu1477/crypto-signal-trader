@@ -2,14 +2,8 @@ name: CD
 
 on:
   push:
-    branches: [main]        # push main → 自動 build + push GHCR
-  workflow_dispatch:         # 手動觸發（可選擇是否部署到 VM）
-    inputs:
-      deploy:
-        description: '部署到正式環境？'
-        required: true
-        type: boolean
-        default: false
+    branches: [main]        # push main → 自動 build + push GHCR + 部署
+  workflow_dispatch:         # 手動觸發（也會 build + 部署）
 
 # 同一 branch 新 push 進來 → 取消正在跑的舊 build，只保留最新
 concurrency:
@@ -74,14 +68,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=web-dashboard
 
   # ============================================================
-  # 2. 部署到正式環境（僅手動觸發 + 勾選 deploy 才執行）
-  #    push main 不會觸發部署，需要手動到 Actions 頁面操作
+  # 2. 部署到正式環境（只需 pull，不用 build）
   # ============================================================
   deploy:
     name: 🚀 部署到正式環境
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
 
     steps:
       - name: 透過 SSH 部署
