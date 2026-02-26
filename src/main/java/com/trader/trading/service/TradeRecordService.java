@@ -118,6 +118,67 @@ public class TradeRecordService {
     }
 
     /**
+     * 查找 OPEN 交易，若找不到則 fallback 查最近被啟動對帳誤標 CANCELLED 的交易
+     *
+     * 場景：LIMIT 入場單在應用重啟期間成交 → reconcileZombieOpenTrades 因
+     * positionAmt=0（掛單未成交時無持倉）標為 CANCELLED → 掛單隨後成交 →
+     * 用戶手動平倉 → recordClose 找不到 OPEN 交易 → 本方法嘗試恢復
+     */
+    private Optional<Trade> resolveOpenOrRecentlyCancelledTrade(String symbol) {
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
+        if (openTradeOpt.isPresent()) return openTradeOpt;
+
+        // Fallback: 查找 4 小時內被 STALE_CLEANUP_STARTUP 標為 CANCELLED 的交易
+        LocalDateTime since = LocalDateTime.now(AppConstants.ZONE_ID).minusHours(4);
+        List<Trade> cancelled;
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            cancelled = tradeRepository.findUserRecentlyStaleCleanedTrades(userId, symbol, since);
+        } else {
+            cancelled = tradeRepository.findRecentlyStaleCleanedTrades(symbol, since);
+        }
+        if (!cancelled.isEmpty()) {
+            Trade trade = cancelled.get(0);
+            log.warn("找不到 OPEN 交易但發現最近被啟動對帳 CANCELLED 的交易: tradeId={} {} → 恢復為 OPEN 以記錄平倉",
+                    trade.getTradeId(), symbol);
+            // 恢復為 OPEN，讓後續 doRecordClose 正常執行
+            trade.setStatus("OPEN");
+            trade.setExitReason(null);
+            trade.setExitTime(null);
+            tradeRepository.save(trade);
+            return Optional.of(trade);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 查找 OPEN 交易（fallback 含被誤標 CANCELLED 的）— 顯式 userId 版本
+     */
+    private Optional<Trade> resolveOpenOrRecentlyCancelledTrade(String symbol, String userId) {
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol, userId);
+        if (openTradeOpt.isPresent()) return openTradeOpt;
+
+        LocalDateTime since = LocalDateTime.now(AppConstants.ZONE_ID).minusHours(4);
+        List<Trade> cancelled;
+        if (multiUserConfig.isEnabled()) {
+            cancelled = tradeRepository.findUserRecentlyStaleCleanedTrades(userId, symbol, since);
+        } else {
+            cancelled = tradeRepository.findRecentlyStaleCleanedTrades(symbol, since);
+        }
+        if (!cancelled.isEmpty()) {
+            Trade trade = cancelled.get(0);
+            log.warn("找不到 OPEN 交易但發現最近被啟動對帳 CANCELLED 的交易: tradeId={} {} userId={} → 恢復為 OPEN 以記錄平倉",
+                    trade.getTradeId(), symbol, userId);
+            trade.setStatus("OPEN");
+            trade.setExitReason(null);
+            trade.setExitTime(null);
+            tradeRepository.save(trade);
+            return Optional.of(trade);
+        }
+        return Optional.empty();
+    }
+
+    /**
      * 查找 OPEN 或 PENDING_CLOSE 的交易（供 WebSocket 更新用）
      * PENDING_CLOSE = MARKET 平倉單已送出但 exitPrice=0，等待 WebSocket 真實成交價
      */
@@ -319,7 +380,7 @@ public class TradeRecordService {
      */
     @Transactional
     public Trade recordClose(String symbol, OrderResult closeOrder, String exitReason) {
-        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
+        Optional<Trade> openTradeOpt = resolveOpenOrRecentlyCancelledTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("找不到 OPEN 狀態的交易紀錄: {}", symbol);
             return null;
@@ -419,7 +480,7 @@ public class TradeRecordService {
      */
     @Transactional
     public Trade recordClose(String symbol, OrderResult closeOrder, String exitReason, String userId) {
-        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol, userId);
+        Optional<Trade> openTradeOpt = resolveOpenOrRecentlyCancelledTrade(symbol, userId);
         if (openTradeOpt.isEmpty()) {
             log.warn("找不到 OPEN 狀態的交易紀錄: {} userId={}", symbol, userId);
             return null;

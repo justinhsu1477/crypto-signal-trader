@@ -129,7 +129,10 @@ public class StartupReconciliationService {
 
     /**
      * 清理殭屍 OPEN 交易
-     * 若 Binance 已無持倉 → 標為 CANCELLED (STALE_CLEANUP_STARTUP)
+     * 若 Binance 已無持倉 且 無未成交掛單 → 標為 CANCELLED (STALE_CLEANUP_STARTUP)
+     *
+     * 注意：若 Binance 無持倉但仍有 LIMIT 掛單（入場單尚未成交），
+     * 不應標為 CANCELLED，需等待掛單成交或過期。
      */
     @Transactional
     int reconcileZombieOpenTrades(List<String> report) {
@@ -144,18 +147,39 @@ public class StartupReconciliationService {
                 double positionAmt = binanceFuturesService.getCurrentPositionAmount(trade.getSymbol());
 
                 if (positionAmt == 0) {
-                    // Binance 無持倉 → 殭屍紀錄
-                    trade.setStatus("CANCELLED");
-                    trade.setExitReason("STALE_CLEANUP_STARTUP");
-                    trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
-                    trade.setUpdatedAt(LocalDateTime.now(AppConstants.ZONE_ID));
-                    tradeRepository.save(trade);
-                    cleaned++;
+                    // 無持倉 → 再檢查是否有未成交的入場掛單（LIMIT 單可能尚未成交）
+                    boolean hasPendingOrders = false;
+                    try {
+                        hasPendingOrders = binanceFuturesService.hasOpenEntryOrders(trade.getSymbol());
+                    } catch (Exception orderEx) {
+                        // 查詢掛單失敗 → 保守策略：不標 CANCELLED，避免誤殺
+                        String detail = String.format("⏳ %s %s 無持倉但查詢掛單失敗: %s → 保守跳過",
+                                trade.getTradeId(), trade.getSymbol(), orderEx.getMessage());
+                        report.add(detail);
+                        log.warn(detail);
+                        continue;
+                    }
 
-                    String detail = String.format("🧹 %s %s %s OPEN → CANCELLED (Binance 無持倉)",
-                            trade.getTradeId(), trade.getSymbol(), trade.getSide());
-                    report.add(detail);
-                    log.info(detail);
+                    if (hasPendingOrders) {
+                        // 有未成交掛單 → 不清理，等待掛單成交或過期
+                        String detail = String.format("⏳ %s %s %s 無持倉但有未成交掛單 → 保留 OPEN",
+                                trade.getTradeId(), trade.getSymbol(), trade.getSide());
+                        report.add(detail);
+                        log.info(detail);
+                    } else {
+                        // 無持倉 + 無掛單 → 確認為殭屍紀錄
+                        trade.setStatus("CANCELLED");
+                        trade.setExitReason("STALE_CLEANUP_STARTUP");
+                        trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
+                        trade.setUpdatedAt(LocalDateTime.now(AppConstants.ZONE_ID));
+                        tradeRepository.save(trade);
+                        cleaned++;
+
+                        String detail = String.format("🧹 %s %s %s OPEN → CANCELLED (Binance 無持倉且無掛單)",
+                                trade.getTradeId(), trade.getSymbol(), trade.getSide());
+                        report.add(detail);
+                        log.info(detail);
+                    }
                 }
                 // 仍有持倉的 OPEN trade 不做任何處理（正常狀態）
             } catch (Exception e) {
