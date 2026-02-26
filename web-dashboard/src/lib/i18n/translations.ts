@@ -877,6 +877,19 @@ const translations = {
     approveSuccess: { en: "Approved successfully", "zh-TW": "審核通過", "zh-CN": "审核通过" },
     rejectSuccess: { en: "Rejected successfully", "zh-TW": "已拒絕", "zh-CN": "已拒绝" },
     noAccess: { en: "Admin access required", "zh-TW": "需要管理員權限", "zh-CN": "需要管理员权限" },
+    // Health Check
+    systemHealth: { en: "System Health", "zh-TW": "系統健康", "zh-CN": "系统健康" },
+    database: { en: "Database", "zh-TW": "資料庫", "zh-CN": "数据库" },
+    binanceApi: { en: "Binance API", "zh-TW": "Binance API", "zh-CN": "Binance API" },
+    webSocket: { en: "WebSocket", "zh-TW": "WebSocket", "zh-CN": "WebSocket" },
+    latency: { en: "Latency", "zh-TW": "延遲", "zh-CN": "延迟" },
+    rateLimit: { en: "Rate Limit", "zh-TW": "頻率限制", "zh-CN": "频率限制" },
+    streams: { en: "Streams", "zh-TW": "連線數", "zh-CN": "连接数" },
+    connected: { en: "Connected", "zh-TW": "已連線", "zh-CN": "已连接" },
+    disconnected: { en: "Disconnected", "zh-TW": "已斷線", "zh-CN": "已断开" },
+    healthy: { en: "Healthy", "zh-TW": "正常", "zh-CN": "正常" },
+    degraded: { en: "Degraded", "zh-TW": "降級", "zh-CN": "降级" },
+    down: { en: "Down", "zh-TW": "離線", "zh-CN": "离线" },
   },
 } as const;
 

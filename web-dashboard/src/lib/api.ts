@@ -397,6 +397,8 @@ import type {
   AdminUpdateUserRequest,
   AdminPendingReferral,
   AdminVerifyRequest,
+  SystemHealthResponse,
+  StreamStatusResponse,
 } from "@/types";
 
 export async function getAdminSystemOverview(): Promise<AdminSystemOverview> {
@@ -428,4 +430,14 @@ export async function adminVerifyReferral(
     "/api/admin/referral/verify",
     { method: "POST", body: JSON.stringify(data) }
   );
+}
+
+// ─── Admin Health Check ───
+
+export async function getSystemHealth(): Promise<SystemHealthResponse> {
+  return request<SystemHealthResponse>("/api/health/deep");
+}
+
+export async function getAdminStreamStatus(): Promise<StreamStatusResponse> {
+  return request<StreamStatusResponse>("/api/stream-status");
 }

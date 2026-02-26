@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminSystemOverview } from "@/lib/api";
-import type { AdminSystemOverview } from "@/types";
+import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus } from "@/lib/api";
+import type { AdminSystemOverview, SystemHealthResponse, StreamStatusResponse } from "@/types";
 import {
   Users,
   UserCheck,
@@ -13,19 +13,54 @@ import {
   DollarSign,
   LineChart,
   Hash,
+  Database,
+  Wifi,
+  WifiOff,
+  RefreshCw,
 } from "lucide-react";
+
+function StatusDot({ status }: { status: string }) {
+  const color =
+    status === "UP" || status === "connected"
+      ? "bg-green-500"
+      : status === "WARN" || status === "DEGRADED"
+        ? "bg-yellow-500"
+        : "bg-red-500";
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />;
+}
 
 export default function AdminOverviewPage() {
   const { t } = useT();
   const [data, setData] = useState<AdminSystemOverview | null>(null);
+  const [health, setHealth] = useState<SystemHealthResponse | null>(null);
+  const [stream, setStream] = useState<StreamStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [healthLoading, setHealthLoading] = useState(false);
 
   useEffect(() => {
-    getAdminSystemOverview()
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      getAdminSystemOverview().catch(() => null),
+      getSystemHealth().catch(() => null),
+      getAdminStreamStatus().catch(() => null),
+    ]).then(([overview, h, s]) => {
+      setData(overview);
+      setHealth(h);
+      setStream(s);
+      setLoading(false);
+    });
   }, []);
+
+  function refreshHealth() {
+    setHealthLoading(true);
+    Promise.all([
+      getSystemHealth().catch(() => null),
+      getAdminStreamStatus().catch(() => null),
+    ]).then(([h, s]) => {
+      setHealth(h);
+      setStream(s);
+      setHealthLoading(false);
+    });
+  }
 
   if (loading) {
     return (
@@ -64,9 +99,100 @@ export default function AdminOverviewPage() {
     { label: t("admin.todayTrades"), value: data.todayTradeCount, icon: TrendingUp, color: "text-yellow-500" },
   ];
 
+  const connectedStreams = stream
+    ? Object.values(stream.streams).filter((s) => s.connected).length
+    : 0;
+  const totalStreams = stream?.totalStreams ?? 0;
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{t("admin.systemOverview")}</h1>
+
+      {/* System Health */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-lg font-semibold">{t("admin.systemHealth")}</h2>
+          <button
+            onClick={refreshHealth}
+            disabled={healthLoading}
+            className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${healthLoading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-0 md:gap-0">
+          {/* Database */}
+          <div className="p-4 md:border-r border-b md:border-b-0 border-border">
+            <div className="flex items-center gap-2 mb-3">
+              <Database className="h-4 w-4 text-blue-500" />
+              <span className="text-sm font-medium">{t("admin.database")}</span>
+              <StatusDot status={health?.database?.status ?? "DOWN"} />
+            </div>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              <div className="flex justify-between">
+                <span>Status</span>
+                <span className="font-mono">
+                  {health?.database?.status === "UP" ? t("admin.healthy") : t("admin.down")}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>{t("admin.latency")}</span>
+                <span className="font-mono">{health?.database?.latencyMs ?? "-"}ms</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Binance API */}
+          <div className="p-4 md:border-r border-b md:border-b-0 border-border">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart3 className="h-4 w-4 text-yellow-500" />
+              <span className="text-sm font-medium">{t("admin.binanceApi")}</span>
+              <StatusDot status={health?.binanceApi?.status ?? "DOWN"} />
+            </div>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              <div className="flex justify-between">
+                <span>Status</span>
+                <span className="font-mono">
+                  {health?.binanceApi?.status === "UP"
+                    ? t("admin.healthy")
+                    : health?.binanceApi?.status === "WARN"
+                      ? t("admin.degraded")
+                      : t("admin.down")}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>{t("admin.rateLimit")}</span>
+                <span className="font-mono">{health?.binanceApi?.usagePercent ?? "-"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* WebSocket */}
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              {stream?.connected ? (
+                <Wifi className="h-4 w-4 text-green-500" />
+              ) : (
+                <WifiOff className="h-4 w-4 text-red-500" />
+              )}
+              <span className="text-sm font-medium">{t("admin.webSocket")}</span>
+              <StatusDot status={stream?.connected ? "UP" : "DOWN"} />
+            </div>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              <div className="flex justify-between">
+                <span>Status</span>
+                <span className="font-mono">
+                  {stream?.connected ? t("admin.connected") : t("admin.disconnected")}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>{t("admin.streams")}</span>
+                <span className="font-mono">{connectedStreams}/{totalStreams}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
