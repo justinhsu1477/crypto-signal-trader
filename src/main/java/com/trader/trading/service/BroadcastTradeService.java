@@ -56,10 +56,18 @@ public class BroadcastTradeService {
      * @return 執行結果統計
      */
     public Map<String, Object> broadcastTrade(TradeRequest request) {
-        // 查詢所有啟用自動跟單的用戶
-        List<User> enabledUsers = userRepository.findAll().stream()
+        // 一次查詢所有用戶，按角色分流：Admin 只收通知不下單
+        List<User> allUsers = userRepository.findAll();
+
+        List<User> adminUsers = allUsers.stream()
+                .filter(User::isEnabled)
+                .filter(user -> user.getRole() == User.Role.ADMIN)
+                .toList();
+
+        List<User> enabledUsers = allUsers.stream()
                 .filter(User::isAutoTradeEnabled)
                 .filter(User::isEnabled)
+                .filter(user -> user.getRole() != User.Role.ADMIN)
                 .toList();
 
         // Batch 查詢：一次取得所有已設定 API Key 的 userId（避免 N+1）
@@ -89,6 +97,16 @@ public class BroadcastTradeService {
         log.info("廣播跟單: 找到 {} 個有效用戶 (跳過 {}), action={} symbol={}",
                 activeUsers.size(), skippedCount, request.getAction(), request.getSymbol());
 
+        // 廣播前 — 發訊號詳情通知給每位 Admin（per-user webhook）
+        String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size());
+        for (User admin : adminUsers) {
+            discordWebhookService.sendNotificationToUser(
+                    admin.getUserId(),
+                    "📡 廣播訊號已發送",
+                    signalDetail,
+                    DiscordWebhookService.COLOR_BLUE);
+        }
+
         if (activeUsers.isEmpty()) {
             return Map.of(
                     "status", "COMPLETED",
@@ -96,8 +114,8 @@ public class BroadcastTradeService {
                     "successCount", 0,
                     "failCount", 0,
                     "skippedNoApiKey", skippedCount,
-                    "message", activeUsers.isEmpty() && skippedCount > 0
-                            ? "所有用戶均未設定 API Key" : "無啟用用戶");
+                    "message", enabledUsers.isEmpty() && skippedCount == 0
+                            ? "無啟用用戶" : "所有用戶均未設定 API Key 或未驗證推薦碼");
         }
 
         // 用共享線程池並行執行（不排隊，全員同時下單）
@@ -154,6 +172,21 @@ public class BroadcastTradeService {
             log.info("廣播跟單完成: 成功={} 失敗={} 超時取消={}",
                     successCount.get(), failCount.get(), cancelledCount);
 
+            // 廣播完成 — 發摘要通知給每位 Admin（per-user webhook）
+            String summary = String.format("%s %s\n成功: %d 人\n失敗: %d 人\n超時: %d 人\n總計: %d 人",
+                    request.getSymbol(), request.getAction(),
+                    successCount.get(), failCount.get(), cancelledCount, activeUsers.size());
+            int summaryColor = failCount.get() > 0 || cancelledCount > 0
+                    ? DiscordWebhookService.COLOR_YELLOW
+                    : DiscordWebhookService.COLOR_GREEN;
+            for (User admin : adminUsers) {
+                discordWebhookService.sendNotificationToUser(
+                        admin.getUserId(),
+                        "📊 廣播跟單摘要",
+                        summary,
+                        summaryColor);
+            }
+
             return Map.of(
                     "status", "COMPLETED",
                     "totalUsers", activeUsers.size(),
@@ -167,5 +200,62 @@ public class BroadcastTradeService {
                     "status", "INTERRUPTED",
                     "error", e.getMessage());
         }
+    }
+
+    /**
+     * 組裝廣播訊號詳情（發給 Admin 的 per-user webhook）
+     * 包含：action、symbol、side、入場價、止損、止盈、來源、目標用戶數
+     */
+    private String formatBroadcastSignalForAdmin(TradeRequest request, int targetUserCount) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(request.getSymbol());
+
+        String action = request.getAction() != null ? request.getAction().toUpperCase() : "UNKNOWN";
+        switch (action) {
+            case "ENTRY" -> {
+                if (request.getSide() != null) sb.append(" ").append(request.getSide());
+                sb.append("\n");
+                if (request.getEntryPrice() != null) {
+                    sb.append("入場: ").append(request.getEntryPrice()).append("\n");
+                }
+                if (request.getStopLoss() != null) {
+                    sb.append("止損: ").append(request.getStopLoss());
+                }
+                if (request.getTakeProfit() != null) {
+                    sb.append(" | 止盈: ").append(request.getTakeProfit());
+                }
+                sb.append("\n");
+                if (Boolean.TRUE.equals(request.getIsDca())) {
+                    sb.append("類型: DCA 補倉\n");
+                }
+            }
+            case "CLOSE" -> {
+                sb.append("\n動作: 平倉\n");
+                if (request.getCloseRatio() != null) {
+                    sb.append("比例: ").append(String.format("%.0f%%", request.getCloseRatio() * 100)).append("\n");
+                }
+            }
+            case "MOVE_SL" -> {
+                sb.append("\n動作: 移動止損\n");
+                if (request.getNewStopLoss() != null) {
+                    sb.append("新止損: ").append(request.getNewStopLoss()).append("\n");
+                }
+                if (request.getNewTakeProfit() != null) {
+                    sb.append("新止盈: ").append(request.getNewTakeProfit()).append("\n");
+                }
+            }
+            case "CANCEL" -> {
+                sb.append("\n動作: 取消掛單\n");
+            }
+            default -> {
+                sb.append("\n動作: ").append(action).append("\n");
+            }
+        }
+
+        if (request.getSource() != null) {
+            sb.append("來源: ").append(request.getSource()).append("\n");
+        }
+        sb.append("目標用戶: ").append(targetUserCount).append(" 人");
+        return sb.toString();
     }
 }

@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Discord Webhook 通知服務
@@ -24,6 +25,7 @@ import java.util.Optional;
  * - 非同步發送（enqueue），不阻塞交易流程
  * - enabled=false 或 URL 為空時靜默跳過
  * - 使用 Discord Embed 格式（帶顏色條和時間戳記）
+ * - 本地快取 webhook URL + 通知開關（TTL 5 分鐘 + 手動 evict）
  */
 @Slf4j
 @Service
@@ -37,11 +39,16 @@ public class DiscordWebhookService {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 分鐘
 
     private final OkHttpClient httpClient;
     private final WebhookConfig webhookConfig;
     private final UserDiscordWebhookRepository userWebhookRepository;
     private final UserRepository userRepository;
+
+    // 本地快取：webhook URL + 通知開關（很少變動，避免每次通知都查 DB）
+    private final ConcurrentHashMap<String, CacheEntry<Optional<String>>> webhookUrlCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CacheEntry<Boolean>> notificationEnabledCache = new ConcurrentHashMap<>();
 
     public DiscordWebhookService(OkHttpClient httpClient, WebhookConfig webhookConfig,
                                   UserDiscordWebhookRepository userWebhookRepository,
@@ -50,6 +57,13 @@ public class DiscordWebhookService {
         this.webhookConfig = webhookConfig;
         this.userWebhookRepository = userWebhookRepository;
         this.userRepository = userRepository;
+    }
+
+    /** 快取條目：值 + 過期時間 */
+    private record CacheEntry<T>(T value, long expireAt) {
+        boolean isExpired() {
+            return System.currentTimeMillis() > expireAt;
+        }
     }
 
     /**
@@ -163,14 +177,27 @@ public class DiscordWebhookService {
     }
 
     /**
-     * 取得用戶的 webhook URL
+     * 取得用戶的 webhook URL（帶快取）
      * 優先順序：
      * 1. 用戶自定義的 webhook（如果 per-user enabled + 有啟用的 webhook）
      * 2. 全局 webhook（如果啟用 fallback + 有全局 URL）
      * 3. null（都沒有）
      */
     public Optional<String> getUserWebhookUrl(String userId) {
-        // 如果啟用了 per-user 配置
+        // 查快取
+        CacheEntry<Optional<String>> cached = webhookUrlCache.get(userId);
+        if (cached != null && !cached.isExpired()) {
+            return cached.value();
+        }
+
+        // Cache miss 或過期 → 查 DB
+        Optional<String> result = resolveWebhookUrlFromDb(userId);
+        webhookUrlCache.put(userId, new CacheEntry<>(result, System.currentTimeMillis() + CACHE_TTL_MS));
+        return result;
+    }
+
+    /** 從 DB 解析用戶 webhook URL（無快取） */
+    private Optional<String> resolveWebhookUrlFromDb(String userId) {
         if (webhookConfig.getPerUser().isEnabled()) {
             Optional<String> userWebhook = userWebhookRepository
                     .findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc(userId)
@@ -242,12 +269,40 @@ public class DiscordWebhookService {
     }
 
     /**
-     * 檢查用戶是否啟用 Discord 通知
+     * 檢查用戶是否啟用 Discord 通知（帶快取）
      * 用戶不存在時預設允許（保守策略，寧可多發不漏發）
      */
     private boolean isNotificationEnabledForUser(String userId) {
-        return userRepository.findById(userId)
+        CacheEntry<Boolean> cached = notificationEnabledCache.get(userId);
+        if (cached != null && !cached.isExpired()) {
+            return cached.value();
+        }
+
+        boolean enabled = userRepository.findById(userId)
                 .map(user -> user.isDiscordNotificationEnabled())
                 .orElse(true);
+        notificationEnabledCache.put(userId, new CacheEntry<>(enabled, System.currentTimeMillis() + CACHE_TTL_MS));
+        return enabled;
+    }
+
+    // ==================== 快取管理 ====================
+
+    /**
+     * 清除指定用戶的所有快取（webhook URL + 通知開關）
+     * 在用戶修改 webhook 或通知設定時呼叫，確保即時生效。
+     */
+    public void evictUserCache(String userId) {
+        webhookUrlCache.remove(userId);
+        notificationEnabledCache.remove(userId);
+        log.debug("已清除用戶 {} 的 Discord 通知快取", userId);
+    }
+
+    /**
+     * 清除所有用戶的快取（管理用途）
+     */
+    public void evictAllCache() {
+        webhookUrlCache.clear();
+        notificationEnabledCache.clear();
+        log.info("已清除所有 Discord 通知快取");
     }
 }

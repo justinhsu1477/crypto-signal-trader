@@ -4,6 +4,7 @@ import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
+import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.user.dto.TradeSettingsDefaultsResponse;
 import com.trader.user.dto.TradeSettingsResponse;
@@ -40,6 +41,7 @@ public class DashboardController {
     private final UserRepository userRepository;
     private final UserDiscordWebhookService webhookService;
     private final UserTradeSettingsService tradeSettingsService;
+    private final DiscordWebhookService discordWebhookService;
 
     /**
      * 首頁總覽
@@ -178,6 +180,9 @@ public class DashboardController {
         userEntity.setDiscordNotificationEnabled(enabled);
         userRepository.save(userEntity);
 
+        // 清除通知快取，讓設定即時生效
+        discordWebhookService.evictUserCache(userId);
+
         log.info("用戶 {} Discord 通知設定已更新: {}", userId, enabled);
 
         return ResponseEntity.ok(Map.of(
@@ -278,6 +283,7 @@ public class DashboardController {
         }
 
         UserDiscordWebhook webhook = webhookService.createOrUpdateWebhook(userId, webhookUrl, name);
+        discordWebhookService.evictUserCache(userId);
 
         log.info("用戶 {} 建立/更新 webhook: {}", userId, webhook.getWebhookId());
 
@@ -300,6 +306,7 @@ public class DashboardController {
 
         try {
             webhookService.disableWebhook(userId, webhookId);
+            discordWebhookService.evictUserCache(userId);
         } catch (IllegalArgumentException e) {
             log.warn("用戶 {} 停用 webhook 失敗: {}", userId, e.getMessage());
             return ResponseEntity.status(403).body(Map.of(
@@ -322,6 +329,7 @@ public class DashboardController {
 
         try {
             webhookService.deleteWebhook(userId, webhookId);
+            discordWebhookService.evictUserCache(userId);
         } catch (IllegalArgumentException e) {
             log.warn("用戶 {} 刪除 webhook 失敗: {}", userId, e.getMessage());
             return ResponseEntity.status(403).body(Map.of(
