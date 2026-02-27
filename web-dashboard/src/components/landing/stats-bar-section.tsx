@@ -54,9 +54,9 @@ export function StatsBarSection() {
   const ref3 = useRef<HTMLDivElement>(null);
   const ref4 = useRef<HTMLDivElement>(null);
 
-  const trades = useCountUp(ref1, 10000, 1800, "+");
+  const trades = useCountUp(ref1, 1000, 1800, "+");
   const winRate = useCountUp(ref2, 72, 1500, "%");
-  const traders = useCountUp(ref3, 500, 1500, "+");
+  const traders = useCountUp(ref3, 50, 1500, "+");
   const speed = useCountUp(ref4, 1, 800, "s", "<");
 
   const stats = [
