@@ -50,6 +50,7 @@ class DashboardPerformanceTest {
         dashboardService = new DashboardService(
                 tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class),
                 Mockito.mock(TradeConfigResolver.class), multiUserConfig, userApiKeyService,
+                Mockito.mock(com.trader.user.service.UserDiscordWebhookService.class),
                 Mockito.mock(StartOfDayBalanceCache.class));
     }
 

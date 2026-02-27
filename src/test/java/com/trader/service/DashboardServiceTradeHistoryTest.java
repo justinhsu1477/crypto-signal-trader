@@ -53,6 +53,7 @@ class DashboardServiceTradeHistoryTest {
         dashboardService = new DashboardService(
                 tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, userRepository,
                 Mockito.mock(TradeConfigResolver.class), multiUserConfig, userApiKeyService,
+                Mockito.mock(com.trader.user.service.UserDiscordWebhookService.class),
                 Mockito.mock(StartOfDayBalanceCache.class));
     }
 

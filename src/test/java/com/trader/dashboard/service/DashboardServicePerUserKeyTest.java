@@ -70,6 +70,7 @@ class DashboardServicePerUserKeyTest {
                 tradeRecordService, subscriptionService, binanceFuturesService,
                 riskConfig, userRepository, tradeConfigResolver,
                 multiUserConfig, userApiKeyService,
+                mock(com.trader.user.service.UserDiscordWebhookService.class),
                 mock(StartOfDayBalanceCache.class));
     }
 
