@@ -94,6 +94,23 @@ public class BinanceFuturesService {
         return tradeRecordService.getActiveUserId();
     }
 
+    /**
+     * 發送全局通知（自動附加當前 userId）
+     * 多用戶模式下，讓 Admin 知道是哪個用戶的交易觸發了告警。
+     */
+    private void notifyGlobal(String title, String body, int color) {
+        String userId = null;
+        try {
+            userId = getActiveUserId();
+        } catch (Exception ignored) {
+            // tradeRecordService 未注入時（如部分測試），安全降級
+        }
+        String enriched = (userId != null && !userId.isBlank())
+                ? "用戶: " + userId + "\n" + body
+                : body;
+        discordWebhookService.sendNotification(title, enriched, color);
+    }
+
     // ==================== 帳戶相關 ====================
 
     public String getAccountBalance() {
@@ -337,7 +354,7 @@ public class BinanceFuturesService {
             cancelSLTPOrders(symbol);
         } catch (Exception e) {
             log.error("cancelAllOrders: 取消 Algo SL/TP 失敗: {}", e.getMessage());
-            discordWebhookService.sendNotification(
+            notifyGlobal(
                     "⚠️ Algo 訂單取消失敗",
                     String.format("%s\n取消標準訂單成功，但 Algo SL/TP 取消失敗\n原因: %s\n請手動檢查",
                             symbol, e.getMessage()),
@@ -381,7 +398,7 @@ public class BinanceFuturesService {
             if (failCount > 0) {
                 String msg = String.format("取消 SL/TP Algo 訂單部分失敗: %d 筆失敗", failCount);
                 log.error(msg);
-                discordWebhookService.sendNotification(
+                notifyGlobal(
                         "⚠️ SL/TP 取消部分失敗",
                         String.format("%s\n%s\n請確認掛單狀態", symbol, msg),
                         DiscordWebhookService.COLOR_YELLOW);
@@ -505,7 +522,7 @@ public class BinanceFuturesService {
             String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT (SOD=%.0f × %.0f%% cap %.0f)",
                     todayLoss, maxDailyLoss, sodBalance, config.dailyLossPercent() * 100, config.maxDailyLossUsdt());
             log.error(msg);
-            discordWebhookService.sendNotification("🚨 每日虧損熔斷", msg, DiscordWebhookService.COLOR_RED);
+            notifyGlobal("🚨 每日虧損熔斷", msg, DiscordWebhookService.COLOR_RED);
             return List.of(OrderResult.fail("每日虧損已達上限，暫停交易"));
         }
 
@@ -734,7 +751,7 @@ public class BinanceFuturesService {
                 if (!tpOrder.isSuccess()) {
                     log.warn("止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
                     tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder, null);
-                    discordWebhookService.sendNotification(
+                    notifyGlobal(
                             "⚠️ 止盈單失敗（需手動設定）",
                             String.format("%s %s\n入場和止損已正常設定\n止盈錯誤: %s\n請手動設定 TP",
                                     symbol, signal.getSide(), tpOrder.getErrorMessage()),
@@ -754,7 +771,7 @@ public class BinanceFuturesService {
                 long entryOrderId = Long.parseLong(entryOrder.getOrderId());
                 cancelOrder(symbol, entryOrderId);
                 log.info("Fail-Safe: 已取消入場單 {}", entryOrderId);
-                discordWebhookService.sendNotification("🛑 Fail-Safe: 止損失敗，入場單已取消",
+                notifyGlobal("🛑 Fail-Safe: 止損失敗，入場單已取消",
                         String.format("%s %s\n止損掛單失敗: %s\n入場單 %s 已自動取消\n⚠️ 此筆交易未成立",
                                 symbol, signal.getSide(),
                                 slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown",
@@ -768,14 +785,14 @@ public class BinanceFuturesService {
                     String alert = String.format("CRITICAL: %s 止損單+取消單+市價平倉全部失敗! 請立即手動處理! 數量=%s",
                             symbol, formatQuantity(symbol, quantity));
                     log.error(alert);
-                    discordWebhookService.sendNotification("🚨 Fail-Safe 全部失敗",
+                    notifyGlobal("🚨 Fail-Safe 全部失敗",
                             alert, DiscordWebhookService.COLOR_RED);
                     tradeRecordService.recordFailSafe(symbol,
                             toJson(Map.of("reason", "所有自動保護措施失敗", "market_close_error", marketClose.getErrorMessage() != null ? marketClose.getErrorMessage() : "")));
                 } else {
                     tradeRecordService.recordOrderEvent(symbol, "FAIL_SAFE_CLOSE", marketClose,
                             toJson(Map.of("reason", "SL失敗+取消失敗，已市價平倉")));
-                    discordWebhookService.sendNotification("🛑 Fail-Safe: 止損失敗，已市價平倉",
+                    notifyGlobal("🛑 Fail-Safe: 止損失敗，已市價平倉",
                             String.format("%s %s\n止損掛單失敗: %s\n取消入場單也失敗，已市價平倉 %s\n⚠️ 請確認帳戶狀態",
                                     symbol, signal.getSide(),
                                     slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown",
@@ -880,7 +897,7 @@ public class BinanceFuturesService {
                 } catch (Exception e) {
                     log.warn("取消紀錄寫入失敗: {}", e.getMessage());
                 }
-                discordWebhookService.sendNotification(
+                notifyGlobal(
                         "🚫 CLOSE 但無持倉 — 已取消掛單",
                         String.format("%s\n訊號要求平倉，但無實際持倉\n已取消所有未成交掛單（入場/SL/TP）",
                                 symbol),
@@ -1011,7 +1028,7 @@ public class BinanceFuturesService {
                         toJson(Map.of("sl_price", slToUse, "remaining_qty", remainingQty)));
                 if (!newSl.isSuccess()) {
                     // SL 重掛 API 呼叫失敗 — 緊急告警
-                    discordWebhookService.sendNotification(
+                    notifyGlobal(
                             "🚨 部分平倉後 SL 重掛 API 失敗",
                             String.format("%s SL=%.2f 重掛失敗！剩餘倉位 %.4f 無保護\n原因: %s\n請立即手動設定 SL",
                                     symbol, slToUse, remainingQty,
@@ -1024,7 +1041,7 @@ public class BinanceFuturesService {
                         toJson(Map.of("reason", "no_sl_price", "remaining_qty", remainingQty)));
                 results.add(OrderResult.fail("部分平倉後無法重掛 SL — 剩餘倉位無保護"));
                 // 緊急 Discord 告警 — 裸倉風險
-                discordWebhookService.sendNotification(
+                notifyGlobal(
                         "🚨 部分平倉後 SL 重掛失敗",
                         String.format("%s 剩餘倉位 %.4f 無止損保護！\n請立即手動設定 SL",
                                 symbol, remainingQty),
@@ -1159,7 +1176,7 @@ public class BinanceFuturesService {
                 tradeRecordService.recordOrderEvent(symbol, "MOVE_SL_FAILED", slOrder,
                         toJson(Map.of("old_sl", oldSl, "new_sl", newSl)));
                 // MOVE_SL 已取消舊 SL，新 SL 又失敗 → 裸倉！發送 CRITICAL 告警
-                discordWebhookService.sendNotification(
+                notifyGlobal(
                         "🚨 移動止損失敗 — 倉位無 SL 保護",
                         String.format("%s 舊SL=%.2f 已被取消，新SL=%.2f 掛單失敗！\n持倉 %.4f 無止損保護\n原因: %s\n請立即手動設定 SL",
                                 symbol, oldSl, newSl, absPosition,
@@ -1185,7 +1202,7 @@ public class BinanceFuturesService {
                 log.warn("新止盈單失敗: {}", tpOrder.getErrorMessage());
                 tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder,
                         toJson(Map.of("context", "MOVE_SL")));
-                discordWebhookService.sendNotification(
+                notifyGlobal(
                         "⚠️ 新止盈單失敗（需手動設定）",
                         String.format("%s\n新TP設定失敗: %s\n請手動設定 TP",
                                 symbol, tpOrder.getErrorMessage()),
@@ -1216,7 +1233,7 @@ public class BinanceFuturesService {
                 String dbSymbol = openTrades.get(0).getSymbol();
                 if (!dbSymbol.equals(originalSymbol)) {
                     log.info("Symbol fallback: 訊號={} 但 DB 唯一 OPEN trade={}", originalSymbol, dbSymbol);
-                    discordWebhookService.sendNotification(
+                    notifyGlobal(
                             "🔄 Symbol 自動修正",
                             String.format("訊號幣種: %s（無持倉）\n自動修正為: %s（DB 中唯一 OPEN trade）",
                                     originalSymbol, dbSymbol),
@@ -1547,7 +1564,7 @@ public class BinanceFuturesService {
         }
 
         // 全部重試用完
-        discordWebhookService.sendNotification(
+        notifyGlobal(
                 "🔴 Binance 下單重試全部失敗",
                 String.format("下單重試 %d 次全部失敗！\nclientOrderId: %s\n錯誤: %s\n請立即檢查網路連線",
                         ORDER_MAX_RETRIES + 1, clientOrderId,
@@ -1596,7 +1613,7 @@ public class BinanceFuturesService {
             throw e; // 不包裝已有的 RuntimeException
         } catch (IOException e) {
             log.error("HTTP request failed: {}", e.getMessage(), e);
-            discordWebhookService.sendNotification(
+            notifyGlobal(
                     "🔴 Binance API 連線中斷",
                     String.format("API 無法連線，止損單可能無法執行！\n請求: %s %s\n錯誤: %s\n請立即檢查網路連線與 Binance API 狀態",
                             request.method(), request.url().encodedPath(), e.getMessage()),
