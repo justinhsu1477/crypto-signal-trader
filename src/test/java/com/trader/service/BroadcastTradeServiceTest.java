@@ -1,7 +1,6 @@
 package com.trader.service;
 
 import com.trader.notification.service.DiscordWebhookService;
-import com.trader.referral.repository.UserExchangeReferralLinkRepository;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.trading.service.BinanceFuturesService;
@@ -31,7 +30,6 @@ class BroadcastTradeServiceTest {
     private BinanceFuturesService mockBinance;
     private DiscordWebhookService mockWebhook;
     private UserApiKeyService mockApiKey;
-    private UserExchangeReferralLinkRepository mockReferralRepo;
     private ExecutorService executor;
     private BroadcastTradeService service;
 
@@ -41,14 +39,9 @@ class BroadcastTradeServiceTest {
         mockBinance = mock(BinanceFuturesService.class);
         mockWebhook = mock(DiscordWebhookService.class);
         mockApiKey = mock(UserApiKeyService.class);
-        mockReferralRepo = mock(UserExchangeReferralLinkRepository.class);
 
         // 預設：executeSignalForBroadcast 回傳空結果（既有測試不受影響）
         when(mockBinance.executeSignalForBroadcast(any(), anyString())).thenReturn(List.of());
-
-        // 預設：所有用戶都已驗證推薦碼（既有測試不受影響）
-        when(mockReferralRepo.findVerifiedUserIds("BINANCE"))
-                .thenReturn(List.of("u1", "u2", "u3", "u4", "u5"));
 
         // 預設：所有用戶都有 API Key（既有測試不受影響）
         when(mockApiKey.getUserIdsWithApiKey("BINANCE"))
@@ -58,7 +51,7 @@ class BroadcastTradeServiceTest {
         executor = Executors.newFixedThreadPool(2);
 
         service = new BroadcastTradeService(
-                mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockReferralRepo, executor);
+                mockUserRepo, mockBinance, mockWebhook, mockApiKey, executor);
     }
 
     @AfterEach

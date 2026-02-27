@@ -109,20 +109,8 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     throw new Error("Unauthorized");
   }
 
-  // 403 推薦碼未驗證 — 直接重導至 /referral（soft gate fallback）
   if (res.status === 403) {
     const body = await res.text();
-    try {
-      const parsed = JSON.parse(body);
-      if (parsed.error === "REFERRAL_NOT_VERIFIED") {
-        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/referral")) {
-          window.location.href = "/referral";
-        }
-        throw new Error("REFERRAL_NOT_VERIFIED");
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message === "REFERRAL_NOT_VERIFIED") throw e;
-    }
     throw new Error(body || `HTTP 403`);
   }
 

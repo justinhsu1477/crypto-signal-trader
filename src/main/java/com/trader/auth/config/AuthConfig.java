@@ -2,7 +2,6 @@ package com.trader.auth.config;
 
 import com.trader.auth.filter.JwtAuthenticationFilter;
 import com.trader.auth.filter.MonitorApiKeyFilter;
-import com.trader.auth.filter.ReferralVerificationFilter;
 import com.trader.auth.handler.CustomAccessDeniedHandler;
 import com.trader.auth.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +39,6 @@ public class AuthConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final MonitorApiKeyFilter monitorApiKeyFilter;
-    private final ReferralVerificationFilter referralVerificationFilter;
     private final CustomAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
 
@@ -88,13 +86,11 @@ public class AuthConfig {
 
                         .anyRequest().denyAll()
                 )
-                // Filter 順序：API Key → JWT → Referral Verification → Spring Security
+                // Filter 順序：API Key → JWT → Spring Security
                 .addFilterBefore(monitorApiKeyFilter,
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(referralVerificationFilter,
-                        JwtAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

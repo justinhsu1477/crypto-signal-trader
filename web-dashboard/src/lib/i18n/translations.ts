@@ -474,6 +474,28 @@ const translations = {
       "zh-TW": "已關閉自動跟單，廣播訊號將不會對您的帳戶執行交易",
       "zh-CN": "已关闭自动跟单，广播信号将不会对您的账户执行交易",
     },
+    autoTradeConfirmEnableTitle: {
+      en: "Enable Auto Trade?",
+      "zh-TW": "確認啟用自動跟單？",
+      "zh-CN": "确认启用自动跟单？",
+    },
+    autoTradeConfirmEnableDesc: {
+      en: "Once enabled, broadcast signals will automatically execute trades on your Binance account. Make sure your API key and trading parameters are properly configured.",
+      "zh-TW": "啟用後，廣播訊號將自動在您的幣安帳戶上執行交易。請確認 API Key 和交易參數已正確設定。",
+      "zh-CN": "启用后，广播信号将自动在您的币安账户上执行交易。请确认 API Key 和交易参数已正确设置。",
+    },
+    autoTradeConfirmEnable: { en: "Enable", "zh-TW": "啟用", "zh-CN": "启用" },
+    autoTradeConfirmDisableTitle: {
+      en: "Disable Auto Trade?",
+      "zh-TW": "確認停止自動跟單？",
+      "zh-CN": "确认停止自动跟单？",
+    },
+    autoTradeConfirmDisableDesc: {
+      en: "After disabling, broadcast signals will no longer execute trades on your account. Your existing positions will not be affected.",
+      "zh-TW": "停止後，廣播訊號將不再對您的帳戶執行交易。已有持倉不受影響。",
+      "zh-CN": "停止后，广播信号将不再对您的账户执行交易。已有持仓不受影响。",
+    },
+    autoTradeConfirmDisable: { en: "Disable", "zh-TW": "停止", "zh-CN": "停止" },
     autoTradePrerequisite: {
       en: "You must configure Binance API Key and Discord Webhook before enabling auto trade.",
       "zh-TW": "您必須先設定 Binance API Key 和 Discord Webhook 才能啟用自動跟單。",
@@ -488,6 +510,11 @@ const translations = {
       en: "Discord Webhook not configured",
       "zh-TW": "尚未設定 Discord Webhook",
       "zh-CN": "尚未配置 Discord Webhook",
+    },
+    webhookReminder: {
+      en: "Want real-time trade notifications? Set up a Discord Webhook in the Notifications tab to receive alerts.",
+      "zh-TW": "想即時收到交易通知？前往「通知設定」綁定 Discord Webhook 即可接收提醒。",
+      "zh-CN": "想即时收到交易通知？前往「通知设置」绑定 Discord Webhook 即可接收提醒。",
     },
     // Discord Webhook
     discordNotification: { en: "Discord Notifications", "zh-TW": "Discord 通知設定", "zh-CN": "Discord 通知设置" },
@@ -685,18 +712,13 @@ const translations = {
     },
     verifiedAt: { en: "Verified at {time}", "zh-TW": "驗證時間：{time}", "zh-CN": "验证时间：{time}" },
     goToDashboard: { en: "Go to Dashboard", "zh-TW": "前往總覽", "zh-CN": "前往总览" },
-    // Guard dialog
-    guardTitle: {
-      en: "Referral Binding Required",
-      "zh-TW": "尚未完成推薦碼綁定",
-      "zh-CN": "尚未完成推荐码绑定",
+    // Soft reminder banner
+    bannerMessage: {
+      en: "Complete referral binding to unlock all features",
+      "zh-TW": "完成推薦碼綁定以解鎖所有功能",
+      "zh-CN": "完成推荐码绑定以解锁所有功能",
     },
-    guardDescription: {
-      en: "Please complete your referral code binding before using trading features. Click the button below to get started.",
-      "zh-TW": "請先完成推薦碼綁定才能使用交易功能，點擊下方按鈕前往設定。",
-      "zh-CN": "请先完成推荐码绑定才能使用交易功能，点击下方按钮前往设置。",
-    },
-    guardAction: { en: "Go to Binding", "zh-TW": "前往綁定", "zh-CN": "前往绑定" },
+    bannerAction: { en: "Complete Now", "zh-TW": "立即完成", "zh-CN": "立即完成" },
   },
   // ─── legal disclaimer ───
   legal: {
