@@ -12,6 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.UUID;
 
 /**
@@ -116,6 +118,20 @@ public class AuthService {
 
         if (!user.isEnabled()) {
             throw new IllegalArgumentException("帳號已停用");
+        }
+
+        // 密碼變更後舊 refresh token 立即失效（iat < passwordChangedAt）
+        if (user.getPasswordChangedAt() != null) {
+            Date iat = jwtService.extractIssuedAt(refreshToken);
+            if (iat != null) {
+                var tokenIssuedAt = iat.toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime();
+                if (tokenIssuedAt.isBefore(user.getPasswordChangedAt())) {
+                    log.warn("Refresh Token 已因密碼變更而失效: userId={}", userId);
+                    throw new IllegalArgumentException("Refresh Token 無效或已過期");
+                }
+            }
         }
 
         String role = user.getRole().name();

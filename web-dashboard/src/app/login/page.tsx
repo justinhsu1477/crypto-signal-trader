@@ -23,10 +23,13 @@ function LoginForm() {
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // 顯示「Email 驗證成功」提示
+  // 顯示提示訊息
   useEffect(() => {
     if (searchParams.get("verified") === "true") {
       setSuccess(t("login.emailVerifiedSuccess"));
+    }
+    if (searchParams.get("reset") === "true") {
+      setSuccess(t("login.passwordResetSuccess"));
     }
   }, [searchParams, t]);
 
@@ -137,6 +140,15 @@ function LoginForm() {
             autoComplete="current-password"
             className="h-11 bg-white/5 border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/20 placeholder:text-white/20"
           />
+        </div>
+
+        <div className="flex justify-end">
+          <Link
+            href="/forgot-password"
+            className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
+          >
+            {t("login.forgotPassword")}
+          </Link>
         </div>
 
         <Button

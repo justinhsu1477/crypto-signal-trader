@@ -3,6 +3,8 @@ package com.trader.auth.filter;
 import com.trader.auth.service.JwtService;
 import com.trader.auth.util.CookieUtil;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.user.entity.User;
+import com.trader.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,6 +19,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -31,6 +35,7 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -63,18 +68,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     String userId = jwtService.extractUserId(token);
                     String role = jwtService.extractRole(token);
 
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(
-                                    userId,
-                                    null,
-                                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                            );
-                    authentication.setDetails(
-                            new WebAuthenticationDetailsSource().buildDetails(request));
+                    // 密碼變更後舊 token 立即失效（iat < passwordChangedAt）
+                    if (isTokenInvalidatedByPasswordChange(token, userId)) {
+                        log.warn("JWT 已因密碼變更而失效 ({}): userId={}", authSource, userId);
+                    } else {
+                        UsernamePasswordAuthenticationToken authentication =
+                                new UsernamePasswordAuthenticationToken(
+                                        userId,
+                                        null,
+                                        List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                                );
+                        authentication.setDetails(
+                                new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
-                    TradeRecordService.setCurrentUserId(userId);
-                    log.debug("JWT 認證成功 ({}): userId={} role={}", authSource, userId, role);
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                        TradeRecordService.setCurrentUserId(userId);
+                        log.debug("JWT 認證成功 ({}): userId={} role={}", authSource, userId, role);
+                    }
                 }
             } catch (Exception e) {
                 log.warn("JWT 處理失敗 ({}): {}", authSource, e.getMessage());
@@ -85,6 +95,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } finally {
             TradeRecordService.clearCurrentUserId();
+        }
+    }
+
+    /**
+     * 檢查 JWT 是否因密碼變更而失效
+     * <p>
+     * 規則：若 passwordChangedAt != null 且 JWT iat < passwordChangedAt → 失效
+     * 向後相容：passwordChangedAt == null 的用戶不檢查
+     */
+    private boolean isTokenInvalidatedByPasswordChange(String token, String userId) {
+        try {
+            return userRepository.findById(userId)
+                    .map(user -> {
+                        if (user.getPasswordChangedAt() == null) {
+                            return false; // 向後相容：未改過密碼，不檢查
+                        }
+                        Date iat = jwtService.extractIssuedAt(token);
+                        if (iat == null) {
+                            return false;
+                        }
+                        var tokenIssuedAt = iat.toInstant()
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDateTime();
+                        return tokenIssuedAt.isBefore(user.getPasswordChangedAt());
+                    })
+                    .orElse(false);
+        } catch (Exception e) {
+            log.warn("密碼變更檢查失敗: userId={} error={}", userId, e.getMessage());
+            return false;
         }
     }
 }

@@ -76,6 +76,16 @@ const translations = {
       "zh-TW": "帳號已停用",
       "zh-CN": "账号已停用",
     },
+    forgotPassword: {
+      en: "Forgot password?",
+      "zh-TW": "忘記密碼？",
+      "zh-CN": "忘记密码？",
+    },
+    passwordResetSuccess: {
+      en: "Password reset successful! Please sign in with your new password.",
+      "zh-TW": "密碼重設成功！請使用新密碼登入。",
+      "zh-CN": "密码重置成功！请使用新密码登录。",
+    },
   },
 
   // ─── register ───
@@ -403,10 +413,34 @@ const translations = {
     navApiKeys: { en: "API Keys", "zh-TW": "API 金鑰", "zh-CN": "API 密钥" },
     navTrading: { en: "Trading", "zh-TW": "交易設定", "zh-CN": "交易设置" },
     navNotifications: { en: "Notifications", "zh-TW": "通知設定", "zh-CN": "通知设置" },
+    navSecurity: { en: "Security", "zh-TW": "安全設定", "zh-CN": "安全设置" },
     navProfileDesc: { en: "Account information and preferences", "zh-TW": "帳戶資訊與偏好設定", "zh-CN": "账户信息与偏好设置" },
     navApiKeysDesc: { en: "Exchange API key management", "zh-TW": "交易所 API 金鑰管理", "zh-CN": "交易所 API 密钥管理" },
     navTradingDesc: { en: "Auto trade and signal settings", "zh-TW": "自動跟單與訊號設定", "zh-CN": "自动跟单与信号设置" },
     navNotificationsDesc: { en: "Discord webhook configuration", "zh-TW": "Discord Webhook 設定", "zh-CN": "Discord Webhook 设置" },
+    navSecurityDesc: { en: "Change password and account security", "zh-TW": "修改密碼與帳戶安全", "zh-CN": "修改密码与账户安全" },
+    // Security
+    changePassword: { en: "Change Password", "zh-TW": "修改密碼", "zh-CN": "修改密码" },
+    currentPassword: { en: "Current Password", "zh-TW": "目前密碼", "zh-CN": "当前密码" },
+    newPassword: { en: "New Password", "zh-TW": "新密碼", "zh-CN": "新密码" },
+    confirmPassword: { en: "Confirm New Password", "zh-TW": "確認新密碼", "zh-CN": "确认新密码" },
+    changePasswordButton: { en: "Change Password", "zh-TW": "修改密碼", "zh-CN": "修改密码" },
+    changingPassword: { en: "Changing...", "zh-TW": "修改中...", "zh-CN": "修改中..." },
+    passwordChanged: {
+      en: "Password changed successfully! Redirecting to login...",
+      "zh-TW": "密碼修改成功！即將跳轉至登入頁面...",
+      "zh-CN": "密码修改成功！即将跳转至登录页面...",
+    },
+    passwordMismatch: {
+      en: "New password and confirmation do not match",
+      "zh-TW": "新密碼與確認密碼不一致",
+      "zh-CN": "新密码与确认密码不一致",
+    },
+    passwordMinLength: {
+      en: "Password must be at least 8 characters",
+      "zh-TW": "密碼至少 8 個字元",
+      "zh-CN": "密码至少 8 个字符",
+    },
     profile: { en: "Profile", "zh-TW": "個人資料", "zh-CN": "个人资料" },
     name: { en: "Name", "zh-TW": "名稱", "zh-CN": "名称" },
     role: { en: "Role", "zh-TW": "角色", "zh-CN": "角色" },
@@ -909,6 +943,59 @@ const translations = {
       "zh-CN": "加入 HookFi，让 AI 处理你的交易，你专注在策略上。",
     },
     ctaButton: { en: "Get Started Free", "zh-TW": "免費開始", "zh-CN": "免费开始" },
+  },
+
+  // ─── forgot password ───
+  forgotPassword: {
+    title: { en: "Forgot Password", "zh-TW": "忘記密碼", "zh-CN": "忘记密码" },
+    subtitle: {
+      en: "Enter your email and we'll send you a reset link",
+      "zh-TW": "輸入您的 Email，我們會寄送密碼重設連結",
+      "zh-CN": "输入您的 Email，我们会发送密码重置链接",
+    },
+    email: { en: "Email", "zh-TW": "電子郵件", "zh-CN": "电子邮件" },
+    sendButton: { en: "Send Reset Link", "zh-TW": "發送重設連結", "zh-CN": "发送重置链接" },
+    sending: { en: "Sending...", "zh-TW": "發送中...", "zh-CN": "发送中..." },
+    sent: {
+      en: "If this email is registered, we've sent a password reset link. Please check your inbox.",
+      "zh-TW": "若此 Email 已註冊，我們已發送密碼重設連結。請檢查您的信箱。",
+      "zh-CN": "若此 Email 已注册，我们已发送密码重置链接。请检查您的邮箱。",
+    },
+    backToLogin: { en: "Back to Sign In", "zh-TW": "返回登入", "zh-CN": "返回登录" },
+  },
+
+  // ─── reset password ───
+  resetPassword: {
+    title: { en: "Reset Password", "zh-TW": "重設密碼", "zh-CN": "重置密码" },
+    subtitle: {
+      en: "Enter your new password",
+      "zh-TW": "請輸入您的新密碼",
+      "zh-CN": "请输入您的新密码",
+    },
+    newPassword: { en: "New Password", "zh-TW": "新密碼", "zh-CN": "新密码" },
+    confirmPassword: { en: "Confirm Password", "zh-TW": "確認密碼", "zh-CN": "确认密码" },
+    resetButton: { en: "Reset Password", "zh-TW": "重設密碼", "zh-CN": "重置密码" },
+    resetting: { en: "Resetting...", "zh-TW": "重設中...", "zh-CN": "重置中..." },
+    success: {
+      en: "Password reset successful! Redirecting to login...",
+      "zh-TW": "密碼重設成功！即將跳轉至登入頁面...",
+      "zh-CN": "密码重置成功！即将跳转至登录页面...",
+    },
+    invalidToken: {
+      en: "This link is invalid or has expired.",
+      "zh-TW": "此連結無效或已過期。",
+      "zh-CN": "此链接无效或已过期。",
+    },
+    requestNewLink: {
+      en: "Request a new reset link",
+      "zh-TW": "重新申請重設連結",
+      "zh-CN": "重新申请重置链接",
+    },
+    passwordMismatch: {
+      en: "Passwords do not match",
+      "zh-TW": "密碼不一致",
+      "zh-CN": "密码不一致",
+    },
   },
 } as const;
 

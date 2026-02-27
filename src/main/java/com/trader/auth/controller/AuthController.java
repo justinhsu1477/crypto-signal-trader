@@ -5,6 +5,7 @@ import com.trader.auth.exception.EmailNotVerifiedException;
 import com.trader.auth.service.AuthService;
 import com.trader.auth.service.EmailVerificationService;
 import com.trader.auth.service.JwtService;
+import com.trader.auth.service.PasswordResetService;
 import com.trader.auth.util.CookieUtil;
 import com.trader.shared.dto.ErrorResponse;
 import com.trader.shared.service.AuditService;
@@ -32,6 +33,7 @@ public class AuthController {
     private final AuthService authService;
     private final AuditService auditService;
     private final EmailVerificationService emailVerificationService;
+    private final PasswordResetService passwordResetService;
     private final UserRepository userRepository;
     private final JwtService jwtService;
 
@@ -223,6 +225,74 @@ public class AuthController {
         }
 
         return ResponseEntity.ok(Map.of("message", "登出成功"));
+    }
+
+    // ========== 密碼管理 ==========
+
+    /**
+     * 修改密碼（已登入用戶）
+     * POST /api/auth/change-password
+     *
+     * 成功後清除 Cookie → 前端收到後跳轉登入頁。
+     */
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                            Authentication authentication,
+                                            HttpServletRequest httpRequest,
+                                            HttpServletResponse httpResponse) {
+        String clientIp = getClientIp(httpRequest);
+        String userId = (String) authentication.getPrincipal();
+
+        try {
+            passwordResetService.changePassword(userId, request);
+
+            // 清除 Cookie → 強制重新登入
+            CookieUtil.clearAuthCookies(httpResponse);
+
+            auditService.log(userId, "CHANGE_PASSWORD", "/api/auth/change-password",
+                    "SUCCESS", clientIp, "");
+
+            return ResponseEntity.ok(Map.of("message", "密碼修改成功，請重新登入"));
+        } catch (IllegalArgumentException e) {
+            auditService.log(userId, "CHANGE_PASSWORD", "/api/auth/change-password",
+                    "FAILED", clientIp, e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder().error(e.getMessage()).build());
+        }
+    }
+
+    /**
+     * 忘記密碼（公開端點）
+     * POST /api/auth/forgot-password
+     *
+     * 安全原則：無論 email 是否存在，永遠回相同訊息（防枚舉）。
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        try {
+            passwordResetService.requestPasswordReset(request.getEmail());
+        } catch (Exception e) {
+            log.error("忘記密碼處理異常（靜默）: email={}", request.getEmail(), e);
+        }
+
+        // 永遠回相同訊息（防枚舉）
+        return ResponseEntity.ok(Map.of(
+                "message", "若此 Email 已註冊，我們已發送密碼重設連結"));
+    }
+
+    /**
+     * 密碼重設（公開端點，需要有效 token）
+     * POST /api/auth/reset-password
+     */
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        try {
+            passwordResetService.resetPassword(request);
+            return ResponseEntity.ok(Map.of("message", "密碼重設成功，請重新登入"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder().error(e.getMessage()).build());
+        }
     }
 
     /**
