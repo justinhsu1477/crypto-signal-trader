@@ -62,6 +62,7 @@ class BinanceUserDataStreamServiceTest {
         orderEventHandler = new OrderEventHandler(
                 tradeRecordService, new SymbolLockRegistry(),
                 discordWebhookService::sendNotification,
+                null,
                 gson, "");
     }
 

@@ -394,6 +394,79 @@ class DailyReportServiceTest {
         }
 
         @Test
+        @DisplayName("sendDailyReport — Admin 收到彙總報告（包含全平台淨利）")
+        void sendDailyReport_sendsAdminSummary() {
+            User userA = mockUser("user-A", true);
+            User userB = mockUser("user-B", true);
+            when(userRepository.findAll()).thenReturn(List.of(userA, userB));
+
+            // user-A: 3 trades, +100 USDT
+            Map<String, Object> statsA = emptyStats();
+            statsA.put("trades", 3L);
+            statsA.put("netProfit", 100.0);
+            when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-A"))).thenReturn(statsA);
+            when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-A"))).thenReturn(List.of());
+            when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
+            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
+
+            // user-B: 2 trades, -50 USDT
+            Map<String, Object> statsB = emptyStats();
+            statsB.put("trades", 2L);
+            statsB.put("netProfit", -50.0);
+            when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-B"))).thenReturn(statsB);
+            when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-B"))).thenReturn(List.of());
+            when(tradeRecordService.getStatsSummary("user-B")).thenReturn(emptySummary());
+            when(userApiKeyService.getUserBinanceKeys("user-B")).thenReturn(Optional.empty());
+
+            // per-user risk config
+            EffectiveTradeConfig config = new EffectiveTradeConfig(
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+            when(tradeConfigResolver.resolve(anyString())).thenReturn(config);
+
+            service.sendDailyReport();
+
+            // 驗證 Admin 收到彙總報告
+            ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+            verify(webhookService).sendNotificationToAdmins(
+                    titleCaptor.capture(), messageCaptor.capture(), eq(DiscordWebhookService.COLOR_BLUE));
+
+            assertThat(titleCaptor.getValue()).contains("每日彙總報告");
+            String summary = messageCaptor.getValue();
+            assertThat(summary).contains("2 人");           // 總用戶
+            assertThat(summary).contains("5 筆");            // 總交易
+            assertThat(summary).contains("+50.00");          // 全平台淨利
+            assertThat(summary).contains("平均每人");         // 平均區塊
+            assertThat(summary).contains("+25.00");          // 平均 = 50/2
+        }
+
+        @Test
+        @DisplayName("sendDailyReport — 無交易時 Admin 彙總不含平均")
+        void sendDailyReport_adminSummary_noTrades() {
+            User user = mockUser("user-A", true);
+            when(userRepository.findAll()).thenReturn(List.of(user));
+
+            when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-A"))).thenReturn(emptyStats());
+            when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-A"))).thenReturn(List.of());
+            when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
+            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
+
+            EffectiveTradeConfig config = new EffectiveTradeConfig(
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+            when(tradeConfigResolver.resolve(anyString())).thenReturn(config);
+
+            service.sendDailyReport();
+
+            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+            verify(webhookService).sendNotificationToAdmins(
+                    anyString(), messageCaptor.capture(), anyInt());
+
+            String summary = messageCaptor.getValue();
+            assertThat(summary).contains("0 筆");
+            assertThat(summary).doesNotContain("平均每人"); // 無交易不顯示平均
+        }
+
+        @Test
         @DisplayName("sendDailyReport — per-user 風控使用 TradeConfigResolver")
         void sendDailyReport_perUserRiskBudget() {
             User user = mockUser("user-X", true);

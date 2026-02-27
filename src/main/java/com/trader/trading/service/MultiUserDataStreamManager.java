@@ -424,11 +424,13 @@ public class MultiUserDataStreamManager {
 
         PerUserWebSocketListener(UserStreamContext context) {
             this.context = context;
-            // per-user 版：通知走 sendNotificationToUser
+            // per-user 版：通知走 sendNotificationToUser + Admin
             this.orderEventHandler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry,
                     (title, msg, color) -> discordWebhookService.sendNotificationToUser(
                             context.getUserId(), title, msg, color),
+                    (title, msg, color) -> discordWebhookService.sendNotificationToAdmins(
+                            context.getDisplayName(), title, msg, color),
                     gson, "用戶 " + context.getUserId() + " ");
         }
 
