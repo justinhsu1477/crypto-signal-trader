@@ -128,6 +128,21 @@ public class JwtService {
     }
 
     /**
+     * 從 Token 中提取簽發時間（iat claim）
+     *
+     * @param token JWT token
+     * @return 簽發時間 Date
+     */
+    public Date extractIssuedAt(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .getIssuedAt();
+    }
+
+    /**
      * 取得 Token 過期時間（毫秒）
      */
     public long getExpirationMs() {

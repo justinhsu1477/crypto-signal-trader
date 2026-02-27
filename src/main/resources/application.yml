@@ -116,7 +116,7 @@ advisor:
   recent-trades-count: 10
   temperature-value: 0.7
 
-# ========== Email OTP 驗證 ==========
+# ========== Email OTP 驗證 + 密碼重設 ==========
 email:
   enabled: ${EMAIL_ENABLED:false}
   resend-api-key: ${RESEND_API_KEY:}
@@ -124,6 +124,9 @@ email:
   otp-expiry-minutes: 10
   max-attempts-per-code: 3
   max-sends-per-hour: 5
+  reset-token-expiry-minutes: 60
+  max-reset-per-quarter-hour: 3
+  app-base-url: ${APP_BASE_URL:http://localhost:3000}
 
 # ========== 推薦系統 ==========
 referral:

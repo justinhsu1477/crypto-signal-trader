@@ -34,7 +34,7 @@ class EmailVerificationServiceTest {
         codeRepository = mock(EmailVerificationCodeRepository.class);
         userRepository = mock(UserRepository.class);
         resendEmailService = mock(ResendEmailService.class);
-        emailConfig = new EmailConfig(false, "", "noreply@hookfi.com", 10, 3, 5);
+        emailConfig = new EmailConfig(false, "", "noreply@hookfi.com", 10, 3, 5, 60, 3, "http://localhost:3000");
         service = new EmailVerificationService(codeRepository, userRepository, resendEmailService, emailConfig);
     }
 

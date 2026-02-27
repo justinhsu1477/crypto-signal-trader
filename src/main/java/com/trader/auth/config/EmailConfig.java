@@ -17,6 +17,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *   otp-expiry-minutes: 10
  *   max-attempts-per-code: 3
  *   max-sends-per-hour: 5
+ *   reset-token-expiry-minutes: 60
+ *   max-reset-per-quarter-hour: 3
+ *   app-base-url: http://localhost:3000
  */
 @Slf4j
 @Getter
@@ -29,6 +32,9 @@ public class EmailConfig {
     private final int otpExpiryMinutes;
     private final int maxAttemptsPerCode;
     private final int maxSendsPerHour;
+    private final int resetTokenExpiryMinutes;
+    private final int maxResetPerQuarterHour;
+    private final String appBaseUrl;
 
     public EmailConfig(
             @DefaultValue("false") boolean enabled,
@@ -36,13 +42,19 @@ public class EmailConfig {
             @DefaultValue("noreply@hookfi.com") String fromAddress,
             @DefaultValue("10") int otpExpiryMinutes,
             @DefaultValue("3") int maxAttemptsPerCode,
-            @DefaultValue("5") int maxSendsPerHour) {
+            @DefaultValue("5") int maxSendsPerHour,
+            @DefaultValue("60") int resetTokenExpiryMinutes,
+            @DefaultValue("3") int maxResetPerQuarterHour,
+            @DefaultValue("http://localhost:3000") String appBaseUrl) {
         this.enabled = enabled;
         this.resendApiKey = resendApiKey;
         this.fromAddress = fromAddress;
         this.otpExpiryMinutes = otpExpiryMinutes;
         this.maxAttemptsPerCode = maxAttemptsPerCode;
         this.maxSendsPerHour = maxSendsPerHour;
+        this.resetTokenExpiryMinutes = resetTokenExpiryMinutes;
+        this.maxResetPerQuarterHour = maxResetPerQuarterHour;
+        this.appBaseUrl = appBaseUrl;
     }
 
     @PostConstruct

@@ -198,6 +198,39 @@ export async function fetchCurrentUser(): Promise<{ userId: string; email: strin
   return publicRequest<{ userId: string; email: string; role: string }>("/api/auth/me");
 }
 
+// ==================== Password Management ====================
+
+export async function changePassword(data: {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function forgotPassword(data: {
+  email: string;
+}): Promise<{ message: string }> {
+  return publicRequest<{ message: string }>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function resetPassword(data: {
+  token: string;
+  newPassword: string;
+  confirmPassword: string;
+}): Promise<{ message: string }> {
+  return publicRequest<{ message: string }>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 /**
  * 登出（清除 HttpOnly Cookie）
  */

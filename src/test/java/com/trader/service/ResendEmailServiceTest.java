@@ -19,7 +19,7 @@ class ResendEmailServiceTest {
         @Test
         @DisplayName("enabled=false → 不拋異常（只 log，不呼叫 HTTP）")
         void disabledMode_doesNotThrow() {
-            EmailConfig config = new EmailConfig(false, "", "noreply@hookfi.com", 10, 3, 5);
+            EmailConfig config = new EmailConfig(false, "", "noreply@hookfi.com", 10, 3, 5, 60, 3, "http://localhost:3000");
             ResendEmailService service = new ResendEmailService(config);
 
             // enabled=false → sendOtpEmail 只 log，不發 HTTP
@@ -30,7 +30,7 @@ class ResendEmailServiceTest {
         @Test
         @DisplayName("enabled=false → 多次呼叫不拋異常")
         void disabledMode_multipleCallsDoNotThrow() {
-            EmailConfig config = new EmailConfig(false, "", "noreply@hookfi.com", 10, 3, 5);
+            EmailConfig config = new EmailConfig(false, "", "noreply@hookfi.com", 10, 3, 5, 60, 3, "http://localhost:3000");
             ResendEmailService service = new ResendEmailService(config);
 
             assertThatCode(() -> {
@@ -51,7 +51,7 @@ class ResendEmailServiceTest {
         @DisplayName("enabled=true 但 API key 無效 → 發信失敗拋 RuntimeException")
         void enabledButInvalidKey_throwsOnSend() {
             // enabled=true 但 API key 無效，HTTP 呼叫必定失敗
-            EmailConfig config = new EmailConfig(true, "invalid-key", "noreply@hookfi.com", 10, 3, 5);
+            EmailConfig config = new EmailConfig(true, "invalid-key", "noreply@hookfi.com", 10, 3, 5, 60, 3, "http://localhost:3000");
             ResendEmailService service = new ResendEmailService(config);
 
             // Resend API 會回 401/403 → 觸發 RuntimeException
