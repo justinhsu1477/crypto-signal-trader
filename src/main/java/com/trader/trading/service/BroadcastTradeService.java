@@ -3,6 +3,7 @@ package com.trader.trading.service;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.referral.repository.UserExchangeReferralLinkRepository;
+import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.DoubleAdder;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * 廣播跟單服務 (共享線程池版本)
@@ -122,6 +125,15 @@ public class BroadcastTradeService {
         // 用共享線程池並行執行（不排隊，全員同時下單）
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger failCount = new AtomicInteger(0);
+        // Thread-safe 收集明細（成交限 10 筆、失敗限 5 筆，避免訊息過長）
+        ConcurrentLinkedQueue<String> successDetails = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<String> failDetails = new ConcurrentLinkedQueue<>();
+        int maxSuccessDetails = 10;
+        int maxFailDetails = 5;
+        // CLOSE 專用：收集 PnL 做彙總
+        boolean isCloseAction = "CLOSE".equalsIgnoreCase(request.getAction());
+        DoubleAdder totalPnl = new DoubleAdder();
+        AtomicInteger pnlCount = new AtomicInteger(0);
 
         // 為每個用戶建立 Callable 任務
         List<Callable<Void>> tasks = new ArrayList<>();
@@ -131,23 +143,44 @@ public class BroadcastTradeService {
                 // 設入 ThreadLocal，讓 BinanceFuturesService.notifyGlobal() 也能讀到
                 TradeRecordService.setCurrentUserDisplayName(userDisplay);
                 try {
-                    binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
+                    List<OrderResult> results = binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
                     successCount.incrementAndGet();
                     log.debug("跟單成功: userId={}", user.getUserId());
 
-                    // 發送成功通知給用戶（使用用戶自定義 webhook）
+                    // 找到主要成交結果
+                    OrderResult mainResult = (results != null && !results.isEmpty())
+                            ? results.stream()
+                                .filter(r -> r.isSuccess() && r.getOrderId() != null)
+                                .findFirst().orElse(results.get(0))
+                            : null;
+
+                    // 發送 enriched 成功通知給用戶（含實際成交價/PnL）
+                    String successTitle = isCloseAction ? "✅ 廣播平倉已執行" : "✅ 廣播跟單已執行";
                     discordWebhookService.sendNotificationToUser(
                             user.getUserId(),
-                            "✅ 廣播跟單已執行",
-                            String.format("%s %s\n入場: %s\n用戶: %s\n訊號來源: 廣播",
-                                    request.getSymbol(),
-                                    request.getSide(),
-                                    request.getEntryPrice(),
-                                    userDisplay),
+                            successTitle,
+                            formatUserResultBody(request, mainResult, userDisplay),
                             DiscordWebhookService.COLOR_GREEN);
+
+                    // 收集成交明細供 Admin 報告（限 maxSuccessDetails 筆）
+                    if (mainResult != null && successDetails.size() < maxSuccessDetails) {
+                        successDetails.add(formatAdminDetailLine(request, mainResult, userDisplay));
+                    }
+
+                    // CLOSE: 收集 PnL 做彙總
+                    if (isCloseAction && mainResult != null && mainResult.getNetProfit() != null) {
+                        totalPnl.add(mainResult.getNetProfit());
+                        pnlCount.incrementAndGet();
+                    }
                 } catch (Exception e) {
                     failCount.incrementAndGet();
                     log.error("跟單失敗: userId={} error={}", user.getUserId(), e.getMessage());
+
+                    // 收集失敗明細（限 maxFailDetails 筆，CAS-free — size 可能略超，可接受）
+                    if (failDetails.size() < maxFailDetails) {
+                        String reason = e.getMessage();
+                        failDetails.add(userDisplay + ": " + (reason != null ? reason : "unknown error"));
+                    }
 
                     // 發送失敗通知給用戶
                     discordWebhookService.sendNotificationToUser(
@@ -176,17 +209,53 @@ public class BroadcastTradeService {
             log.info("廣播跟單完成: 成功={} 失敗={} 超時取消={}",
                     successCount.get(), failCount.get(), cancelledCount);
 
-            // 廣播完成 — 發摘要通知給每位 Admin（per-user webhook）
-            String summary = String.format("%s %s\n成功: %d 人\n失敗: %d 人\n超時: %d 人\n總計: %d 人",
+            // 廣播完成 — 發彙總報告給每位 Admin（per-user webhook）
+            StringBuilder summaryBuilder = new StringBuilder(
+                    String.format("%s %s\n成功: %d 人\n失敗: %d 人\n超時: %d 人\n總計: %d 人",
                     request.getSymbol(), request.getAction(),
-                    successCount.get(), failCount.get(), cancelledCount, activeUsers.size());
+                    successCount.get(), failCount.get(), cancelledCount, activeUsers.size()));
+
+            // CLOSE: 附上 PnL 彙總（總損益 + 平均）
+            if (isCloseAction && pnlCount.get() > 0) {
+                double pnlTotal = totalPnl.sum();
+                double pnlAvg = pnlTotal / pnlCount.get();
+                summaryBuilder.append(String.format("\n\n總損益: %+.2f USDT\n平均: %+.2f USDT",
+                        pnlTotal, pnlAvg));
+            }
+
+            // 附上成交明細（最多 10 筆）
+            if (!successDetails.isEmpty()) {
+                summaryBuilder.append(isCloseAction ? "\n\n平倉明細:" : "\n\n成交明細:");
+                for (String detail : successDetails) {
+                    summaryBuilder.append("\n- ").append(detail);
+                }
+                int totalSuccess = successCount.get();
+                if (totalSuccess > successDetails.size()) {
+                    summaryBuilder.append(String.format("\n...及其他 %d 人", totalSuccess - successDetails.size()));
+                }
+            }
+
+            // 附上失敗明細（最多 5 筆）
+            if (!failDetails.isEmpty()) {
+                summaryBuilder.append("\n\n失敗明細:");
+                for (String detail : failDetails) {
+                    summaryBuilder.append("\n- ").append(detail);
+                }
+                int totalFails = failCount.get();
+                if (totalFails > failDetails.size()) {
+                    summaryBuilder.append(String.format("\n...及其他 %d 人", totalFails - failDetails.size()));
+                }
+            }
+
+            String summary = summaryBuilder.toString();
+            String summaryTitle = isCloseAction ? "📊 廣播平倉報告" : "📊 廣播跟單報告";
             int summaryColor = failCount.get() > 0 || cancelledCount > 0
                     ? DiscordWebhookService.COLOR_YELLOW
                     : DiscordWebhookService.COLOR_GREEN;
             for (User admin : adminUsers) {
                 discordWebhookService.sendNotificationToUser(
                         admin.getUserId(),
-                        "📊 廣播跟單摘要",
+                        summaryTitle,
                         summary,
                         summaryColor);
             }
@@ -217,6 +286,81 @@ public class BroadcastTradeService {
             return name + " (" + email + ")";
         }
         return email;
+    }
+
+    /**
+     * 格式化用戶成交通知（enriched，含實際成交價/PnL）
+     */
+    private String formatUserResultBody(TradeRequest request, OrderResult result, String userDisplay) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(request.getSymbol());
+
+        String action = request.getAction() != null ? request.getAction().toUpperCase() : "";
+        switch (action) {
+            case "ENTRY" -> {
+                if (request.getSide() != null) sb.append(" ").append(request.getSide());
+                sb.append("\n");
+                if (result != null && result.getPrice() > 0) {
+                    sb.append("成交: ").append(result.getPrice()).append("\n");
+                    if (result.getQuantity() > 0) {
+                        sb.append("數量: ").append(result.getQuantity()).append("\n");
+                    }
+                    if (result.getCommission() > 0) {
+                        sb.append("手續費: ").append(String.format("%.4f", result.getCommission())).append(" USDT\n");
+                    }
+                } else {
+                    // fallback：無成交結果時顯示請求價
+                    sb.append("入場: ").append(request.getEntryPrice()).append("\n");
+                }
+            }
+            case "CLOSE" -> {
+                sb.append("\n");
+                if (result != null) {
+                    if (result.getPrice() > 0) {
+                        sb.append("成交: ").append(result.getPrice()).append("\n");
+                    }
+                    if (result.getNetProfit() != null) {
+                        sb.append("已實現損益: ").append(String.format("%+.2f", result.getNetProfit())).append(" USDT\n");
+                    }
+                    if (result.getTotalCommission() != null) {
+                        sb.append("手續費: ").append(String.format("%.4f", result.getTotalCommission())).append(" USDT\n");
+                    }
+                }
+            }
+            case "MOVE_SL" -> {
+                sb.append("\n");
+                if (request.getNewStopLoss() != null) sb.append("新止損: ").append(request.getNewStopLoss()).append("\n");
+                if (request.getNewTakeProfit() != null) sb.append("新止盈: ").append(request.getNewTakeProfit()).append("\n");
+            }
+            case "CANCEL" -> sb.append("\n已取消所有掛單\n");
+            default -> sb.append("\n");
+        }
+
+        sb.append("用戶: ").append(userDisplay);
+        sb.append("\n訊號來源: 廣播");
+        return sb.toString();
+    }
+
+    /**
+     * 格式化 Admin 報告的單行明細
+     */
+    private String formatAdminDetailLine(TradeRequest request, OrderResult result, String userDisplay) {
+        String action = request.getAction() != null ? request.getAction().toUpperCase() : "";
+        return switch (action) {
+            case "ENTRY" -> {
+                if (result.getPrice() > 0 && result.getQuantity() > 0) {
+                    yield userDisplay + ": " + result.getPrice() + " × " + result.getQuantity();
+                }
+                yield userDisplay + ": 成功";
+            }
+            case "CLOSE" -> {
+                if (result.getNetProfit() != null) {
+                    yield userDisplay + ": " + String.format("%+.2f USDT", result.getNetProfit());
+                }
+                yield userDisplay + ": 成功";
+            }
+            default -> userDisplay + ": 成功";
+        };
     }
 
     /**

@@ -1692,7 +1692,7 @@ public class BinanceFuturesService {
      * @param userId  用戶 ID（用於查詢 per-user API Key）
      * @throws RuntimeException 交易失敗時拋出，讓 BroadcastTradeService 捕獲
      */
-    public void executeSignalForBroadcast(TradeRequest request, String userId) {
+    public List<OrderResult> executeSignalForBroadcast(TradeRequest request, String userId) {
         log.info("廣播跟單執行: userId={} action={} symbol={}", userId, request.getAction(), request.getSymbol());
 
         String action = request.getAction();
@@ -1717,6 +1717,7 @@ public class BinanceFuturesService {
         TradeRecordService.setCurrentUserId(userId);  // 同步設定 TradeRecordService 的 userId
         log.info("廣播跟單: userId={} 使用 per-user API Key", userId);
 
+        List<OrderResult> broadcastResults = List.of();
         try {
         switch (action.toUpperCase()) {
             case "ENTRY" -> {
@@ -1770,6 +1771,7 @@ public class BinanceFuturesService {
                             .collect(Collectors.joining("; "));
                     throw new RuntimeException("ENTRY 失敗: " + errors);
                 }
+                broadcastResults = results;
             }
             case "CLOSE" -> {
                 TradeSignal signal = TradeSignal.builder()
@@ -1785,6 +1787,7 @@ public class BinanceFuturesService {
                 if (!ok) {
                     throw new RuntimeException("CLOSE 失敗: " + symbol);
                 }
+                broadcastResults = results;
             }
             case "MOVE_SL" -> {
                 TradeSignal signal = TradeSignal.builder()
@@ -1799,11 +1802,12 @@ public class BinanceFuturesService {
                 if (!ok) {
                     throw new RuntimeException("MOVE_SL 失敗: " + symbol);
                 }
+                broadcastResults = results;
             }
             case "CANCEL" -> {
                 if (deduplicationService.isCancelDuplicate(symbol)) {
                     log.warn("廣播跟單: 重複取消跳過 userId={} symbol={}", userId, symbol);
-                    return;  // 靜默跳過，不拋異常
+                    return List.of();  // 靜默跳過，不拋異常
                 }
                 cancelAllOrders(symbol);
                 try {
@@ -1816,6 +1820,7 @@ public class BinanceFuturesService {
         }
 
         log.info("廣播跟單完成: userId={} action={} symbol={}", userId, action, symbol);
+        return broadcastResults;
         } finally {
             // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
             CURRENT_USER_KEYS.remove();
