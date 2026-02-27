@@ -603,6 +603,97 @@ class TradeControllerTest {
             ResponseEntity<?> response = controller.broadcastTrade(request);
             assertThat(response.getStatusCode().value()).isEqualTo(400);
         }
+
+        @Test
+        @DisplayName("CLOSE 重複訊號 — signal-level 去重攔截")
+        void broadcastCloseDuplicate() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("CLOSE");
+            request.setSymbol("BTCUSDT");
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(true);
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("status", "SKIPPED");
+            verify(broadcastTradeService, never()).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("MOVE_SL 重複訊號 — signal-level 去重攔截")
+        void broadcastMoveSLDuplicate() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("MOVE_SL");
+            request.setSymbol("BTCUSDT");
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(true);
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("status", "SKIPPED");
+            verify(broadcastTradeService, never()).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("CLOSE 通過去重 — 正常廣播")
+        void broadcastClosePassesDedup() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("CLOSE");
+            request.setSymbol("BTCUSDT");
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 3, "success", 3));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(broadcastTradeService).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("ENTRY 重複訊號 — signal-level 去重攔截")
+        void broadcastEntryDuplicate() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(true);
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("status", "SKIPPED");
+            verify(broadcastTradeService, never()).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("CANCEL 跳過 signal-level 去重 — 有自己的去重邏輯")
+        void broadcastCancelSkipsSignalDedup() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("CANCEL");
+            request.setSymbol("BTCUSDT");
+
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 3, "success", 3));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(deduplicationService, never()).isSignalProcessed(any());
+            verify(broadcastTradeService).broadcastTrade(any());
+        }
     }
 
     // ==================== 其他端點 ====================

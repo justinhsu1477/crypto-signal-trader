@@ -678,9 +678,11 @@ public class TradeController {
                     "received", symbol != null ? symbol : "null"));
         }
 
-        // Signal-level 去重：ENTRY 訊號在廣播前檢查是否已被處理過
+        // Signal-level 去重：ENTRY / CLOSE / MOVE_SL 訊號在廣播前檢查是否已被處理過
         // 防止 Discord 重連/重發導致同一訊號被多次廣播給所有用戶
-        if ("ENTRY".equalsIgnoreCase(request.getAction())) {
+        // CANCEL 有自己的去重邏輯（isCancelDuplicate），不在此處理
+        String action = request.getAction().toUpperCase();
+        if ("ENTRY".equals(action) || "CLOSE".equals(action) || "MOVE_SL".equals(action)) {
             TradeSignal dedupSignal = TradeSignal.builder()
                     .symbol(symbol)
                     .side(request.getSide() != null
@@ -689,7 +691,7 @@ public class TradeController {
                     .stopLoss(request.getStopLoss() != null ? request.getStopLoss() : 0)
                     .build();
             if (deduplicationService.isSignalProcessed(dedupSignal)) {
-                log.warn("廣播跟單: signal-level 去重攔截 {} {}", symbol, request.getSide());
+                log.warn("廣播跟單: signal-level 去重攔截 {} {} {}", action, symbol, request.getSide());
                 signalRecordService.recordFromRequest(
                         request.getAction(), symbol, request.getSide(),
                         request.getEntryPrice(), request.getStopLoss(),

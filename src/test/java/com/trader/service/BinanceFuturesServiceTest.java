@@ -762,6 +762,32 @@ class BinanceFuturesServiceTest {
             verify(mockWebhook, atLeastOnce()).sendNotificationToAdmins(
                     anyString(), anyString(), anyString(), anyInt());
         }
+
+        @Test
+        @DisplayName("廣播 context 無持倉平倉 — 不發 notifyGlobal")
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        void closeNoPositionBroadcastContextSkipsNotifyGlobal() throws Exception {
+            // 模擬廣播 context：設入 CURRENT_USER_KEYS ThreadLocal
+            var field = BinanceFuturesService.class.getDeclaredField("CURRENT_USER_KEYS");
+            field.setAccessible(true);
+            var threadLocal = (ThreadLocal<?>) field.get(null);
+
+            try {
+                ((ThreadLocal) threadLocal).set(new UserApiKeyService.BinanceKeys("test", "test"));
+
+                doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+                doReturn("{}").when(service).cancelAllOrders(anyString());
+                when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+
+                TradeSignal signal = buildCloseSignal(1.0);
+                service.executeClose(signal);
+
+                // 廣播 context 下，無持倉平倉不應發 notifyGlobal
+                verify(mockWebhook, never()).sendNotification(contains("無持倉"), anyString(), anyInt());
+            } finally {
+                threadLocal.getClass().getMethod("remove").invoke(threadLocal);
+            }
+        }
     }
 
     // ==================== 交易安全迴歸測試 ====================
