@@ -62,6 +62,10 @@ export interface DashboardOverview {
   account: AccountSummary;
   riskBudget: RiskBudget;
   subscription: SubscriptionInfo;
+  autoTradeEnabled: boolean;
+  discordNotificationEnabled: boolean;
+  hasBinanceApiKey: boolean;
+  hasDiscordWebhook: boolean;
   positions: OpenPositionSummary[];
 }
 

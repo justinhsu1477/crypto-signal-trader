@@ -17,6 +17,7 @@ import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserDiscordWebhookService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,7 @@ public class DashboardService {
     private final TradeConfigResolver tradeConfigResolver;
     private final MultiUserConfig multiUserConfig;
     private final UserApiKeyService userApiKeyService;
+    private final UserDiscordWebhookService userDiscordWebhookService;
     private final StartOfDayBalanceCache startOfDayBalanceCache;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -69,6 +71,8 @@ public class DashboardService {
         var userOpt = userRepository.findById(userId);
         boolean autoTradeEnabled = userOpt.map(u -> u.isAutoTradeEnabled()).orElse(false);
         boolean discordNotificationEnabled = userOpt.map(u -> u.isDiscordNotificationEnabled()).orElse(true);
+        boolean hasBinanceApiKey = userApiKeyService.getUserIdsWithApiKey("BINANCE").contains(userId);
+        boolean hasDiscordWebhook = userDiscordWebhookService.getPrimaryWebhook(userId).isPresent();
 
         // 一次取得餘額，避免重複呼叫 Binance API（account + riskBudget 共用）
         double balance = 0;
@@ -84,6 +88,8 @@ public class DashboardService {
                 .subscription(buildSubscriptionInfo(userId))
                 .autoTradeEnabled(autoTradeEnabled)
                 .discordNotificationEnabled(discordNotificationEnabled)
+                .hasBinanceApiKey(hasBinanceApiKey)
+                .hasDiscordWebhook(hasDiscordWebhook)
                 .positions(buildPositionList(userId))
                 .build();
     }

@@ -330,6 +330,27 @@ const translations = {
     systemStatus: { en: "System Status", "zh-TW": "系統狀態", "zh-CN": "系统状态" },
   },
 
+  // ─── onboarding checklist ───
+  onboarding: {
+    title: { en: "Get Started", "zh-TW": "快速上手", "zh-CN": "快速上手" },
+    optional: { en: "Optional", "zh-TW": "選填", "zh-CN": "选填" },
+    step_apiKey: {
+      en: "Set up Binance API Key",
+      "zh-TW": "設定 Binance API Key",
+      "zh-CN": "设置 Binance API Key",
+    },
+    step_autoTrade: {
+      en: "Enable Auto Trade",
+      "zh-TW": "開啟自動跟單",
+      "zh-CN": "开启自动跟单",
+    },
+    step_webhook: {
+      en: "Set up Discord notification",
+      "zh-TW": "設定 Discord 交易通知",
+      "zh-CN": "设置 Discord 交易通知",
+    },
+  },
+
   // ─── trades ───
   trades: {
     title: { en: "Trade History", "zh-TW": "交易紀錄", "zh-CN": "交易记录" },

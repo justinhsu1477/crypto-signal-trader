@@ -7,6 +7,7 @@ import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { RiskBudgetCard } from "@/components/dashboard/risk-budget";
 import { PositionsTable } from "@/components/dashboard/positions-table";
 import { SystemStatus } from "@/components/dashboard/system-status";
+import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useT } from "@/lib/i18n/i18n-context";
 import { useAuth } from "@/lib/auth-context";
@@ -60,6 +61,9 @@ export default function HomePage() {
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold tracking-tight">{t("dashboard.title")}</h1>
+      <ErrorBoundary>
+        <OnboardingChecklist data={data} />
+      </ErrorBoundary>
       <ErrorBoundary>
         <KpiCards data={data} />
       </ErrorBoundary>

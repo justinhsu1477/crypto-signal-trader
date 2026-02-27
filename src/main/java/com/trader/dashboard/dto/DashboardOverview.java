@@ -30,6 +30,12 @@ public class DashboardOverview {
     /** Discord 通知是否啟用 */
     private boolean discordNotificationEnabled;
 
+    /** 是否已設定 Binance API Key */
+    private boolean hasBinanceApiKey;
+
+    /** 是否已設定 Discord Webhook */
+    private boolean hasDiscordWebhook;
+
     /** 目前持倉列表 */
     private List<OpenPositionSummary> positions;
 
