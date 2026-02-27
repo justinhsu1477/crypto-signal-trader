@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n/i18n-context";
 export function PublicNavbar() {
   const pathname = usePathname();
   const isLogin = pathname === "/login";
+  const isLandingPage = ["/login", "/register", "/verify-email"].includes(pathname);
   const { t } = useT();
 
   const navLinks = [
@@ -25,10 +26,12 @@ export function PublicNavbar() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         {/* Logo */}
         <a
-          href="#"
+          href="/login"
           onClick={(e) => {
-            e.preventDefault();
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            if (isLandingPage) {
+              e.preventDefault();
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }
           }}
           className="flex items-center gap-2.5 group cursor-pointer"
         >
@@ -55,7 +58,7 @@ export function PublicNavbar() {
               >
                 {link.label}
               </Link>
-            ) : (
+            ) : isLandingPage ? (
               <a
                 key={link.href}
                 href={link.href}
@@ -67,6 +70,14 @@ export function PublicNavbar() {
               >
                 {link.label}
               </a>
+            ) : (
+              <Link
+                key={link.href}
+                href={`/login${link.href}`}
+                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-white/5"
+              >
+                {link.label}
+              </Link>
             )
           )}
         </div>
