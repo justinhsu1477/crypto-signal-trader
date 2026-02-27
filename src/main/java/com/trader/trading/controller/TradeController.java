@@ -232,6 +232,9 @@ public class TradeController {
     public ResponseEntity<?> executeTrade(@RequestBody TradeRequest request) {
         log.info("收到結構化交易請求: action={} symbol={}", request.getAction(), request.getSymbol());
 
+        // 取得當前用戶 ID（JwtAuthenticationFilter 已設入 ThreadLocal）
+        String currentUserId = TradeRecordService.getCurrentUserId();
+
         // 白名單檢查
         String symbol = request.getSymbol();
         if (symbol == null || !riskConfig.isSymbolAllowed(symbol)) {
@@ -303,10 +306,10 @@ public class TradeController {
                 String title = isDca
                         ? (entryOk ? "📈 DCA 補倉成功 (API)" : "❌ DCA 補倉失敗 (API)")
                         : (entryOk ? "✅ ENTRY 入場成功 (API)" : "❌ ENTRY 入場失敗 (API)");
-                webhookService.sendNotification(
-                        title,
-                        formatEntryResults(signal, results),
-                        entryOk ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
+                String entryBody = formatEntryResults(signal, results);
+                int entryColor = entryOk ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED;
+                webhookService.sendNotification(title, entryBody, entryColor);
+                notifyCurrentUser(currentUserId, title, entryBody, entryColor);
                 signalRecordService.recordSignal(signal, entryOk ? "EXECUTED" : "FAILED", null, null);
                 return ResponseEntity.ok(Map.of("action", isDca ? "DCA" : "ENTRY", "results", results));
             }
@@ -335,7 +338,9 @@ public class TradeController {
                     closeTitle = "💰 CLOSE 平倉成功 (API)";
                     closeColor = DiscordWebhookService.COLOR_GREEN;
                 }
-                webhookService.sendNotification(closeTitle, formatCloseResults(symbol, results), closeColor);
+                String closeBody = formatCloseResults(symbol, results);
+                webhookService.sendNotification(closeTitle, closeBody, closeColor);
+                notifyCurrentUser(currentUserId, closeTitle, closeBody, closeColor);
                 signalRecordService.recordFromRequest("CLOSE", symbol, null,
                         null, null, closeOk ? "EXECUTED" : "FAILED", null, null, request.getSource());
                 return ResponseEntity.ok(Map.of("action", "CLOSE", "results", results));
@@ -354,10 +359,11 @@ public class TradeController {
 
                 List<OrderResult> results = binanceFuturesService.executeMoveSL(signal);
                 boolean moveOk = results.stream().allMatch(OrderResult::isSuccess);
-                webhookService.sendNotification(
-                        moveOk ? "🔄 TP/SL 修改成功 (API)" : "❌ TP/SL 修改失敗 (API)",
-                        formatMoveSLResults(signal, results),
-                        moveOk ? DiscordWebhookService.COLOR_BLUE : DiscordWebhookService.COLOR_RED);
+                String moveTitle = moveOk ? "🔄 TP/SL 修改成功 (API)" : "❌ TP/SL 修改失敗 (API)";
+                String moveBody = formatMoveSLResults(signal, results);
+                int moveColor = moveOk ? DiscordWebhookService.COLOR_BLUE : DiscordWebhookService.COLOR_RED;
+                webhookService.sendNotification(moveTitle, moveBody, moveColor);
+                notifyCurrentUser(currentUserId, moveTitle, moveBody, moveColor);
                 signalRecordService.recordFromRequest("MOVE_SL", symbol, null,
                         null, null, moveOk ? "EXECUTED" : "FAILED", null, null, request.getSource());
                 return ResponseEntity.ok(Map.of("action", "MOVE_SL", "results", results));
@@ -377,10 +383,10 @@ public class TradeController {
                 } catch (Exception e) {
                     log.error("取消紀錄寫入失敗: {}", e.getMessage());
                 }
-                webhookService.sendNotification(
-                        "🚫 CANCEL 取消掛單 (API)",
-                        symbol + " — 已取消所有掛單",
-                        DiscordWebhookService.COLOR_BLUE);
+                String cancelTitle = "🚫 CANCEL 取消掛單 (API)";
+                String cancelBody = symbol + " — 已取消所有掛單";
+                webhookService.sendNotification(cancelTitle, cancelBody, DiscordWebhookService.COLOR_BLUE);
+                notifyCurrentUser(currentUserId, cancelTitle, cancelBody, DiscordWebhookService.COLOR_BLUE);
                 signalRecordService.recordFromRequest("CANCEL", symbol, null,
                         null, null, "EXECUTED", null, null, request.getSource());
                 return ResponseEntity.ok(Map.of("action", "CANCEL", "symbol", symbol, "result", cancelResult));
@@ -493,6 +499,21 @@ public class TradeController {
                     .build();
         }
         return null;
+    }
+
+    // ==================== Per-user 通知 Helper ====================
+
+    /**
+     * 發送 per-user 通知給當前用戶（userId 為空時跳過）
+     */
+    private void notifyCurrentUser(String userId, String title, String message, int color) {
+        if (userId != null && !userId.isBlank()) {
+            try {
+                webhookService.sendNotificationToUser(userId, title, message, color);
+            } catch (Exception e) {
+                log.debug("Per-user 通知失敗: userId={} error={}", userId, e.getMessage());
+            }
+        }
     }
 
     // ==================== Webhook 通知格式化 ====================
