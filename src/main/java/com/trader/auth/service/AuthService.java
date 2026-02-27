@@ -49,6 +49,7 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName())
                 .emailVerified(false)
+                .autoTradeEnabled(false)
                 .build();
 
         userRepository.save(user);
