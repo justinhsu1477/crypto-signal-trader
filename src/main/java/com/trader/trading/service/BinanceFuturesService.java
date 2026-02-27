@@ -95,18 +95,21 @@ public class BinanceFuturesService {
     }
 
     /**
-     * 發送全局通知（自動附加當前 userId）
-     * 多用戶模式下，讓 Admin 知道是哪個用戶的交易觸發了告警。
+     * 發送全局通知（自動附加當前用戶顯示名稱）
+     * 優先使用 ThreadLocal displayName（name (email)），fallback 到 userId。
      */
     private void notifyGlobal(String title, String body, int color) {
-        String userId = null;
+        String displayName = null;
         try {
-            userId = getActiveUserId();
+            displayName = TradeRecordService.getCurrentUserDisplayName();
+            if (displayName == null || displayName.isBlank()) {
+                displayName = getActiveUserId(); // fallback 到 userId
+            }
         } catch (Exception ignored) {
             // tradeRecordService 未注入時（如部分測試），安全降級
         }
-        String enriched = (userId != null && !userId.isBlank())
-                ? "用戶: " + userId + "\n" + body
+        String enriched = (displayName != null && !displayName.isBlank())
+                ? "用戶: " + displayName + "\n" + body
                 : body;
         discordWebhookService.sendNotification(title, enriched, color);
     }
@@ -1790,6 +1793,7 @@ public class BinanceFuturesService {
             // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
             CURRENT_USER_KEYS.remove();
             TradeRecordService.clearCurrentUserId();
+            TradeRecordService.clearCurrentUserDisplayName();
         }
     }
 }

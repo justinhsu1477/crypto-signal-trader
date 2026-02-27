@@ -60,6 +60,8 @@ public class TradeRecordService {
 
     /** 廣播模式下，BinanceFuturesService 會設定當前用戶 ID */
     private static final ThreadLocal<String> CURRENT_USER_ID = new ThreadLocal<>();
+    /** 廣播模式下，用於通知顯示的可讀名稱（格式：name (email)） */
+    private static final ThreadLocal<String> CURRENT_USER_DISPLAY_NAME = new ThreadLocal<>();
 
     /** 設定當前線程的用戶 ID（供 BinanceFuturesService.executeSignalForBroadcast 呼叫） */
     public static void setCurrentUserId(String userId) {
@@ -74,6 +76,21 @@ public class TradeRecordService {
     /** 取得當前線程的用戶 ID（供 TradeConfigResolver 使用） */
     public static String getCurrentUserId() {
         return CURRENT_USER_ID.get();
+    }
+
+    /** 設定當前線程的用戶顯示名稱 */
+    public static void setCurrentUserDisplayName(String displayName) {
+        CURRENT_USER_DISPLAY_NAME.set(displayName);
+    }
+
+    /** 清除當前線程的用戶顯示名稱 */
+    public static void clearCurrentUserDisplayName() {
+        CURRENT_USER_DISPLAY_NAME.remove();
+    }
+
+    /** 取得當前線程的用戶顯示名稱（供 notifyGlobal 使用） */
+    public static String getCurrentUserDisplayName() {
+        return CURRENT_USER_DISPLAY_NAME.get();
     }
 
     /**

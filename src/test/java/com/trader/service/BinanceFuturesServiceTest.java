@@ -69,6 +69,15 @@ class BinanceFuturesServiceTest {
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
+
+        // 設定 displayName ThreadLocal（notifyGlobal 會讀取）
+        TradeRecordService.setCurrentUserDisplayName("Test User (test@example.com)");
+    }
+
+    @AfterEach
+    void tearDown() {
+        TradeRecordService.clearCurrentUserDisplayName();
+        TradeRecordService.clearCurrentUserId();
     }
 
     // ==================== Helper ====================
@@ -656,10 +665,10 @@ class BinanceFuturesServiceTest {
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             service.executeSignal(signal);
 
-            // 驗證通知內容包含 userId
+            // 驗證通知內容包含 displayName
             verify(mockWebhook).sendNotification(
                     eq("🚨 每日虧損熔斷"),
-                    contains("用戶: test-user"),
+                    contains("用戶: Test User (test@example.com)"),
                     eq(DiscordWebhookService.COLOR_RED));
         }
 
@@ -677,10 +686,10 @@ class BinanceFuturesServiceTest {
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             service.executeSignal(signal);
 
-            // fail-safe 通知應包含 userId
+            // fail-safe 通知應包含 displayName
             verify(mockWebhook).sendNotification(
                     eq("🛑 Fail-Safe: 止損失敗，入場單已取消"),
-                    contains("用戶: test-user"),
+                    contains("用戶: Test User (test@example.com)"),
                     eq(DiscordWebhookService.COLOR_RED));
         }
 
@@ -694,10 +703,10 @@ class BinanceFuturesServiceTest {
             TradeSignal signal = buildCloseSignal(1.0);
             service.executeClose(signal);
 
-            // 無持倉平倉通知應包含 userId
+            // 無持倉平倉通知應包含 displayName
             verify(mockWebhook).sendNotification(
                     contains("無持倉"),
-                    contains("用戶: test-user"),
+                    contains("用戶: Test User (test@example.com)"),
                     anyInt());
         }
     }
