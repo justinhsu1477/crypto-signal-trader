@@ -1,10 +1,12 @@
 package com.trader.trading.service;
 
 import com.trader.shared.config.AppConstants;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
-import lombok.RequiredArgsConstructor;
+import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -12,8 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 應用啟動時自動對帳服務
@@ -25,15 +27,32 @@ import java.util.List;
  * 策略：
  * - PENDING_CLOSE → 查詢 Binance 當前持倉，若已無持倉則標為 CLOSED（用 markPrice 估算 exitPrice）
  * - OPEN → 與 Binance getCurrentPositionAmount 比對，若無持倉則標為 CANCELLED
+ *
+ * 多用戶模式：
+ * - 按 userId 分組 Trade，每組使用該用戶的 API Key 查詢 Binance 持倉
+ * - 全局摘要發給 Admin，per-user 通知發給各用戶
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class StartupReconciliationService {
 
     private final TradeRepository tradeRepository;
     private final BinanceFuturesService binanceFuturesService;
     private final DiscordWebhookService discordWebhookService;
+    private final MultiUserConfig multiUserConfig;
+    private final UserApiKeyService userApiKeyService;
+
+    public StartupReconciliationService(TradeRepository tradeRepository,
+                                         BinanceFuturesService binanceFuturesService,
+                                         DiscordWebhookService discordWebhookService,
+                                         MultiUserConfig multiUserConfig,
+                                         UserApiKeyService userApiKeyService) {
+        this.tradeRepository = tradeRepository;
+        this.binanceFuturesService = binanceFuturesService;
+        this.discordWebhookService = discordWebhookService;
+        this.multiUserConfig = multiUserConfig;
+        this.userApiKeyService = userApiKeyService;
+    }
 
     /**
      * 應用完全啟動後執行對帳（ApplicationReadyEvent 確保所有 Bean 已初始化）
@@ -42,22 +61,10 @@ public class StartupReconciliationService {
     public void reconcileOnStartup() {
         log.info("========== 啟動對帳開始 ==========");
         try {
-            List<String> report = new ArrayList<>();
-
-            int pendingFixed = reconcilePendingCloseTrades(report);
-            int zombieCleaned = reconcileZombieOpenTrades(report);
-
-            log.info("啟動對帳完成: PENDING_CLOSE 修復={}, 殭屍清理={}", pendingFixed, zombieCleaned);
-
-            if (pendingFixed > 0 || zombieCleaned > 0) {
-                String details = String.join("\n", report);
-                discordWebhookService.sendNotification(
-                        "🔄 啟動對帳完成",
-                        String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n\n%s",
-                                pendingFixed, zombieCleaned, details),
-                        DiscordWebhookService.COLOR_BLUE);
+            if (multiUserConfig.isEnabled()) {
+                reconcileForAllUsers();
             } else {
-                log.info("啟動對帳: 無需修復，所有 Trade 狀態一致");
+                reconcileGlobal();
             }
         } catch (Exception e) {
             log.error("啟動對帳失敗: {}", e.getMessage(), e);
@@ -69,14 +76,137 @@ public class StartupReconciliationService {
         log.info("========== 啟動對帳結束 ==========");
     }
 
+    // ==================== 單人模式 ====================
+
     /**
-     * 修復 PENDING_CLOSE 交易
+     * 全局對帳（單人模式）— 現有邏輯
+     */
+    private void reconcileGlobal() {
+        List<String> report = new ArrayList<>();
+
+        int pendingFixed = reconcilePendingCloseTrades(report);
+        int zombieCleaned = reconcileZombieOpenTrades(report);
+
+        log.info("啟動對帳完成: PENDING_CLOSE 修復={}, 殭屍清理={}", pendingFixed, zombieCleaned);
+
+        if (pendingFixed > 0 || zombieCleaned > 0) {
+            String details = String.join("\n", report);
+            discordWebhookService.sendNotification(
+                    "🔄 啟動對帳完成",
+                    String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n\n%s",
+                            pendingFixed, zombieCleaned, details),
+                    DiscordWebhookService.COLOR_BLUE);
+        } else {
+            log.info("啟動對帳: 無需修復，所有 Trade 狀態一致");
+        }
+    }
+
+    // ==================== 多用戶模式 ====================
+
+    /**
+     * 遍歷所有用戶對帳（多用戶模式）
+     *
+     * 按 userId 分組 Trade，每組使用該用戶的 API Key 查詢 Binance 持倉。
+     * - per-user 通知：有修復的用戶收到個人通知
+     * - 全局摘要：admin 看總覽
+     */
+    private void reconcileForAllUsers() {
+        // 一次查出所有 PENDING_CLOSE + OPEN 的 trade，按 userId 分組
+        List<Trade> allPending = tradeRepository.findByStatus("PENDING_CLOSE");
+        List<Trade> allOpen = tradeRepository.findByStatus("OPEN");
+
+        Map<String, List<Trade>> pendingByUser = allPending.stream()
+                .filter(t -> t.getUserId() != null)
+                .collect(Collectors.groupingBy(Trade::getUserId));
+        Map<String, List<Trade>> openByUser = allOpen.stream()
+                .filter(t -> t.getUserId() != null)
+                .collect(Collectors.groupingBy(Trade::getUserId));
+
+        // 合併所有涉及的 userId
+        Set<String> allUserIds = new HashSet<>();
+        allUserIds.addAll(pendingByUser.keySet());
+        allUserIds.addAll(openByUser.keySet());
+
+        if (allUserIds.isEmpty()) {
+            log.info("啟動對帳（多用戶）: 無 PENDING_CLOSE/OPEN 交易，跳過");
+            return;
+        }
+
+        log.info("啟動對帳（多用戶）: {} 個用戶有待對帳交易", allUserIds.size());
+        int totalPendingFixed = 0;
+        int totalZombieCleaned = 0;
+        List<String> globalReport = new ArrayList<>();
+
+        for (String userId : allUserIds) {
+            Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+            if (keysOpt.isEmpty()) {
+                log.warn("啟動對帳: 用戶 {} 未設定 API Key，跳過", userId);
+                continue;
+            }
+
+            BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+            try {
+                List<String> report = new ArrayList<>();
+                int pFixed = reconcilePendingCloseTrades(report,
+                        pendingByUser.getOrDefault(userId, List.of()));
+                int zCleaned = reconcileZombieOpenTrades(report,
+                        openByUser.getOrDefault(userId, List.of()));
+
+                totalPendingFixed += pFixed;
+                totalZombieCleaned += zCleaned;
+
+                if (pFixed > 0 || zCleaned > 0) {
+                    globalReport.addAll(report);
+                    // per-user 通知
+                    discordWebhookService.sendNotificationToUser(userId,
+                            "🔄 啟動對帳完成",
+                            String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆",
+                                    pFixed, zCleaned),
+                            DiscordWebhookService.COLOR_BLUE);
+                }
+            } catch (Exception e) {
+                log.error("啟動對帳 用戶 {} 失敗: {}", userId, e.getMessage());
+            } finally {
+                BinanceFuturesService.clearCurrentUserKeys();
+            }
+        }
+
+        log.info("啟動對帳（多用戶）完成: PENDING_CLOSE={}, 殭屍={}, 用戶數={}",
+                totalPendingFixed, totalZombieCleaned, allUserIds.size());
+
+        // 全局摘要（admin 看總覽）
+        if (totalPendingFixed > 0 || totalZombieCleaned > 0) {
+            String details = globalReport.size() > 10
+                    ? String.join("\n", globalReport.subList(0, 10)) + "\n...還有 " + (globalReport.size() - 10) + " 筆"
+                    : String.join("\n", globalReport);
+            discordWebhookService.sendNotification(
+                    "🔄 啟動對帳完成",
+                    String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n用戶數: %d\n\n%s",
+                            totalPendingFixed, totalZombieCleaned, allUserIds.size(), details),
+                    DiscordWebhookService.COLOR_BLUE);
+        } else {
+            log.info("啟動對帳（多用戶）: 無需修復，所有 Trade 狀態一致");
+        }
+    }
+
+    // ==================== 對帳核心邏輯 ====================
+
+    /**
+     * 修復 PENDING_CLOSE 交易（單人模式 wrapper — 自行查 DB）
+     */
+    @Transactional
+    int reconcilePendingCloseTrades(List<String> report) {
+        return reconcilePendingCloseTrades(report, tradeRepository.findByStatus("PENDING_CLOSE"));
+    }
+
+    /**
+     * 修復 PENDING_CLOSE 交易（接收外部傳入的 Trade list）
+     *
      * 若 Binance 已無持倉 → 用 markPrice 估算 exitPrice 並標為 CLOSED
      * 若 Binance 仍有持倉 → 保持 PENDING_CLOSE（WebSocket 重連後會收到事件）
      */
     @Transactional
-    int reconcilePendingCloseTrades(List<String> report) {
-        List<Trade> pendingTrades = tradeRepository.findByStatus("PENDING_CLOSE");
+    int reconcilePendingCloseTrades(List<String> report, List<Trade> pendingTrades) {
         if (pendingTrades.isEmpty()) return 0;
 
         log.info("發現 {} 筆 PENDING_CLOSE 交易待修復", pendingTrades.size());
@@ -128,15 +258,23 @@ public class StartupReconciliationService {
     }
 
     /**
-     * 清理殭屍 OPEN 交易
+     * 清理殭屍 OPEN 交易（單人模式 wrapper — 自行查 DB）
+     */
+    @Transactional
+    int reconcileZombieOpenTrades(List<String> report) {
+        return reconcileZombieOpenTrades(report, tradeRepository.findByStatus("OPEN"));
+    }
+
+    /**
+     * 清理殭屍 OPEN 交易（接收外部傳入的 Trade list）
+     *
      * 若 Binance 已無持倉 且 無未成交掛單 → 標為 CANCELLED (STALE_CLEANUP_STARTUP)
      *
      * 注意：若 Binance 無持倉但仍有 LIMIT 掛單（入場單尚未成交），
      * 不應標為 CANCELLED，需等待掛單成交或過期。
      */
     @Transactional
-    int reconcileZombieOpenTrades(List<String> report) {
-        List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
+    int reconcileZombieOpenTrades(List<String> report, List<Trade> openTrades) {
         if (openTrades.isEmpty()) return 0;
 
         log.info("檢查 {} 筆 OPEN 交易是否為殭屍紀錄", openTrades.size());

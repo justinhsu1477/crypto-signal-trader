@@ -1,14 +1,18 @@
 package com.trader.trading.service;
 
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -18,16 +22,17 @@ import static org.mockito.Mockito.*;
  * StartupReconciliationService 單元測試
  *
  * 測試重點：
- * 1. reconcileZombieOpenTrades — 有掛單時不清理
- * 2. reconcileZombieOpenTrades — 無持倉+無掛單時標 CANCELLED
- * 3. reconcileZombieOpenTrades — 查詢掛單失敗時保守跳過
- * 4. reconcileZombieOpenTrades — 有持倉時不做處理
+ * 1. 殭屍 OPEN 清理 — 掛單/持倉/失敗場景
+ * 2. PENDING_CLOSE 修復 — 持倉歸零場景
+ * 3. 多用戶模式 — 按 userId 分組 + per-user API Key
  */
 class StartupReconciliationServiceTest {
 
     private TradeRepository tradeRepository;
     private BinanceFuturesService binanceFuturesService;
     private DiscordWebhookService discordWebhookService;
+    private MultiUserConfig multiUserConfig;
+    private UserApiKeyService userApiKeyService;
     private StartupReconciliationService service;
 
     @BeforeEach
@@ -35,7 +40,16 @@ class StartupReconciliationServiceTest {
         tradeRepository = mock(TradeRepository.class);
         binanceFuturesService = mock(BinanceFuturesService.class);
         discordWebhookService = mock(DiscordWebhookService.class);
-        service = new StartupReconciliationService(tradeRepository, binanceFuturesService, discordWebhookService);
+        multiUserConfig = new MultiUserConfig(); // 預設 enabled=false
+        userApiKeyService = mock(UserApiKeyService.class);
+        service = new StartupReconciliationService(
+                tradeRepository, binanceFuturesService, discordWebhookService,
+                multiUserConfig, userApiKeyService);
+    }
+
+    @AfterEach
+    void tearDown() {
+        BinanceFuturesService.clearCurrentUserKeys();
     }
 
     // ==================== reconcileZombieOpenTrades ====================
@@ -181,6 +195,172 @@ class StartupReconciliationServiceTest {
         }
     }
 
+    // ==================== 多用戶模式 ====================
+
+    @Nested
+    @DisplayName("多用戶模式對帳")
+    class MultiUserReconciliationTests {
+
+        @BeforeEach
+        void enableMultiUser() {
+            multiUserConfig.setEnabled(true);
+        }
+
+        @Test
+        @DisplayName("按 userId 分組 — 每個用戶用自己的 API Key")
+        void groupsByUserIdAndUsesPerUserApiKey() {
+            Trade tradeA = createOpenTradeWithUser("trade-a", "BTCUSDT", "LONG", "user-a");
+            Trade tradeB = createOpenTradeWithUser("trade-b", "ETHUSDT", "SHORT", "user-b");
+
+            when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(tradeA, tradeB));
+
+            when(userApiKeyService.getUserBinanceKeys("user-a"))
+                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
+            when(userApiKeyService.getUserBinanceKeys("user-b"))
+                    .thenReturn(Optional.of(new BinanceKeys("key-b", "secret-b")));
+
+            // 兩個用戶都有持倉 → 不清理
+            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.01);
+            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(-0.1);
+
+            service.reconcileOnStartup();
+
+            // 驗證每個用戶的 API Key 都被設定過
+            verify(userApiKeyService).getUserBinanceKeys("user-a");
+            verify(userApiKeyService).getUserBinanceKeys("user-b");
+            // 沒有清理
+            verify(tradeRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("用戶無 API Key — 跳過該用戶")
+        void skipsUserWithoutApiKey() {
+            Trade trade = createOpenTradeWithUser("trade-1", "BTCUSDT", "LONG", "user-no-key");
+
+            when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
+            when(userApiKeyService.getUserBinanceKeys("user-no-key"))
+                    .thenReturn(Optional.empty());
+
+            service.reconcileOnStartup();
+
+            // 未查詢 Binance（因為沒有 API Key）
+            verify(binanceFuturesService, never()).getCurrentPositionAmount(any());
+        }
+
+        @Test
+        @DisplayName("多用戶清理 — 發送 per-user 通知 + 全局摘要")
+        void sendsPerUserAndGlobalNotification() {
+            Trade trade = createOpenTradeWithUser("trade-z", "ETHUSDT", "SHORT", "user-a");
+
+            when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
+            when(userApiKeyService.getUserBinanceKeys("user-a"))
+                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
+            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
+            when(binanceFuturesService.hasOpenEntryOrders("ETHUSDT")).thenReturn(false);
+
+            service.reconcileOnStartup();
+
+            // per-user 通知
+            verify(discordWebhookService).sendNotificationToUser(
+                    eq("user-a"),
+                    eq("🔄 啟動對帳完成"),
+                    anyString(),
+                    eq(DiscordWebhookService.COLOR_BLUE));
+            // 全局摘要
+            verify(discordWebhookService).sendNotification(
+                    eq("🔄 啟動對帳完成"),
+                    anyString(),
+                    eq(DiscordWebhookService.COLOR_BLUE));
+        }
+
+        @Test
+        @DisplayName("一個用戶失敗 — 不影響其他用戶")
+        void oneUserFailureDoesNotAffectOthers() {
+            Trade tradeA = createOpenTradeWithUser("trade-a", "BTCUSDT", "LONG", "user-a");
+            Trade tradeB = createOpenTradeWithUser("trade-b", "ETHUSDT", "SHORT", "user-b");
+
+            when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(tradeA, tradeB));
+
+            when(userApiKeyService.getUserBinanceKeys("user-a"))
+                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
+            when(userApiKeyService.getUserBinanceKeys("user-b"))
+                    .thenReturn(Optional.of(new BinanceKeys("key-b", "secret-b")));
+
+            // user-a 查詢失敗
+            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT"))
+                    .thenThrow(new RuntimeException("API timeout"));
+            // user-b 正常（有持倉 → 不清理）
+            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(-0.1);
+
+            // 不應拋出例外
+            assertThatCode(() -> service.reconcileOnStartup()).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("無待對帳交易 — 直接跳過不查用戶 API Key")
+        void noTradesSkipsApiKeyLookup() {
+            when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of());
+
+            service.reconcileOnStartup();
+
+            verify(userApiKeyService, never()).getUserBinanceKeys(any());
+            verify(binanceFuturesService, never()).getCurrentPositionAmount(any());
+        }
+
+        @Test
+        @DisplayName("userId 為 null 的 Trade — 跳過不處理")
+        void nullUserIdTradesSkipped() {
+            Trade trade = createOpenTrade("trade-null", "BTCUSDT", "LONG");
+            // userId 為 null
+
+            when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
+
+            service.reconcileOnStartup();
+
+            // 沒有 userId → 不會去查 API Key
+            verify(userApiKeyService, never()).getUserBinanceKeys(any());
+        }
+    }
+
+    // ==================== 帶 Trade list 參數的重載方法 ====================
+
+    @Nested
+    @DisplayName("reconcileZombieOpenTrades(report, trades) — 接收外部 Trade list")
+    class OverloadedMethodTests {
+
+        @Test
+        @DisplayName("傳入空 list → 直接回傳 0")
+        void emptyListReturnsZero() {
+            List<String> report = new ArrayList<>();
+            int result = service.reconcileZombieOpenTrades(report, List.of());
+
+            assertThat(result).isZero();
+            verify(binanceFuturesService, never()).getCurrentPositionAmount(any());
+        }
+
+        @Test
+        @DisplayName("傳入指定 Trade list — 只處理該 list")
+        void processesOnlyProvidedTrades() {
+            Trade trade = createOpenTrade("trade-x", "SOLUSDT", "LONG");
+            when(binanceFuturesService.getCurrentPositionAmount("SOLUSDT")).thenReturn(0.0);
+            when(binanceFuturesService.hasOpenEntryOrders("SOLUSDT")).thenReturn(false);
+
+            List<String> report = new ArrayList<>();
+            int result = service.reconcileZombieOpenTrades(report, List.of(trade));
+
+            assertThat(result).isEqualTo(1);
+            assertThat(trade.getStatus()).isEqualTo("CANCELLED");
+            // 不應查詢 tradeRepository（直接用傳入的 list）
+            verify(tradeRepository, never()).findByStatus(any());
+        }
+    }
+
     // ==================== Helper ====================
 
     private Trade createOpenTrade(String tradeId, String symbol, String side) {
@@ -189,6 +369,12 @@ class StartupReconciliationServiceTest {
         trade.setSymbol(symbol);
         trade.setSide(side);
         trade.setStatus("OPEN");
+        return trade;
+    }
+
+    private Trade createOpenTradeWithUser(String tradeId, String symbol, String side, String userId) {
+        Trade trade = createOpenTrade(tradeId, symbol, side);
+        trade.setUserId(userId);
         return trade;
     }
 }

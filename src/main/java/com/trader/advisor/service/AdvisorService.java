@@ -256,6 +256,15 @@ public class AdvisorService {
                 ? aiResponse.substring(0, 3800) + "\n\n...（已截斷）"
                 : aiResponse;
 
+        if (multiUserConfig.isEnabled()) {
+            String userId = TradeRecordService.getCurrentUserId();
+            if (userId != null) {
+                webhookService.sendNotificationToUser(userId,
+                        "\uD83E\uDD16 AI 交易顧問", content, COLOR_PURPLE);
+                return;
+            }
+        }
+        // fallback: 單人模式或無 userId → 全局
         webhookService.sendNotification(
                 "\uD83E\uDD16 AI 交易顧問",
                 content,

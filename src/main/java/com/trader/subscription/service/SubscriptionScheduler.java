@@ -61,7 +61,7 @@ public class SubscriptionScheduler {
                     "⚠️ **訂閱到期通知**\n用戶: `%s`\n方案: %s\n到期時間: %s\n狀態已自動標記為 CANCELLED",
                     sub.getUserId(), sub.getPlanId(),
                     sub.getCurrentPeriodEnd() != null ? sub.getCurrentPeriodEnd().toLocalDate() : "N/A");
-            discordWebhookService.sendNotification("訂閱通知", message, 0xFF9900);
+            discordWebhookService.sendNotificationToUser(sub.getUserId(), "訂閱通知", message, 0xFF9900);
         } catch (Exception e) {
             log.warn("發送到期通知失敗: userId={}, error={}", sub.getUserId(), e.getMessage());
         }
@@ -73,7 +73,7 @@ public class SubscriptionScheduler {
                     "🔔 **訂閱即將到期提醒**\n用戶: `%s`\n方案: %s\n到期時間: %s\n請記得續費以保持服務！",
                     sub.getUserId(), sub.getPlanId(),
                     sub.getCurrentPeriodEnd() != null ? sub.getCurrentPeriodEnd().toLocalDate() : "N/A");
-            discordWebhookService.sendNotification("訂閱通知", message, 0xFF9900);
+            discordWebhookService.sendNotificationToUser(sub.getUserId(), "訂閱通知", message, 0xFF9900);
         } catch (Exception e) {
             log.warn("發送續費提醒失敗: userId={}, error={}", sub.getUserId(), e.getMessage());
         }
