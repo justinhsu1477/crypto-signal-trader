@@ -620,4 +620,85 @@ class BinanceFuturesServiceTest {
             verify(service).placeMarketOrder(anyString(), anyString(), anyDouble());
         }
     }
+
+    // ==================== 全局通知 userId ====================
+
+    @Nested
+    @DisplayName("notifyGlobal — 全局通知自動附加 userId")
+    class NotifyGlobalTests {
+
+        @Test
+        @DisplayName("每日虧損熔斷通知 — 包含 userId")
+        void circuitBreakerNotificationContainsUserId() {
+            setupEntryMocks(1000, 0, 95000);
+
+            // 模擬今日虧損已達上限
+            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-3000.0);
+            // SOD balance cache
+            var sodCache = mock(StartOfDayBalanceCache.class);
+            when(sodCache.getOrCompute(anyString(), any())).thenReturn(1000.0);
+
+            // 用嚴格的 EffectiveTradeConfig，讓 maxDailyLoss = 200 (1000 * 0.20)
+            EffectiveTradeConfig config = new EffectiveTradeConfig(
+                    0.20, 50000, 200, 0.20, 200, 3, 2.0, 20,
+                    List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
+            );
+            when(mockTradeConfigResolver.resolve(any())).thenReturn(config);
+
+            // 重建 service 以注入 sodCache
+            service = spy(new BinanceFuturesService(
+                    null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
+                    riskConfig, mockTradeRecord, mockDedup, mockWebhook,
+                    new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
+                    mockTradeConfigResolver, sodCache, new com.trader.shared.util.BinanceApiRateLimiter()));
+            setupEntryMocks(1000, 0, 95000);
+
+            TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
+            service.executeSignal(signal);
+
+            // 驗證通知內容包含 userId
+            verify(mockWebhook).sendNotification(
+                    eq("🚨 每日虧損熔斷"),
+                    contains("用戶: test-user"),
+                    eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("SL 失敗 fail-safe 通知 — 包含 userId")
+        void failSafeNotificationContainsUserId() {
+            setupEntryMocks(1000, 0, 95000);
+
+            OrderResult entryOrder = successOrder("12345", "BUY", 95000, 0.01);
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
+            doReturn(OrderResult.fail("SL placement failed")).when(service)
+                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+
+            TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
+            service.executeSignal(signal);
+
+            // fail-safe 通知應包含 userId
+            verify(mockWebhook).sendNotification(
+                    eq("🛑 Fail-Safe: 止損失敗，入場單已取消"),
+                    contains("用戶: test-user"),
+                    eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("無持倉平倉通知 — 包含 userId")
+        void closeNoPositionNotificationContainsUserId() {
+            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+
+            TradeSignal signal = buildCloseSignal(1.0);
+            service.executeClose(signal);
+
+            // 無持倉平倉通知應包含 userId
+            verify(mockWebhook).sendNotification(
+                    contains("無持倉"),
+                    contains("用戶: test-user"),
+                    anyInt());
+        }
+    }
 }
