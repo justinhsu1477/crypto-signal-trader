@@ -891,7 +891,6 @@ const translations = {
     degraded: { en: "Degraded", "zh-TW": "降級", "zh-CN": "降级" },
     down: { en: "Down", "zh-TW": "離線", "zh-CN": "离线" },
   },
-  },
 
   // ─── blog ───
   blog: {
