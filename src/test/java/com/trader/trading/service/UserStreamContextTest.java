@@ -15,7 +15,7 @@ class UserStreamContextTest {
 
     @BeforeEach
     void setUp() {
-        context = new UserStreamContext("user-1", "api-key-123", "secret-key-456");
+        context = new UserStreamContext("user-1", "User 1", "api-key-123", "secret-key-456");
     }
 
     @Nested
@@ -39,6 +39,12 @@ class UserStreamContextTest {
             assertThat(context.isAlertSent()).isFalse();
             assertThat(context.getListenKey()).isNull();
             assertThat(context.getWebSocket()).isNull();
+        }
+
+        @Test
+        @DisplayName("displayName 正確設定")
+        void displayNameSetCorrectly() {
+            assertThat(context.getDisplayName()).isEqualTo("User 1");
         }
 
         @Test

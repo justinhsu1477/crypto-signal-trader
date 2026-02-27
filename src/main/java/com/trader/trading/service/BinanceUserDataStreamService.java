@@ -249,9 +249,12 @@ public class BinanceUserDataStreamService {
 
             if (alertSent) {
                 alertSent = false;
+                String msg = "WebSocket 連線已重新建立\n自動觸發止損/止盈將正常同步至 DB";
                 discordWebhookService.sendNotification(
-                        "✅ Binance User Data Stream 已恢復",
-                        "WebSocket 連線已重新建立\n自動觸發止損/止盈將正常同步至 DB",
+                        "✅ Binance User Data Stream 已恢復", msg,
+                        DiscordWebhookService.COLOR_GREEN);
+                discordWebhookService.sendNotificationToAdmins(
+                        "✅ Binance User Data Stream 已恢復", msg,
                         DiscordWebhookService.COLOR_GREEN);
             }
         }
@@ -322,11 +325,14 @@ public class BinanceUserDataStreamService {
             if (!shuttingDown) {
                 if (!alertSent) {
                     alertSent = true;
+                    String msg = "WebSocket 連線中斷: " + t.getMessage()
+                            + "\n自動觸發止損/止盈暫時無法同步至 DB"
+                            + "\n正在嘗試自動重連...";
                     discordWebhookService.sendNotification(
-                            "🚨 Binance User Data Stream 斷線",
-                            "WebSocket 連線中斷: " + t.getMessage()
-                                    + "\n自動觸發止損/止盈暫時無法同步至 DB"
-                                    + "\n正在嘗試自動重連...",
+                            "🚨 Binance User Data Stream 斷線", msg,
+                            DiscordWebhookService.COLOR_RED);
+                    discordWebhookService.sendNotificationToAdmins(
+                            "🚨 Binance User Data Stream 斷線", msg,
                             DiscordWebhookService.COLOR_RED);
                 }
                 scheduleReconnect();
@@ -346,9 +352,12 @@ public class BinanceUserDataStreamService {
         int attempt = reconnectAttempts.incrementAndGet();
         if (attempt > MAX_RECONNECT_ATTEMPTS) {
             log.error("WebSocket 重連次數已達上限 ({})，停止重試", MAX_RECONNECT_ATTEMPTS);
+            String msg = String.format("已嘗試 %d 次重連，全部失敗\n請手動重啟服務！", MAX_RECONNECT_ATTEMPTS);
             discordWebhookService.sendNotification(
-                    "🚨 User Data Stream 重連失敗",
-                    String.format("已嘗試 %d 次重連，全部失敗\n請手動重啟服務！", MAX_RECONNECT_ATTEMPTS),
+                    "🚨 User Data Stream 重連失敗", msg,
+                    DiscordWebhookService.COLOR_RED);
+            discordWebhookService.sendNotificationToAdmins(
+                    "🚨 User Data Stream 重連失敗", msg,
                     DiscordWebhookService.COLOR_RED);
             return;
         }
