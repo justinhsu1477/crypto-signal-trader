@@ -23,6 +23,8 @@ public class UserStreamContext {
     @Getter
     private final String userId;
     @Getter
+    private final String displayName;
+    @Getter
     private final Instant createdAt;
 
     // API 憑證（可更新 — 用戶可能在重連期間換了 key）
@@ -43,8 +45,9 @@ public class UserStreamContext {
     private final AtomicReference<Instant> lastMessageTime = new AtomicReference<>(null);
     private volatile ScheduledFuture<?> pendingReconnect;
 
-    public UserStreamContext(String userId, String apiKey, String secretKey) {
+    public UserStreamContext(String userId, String displayName, String apiKey, String secretKey) {
         this.userId = userId;
+        this.displayName = displayName;
         this.apiKey = apiKey;
         this.secretKey = secretKey;
         this.createdAt = Instant.now();

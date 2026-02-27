@@ -206,7 +206,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("重連計數遞增")
         void reconnectIncrementsAttempts() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
 
             manager.scheduleReconnect("u1", context);
             assertThat(context.getReconnectAttempts()).isEqualTo(1);
@@ -218,7 +218,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("超過上限停止重試並發告警")
         void stopsAfterMaxAttempts() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
 
             // 先衝到上限
             for (int i = 0; i < MultiUserDataStreamManager.MAX_RECONNECT_ATTEMPTS; i++) {
@@ -238,7 +238,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("排程去重 — 多次呼叫只保留最後一個 pending")
         void deduplicatesSchedule() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
 
             manager.scheduleReconnect("u1", context);
             ScheduledFuture<?> first = context.getPendingReconnect();
@@ -259,11 +259,36 @@ class MultiUserDataStreamManagerTest {
         void doesNotScheduleWhenShuttingDown() {
             manager.stopAllStreams();  // sets shuttingDown = true
 
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             manager.scheduleReconnect("u1", context);
 
             // shuttingDown=true，應直接 return，attempts 還是會加（但不排程）
             assertThat((Object) context.getPendingReconnect()).isNull();
+        }
+    }
+
+    // ==================== WebSocket Admin 通知 ====================
+
+    @Nested
+    @DisplayName("WebSocket Admin 通知")
+    class WebSocketAdminNotificationTests {
+
+        @Test
+        @DisplayName("重連失敗同時通知 Admin")
+        void reconnectFailureNotifiesAdmin() {
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
+
+            // 衝到上限 + 再呼叫一次
+            for (int i = 0; i <= MultiUserDataStreamManager.MAX_RECONNECT_ATTEMPTS; i++) {
+                manager.scheduleReconnect("u1", context);
+            }
+
+            // 驗證同時通知 Admin（帶 displayName）
+            verify(discordWebhookService).sendNotificationToAdmins(
+                    eq("User 1"),
+                    contains("重連失敗"),
+                    contains("管理員"),
+                    eq(DiscordWebhookService.COLOR_RED));
         }
     }
 
@@ -326,7 +351,7 @@ class MultiUserDataStreamManagerTest {
         @DisplayName("reconnect 期間 API Key 已消失 → 移除 stream")
         void reconnectApiKeyGoneRemovesStream() {
             // 先把 context 手動放入 activeStreams
-            UserStreamContext context = new UserStreamContext("u1", "old-key", "old-secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "old-key", "old-secret");
             manager.getActiveStreams().put("u1", context);
 
             when(userApiKeyService.getUserBinanceKeys("u1")).thenReturn(Optional.empty());
@@ -339,7 +364,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("reconnect 期間 API Key 已更新 → context 使用新 key")
         void reconnectWithUpdatedApiKey() {
-            UserStreamContext context = new UserStreamContext("u1", "old-key", "old-secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "old-key", "old-secret");
             manager.getActiveStreams().put("u1", context);
 
             when(userApiKeyService.getUserBinanceKeys("u1"))
@@ -362,7 +387,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("沒有 listenKey 的 context → 跳過")
         void skipsContextWithoutListenKey() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             // listenKey = null（預設）
             manager.getActiveStreams().put("u1", context);
 
@@ -373,7 +398,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("keepalive 回 200 → 不觸發 reconnect")
         void successfulKeepAliveDoesNotReconnect() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             context.setListenKey("test-listen-key");
             manager.getActiveStreams().put("u1", context);
 
@@ -390,7 +415,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("keepalive 回 400 → 設 selfInitiatedClose + 觸發 reconnect")
         void keepAlive400TriggersSelfInitiatedAndReconnect() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             context.setListenKey("test-listen-key");
             manager.getActiveStreams().put("u1", context);
 
@@ -408,7 +433,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("keepalive 回 401 → 設 selfInitiatedClose + 觸發 reconnect")
         void keepAlive401TriggersSelfInitiatedAndReconnect() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             context.setListenKey("test-listen-key");
             manager.getActiveStreams().put("u1", context);
 
@@ -425,7 +450,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("keepalive 異常 → 不拋異常不 reconnect")
         void keepAliveExceptionDoesNotThrow() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             context.setListenKey("test-listen-key");
             manager.getActiveStreams().put("u1", context);
 
@@ -448,7 +473,7 @@ class MultiUserDataStreamManagerTest {
         @DisplayName("stopAllStreams 關閉 reconnect executor")
         void stopsReconnectExecutor() {
             // 先觸發 executor 建立
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             manager.scheduleReconnect("u1", context);
 
             ScheduledExecutorService executor = manager.getReconnectExecutor();
@@ -511,7 +536,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("有 active streams 時 getAllStatus 包含每個用戶的 status")
         void allStatusIncludesPerUserStatus() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             context.setConnected(true);
             context.setListenKey("test-key");
             manager.getActiveStreams().put("u1", context);
@@ -527,7 +552,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("getUserStatus 存在的用戶回傳完整 status")
         void userStatusFound() {
-            UserStreamContext context = new UserStreamContext("u1", "key", "secret");
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
             context.setConnected(true);
             manager.getActiveStreams().put("u1", context);
 

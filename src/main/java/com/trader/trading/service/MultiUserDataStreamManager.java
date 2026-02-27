@@ -128,7 +128,7 @@ public class MultiUserDataStreamManager {
             try {
                 // 使用已預載的 keys，不再重複查 DB
                 BinanceKeys keys = allKeys.get(user.getUserId());
-                startUserStreamWithKeys(user.getUserId(), keys);
+                startUserStreamWithKeys(user.getUserId(), formatUserDisplay(user), keys);
             } catch (Exception e) {
                 log.error("用戶 {} Stream 啟動失敗: {}", user.getUserId(), e.getMessage());
             }
@@ -153,20 +153,23 @@ public class MultiUserDataStreamManager {
             return;
         }
 
-        startUserStreamWithKeys(userId, keysOpt.get());
+        // 查詢用戶顯示名稱
+        String displayName = userRepository.findById(userId)
+                .map(this::formatUserDisplay).orElse(userId);
+        startUserStreamWithKeys(userId, displayName, keysOpt.get());
     }
 
     /**
      * 啟動單一用戶的 stream（使用已預載的 keys，避免重複查 DB）
      * 供 startAllStreams() batch 模式使用
      */
-    private void startUserStreamWithKeys(String userId, BinanceKeys keys) {
+    private void startUserStreamWithKeys(String userId, String displayName, BinanceKeys keys) {
         if (activeStreams.containsKey(userId)) {
             log.debug("用戶 {} 已有 active stream，跳過", userId);
             return;
         }
 
-        UserStreamContext context = new UserStreamContext(userId, keys.apiKey(), keys.secretKey());
+        UserStreamContext context = new UserStreamContext(userId, displayName, keys.apiKey(), keys.secretKey());
 
         try {
             String listenKey = createListenKey(keys.apiKey());
@@ -322,9 +325,13 @@ public class MultiUserDataStreamManager {
         int attempt = context.incrementReconnectAttempts();
         if (attempt > MAX_RECONNECT_ATTEMPTS) {
             log.error("用戶 {} 重連次數已達上限 ({})，停止重試", userId, MAX_RECONNECT_ATTEMPTS);
+            String msg = String.format("已嘗試 %d 次重連，全部失敗\n請通知管理員檢查！", MAX_RECONNECT_ATTEMPTS);
             discordWebhookService.sendNotificationToUser(userId,
-                    "🚨 User Data Stream 重連失敗",
-                    String.format("已嘗試 %d 次重連，全部失敗\n請通知管理員檢查！", MAX_RECONNECT_ATTEMPTS),
+                    "🚨 User Data Stream 重連失敗", msg,
+                    DiscordWebhookService.COLOR_RED);
+            discordWebhookService.sendNotificationToAdmins(
+                    context.getDisplayName(),
+                    "🚨 User Data Stream 重連失敗", msg,
                     DiscordWebhookService.COLOR_RED);
             return;
         }
@@ -432,9 +439,13 @@ public class MultiUserDataStreamManager {
 
             if (context.isAlertSent()) {
                 context.setAlertSent(false);
+                String msg = "WebSocket 連線已重新建立\n止損/止盈觸發將正常同步至 DB";
                 discordWebhookService.sendNotificationToUser(context.getUserId(),
-                        "✅ User Data Stream 已恢復",
-                        "WebSocket 連線已重新建立\n止損/止盈觸發將正常同步至 DB",
+                        "✅ User Data Stream 已恢復", msg,
+                        DiscordWebhookService.COLOR_GREEN);
+                discordWebhookService.sendNotificationToAdmins(
+                        context.getDisplayName(),
+                        "✅ User Data Stream 已恢復", msg,
                         DiscordWebhookService.COLOR_GREEN);
             }
         }
@@ -500,11 +511,15 @@ public class MultiUserDataStreamManager {
             if (!shuttingDown) {
                 if (!context.isAlertSent()) {
                     context.setAlertSent(true);
+                    String msg = "WebSocket 連線中斷: " + t.getMessage()
+                            + "\n止損/止盈觸發暫時無法同步至 DB"
+                            + "\n正在嘗試自動重連...";
                     discordWebhookService.sendNotificationToUser(context.getUserId(),
-                            "🚨 User Data Stream 斷線",
-                            "WebSocket 連線中斷: " + t.getMessage()
-                                    + "\n止損/止盈觸發暫時無法同步至 DB"
-                                    + "\n正在嘗試自動重連...",
+                            "🚨 User Data Stream 斷線", msg,
+                            DiscordWebhookService.COLOR_RED);
+                    discordWebhookService.sendNotificationToAdmins(
+                            context.getDisplayName(),
+                            "🚨 User Data Stream 斷線", msg,
                             DiscordWebhookService.COLOR_RED);
                 }
                 scheduleReconnect(context.getUserId(), context);
@@ -552,5 +567,17 @@ public class MultiUserDataStreamManager {
 
     boolean isShuttingDown() {
         return shuttingDown;
+    }
+
+    /**
+     * 格式化用戶顯示名稱：name (email)，name 為空時 fallback 到 email
+     */
+    private String formatUserDisplay(User user) {
+        String name = user.getName();
+        String email = user.getEmail();
+        if (name != null && !name.isBlank()) {
+            return name + " (" + email + ")";
+        }
+        return email != null ? email : user.getUserId();
     }
 }
