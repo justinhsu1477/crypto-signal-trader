@@ -6,6 +6,7 @@ import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
@@ -60,7 +61,7 @@ class DailyLossCircuitBreakerTest {
         service = spy(new BinanceFuturesService(
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
-                new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
+                new MultiUserConfig(), new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
                 mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
         when(mockDedup.isDuplicate(any())).thenReturn(false);

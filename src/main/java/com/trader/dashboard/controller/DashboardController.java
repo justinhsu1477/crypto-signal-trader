@@ -4,7 +4,7 @@ import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.user.dto.TradeSettingsDefaultsResponse;
 import com.trader.user.dto.TradeSettingsResponse;
@@ -41,7 +41,7 @@ public class DashboardController {
     private final UserRepository userRepository;
     private final UserDiscordWebhookService webhookService;
     private final UserTradeSettingsService tradeSettingsService;
-    private final DiscordWebhookService discordWebhookService;
+    private final NotificationService discordWebhookService;
 
     /**
      * 首頁總覽

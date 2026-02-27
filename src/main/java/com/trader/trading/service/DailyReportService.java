@@ -6,6 +6,7 @@ import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
@@ -54,7 +55,7 @@ public class DailyReportService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final TradeRecordService tradeRecordService;
-    private final DiscordWebhookService webhookService;
+    private final NotificationService webhookService;
     private final BinanceFuturesService binanceFuturesService;
     private final BinanceUserDataStreamService userDataStreamService;
     private final MonitorHeartbeatService monitorHeartbeatService;
@@ -66,7 +67,7 @@ public class DailyReportService {
     private final StartOfDayBalanceCache startOfDayBalanceCache;
 
     public DailyReportService(TradeRecordService tradeRecordService,
-                              DiscordWebhookService webhookService,
+                              NotificationService webhookService,
                               BinanceFuturesService binanceFuturesService,
                               BinanceUserDataStreamService userDataStreamService,
                               MonitorHeartbeatService monitorHeartbeatService,

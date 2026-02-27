@@ -5,6 +5,7 @@ import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import lombok.extern.slf4j.Slf4j;
@@ -38,13 +39,13 @@ public class StartupReconciliationService {
 
     private final TradeRepository tradeRepository;
     private final BinanceFuturesService binanceFuturesService;
-    private final DiscordWebhookService discordWebhookService;
+    private final NotificationService discordWebhookService;
     private final MultiUserConfig multiUserConfig;
     private final UserApiKeyService userApiKeyService;
 
     public StartupReconciliationService(TradeRepository tradeRepository,
                                          BinanceFuturesService binanceFuturesService,
-                                         DiscordWebhookService discordWebhookService,
+                                         NotificationService discordWebhookService,
                                          MultiUserConfig multiUserConfig,
                                          UserApiKeyService userApiKeyService) {
         this.tradeRepository = tradeRepository;
@@ -69,6 +70,10 @@ public class StartupReconciliationService {
         } catch (Exception e) {
             log.error("啟動對帳失敗: {}", e.getMessage(), e);
             discordWebhookService.sendNotification(
+                    "⚠️ 啟動對帳失敗",
+                    "原因: " + e.getMessage() + "\n請手動檢查 OPEN/PENDING_CLOSE 交易",
+                    DiscordWebhookService.COLOR_YELLOW);
+            discordWebhookService.sendNotificationToAdmins(
                     "⚠️ 啟動對帳失敗",
                     "原因: " + e.getMessage() + "\n請手動檢查 OPEN/PENDING_CLOSE 交易",
                     DiscordWebhookService.COLOR_YELLOW);
@@ -179,11 +184,12 @@ public class StartupReconciliationService {
             String details = globalReport.size() > 10
                     ? String.join("\n", globalReport.subList(0, 10)) + "\n...還有 " + (globalReport.size() - 10) + " 筆"
                     : String.join("\n", globalReport);
+            String summary = String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n用戶數: %d\n\n%s",
+                    totalPendingFixed, totalZombieCleaned, allUserIds.size(), details);
             discordWebhookService.sendNotification(
-                    "🔄 啟動對帳完成",
-                    String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n用戶數: %d\n\n%s",
-                            totalPendingFixed, totalZombieCleaned, allUserIds.size(), details),
-                    DiscordWebhookService.COLOR_BLUE);
+                    "🔄 啟動對帳完成", summary, DiscordWebhookService.COLOR_BLUE);
+            discordWebhookService.sendNotificationToAdmins(
+                    "🔄 啟動對帳完成", summary, DiscordWebhookService.COLOR_BLUE);
         } else {
             log.info("啟動對帳（多用戶）: 無需修復，所有 Trade 狀態一致");
         }

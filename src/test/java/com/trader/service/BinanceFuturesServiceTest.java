@@ -7,6 +7,8 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
@@ -32,9 +34,10 @@ class BinanceFuturesServiceTest {
     private RiskConfig riskConfig;
     private TradeRecordService mockTradeRecord;
     private SignalDeduplicationService mockDedup;
-    private DiscordWebhookService mockWebhook;
+    private NotificationService mockWebhook;
     private UserApiKeyService mockUserApiKeyService;
     private TradeConfigResolver mockTradeConfigResolver;
+    private MultiUserConfig multiUserConfig;
     private BinanceFuturesService service;
 
     @BeforeEach
@@ -47,9 +50,10 @@ class BinanceFuturesServiceTest {
         );
         mockTradeRecord = mock(TradeRecordService.class);
         mockDedup = mock(SignalDeduplicationService.class);
-        mockWebhook = mock(DiscordWebhookService.class);
+        mockWebhook = mock(NotificationService.class);
         mockUserApiKeyService = mock(UserApiKeyService.class);
         mockTradeConfigResolver = mock(TradeConfigResolver.class);
+        multiUserConfig = new MultiUserConfig(); // 預設 enabled=false（單用戶）
 
         // mock TradeConfigResolver — 回傳與全局 RiskConfig 一致的 EffectiveTradeConfig
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
@@ -60,7 +64,7 @@ class BinanceFuturesServiceTest {
 
         service = spy(new BinanceFuturesService(
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
-                riskConfig, mockTradeRecord, mockDedup, mockWebhook,
+                riskConfig, mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
                 new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
                 mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -657,7 +661,7 @@ class BinanceFuturesServiceTest {
             // 重建 service 以注入 sodCache
             service = spy(new BinanceFuturesService(
                     null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
-                    riskConfig, mockTradeRecord, mockDedup, mockWebhook,
+                    riskConfig, mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
                     new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
                     mockTradeConfigResolver, sodCache, new com.trader.shared.util.BinanceApiRateLimiter()));
             setupEntryMocks(1000, 0, 95000);
@@ -708,6 +712,128 @@ class BinanceFuturesServiceTest {
                     contains("無持倉"),
                     contains("用戶: Test User (test@example.com)"),
                     anyInt());
+        }
+
+        @Test
+        @DisplayName("單用戶模式 — 只發 global，不發 per-user / admin")
+        void singleUserModeOnlyGlobal() {
+            // multiUserConfig.enabled = false（預設）
+            setupEntryMocks(1000, 0, 95000);
+
+            OrderResult entryOrder = successOrder("12345", "BUY", 95000, 0.01);
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
+            doReturn(OrderResult.fail("SL failed")).when(service)
+                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+
+            TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
+            service.executeSignal(signal);
+
+            // 只有 sendNotification（全局），不應呼叫 per-user 或 admin
+            verify(mockWebhook, atLeastOnce()).sendNotification(anyString(), anyString(), anyInt());
+            verify(mockWebhook, never()).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+            verify(mockWebhook, never()).sendNotificationToAdmins(anyString(), anyString(), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("多用戶模式 — 發 global + per-user + admin")
+        void multiUserModeThreeWay() {
+            multiUserConfig.setEnabled(true);
+            TradeRecordService.setCurrentUserId("user-beck");
+            TradeRecordService.setCurrentUserDisplayName("Beck Tsai (beck@example.com)");
+
+            setupEntryMocks(1000, 0, 95000);
+
+            OrderResult entryOrder = successOrder("12345", "BUY", 95000, 0.01);
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
+            doReturn(OrderResult.fail("SL failed")).when(service)
+                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+
+            TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
+            service.executeSignal(signal);
+
+            // 1. 全局 webhook
+            verify(mockWebhook, atLeastOnce()).sendNotification(anyString(), anyString(), anyInt());
+            // 2. 受影響用戶 per-user（不帶前綴）
+            verify(mockWebhook, atLeastOnce()).sendNotificationToUser(
+                    anyString(), anyString(), anyString(), anyInt());
+            // 3. Admin（帶 displayName 前綴）
+            verify(mockWebhook, atLeastOnce()).sendNotificationToAdmins(
+                    anyString(), anyString(), anyString(), anyInt());
+        }
+    }
+
+    // ==================== 交易安全迴歸測試 ====================
+
+    @Nested
+    @DisplayName("交易安全迴歸 — 通知改動不影響核心交易")
+    class TradingSafetyRegressionTests {
+
+        @Test
+        @DisplayName("通知服務拋例外 — 不影響進場流程")
+        void notificationExceptionDoesNotBreakEntry() {
+            setupEntryMocks(1000, 0, 95000);
+
+            // 模擬通知服務拋例外
+            doThrow(new RuntimeException("Discord webhook timeout"))
+                    .when(mockWebhook).sendNotification(anyString(), anyString(), anyInt());
+
+            OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.01);
+            OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.01);
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+
+            TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
+            List<OrderResult> results = service.executeSignal(signal);
+
+            // 進場仍應成功
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isTrue();
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+        }
+
+        @Test
+        @DisplayName("多用戶通知改動 — 進場 recordEntry 仍被正確呼叫")
+        void multiUserNotificationDoesNotAffectRecordEntry() {
+            multiUserConfig.setEnabled(true);
+            TradeRecordService.setCurrentUserId("user-test");
+
+            setupEntryMocks(1000, 0, 95000);
+
+            OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.01);
+            OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.01);
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+
+            TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
+            List<OrderResult> results = service.executeSignal(signal);
+
+            // 核心交易邏輯不受通知改動影響
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isTrue();
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+        }
+
+        @Test
+        @DisplayName("多用戶通知改動 — 平倉 recordClose 仍被正確呼叫")
+        void multiUserNotificationDoesNotAffectRecordClose() {
+            multiUserConfig.setEnabled(true);
+            TradeRecordService.setCurrentUserId("user-test");
+
+            doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
+            doReturn(95000.0).when(service).getMarkPrice(anyString());
+            doReturn("{}").when(service).cancelAllOrders(anyString());
+
+            OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
+            doReturn(closeOrder).when(service).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
+
+            TradeSignal signal = buildCloseSignal(1.0);
+            List<OrderResult> results = service.executeClose(signal);
+
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isTrue();
+            verify(mockTradeRecord).recordClose(anyString(), any(), anyString());
         }
     }
 }

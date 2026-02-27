@@ -1,6 +1,6 @@
 package com.trader.trading.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -8,12 +8,14 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.shared.config.RiskConfig;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.BinanceApiRateLimiter;
 import com.trader.shared.util.BinanceSignatureUtil;
 import com.trader.user.service.UserApiKeyService;
@@ -40,7 +42,8 @@ public class BinanceFuturesService {
     private final RiskConfig riskConfig;
     private final TradeRecordService tradeRecordService;
     private final SignalDeduplicationService deduplicationService;
-    private final DiscordWebhookService discordWebhookService;
+    private final NotificationService discordWebhookService;
+    private final MultiUserConfig multiUserConfig;
     private final ObjectMapper objectMapper;
     private final SymbolLockRegistry symbolLockRegistry;
     private final UserApiKeyService userApiKeyService;
@@ -64,7 +67,8 @@ public class BinanceFuturesService {
     public BinanceFuturesService(OkHttpClient httpClient, BinanceConfig binanceConfig,
                                   RiskConfig riskConfig, TradeRecordService tradeRecordService,
                                   SignalDeduplicationService deduplicationService,
-                                  DiscordWebhookService discordWebhookService,
+                                  NotificationService discordWebhookService,
+                                  MultiUserConfig multiUserConfig,
                                   ObjectMapper objectMapper,
                                   SymbolLockRegistry symbolLockRegistry,
                                   UserApiKeyService userApiKeyService,
@@ -77,6 +81,7 @@ public class BinanceFuturesService {
         this.tradeRecordService = tradeRecordService;
         this.deduplicationService = deduplicationService;
         this.discordWebhookService = discordWebhookService;
+        this.multiUserConfig = multiUserConfig;
         this.objectMapper = objectMapper;
         this.symbolLockRegistry = symbolLockRegistry;
         this.userApiKeyService = userApiKeyService;
@@ -98,20 +103,42 @@ public class BinanceFuturesService {
      * 發送全局通知（自動附加當前用戶顯示名稱）
      * 優先使用 ThreadLocal displayName（name (email)），fallback 到 userId。
      */
+    /**
+     * 三路通知（風控告警 / 系統級事件）
+     *
+     * 1. 全局 webhook（保留，向後相容）
+     * 2. 受影響用戶 per-user webhook（自己的頻道，不帶用戶前綴）
+     * 3. 所有 Admin per-user webhook（帶 displayName 前綴，知道是誰的事件）
+     *
+     * 第 2、3 路僅在多用戶模式 + 有 userId 時觸發。
+     */
     private void notifyGlobal(String title, String body, int color) {
         String displayName = null;
+        String userId = null;
         try {
             displayName = TradeRecordService.getCurrentUserDisplayName();
+            userId = getActiveUserId();
             if (displayName == null || displayName.isBlank()) {
-                displayName = getActiveUserId(); // fallback 到 userId
+                displayName = userId; // fallback 到 userId
             }
         } catch (Exception ignored) {
             // tradeRecordService 未注入時（如部分測試），安全降級
         }
+
         String enriched = (displayName != null && !displayName.isBlank())
                 ? "用戶: " + displayName + "\n" + body
                 : body;
+
+        // 1. 全局 webhook（保留）
         discordWebhookService.sendNotification(title, enriched, color);
+
+        // 2. 多用戶模式：受影響用戶 + Admin
+        if (multiUserConfig.isEnabled() && userId != null && !userId.isBlank()) {
+            // 2a. 受影響的用戶（不帶前綴 — 自己的頻道）
+            discordWebhookService.sendNotificationToUser(userId, title, body, color);
+            // 2b. 所有 Admin（帶 displayName 前綴 — 知道是誰的事件）
+            discordWebhookService.sendNotificationToAdmins(displayName, title, body, color);
+        }
     }
 
     // ==================== 帳戶相關 ====================
