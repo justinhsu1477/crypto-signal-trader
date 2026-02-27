@@ -36,10 +36,10 @@ public class User {
     private boolean enabled = true;
 
     @Builder.Default
-    private boolean emailVerified = true;
+    private boolean emailVerified = false;
 
     @Builder.Default
-    private boolean autoTradeEnabled = true;
+    private boolean autoTradeEnabled = false;
 
     @Builder.Default
     private boolean discordNotificationEnabled = true;

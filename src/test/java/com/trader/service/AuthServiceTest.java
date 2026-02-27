@@ -86,6 +86,23 @@ class AuthServiceTest {
         }
 
         @Test
+        @DisplayName("註冊成功 → autoTradeEnabled=false（防止未設定 API Key 就被廣播跟單）")
+        void registerSuccess_setsAutoTradeDisabled() {
+            RegisterRequest request = new RegisterRequest();
+            request.setEmail("test@example.com");
+            request.setPassword("password123");
+            request.setName("Test User");
+
+            when(userRepository.existsByEmail(anyString())).thenReturn(false);
+            when(passwordEncoder.encode(anyString())).thenReturn("hashed");
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            User result = authService.register(request);
+
+            assertThat(result.isAutoTradeEnabled()).isFalse();
+        }
+
+        @Test
         @DisplayName("註冊成功 → 呼叫 emailVerificationService.generateAndSend()")
         void registerSuccess_triggersOtpGeneration() {
             RegisterRequest request = new RegisterRequest();
