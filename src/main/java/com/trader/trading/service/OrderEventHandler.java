@@ -324,17 +324,11 @@ public class OrderEventHandler {
             return;
         }
 
-        int color = isSL ? DiscordWebhookService.COLOR_RED : DiscordWebhookService.COLOR_YELLOW;
-        String urgency = isSL ? "🚨" : "⚠️";
-        String protTitle = urgency + " " + label + "單被取消";
-        String protBody = String.format("%s\n訂單號: %s\n原因: %s\n%s",
-                symbol, orderId, reason,
-                isSL ? "⚠️ 持倉已失去止損保護！請立即檢查" : "止盈保護已消失，止損仍有效");
-
-        notificationSender.send(protTitle, protBody, color);
-        if (adminNotifier != null) {
-            adminNotifier.send(protTitle, protBody, color);
-        }
+        // 降級為 log-only：多數保護消失事件是廣播平倉的連帶取消（race condition 導致 hasOpenTrade 誤判）
+        // 真正的保護消失可透過日誌監控發現
+        log.warn("{}{}單被取消（仍有持倉）: {} orderId={} 原因={} — {}",
+                logPrefix, label, symbol, orderId, reason,
+                isSL ? "持倉已失去止損保護" : "止盈保護已消失，止損仍有效");
     }
 
     private void processStreamClose(String symbol, double exitPrice, double exitQty,

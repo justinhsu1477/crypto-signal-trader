@@ -112,9 +112,9 @@ class OrderEventHandlerTest {
     class ProtectionLost {
 
         @Test
-        @DisplayName("STOP_MARKET CANCELED（仍有持倉）→ recordProtectionLost + 紅色告警")
+        @DisplayName("STOP_MARKET CANCELED（仍有持倉）→ recordProtectionLost + log only（不發 Discord）")
         void slCanceledTriggersRedAlert() {
-            // 模擬仍有 OPEN 持倉 → 應發告警
+            // 模擬仍有 OPEN 持倉 → 降級為 log only
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
@@ -135,13 +135,12 @@ class OrderEventHandlerTest {
                     anyDouble(), anyDouble(),
                     anyString(), anyString(), anyLong());
 
-            assertThat(lastTitle).contains("止損單被取消");
-            assertThat(lastMessage).contains("持倉已失去止損保護");
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+            // 保護消失降級為 log only，不發 Discord 通知
+            assertThat(lastTitle).isNull();
         }
 
         @Test
-        @DisplayName("TAKE_PROFIT_MARKET CANCELED（仍有持倉）→ recordProtectionLost + 黃色告警")
+        @DisplayName("TAKE_PROFIT_MARKET CANCELED（仍有持倉）→ recordProtectionLost + log only")
         void tpCanceledTriggersYellowAlert() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -158,13 +157,12 @@ class OrderEventHandlerTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("888999000"), eq("CANCELED"));
 
-            assertThat(lastTitle).contains("止盈單被取消");
-            assertThat(lastMessage).contains("止損仍有效");
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_YELLOW);
+            // 保護消失降級為 log only
+            assertThat(lastTitle).isNull();
         }
 
         @Test
-        @DisplayName("STOP_MARKET EXPIRED（仍有持倉）→ 與 CANCELED 同等處理（紅色告警）")
+        @DisplayName("STOP_MARKET EXPIRED（仍有持倉）→ recordProtectionLost + log only")
         void slExpiredTriggersRedAlert() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -181,11 +179,11 @@ class OrderEventHandlerTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("111222333"), eq("EXPIRED"));
 
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+            assertThat(lastTitle).isNull();
         }
 
         @Test
-        @DisplayName("TAKE_PROFIT_MARKET EXPIRED（仍有持倉）→ 黃色告警")
+        @DisplayName("TAKE_PROFIT_MARKET EXPIRED（仍有持倉）→ log only")
         void tpExpiredTriggersYellowAlert() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -202,7 +200,7 @@ class OrderEventHandlerTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("444555666"), eq("EXPIRED"));
 
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_YELLOW);
+            assertThat(lastTitle).isNull();
         }
 
         @Test
@@ -466,7 +464,7 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("recordProtectionLost 拋異常 → 保守假設有持倉，仍發通知不傳播")
+        @DisplayName("recordProtectionLost 拋異常 → 保守假設有持倉，log only 不傳播")
         void protectionLostFailureStillNotifies() {
             doThrow(new RuntimeException("DB error"))
                     .when(tradeRecordService).recordProtectionLost(
@@ -482,8 +480,8 @@ class OrderEventHandlerTest {
             assertThatCode(() -> handler.handleOrderTradeUpdate(event))
                     .doesNotThrowAnyException();
 
-            // recordProtectionLost 拋異常 → 保守處理假設有持倉 → 仍發告警
-            assertThat(lastTitle).contains("止損單被取消");
+            // 保護消失降級為 log only，即使 DB 異常也不發 Discord
+            assertThat(lastTitle).isNull();
         }
 
         @Test
@@ -626,7 +624,7 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("ALGO_UPDATE CANCELED（仍有持倉）→ recordProtectionLost + 告警")
+        @DisplayName("ALGO_UPDATE CANCELED（仍有持倉）→ recordProtectionLost + log only")
         void algoCanceled_triggersProtectionLost() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -641,12 +639,11 @@ class OrderEventHandlerTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("12345"), eq("CANCELED"));
 
-            assertThat(lastTitle).contains("止損單被取消");
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+            assertThat(lastTitle).isNull();
         }
 
         @Test
-        @DisplayName("ALGO_UPDATE EXPIRED（仍有持倉）→ recordProtectionLost + 告警")
+        @DisplayName("ALGO_UPDATE EXPIRED（仍有持倉）→ recordProtectionLost + log only")
         void algoExpired_triggersProtectionLost() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -660,12 +657,11 @@ class OrderEventHandlerTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("67890"), eq("EXPIRED"));
 
-            assertThat(lastTitle).contains("止盈單被取消");
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_YELLOW);
+            assertThat(lastTitle).isNull();
         }
 
         @Test
-        @DisplayName("ALGO_UPDATE REJECTED（仍有持倉）→ 無條件 recordProtectionLost + 告警")
+        @DisplayName("ALGO_UPDATE REJECTED（仍有持倉）→ 無條件 recordProtectionLost + log only")
         void algoRejected_triggersProtectionLost() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -679,12 +675,11 @@ class OrderEventHandlerTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("12345"), eq("REJECTED"));
 
-            assertThat(lastTitle).contains("止損單被取消");
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+            assertThat(lastTitle).isNull();
         }
 
         @Test
-        @DisplayName("ALGO_UPDATE REJECTED 即使有 sibling hint 也要告警（非 OCO 行為）")
+        @DisplayName("ALGO_UPDATE REJECTED 即使有 sibling hint 也走 protectionLost（非 OCO 行為）")
         void algoRejected_alwaysAlerts_evenWithSibling() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -697,15 +692,14 @@ class OrderEventHandlerTest {
                     200L, "TP-1700000-c3d4", "77001");
             handler.handleAlgoUpdate(tpTriggered);
 
-            // SL 被 REJECTED（而非 CANCELED）→ 無條件告警，不走 OCO 跳過
+            // SL 被 REJECTED（而非 CANCELED）→ 無條件走 protectionLost，不走 OCO 跳過
             JsonObject slRejected = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "REJECTED",
                     100L, "SL-1700000-a1b2");
             handler.handleAlgoUpdate(slRejected);
 
-            // REJECTED 應該無條件告警
+            // REJECTED 應無條件走 protectionLost（log only）
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("100"), eq("REJECTED"));
-            assertThat(lastTitle).contains("止損單被取消");
         }
 
         @Test
@@ -1020,7 +1014,7 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("單獨 SL CANCELED（無 sibling hint）→ 應正常觸發保護消失告警")
+        @DisplayName("單獨 SL CANCELED（無 sibling hint）→ 應正常觸發 protectionLost（log only）")
         void slCanceledAloneTriggersAlert() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
@@ -1033,11 +1027,10 @@ class OrderEventHandlerTest {
                     100L, "SL-1700000-a1b2");
             handler.handleAlgoUpdate(slCanceled);
 
-            // 應觸發保護消失告警
+            // 應走 protectionLost（log only）
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("100"), eq("CANCELED"));
-            assertThat(lastTitle).contains("止損單被取消");
-            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+            assertThat(lastTitle).isNull();
         }
 
         @Test
@@ -1136,8 +1129,8 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("保護消失 — adminNotifier 收到告警")
-        void protectionLost_notifiesAdmin() {
+        @DisplayName("保護消失 — 降級為 log only，admin 也不收到通知")
+        void protectionLost_logOnly_noAdminNotification() {
             when(tradeRecordService.recordProtectionLost(
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
@@ -1150,9 +1143,9 @@ class OrderEventHandlerTest {
 
             handler.handleOrderTradeUpdate(event);
 
-            assertThat(adminTitle).contains("止損單被取消");
-            assertThat(adminMessage).contains("BTCUSDT");
-            assertThat(adminColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+            // 保護消失降級為 log only，per-user 和 admin 都不發
+            assertThat(lastTitle).isNull();
+            assertThat(adminTitle).isNull();
         }
 
         @Test

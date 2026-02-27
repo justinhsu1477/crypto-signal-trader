@@ -207,9 +207,9 @@ class BinanceUserDataStreamServiceTest {
     class ProtectionLost {
 
         @Test
-        @DisplayName("STOP_MARKET CANCELED → 紅色告警 + recordProtectionLost")
+        @DisplayName("STOP_MARKET CANCELED → recordProtectionLost + log only（不發 Discord）")
         void slCanceledTriggersRedAlert() {
-            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 應發告警
+            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 降級為 log only
             when(tradeRecordService.recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("555666777"), eq("CANCELED")))
                     .thenReturn(true);
@@ -230,17 +230,15 @@ class BinanceUserDataStreamServiceTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("555666777"), eq("CANCELED"));
 
-            // SL 被取消 → 紅色告警（高危）
-            verify(discordWebhookService).sendNotification(
-                    contains("止損單被取消"),
-                    contains("持倉已失去止損保護"),
-                    eq(DiscordWebhookService.COLOR_RED));
+            // 保護消失降級為 log only，不發 Discord 通知
+            verify(discordWebhookService, never()).sendNotification(
+                    anyString(), anyString(), anyInt());
         }
 
         @Test
-        @DisplayName("TAKE_PROFIT_MARKET CANCELED → 黃色告警 + recordProtectionLost")
+        @DisplayName("TAKE_PROFIT_MARKET CANCELED → recordProtectionLost + log only")
         void tpCanceledTriggersYellowAlert() {
-            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 應發告警
+            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 降級為 log only
             when(tradeRecordService.recordProtectionLost(
                     eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("888999000"), eq("CANCELED")))
                     .thenReturn(true);
@@ -255,17 +253,15 @@ class BinanceUserDataStreamServiceTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("ETHUSDT"), eq("TAKE_PROFIT_MARKET"), eq("888999000"), eq("CANCELED"));
 
-            // TP 被取消 → 黃色告警（較不緊急）
-            verify(discordWebhookService).sendNotification(
-                    contains("止盈單被取消"),
-                    contains("止損仍有效"),
-                    eq(DiscordWebhookService.COLOR_YELLOW));
+            // 保護消失降級為 log only
+            verify(discordWebhookService, never()).sendNotification(
+                    anyString(), anyString(), anyInt());
         }
 
         @Test
-        @DisplayName("STOP_MARKET EXPIRED → 紅色告警（與 CANCELED 同等處理）")
+        @DisplayName("STOP_MARKET EXPIRED → recordProtectionLost + log only")
         void slExpiredTriggersRedAlert() {
-            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 應發告警
+            // recordProtectionLost 回傳 true 代表仍有 OPEN 持倉 → 降級為 log only
             when(tradeRecordService.recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("111222333"), eq("EXPIRED")))
                     .thenReturn(true);
@@ -279,10 +275,9 @@ class BinanceUserDataStreamServiceTest {
             verify(tradeRecordService).recordProtectionLost(
                     eq("BTCUSDT"), eq("STOP_MARKET"), eq("111222333"), eq("EXPIRED"));
 
-            verify(discordWebhookService).sendNotification(
-                    contains("止損單被取消"),
-                    contains("持倉已失去止損保護"),
-                    eq(DiscordWebhookService.COLOR_RED));
+            // 保護消失降級為 log only
+            verify(discordWebhookService, never()).sendNotification(
+                    anyString(), anyString(), anyInt());
         }
 
         @Test
