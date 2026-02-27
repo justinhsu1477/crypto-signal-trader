@@ -141,6 +141,15 @@ public class BinanceFuturesService {
         }
     }
 
+    /**
+     * 判斷當前是否在廣播跟單的 context 中。
+     * 廣播時 executeSignalForBroadcast() 會設入 per-user CURRENT_USER_KEYS；
+     * 單用戶模式或直接 API 呼叫則不會設。
+     */
+    private boolean isBroadcastContext() {
+        return CURRENT_USER_KEYS.get() != null;
+    }
+
     // ==================== 帳戶相關 ====================
 
     public String getAccountBalance() {
@@ -927,11 +936,17 @@ public class BinanceFuturesService {
                 } catch (Exception e) {
                     log.warn("取消紀錄寫入失敗: {}", e.getMessage());
                 }
-                notifyGlobal(
-                        "🚫 CLOSE 但無持倉 — 已取消掛單",
-                        String.format("%s\n訊號要求平倉，但無實際持倉\n已取消所有未成交掛單（入場/SL/TP）",
-                                symbol),
-                        DiscordWebhookService.COLOR_YELLOW);
+                // 廣播 context → 不發 notifyGlobal（BroadcastTradeService 統一處理失敗通知 + Admin 彙總）
+                // 單用戶/直接 API → 仍發 notifyGlobal
+                if (!isBroadcastContext()) {
+                    notifyGlobal(
+                            "🚫 CLOSE 但無持倉 — 已取消掛單",
+                            String.format("%s\n訊號要求平倉，但無實際持倉\n已取消所有未成交掛單（入場/SL/TP）",
+                                    symbol),
+                            DiscordWebhookService.COLOR_YELLOW);
+                } else {
+                    log.info("廣播 CLOSE 無持倉，跳過 notifyGlobal: {}", symbol);
+                }
                 return List.of(OrderResult.fail("無持倉，已取消掛單"));
             }
         }
