@@ -21,6 +21,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useT } from "@/lib/i18n/i18n-context";
 import { DiscordWebhookManager } from "@/components/settings/discord-webhook-manager";
 import { TradeSettingsForm } from "@/components/settings/trade-settings-form";
@@ -77,11 +85,15 @@ export default function SettingsPage() {
   const [pwSuccess, setPwSuccess] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
 
+  // ─── Auto Trade confirmation dialog state ───
+  const [autoTradeConfirmOpen, setAutoTradeConfirmOpen] = useState(false);
+  const [autoTradeConfirmValue, setAutoTradeConfirmValue] = useState(false);
+
   // ─── Prerequisite check ───
   const hasBinanceKey = apiKeys.some(
     (k) => k.exchange === "BINANCE" && k.hasApiKey
   );
-  const canEnableAutoTrade = hasBinanceKey && hasActiveWebhook;
+  const canEnableAutoTrade = hasBinanceKey;
 
   // ─── Sidebar nav items ───
   const navItems: {
@@ -223,16 +235,22 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleToggleAutoTrade(enabled: boolean) {
+  function handleToggleAutoTrade(enabled: boolean) {
+    setAutoTradeConfirmValue(enabled);
+    setAutoTradeConfirmOpen(true);
+  }
+
+  async function confirmToggleAutoTrade() {
+    setAutoTradeConfirmOpen(false);
     setAutoTradeUpdating(true);
     try {
-      const result = await updateAutoTradeStatus(enabled);
+      const result = await updateAutoTradeStatus(autoTradeConfirmValue);
       setAutoTradeStatus(result);
       toast.success(result.message);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
       setAutoTradeStatus((prev) =>
-        prev ? { ...prev, autoTradeEnabled: !enabled } : null
+        prev ? { ...prev, autoTradeEnabled: !autoTradeConfirmValue } : null
       );
     } finally {
       setAutoTradeUpdating(false);
@@ -483,10 +501,14 @@ export default function SettingsPage() {
                   {!hasBinanceKey && (
                     <li>❌ {t("settings.autoTradeMissingApiKey")}</li>
                   )}
-                  {!hasActiveWebhook && (
-                    <li>❌ {t("settings.autoTradeMissingWebhook")}</li>
-                  )}
                 </ul>
+              </div>
+            )}
+
+            {/* Webhook soft reminder */}
+            {!hasActiveWebhook && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 dark:bg-blue-950/30 dark:border-blue-900 dark:text-blue-300">
+                💡 {t("settings.webhookReminder")}
               </div>
             )}
 
@@ -512,6 +534,40 @@ export default function SettingsPage() {
           </p>
         </div>
         <TradeSettingsForm />
+
+        {/* Auto Trade 確認對話框 */}
+        <Dialog open={autoTradeConfirmOpen} onOpenChange={setAutoTradeConfirmOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {autoTradeConfirmValue
+                  ? t("settings.autoTradeConfirmEnableTitle")
+                  : t("settings.autoTradeConfirmDisableTitle")}
+              </DialogTitle>
+              <DialogDescription>
+                {autoTradeConfirmValue
+                  ? t("settings.autoTradeConfirmEnableDesc")
+                  : t("settings.autoTradeConfirmDisableDesc")}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                variant="outline"
+                onClick={() => setAutoTradeConfirmOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                variant={autoTradeConfirmValue ? "default" : "destructive"}
+                onClick={confirmToggleAutoTrade}
+              >
+                {autoTradeConfirmValue
+                  ? t("settings.autoTradeConfirmEnable")
+                  : t("settings.autoTradeConfirmDisable")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
