@@ -6,6 +6,7 @@ import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.SignalDeduplicationService;
 import com.trader.trading.service.StartOfDayBalanceCache;
@@ -66,7 +67,7 @@ class AlertNotificationTest {
             when(mockDedup.generateHash(any())).thenReturn("testhash");
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -125,7 +126,7 @@ class AlertNotificationTest {
             DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, null, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -185,7 +186,7 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
 
@@ -222,7 +223,7 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
 
@@ -268,7 +269,7 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
 
@@ -296,7 +297,7 @@ class AlertNotificationTest {
 
             BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
             BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, null,
+                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
 

@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
@@ -36,7 +37,7 @@ public class MultiUserDataStreamManager {
     private final OkHttpClient wsClient;
     private final BinanceConfig binanceConfig;
     private final TradeRecordService tradeRecordService;
-    private final DiscordWebhookService discordWebhookService;
+    private final NotificationService discordWebhookService;
     private final SymbolLockRegistry symbolLockRegistry;
     private final UserApiKeyService userApiKeyService;
     private final UserRepository userRepository;
@@ -60,7 +61,7 @@ public class MultiUserDataStreamManager {
     public MultiUserDataStreamManager(OkHttpClient httpClient,
                                        BinanceConfig binanceConfig,
                                        TradeRecordService tradeRecordService,
-                                       DiscordWebhookService discordWebhookService,
+                                       NotificationService discordWebhookService,
                                        SymbolLockRegistry symbolLockRegistry,
                                        UserApiKeyService userApiKeyService,
                                        UserRepository userRepository) {

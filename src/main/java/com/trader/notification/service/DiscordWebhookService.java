@@ -9,9 +9,12 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
 
+import com.trader.user.entity.User;
+
 import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Service
-public class DiscordWebhookService {
+public class DiscordWebhookService implements NotificationService {
 
     // 顏色常量
     public static final int COLOR_GREEN  = 0x00FF00;  // 成功
@@ -46,9 +49,11 @@ public class DiscordWebhookService {
     private final UserDiscordWebhookRepository userWebhookRepository;
     private final UserRepository userRepository;
 
-    // 本地快取：webhook URL + 通知開關（很少變動，避免每次通知都查 DB）
+    // 本地快取：webhook URL + 通知開關 + admin IDs（很少變動，避免每次通知都查 DB）
     private final ConcurrentHashMap<String, CacheEntry<Optional<String>>> webhookUrlCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CacheEntry<Boolean>> notificationEnabledCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CacheEntry<List<String>>> adminIdsCache = new ConcurrentHashMap<>();
+    private static final String ADMIN_CACHE_KEY = "admin_user_ids";
 
     public DiscordWebhookService(OkHttpClient httpClient, WebhookConfig webhookConfig,
                                   UserDiscordWebhookRepository userWebhookRepository,
@@ -73,6 +78,7 @@ public class DiscordWebhookService {
      * @param message 內容（多行描述）
      * @param color   嵌入顏色（用上面的常量）
      */
+    @Override
     public void sendNotification(String title, String message, int color) {
         if (!webhookConfig.isEnabled()) {
             return;
@@ -241,6 +247,7 @@ public class DiscordWebhookService {
      * @param message 內容
      * @param color   顏色
      */
+    @Override
     public void sendNotificationToUser(String userId, String title, String message, int color) {
         if (!isNotificationEnabledForUser(userId)) {
             log.debug("用戶 {} Discord 通知已關閉，跳過: {}", userId, title);
@@ -263,6 +270,7 @@ public class DiscordWebhookService {
      * @param message  內容
      * @param color    顏色
      */
+    @Override
     public void sendNotificationToUser(String userId, NotificationCategory category,
                                         String title, String message, int color) {
         sendNotificationToUser(userId, title, message, color);
@@ -285,12 +293,59 @@ public class DiscordWebhookService {
         return enabled;
     }
 
+    // ==================== Admin 通知 ====================
+
+    /**
+     * 取得所有已啟用 ADMIN 用戶 ID（帶快取，5 分鐘 TTL）
+     */
+    private List<String> getAdminUserIds() {
+        CacheEntry<List<String>> cached = adminIdsCache.get(ADMIN_CACHE_KEY);
+        if (cached != null && !cached.isExpired()) {
+            return cached.value();
+        }
+        List<String> adminIds = userRepository.findByRole(User.Role.ADMIN).stream()
+                .filter(User::isEnabled)
+                .map(User::getUserId)
+                .toList();
+        adminIdsCache.put(ADMIN_CACHE_KEY,
+                new CacheEntry<>(adminIds, System.currentTimeMillis() + CACHE_TTL_MS));
+        return adminIds;
+    }
+
+    /**
+     * 發送通知到所有 ADMIN 用戶的 per-user webhook
+     *
+     * 場景：系統級告警（心跳、啟動對帳）需通知管理員。
+     * 不受 MultiUserConfig 限制 — 只要 admin 有 per-user webhook 就發送。
+     */
+    @Override
+    public void sendNotificationToAdmins(String title, String message, int color) {
+        for (String adminId : getAdminUserIds()) {
+            sendNotificationToUser(adminId, title, message, color);
+        }
+    }
+
+    /**
+     * 發送通知到所有 ADMIN（帶用戶 displayName 前綴）
+     *
+     * 場景：風控告警 — admin 需知道是哪個用戶的事件。
+     * 訊息前面會加上 "用戶: {displayName}\n"。
+     */
+    @Override
+    public void sendNotificationToAdmins(String displayName, String title, String message, int color) {
+        String prefixed = (displayName != null && !displayName.isBlank())
+                ? "用戶: " + displayName + "\n" + message
+                : message;
+        sendNotificationToAdmins(title, prefixed, color);
+    }
+
     // ==================== 快取管理 ====================
 
     /**
      * 清除指定用戶的所有快取（webhook URL + 通知開關）
      * 在用戶修改 webhook 或通知設定時呼叫，確保即時生效。
      */
+    @Override
     public void evictUserCache(String userId) {
         webhookUrlCache.remove(userId);
         notificationEnabledCache.remove(userId);
@@ -300,9 +355,11 @@ public class DiscordWebhookService {
     /**
      * 清除所有用戶的快取（管理用途）
      */
+    @Override
     public void evictAllCache() {
         webhookUrlCache.clear();
         notificationEnabledCache.clear();
+        adminIdsCache.clear();
         log.info("已清除所有 Discord 通知快取");
     }
 }

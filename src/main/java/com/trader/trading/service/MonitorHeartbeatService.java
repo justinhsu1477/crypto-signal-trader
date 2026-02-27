@@ -1,6 +1,7 @@
 package com.trader.trading.service;
 
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,7 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 public class MonitorHeartbeatService {
 
-    private final DiscordWebhookService webhookService;
+    private final NotificationService webhookService;
 
     /** 最後一次收到心跳的時間 */
     private final AtomicReference<Instant> lastHeartbeat = new AtomicReference<>(null);
@@ -60,8 +61,17 @@ public class MonitorHeartbeatService {
     private final AtomicLong dailyPromptTokens = new AtomicLong(0);
     private final AtomicLong dailyResponseTokens = new AtomicLong(0);
 
-    public MonitorHeartbeatService(DiscordWebhookService webhookService) {
+    public MonitorHeartbeatService(NotificationService webhookService) {
         this.webhookService = webhookService;
+    }
+
+    /**
+     * 系統級通知：全局 webhook + 所有 Admin per-user webhook
+     * 心跳類事件不屬於特定用戶，只需通知管理員。
+     */
+    private void notifySystem(String title, String message, int color) {
+        webhookService.sendNotification(title, message, color);
+        webhookService.sendNotificationToAdmins(title, message, color);
     }
 
     /**
@@ -93,7 +103,7 @@ public class MonitorHeartbeatService {
         if ("reconnecting".equals(status) && !alertSent) {
             alertSent = true;
             log.warn("Discord 連線中斷! Python monitor 正在重連...");
-            webhookService.sendNotification(
+            notifySystem(
                     "🚨 Discord 連線中斷",
                     "Python monitor 回報 Discord CDP 連線已斷開\n"
                     + "正在自動重連中...\n\n"
@@ -107,7 +117,7 @@ public class MonitorHeartbeatService {
             alertSent = false;
             long downSeconds = previous != null ? now.getEpochSecond() - previous.getEpochSecond() : 0;
             log.info("Discord Monitor 已恢復連線，斷線時長: {}秒", downSeconds);
-            webhookService.sendNotification(
+            notifySystem(
                     "✅ Discord Monitor 已恢復",
                     String.format("監控服務已重新連線\n斷線時長約: %d 秒\n訊號監控已恢復正常", downSeconds),
                     DiscordWebhookService.COLOR_GREEN);
@@ -117,7 +127,7 @@ public class MonitorHeartbeatService {
         if ("disabled".equals(aiStatus) && !aiAlertSent) {
             aiAlertSent = true;
             log.warn("AI Signal Parser 未啟用! 將使用 regex fallback");
-            webhookService.sendNotification(
+            notifySystem(
                     "⚠️ AI Agent 未啟用",
                     "Python monitor 回報 AI Signal Parser 無法連線\n"
                     + "可能原因:\n"
@@ -132,7 +142,7 @@ public class MonitorHeartbeatService {
         if ("active".equals(aiStatus) && aiAlertSent) {
             aiAlertSent = false;
             log.info("AI Signal Parser 已恢復啟用");
-            webhookService.sendNotification(
+            notifySystem(
                     "✅ AI Agent 已啟用",
                     "AI Signal Parser 已成功連線\n訊號解析已切換回 AI 模式",
                     DiscordWebhookService.COLOR_GREEN);
@@ -172,7 +182,7 @@ public class MonitorHeartbeatService {
                     + "⚠️ 訊號監控已中斷，新的交易訊號將不會被接收！",
                     elapsed);
             log.error("Discord Monitor 心跳逾時! 已 {}秒 未收到心跳", elapsed);
-            webhookService.sendNotification(
+            notifySystem(
                     "🚨 Discord Monitor 離線",
                     msg,
                     DiscordWebhookService.COLOR_RED);

@@ -1,6 +1,6 @@
 package com.trader.subscription.service;
 
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.subscription.entity.Subscription;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +21,7 @@ import java.util.List;
 public class SubscriptionScheduler {
 
     private final SubscriptionService subscriptionService;
-    private final DiscordWebhookService discordWebhookService;
+    private final NotificationService discordWebhookService;
 
     /**
      * 每天凌晨 1:00（Asia/Taipei）— 標記到期訂閱

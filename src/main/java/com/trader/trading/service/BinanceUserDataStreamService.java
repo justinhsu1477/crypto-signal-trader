@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -41,7 +42,7 @@ public class BinanceUserDataStreamService {
     private final OkHttpClient httpClient;
     private final OkHttpClient wsClient;
     private final BinanceConfig binanceConfig;
-    private final DiscordWebhookService discordWebhookService;
+    private final NotificationService discordWebhookService;
     private final MultiUserConfig multiUserConfig;
     private final MultiUserDataStreamManager multiUserManager;
     private final Gson gson = new Gson();
@@ -74,7 +75,7 @@ public class BinanceUserDataStreamService {
     public BinanceUserDataStreamService(OkHttpClient httpClient,
                                          BinanceConfig binanceConfig,
                                          TradeRecordService tradeRecordService,
-                                         DiscordWebhookService discordWebhookService,
+                                         NotificationService discordWebhookService,
                                          SymbolLockRegistry symbolLockRegistry,
                                          MultiUserConfig multiUserConfig,
                                          MultiUserDataStreamManager multiUserManager) {

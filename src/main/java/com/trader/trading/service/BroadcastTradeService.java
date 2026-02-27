@@ -1,6 +1,7 @@
 package com.trader.trading.service;
 
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.referral.repository.UserExchangeReferralLinkRepository;
 import com.trader.shared.model.TradeRequest;
 import com.trader.user.entity.User;
@@ -25,7 +26,7 @@ public class BroadcastTradeService {
 
     private final UserRepository userRepository;
     private final BinanceFuturesService binanceFuturesService;
-    private final DiscordWebhookService discordWebhookService;
+    private final NotificationService discordWebhookService;
     private final UserApiKeyService userApiKeyService;
     private final UserExchangeReferralLinkRepository referralLinkRepository;
     private final ExecutorService broadcastExecutor;
@@ -35,7 +36,7 @@ public class BroadcastTradeService {
     public BroadcastTradeService(
             UserRepository userRepository,
             BinanceFuturesService binanceFuturesService,
-            DiscordWebhookService discordWebhookService,
+            NotificationService discordWebhookService,
             UserApiKeyService userApiKeyService,
             UserExchangeReferralLinkRepository referralLinkRepository,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor) {

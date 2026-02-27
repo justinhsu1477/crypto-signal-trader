@@ -8,6 +8,7 @@ import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.SignalDeduplicationService;
 import com.trader.trading.service.StartOfDayBalanceCache;
@@ -66,7 +67,7 @@ class SafetyCheckTest {
         void getCurrentPositionAmountThrowsOnParseError() {
             // 模擬 getPositions() 回傳無法解析的 response
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, null, null, null, null,
+                    null, null, riskConfig, null, null, null, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
             doReturn("invalid json response").when(service).getPositions();
@@ -83,7 +84,7 @@ class SafetyCheckTest {
             // 這驗證了當 API 不可用時，getMarkPrice 不會靜默回傳 0
             BinanceFuturesService service = new BinanceFuturesService(
                     null, new BinanceConfig("https://fake.test", null, "", ""),
-                    riskConfig, null, null, null, null,
+                    riskConfig, null, null, null, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
 
@@ -95,7 +96,7 @@ class SafetyCheckTest {
         @DisplayName("getActivePositionCount — JSON 解析失敗應拋出 RuntimeException")
         void getActivePositionCountThrowsOnParseError() {
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, null, null, null, null,
+                    null, null, riskConfig, null, null, null, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
             doReturn("bad response").when(service).getPositions();
@@ -109,7 +110,7 @@ class SafetyCheckTest {
         @DisplayName("hasOpenEntryOrders — JSON 解析失敗應拋出 RuntimeException")
         void hasOpenEntryOrdersThrowsOnParseError() {
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, null, null, null, null,
+                    null, null, riskConfig, null, null, null, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
             doReturn("bad response").when(service).getOpenOrders(anyString());
@@ -132,7 +133,7 @@ class SafetyCheckTest {
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -174,7 +175,7 @@ class SafetyCheckTest {
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -213,7 +214,7 @@ class SafetyCheckTest {
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -260,7 +261,7 @@ class SafetyCheckTest {
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -282,7 +283,7 @@ class SafetyCheckTest {
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 
@@ -328,7 +329,7 @@ class SafetyCheckTest {
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
             BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, null,
+                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
                     mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
 

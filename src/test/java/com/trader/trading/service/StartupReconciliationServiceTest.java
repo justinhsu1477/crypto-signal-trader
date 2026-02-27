@@ -4,6 +4,7 @@ import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import org.junit.jupiter.api.*;
@@ -30,7 +31,7 @@ class StartupReconciliationServiceTest {
 
     private TradeRepository tradeRepository;
     private BinanceFuturesService binanceFuturesService;
-    private DiscordWebhookService discordWebhookService;
+    private NotificationService discordWebhookService;
     private MultiUserConfig multiUserConfig;
     private UserApiKeyService userApiKeyService;
     private StartupReconciliationService service;
@@ -39,7 +40,7 @@ class StartupReconciliationServiceTest {
     void setUp() {
         tradeRepository = mock(TradeRepository.class);
         binanceFuturesService = mock(BinanceFuturesService.class);
-        discordWebhookService = mock(DiscordWebhookService.class);
+        discordWebhookService = mock(NotificationService.class);
         multiUserConfig = new MultiUserConfig(); // 預設 enabled=false
         userApiKeyService = mock(UserApiKeyService.class);
         service = new StartupReconciliationService(
@@ -250,8 +251,8 @@ class StartupReconciliationServiceTest {
         }
 
         @Test
-        @DisplayName("多用戶清理 — 發送 per-user 通知 + 全局摘要")
-        void sendsPerUserAndGlobalNotification() {
+        @DisplayName("多用戶清理 — 發送 per-user 通知 + 全局摘要 + admin 通知")
+        void sendsPerUserAndGlobalAndAdminNotification() {
             Trade trade = createOpenTradeWithUser("trade-z", "ETHUSDT", "SHORT", "user-a");
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
@@ -271,6 +272,11 @@ class StartupReconciliationServiceTest {
                     eq(DiscordWebhookService.COLOR_BLUE));
             // 全局摘要
             verify(discordWebhookService).sendNotification(
+                    eq("🔄 啟動對帳完成"),
+                    anyString(),
+                    eq(DiscordWebhookService.COLOR_BLUE));
+            // Admin 通知（新增）
+            verify(discordWebhookService).sendNotificationToAdmins(
                     eq("🔄 啟動對帳完成"),
                     anyString(),
                     eq(DiscordWebhookService.COLOR_BLUE));
@@ -358,6 +364,53 @@ class StartupReconciliationServiceTest {
             assertThat(trade.getStatus()).isEqualTo("CANCELLED");
             // 不應查詢 tradeRepository（直接用傳入的 list）
             verify(tradeRepository, never()).findByStatus(any());
+        }
+    }
+
+    // ==================== Admin 通知 ====================
+
+    @Nested
+    @DisplayName("Admin 通知 — 啟動對帳失敗/完成")
+    class AdminNotificationTests {
+
+        @Test
+        @DisplayName("對帳失敗 — 同時發送 global + admin 告警")
+        void failureSendsGlobalAndAdminNotification() {
+            // 讓 findByStatus 拋異常 → 觸發 catch block
+            when(tradeRepository.findByStatus("PENDING_CLOSE"))
+                    .thenThrow(new RuntimeException("DB connection refused"));
+
+            service.reconcileOnStartup();
+
+            verify(discordWebhookService).sendNotification(
+                    eq("⚠️ 啟動對帳失敗"),
+                    contains("DB connection refused"),
+                    eq(DiscordWebhookService.COLOR_YELLOW));
+            verify(discordWebhookService).sendNotificationToAdmins(
+                    eq("⚠️ 啟動對帳失敗"),
+                    contains("DB connection refused"),
+                    eq(DiscordWebhookService.COLOR_YELLOW));
+        }
+
+        @Test
+        @DisplayName("單人模式對帳有修復 — 發送全局通知（admin 不額外通知）")
+        void singleUserReconcileOnlySendsGlobal() {
+            // 單人模式: multiUserConfig.enabled = false
+            Trade trade = createOpenTrade("trade-x", "BTCUSDT", "LONG");
+            when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
+            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
+            when(binanceFuturesService.hasOpenEntryOrders("BTCUSDT")).thenReturn(false);
+
+            service.reconcileOnStartup();
+
+            // 單人模式只有全局通知，不額外呼叫 sendNotificationToAdmins
+            verify(discordWebhookService).sendNotification(
+                    eq("🔄 啟動對帳完成"),
+                    anyString(),
+                    eq(DiscordWebhookService.COLOR_BLUE));
+            verify(discordWebhookService, never()).sendNotificationToAdmins(
+                    eq("🔄 啟動對帳完成"), anyString(), anyInt());
         }
     }
 

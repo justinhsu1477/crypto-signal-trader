@@ -9,6 +9,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BroadcastTradeService;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalDeduplicationService;
 import com.trader.trading.service.SignalParserService;
@@ -43,7 +44,7 @@ public class TradeController {
     private final RiskConfig riskConfig;
     private final TradeRecordService tradeRecordService;
     private final SignalDeduplicationService deduplicationService;
-    private final DiscordWebhookService webhookService;
+    private final NotificationService webhookService;
     private final MonitorHeartbeatService heartbeatService;
     private final BinanceUserDataStreamService userDataStreamService;
     private final SignalRecordService signalRecordService;

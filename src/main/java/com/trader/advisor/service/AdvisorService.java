@@ -1,7 +1,7 @@
 package com.trader.advisor.service;
 
 import com.trader.advisor.config.AdvisorConfig;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.RiskConfig;
 import com.trader.trading.config.MultiUserConfig;
@@ -40,7 +40,7 @@ public class AdvisorService {
     private final GeminiService geminiService;
     private final BinanceFuturesService binanceFuturesService;
     private final TradeRecordService tradeRecordService;
-    private final DiscordWebhookService webhookService;
+    private final NotificationService webhookService;
     private final AdvisorConfig advisorConfig;
     private final RiskConfig riskConfig;
     private final MultiUserConfig multiUserConfig;
