@@ -126,6 +126,9 @@ public class BroadcastTradeService {
         List<Callable<Void>> tasks = new ArrayList<>();
         for (User user : activeUsers) {
             tasks.add(() -> {
+                String userDisplay = formatUserDisplay(user);
+                // 設入 ThreadLocal，讓 BinanceFuturesService.notifyGlobal() 也能讀到
+                TradeRecordService.setCurrentUserDisplayName(userDisplay);
                 try {
                     binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
                     successCount.incrementAndGet();
@@ -139,7 +142,7 @@ public class BroadcastTradeService {
                                     request.getSymbol(),
                                     request.getSide(),
                                     request.getEntryPrice(),
-                                    user.getUserId()),
+                                    userDisplay),
                             DiscordWebhookService.COLOR_GREEN);
                 } catch (Exception e) {
                     failCount.incrementAndGet();
@@ -151,7 +154,7 @@ public class BroadcastTradeService {
                             "❌ 廣播跟單失敗",
                             String.format("%s\n用戶: %s\n錯誤: %s",
                                     request.getSymbol(),
-                                    user.getUserId(),
+                                    userDisplay,
                                     e.getMessage()),
                             DiscordWebhookService.COLOR_RED);
                 }
@@ -200,6 +203,19 @@ public class BroadcastTradeService {
                     "status", "INTERRUPTED",
                     "error", e.getMessage());
         }
+    }
+
+    /**
+     * 格式化用戶顯示名稱：name (email)
+     * name 為空時 fallback 到 email
+     */
+    private String formatUserDisplay(User user) {
+        String name = user.getName();
+        String email = user.getEmail();
+        if (name != null && !name.isBlank()) {
+            return name + " (" + email + ")";
+        }
+        return email;
     }
 
     /**
