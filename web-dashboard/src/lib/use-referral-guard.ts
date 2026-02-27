@@ -17,15 +17,18 @@ let cachedStatus: ReferralStatusEnum | null = null;
 /** Reset cache — called on logout */
 export function clearReferralCache() {
   cachedStatus = null;
+  if (typeof window !== "undefined") {
+    sessionStorage.removeItem("referral-banner-dismissed");
+  }
 }
 
 /**
  * Proactively checks referral status after auth is established.
- * - VERIFIED → cache + allow through
- * - NOT_STARTED / PENDING → needsReferral=true (let UI show dialog)
+ * - VERIFIED → cache + hide banner
+ * - NOT_STARTED / PENDING → needsReferral=true (let UI show banner)
  * - On /referral page → skip check (prevent infinite loop)
- * - ADMIN role → skip check entirely (backend already bypasses)
- * - API error → fail-open (backend 403 is safety net)
+ * - ADMIN role → skip check entirely
+ * - API error → fail-open (不擋用戶)
  */
 export function useReferralGuard(role?: string | null): ReferralGuardState {
   const pathname = usePathname();
@@ -61,7 +64,7 @@ export function useReferralGuard(role?: string | null): ReferralGuardState {
           setNeedsReferral(true);
         }
       } catch {
-        // API failure → fail-open; backend 403 filter is the safety net
+        // API failure → fail-open（不擋用戶進 Dashboard）
       } finally {
         if (!cancelled) setIsChecking(false);
       }

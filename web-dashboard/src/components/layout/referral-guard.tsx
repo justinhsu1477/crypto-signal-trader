@@ -1,64 +1,54 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import Link from "next/link";
+import { AlertTriangle, X } from "lucide-react";
 import { useReferralGuard } from "@/lib/use-referral-guard";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 
-export function ReferralGuard({ children }: { children: React.ReactNode }) {
+const DISMISS_KEY = "referral-banner-dismissed";
+
+/**
+ * 推薦碼軟提醒 Banner
+ * - 未驗證用戶：顯示黃色可關閉 banner
+ * - 可按 X 關閉（sessionStorage 記住，新 session 重新顯示）
+ * - 已驗證 / Admin → 不顯示
+ */
+export function ReferralBanner() {
   const { role } = useAuth();
   const { isChecking, needsReferral } = useReferralGuard(role);
   const { t } = useT();
-  const router = useRouter();
+  const [dismissed, setDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem(DISMISS_KEY) === "true";
+  });
 
-  if (isChecking) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
+  // 檢查中 or 不需要 or 已關閉 → 不顯示
+  if (isChecking || !needsReferral || dismissed) return null;
+
+  function handleDismiss() {
+    setDismissed(true);
+    sessionStorage.setItem(DISMISS_KEY, "true");
   }
 
   return (
-    <>
-      {children}
-
-      <Dialog open={needsReferral} onOpenChange={() => {}}>
-        <DialogContent
-          showCloseButton={false}
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
-          className="sm:max-w-md"
-        >
-          <DialogHeader className="items-center sm:items-start">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900/30 mb-2">
-              <AlertTriangle className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-            </div>
-            <DialogTitle>{t("referral.guardTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("referral.guardDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="sm:justify-center">
-            <Button
-              className="w-full sm:w-auto"
-              onClick={() => router.push("/referral")}
-            >
-              {t("referral.guardAction")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <div className="mx-4 md:mx-6 lg:mx-8 mt-4 flex items-center gap-3 rounded-lg border border-yellow-500/25 bg-yellow-500/10 px-4 py-3">
+      <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0" />
+      <p className="flex-1 text-sm text-yellow-200">
+        {t("referral.bannerMessage")}
+      </p>
+      <Button variant="outline" size="sm" asChild className="shrink-0 border-yellow-500/30 text-yellow-200 hover:bg-yellow-500/20">
+        <Link href="/referral">{t("referral.bannerAction")}</Link>
+      </Button>
+      <button
+        onClick={handleDismiss}
+        className="shrink-0 p-1 rounded hover:bg-yellow-500/20 text-yellow-500"
+        aria-label="Dismiss"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
   );
 }

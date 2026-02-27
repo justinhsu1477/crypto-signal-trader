@@ -131,8 +131,8 @@ email:
 # ========== 推薦系統 ==========
 referral:
   default-exchange: BINANCE
-  referral-link: ${REFERRAL_LINK:https://www.binance.com/activity/referral-entry/CPA?ref=CPA_YOUR_CODE}
-  referral-code: ${REFERRAL_CODE:YOUR_CODE}
+  referral-link: ${REFERRAL_LINK:https://www.binance.com/activity/referral-entry/CPA?ref=CPA_GRO_28502_3UMIS}
+  referral-code: ${REFERRAL_CODE:GRO_28502_3UMIS}
 
 logging:
   level:
