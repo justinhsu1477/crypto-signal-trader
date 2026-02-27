@@ -269,6 +269,9 @@ public class DailyReportService {
 
         log.info("開始產生多用戶每日摘要: {} 個用戶 ({})", users.size(), dateStr);
         int sent = 0;
+        long totalTrades = 0;
+        double totalNetProfit = 0;
+        int usersWithTrades = 0;
 
         for (User user : users) {
             String userId = user.getUserId();
@@ -289,14 +292,45 @@ public class DailyReportService {
                         message,
                         DiscordWebhookService.COLOR_BLUE);
                 sent++;
+
+                // 累加聚合數據（供 Admin 彙總）
+                long userTrades = (long) stats.get("trades");
+                totalTrades += userTrades;
+                totalNetProfit += (double) stats.get("netProfit");
+                if (userTrades > 0) usersWithTrades++;
             } catch (Exception e) {
                 log.error("用戶 {} 每日摘要發送失敗: {}", userId, e.getMessage());
             }
         }
 
+        // Admin 彙總報告
+        sendAdminDailySummary(dateStr, users.size(), sent, totalTrades, totalNetProfit, usersWithTrades);
+
         // 重置每日 AI token 統計（全局，只做一次）
         monitorHeartbeatService.resetDailyTokenStats();
         log.info("多用戶每日摘要已發送: {}/{} 個用戶 ({})", sent, users.size(), dateStr);
+    }
+
+    /**
+     * Admin 每日彙總報告（多用戶模式）
+     *
+     * 在所有 per-user 報告發送完成後，發送全平台聚合摘要給所有 Admin。
+     * 數據在 per-user 循環中累加，不需額外 DB 查詢。
+     */
+    private void sendAdminDailySummary(String dateStr, int totalUsers, int sentCount,
+                                        long totalTrades, double totalNetProfit, int usersWithTrades) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("👥 用戶: %d 人（%d 人已發送）\n", totalUsers, sentCount));
+        sb.append(String.format("📊 昨日總交易: %d 筆（%d 人有交易）\n", totalTrades, usersWithTrades));
+        sb.append(String.format("💰 全平台淨利: %s USDT\n", formatProfit(totalNetProfit)));
+        if (usersWithTrades > 0) {
+            sb.append(String.format("📈 平均每人: %s USDT", formatProfit(totalNetProfit / usersWithTrades)));
+        }
+
+        webhookService.sendNotificationToAdmins(
+                "📊 每日彙總報告 — " + dateStr,
+                sb.toString(),
+                DiscordWebhookService.COLOR_BLUE);
     }
 
     // ==================== 訊息組裝 ====================

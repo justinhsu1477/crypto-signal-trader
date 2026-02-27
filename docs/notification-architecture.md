@@ -94,16 +94,19 @@ sendNotification(...)                  — 全局
 | execute-trade MOVE_SL 結果 | 操作用戶 + 全局 | GREEN/RED |
 | execute-trade CANCEL 結果 | 操作用戶 + 全局 | GREEN/RED |
 
-### G. 排程通知（per-user + 全局）
-| 場景 | 來源 | 顏色 |
-|------|------|------|
-| 每日報告 | DailyReportService | BLUE |
-| 訂閱到期提醒 | SubscriptionScheduler | YELLOW |
+### G. 排程通知（per-user + 全局 + Admin）
+| 場景 | 接收者 | 顏色 |
+|------|--------|------|
+| 每日報告（個人） | per-user | BLUE |
+| 每日彙總報告 | Admin per-user | BLUE |
+| 訂閱到期提醒 | per-user | YELLOW |
 
-### H. WebSocket 交易事件（per-user）
-| 場景 | 來源 | 顏色 |
-|------|------|------|
-| SL/TP 觸發 + PnL | OrderEventHandler | GREEN/RED |
+### H. WebSocket 交易事件（per-user + Admin）
+| 場景 | 接收者 | 顏色 |
+|------|--------|------|
+| SL/TP 觸發 + PnL | per-user + Admin | GREEN/RED |
+| SL/TP 保護消失 | per-user + Admin | RED/YELLOW |
+| SL/TP 部分成交 | per-user + Admin | YELLOW |
 
 ## Admin 彙總報告格式
 
@@ -140,6 +143,15 @@ BTCUSDT CLOSE
 - User1 (a@b.com): +150.32 USDT
 - User2 (c@d.com): +180.44 USDT
 - User3 (e@f.com): +95.00 USDT
+```
+
+### 每日彙總報告（Admin）
+```
+📊 每日彙總報告 — 2026-02-27
+👥 用戶: 5 人（5 人已發送）
+📊 昨日總交易: 12 筆（3 人有交易）
+💰 全平台淨利: +425.76 USDT
+📈 平均每人: +141.92 USDT
 ```
 
 ## 快取機制

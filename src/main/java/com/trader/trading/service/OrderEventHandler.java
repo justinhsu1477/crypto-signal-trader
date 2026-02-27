@@ -30,6 +30,7 @@ public class OrderEventHandler {
     private final TradeRecordService tradeRecordService;
     private final SymbolLockRegistry symbolLockRegistry;
     private final NotificationSender notificationSender;
+    private final NotificationSender adminNotifier;  // nullable — 單用戶模式為 null
     private final Gson gson;
     private final String logPrefix;  // 日誌前綴：空字串 or "用戶 {userId} "
 
@@ -57,11 +58,13 @@ public class OrderEventHandler {
     public OrderEventHandler(TradeRecordService tradeRecordService,
                               SymbolLockRegistry symbolLockRegistry,
                               NotificationSender notificationSender,
+                              NotificationSender adminNotifier,
                               Gson gson,
                               String logPrefix) {
         this.tradeRecordService = tradeRecordService;
         this.symbolLockRegistry = symbolLockRegistry;
         this.notificationSender = notificationSender;
+        this.adminNotifier = adminNotifier;
         this.gson = gson;
         this.logPrefix = logPrefix != null ? logPrefix : "";
     }
@@ -290,11 +293,13 @@ public class OrderEventHandler {
             log.error("{}記錄部分成交事件失敗: {}", logPrefix, e.getMessage());
         }
 
-        notificationSender.send(
-                "⚠️ " + (isSL ? "止損" : "止盈") + "單部分成交",
-                String.format("%s %s\n成交: %.4f / %.4f\n剩餘 %.4f 等待完全成交",
-                        symbol, orderType, filledQty, origQty, remainingQty),
-                DiscordWebhookService.COLOR_YELLOW);
+        String partialTitle = "⚠️ " + (isSL ? "止損" : "止盈") + "單部分成交";
+        String partialBody = String.format("%s %s\n成交: %.4f / %.4f\n剩餘 %.4f 等待完全成交",
+                symbol, orderType, filledQty, origQty, remainingQty);
+        notificationSender.send(partialTitle, partialBody, DiscordWebhookService.COLOR_YELLOW);
+        if (adminNotifier != null) {
+            adminNotifier.send(partialTitle, partialBody, DiscordWebhookService.COLOR_YELLOW);
+        }
     }
 
     private void handleProtectionLost(String symbol, String orderType, String orderId, String reason) {
@@ -321,13 +326,15 @@ public class OrderEventHandler {
 
         int color = isSL ? DiscordWebhookService.COLOR_RED : DiscordWebhookService.COLOR_YELLOW;
         String urgency = isSL ? "🚨" : "⚠️";
+        String protTitle = urgency + " " + label + "單被取消";
+        String protBody = String.format("%s\n訂單號: %s\n原因: %s\n%s",
+                symbol, orderId, reason,
+                isSL ? "⚠️ 持倉已失去止損保護！請立即檢查" : "止盈保護已消失，止損仍有效");
 
-        notificationSender.send(
-                urgency + " " + label + "單被取消",
-                String.format("%s\n訂單號: %s\n原因: %s\n%s",
-                        symbol, orderId, reason,
-                        isSL ? "⚠️ 持倉已失去止損保護！請立即檢查" : "止盈保護已消失，止損仍有效"),
-                color);
+        notificationSender.send(protTitle, protBody, color);
+        if (adminNotifier != null) {
+            adminNotifier.send(protTitle, protBody, color);
+        }
     }
 
     private void processStreamClose(String symbol, double exitPrice, double exitQty,
@@ -342,13 +349,19 @@ public class OrderEventHandler {
 
             String emoji = "SL_TRIGGERED".equals(exitReason) ? "🛑" : "🎯";
             String label = "SL_TRIGGERED".equals(exitReason) ? "止損觸發" : "止盈觸發";
-            notificationSender.send(
-                    emoji + " " + label + " (自動)",
-                    String.format("%s\n出場價: %.2f\n數量: %.4f\n手續費: %.4f USDT\n已實現損益: %.2f USDT",
-                            symbol, exitPrice, exitQty, commission, realizedProfit),
-                    "SL_TRIGGERED".equals(exitReason)
-                            ? DiscordWebhookService.COLOR_RED
-                            : DiscordWebhookService.COLOR_GREEN);
+            String closeTitle = emoji + " " + label + " (自動)";
+            String closeBody = String.format("%s\n出場價: %.2f\n數量: %.4f\n手續費: %.4f USDT\n已實現損益: %.2f USDT",
+                    symbol, exitPrice, exitQty, commission, realizedProfit);
+            int closeColor = "SL_TRIGGERED".equals(exitReason)
+                    ? DiscordWebhookService.COLOR_RED
+                    : DiscordWebhookService.COLOR_GREEN;
+            notificationSender.send(closeTitle, closeBody, closeColor);
+            if (adminNotifier != null) {
+                adminNotifier.send(closeTitle,
+                        String.format("%s\n出場價: %.2f\n已實現損益: %+.2f USDT",
+                                symbol, exitPrice, realizedProfit),
+                        closeColor);
+            }
 
         } catch (Exception e) {
             log.error("{}WebSocket 平倉記錄失敗: {} {} - {}",

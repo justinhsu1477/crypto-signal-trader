@@ -63,7 +63,7 @@ class OrderEventHandlerTest {
         @DisplayName("STOP_MARKET FILLED → recordCloseFromStream('SL_TRIGGERED') + 紅色通知")
         void stopMarketFilledTriggersSlClose() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
@@ -86,7 +86,7 @@ class OrderEventHandlerTest {
         @DisplayName("TAKE_PROFIT_MARKET FILLED → recordCloseFromStream('TP_TRIGGERED') + 綠色通知")
         void takeProfitFilledTriggersTpClose() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "ETHUSDT", "TAKE_PROFIT_MARKET", "FILLED", "BUY",
@@ -119,7 +119,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "CANCELED", "SELL",
@@ -147,7 +147,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "ETHUSDT", "TAKE_PROFIT_MARKET", "CANCELED", "BUY",
@@ -170,7 +170,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "EXPIRED", "SELL",
@@ -191,7 +191,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "ETHUSDT", "TAKE_PROFIT_MARKET", "EXPIRED", "BUY",
@@ -213,7 +213,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(false);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "EXPIRED", "SELL",
@@ -237,7 +237,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(false);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "ETHUSDT", "TAKE_PROFIT_MARKET", "CANCELED", "BUY",
@@ -262,7 +262,7 @@ class OrderEventHandlerTest {
         @DisplayName("STOP_MARKET PARTIALLY_FILLED → recordOrderEvent + 黃色告警")
         void slPartialFillTriggersWarning() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildPartialFillEvent(
                     "BTCUSDT", "STOP_MARKET", "SELL", 0.3, 0.5, 111L);
@@ -291,7 +291,7 @@ class OrderEventHandlerTest {
         @DisplayName("TAKE_PROFIT_MARKET PARTIALLY_FILLED → recordOrderEvent + 黃色告警")
         void tpPartialFillTriggersWarning() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildPartialFillEvent(
                     "ETHUSDT", "TAKE_PROFIT_MARKET", "BUY", 0.5, 1.0, 222L);
@@ -319,7 +319,7 @@ class OrderEventHandlerTest {
         @DisplayName("LIMIT FILLED → 不呼叫 recordCloseFromStream")
         void limitFilledDoesNotTriggerClose() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "LIMIT", "FILLED", "BUY",
@@ -337,7 +337,7 @@ class OrderEventHandlerTest {
         @DisplayName("MARKET FILLED → 不呼叫 recordCloseFromStream")
         void marketFilledDoesNotTriggerClose() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "MARKET", "FILLED", "BUY",
@@ -355,7 +355,7 @@ class OrderEventHandlerTest {
         @DisplayName("LIMIT CANCELED → 不觸發保護消失告警（入場單取消是正常操作）")
         void limitCanceledIgnored() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "LIMIT", "CANCELED", "BUY",
@@ -374,7 +374,7 @@ class OrderEventHandlerTest {
         @DisplayName("STOP_MARKET NEW → 忽略（非 FILLED 狀態）")
         void stopMarketNewIgnored() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "NEW", "SELL",
@@ -399,7 +399,7 @@ class OrderEventHandlerTest {
         @DisplayName("手續費幣種 BNB → fallback 估算 (avgPrice × qty × 0.04%)")
         void bnbCommissionFallback() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
@@ -426,7 +426,7 @@ class OrderEventHandlerTest {
         @DisplayName("缺少 'o' 欄位 → 安全忽略，不拋異常")
         void missingOrderFieldIgnored() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = new JsonObject();
             event.addProperty("e", "ORDER_TRADE_UPDATE");
@@ -451,7 +451,7 @@ class OrderEventHandlerTest {
                             anyString(), anyString(), anyLong());
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
@@ -473,7 +473,7 @@ class OrderEventHandlerTest {
                             anyString(), anyString(), anyString(), anyString());
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "CANCELED", "SELL",
@@ -494,7 +494,7 @@ class OrderEventHandlerTest {
                             anyString(), anyString(), any(), anyString());
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildPartialFillEvent(
                     "BTCUSDT", "STOP_MARKET", "SELL", 0.3, 0.5, 111L);
@@ -531,7 +531,7 @@ class OrderEventHandlerTest {
                     (title, msg, color) -> mockWebhook.sendNotificationToUser(userId, title, msg, color);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, perUserSender, gson, "用戶 " + userId + " ");
+                    tradeRecordService, symbolLockRegistry, perUserSender, null, gson, "用戶 " + userId + " ");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
@@ -554,7 +554,7 @@ class OrderEventHandlerTest {
         @DisplayName("null logPrefix → 預設空字串（不拋 NPE）")
         void nullLogPrefixSafe() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, null);
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, null);
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "LIMIT", "FILLED", "BUY",
@@ -576,7 +576,7 @@ class OrderEventHandlerTest {
         void processStreamCloseUsesLock() {
             SymbolLockRegistry spyRegistry = spy(new SymbolLockRegistry());
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, spyRegistry, notificationSender, gson, "");
+                    tradeRecordService, spyRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
@@ -598,7 +598,7 @@ class OrderEventHandlerTest {
         @DisplayName("ALGO_UPDATE TRIGGERED STOP_MARKET → 暫存 SL_TRIGGERED hint")
         void algoTriggeredSl_storesPendingHint() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED", 12345L, "SL-1700000-a1b2");
             handler.handleAlgoUpdate(event);
@@ -614,7 +614,7 @@ class OrderEventHandlerTest {
         @DisplayName("ALGO_UPDATE TRIGGERED TAKE_PROFIT_MARKET → 暫存 TP_TRIGGERED hint")
         void algoTriggeredTp_storesPendingHint() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildAlgoUpdate("ETHUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED", 67890L, "TP-1700000-c3d4");
             handler.handleAlgoUpdate(event);
@@ -632,7 +632,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // Binance 用美式拼法 CANCELED（單 L）
             JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED", 12345L, "SL-1700000-a1b2");
@@ -652,7 +652,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildAlgoUpdate("ETHUSDT", "TAKE_PROFIT_MARKET", "EXPIRED", 67890L, "TP-1700000-c3d4");
             handler.handleAlgoUpdate(event);
@@ -671,7 +671,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "REJECTED", 12345L, "SL-1700000-a1b2");
             handler.handleAlgoUpdate(event);
@@ -690,7 +690,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // TP 已觸發（sibling hint 存在）
             JsonObject tpTriggered = buildAlgoUpdate("BTCUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED",
@@ -712,7 +712,7 @@ class OrderEventHandlerTest {
         @DisplayName("ALGO_UPDATE 缺少 'o' 欄位 → 安全忽略")
         void algoUpdateMissingOrderField() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = new JsonObject();
             event.addProperty("e", "ALGO_UPDATE");
@@ -733,7 +733,7 @@ class OrderEventHandlerTest {
         @DisplayName("TRIGGERED(SL) + orderId 精確匹配 MARKET FILLED → SL_TRIGGERED")
         void algoSlTriggeredWithOrderIdMatch() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // ALGO_UPDATE TRIGGERED 帶 ai=999888777（觸發後 MARKET 單的 orderId）
             JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
@@ -760,7 +760,7 @@ class OrderEventHandlerTest {
         @DisplayName("TRIGGERED(TP) + orderId 精確匹配 MARKET FILLED → TP_TRIGGERED")
         void algoTpTriggeredWithOrderIdMatch() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject algoEvent = buildAlgoUpdate("ETHUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED",
                     67890L, "TP-1700000-c3d4", "111222333");
@@ -785,7 +785,7 @@ class OrderEventHandlerTest {
         @DisplayName("TRIGGERED 但 MARKET orderId 不匹配（手動市價單）→ 不觸發平倉")
         void algoTriggeredButOrderIdMismatch_noClose() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // ALGO_UPDATE 帶 ai=999888777
             JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
@@ -809,7 +809,7 @@ class OrderEventHandlerTest {
         @DisplayName("TRIGGERED(ai 為空) → fallback 到 symbol 匹配")
         void algoTriggeredEmptyAi_fallbackToSymbolMatch() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // ai 為空（罕見情況）
             JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
@@ -832,7 +832,7 @@ class OrderEventHandlerTest {
         @DisplayName("TRIGGERING 不寫入 hint → MARKET FILLED 不觸發平倉")
         void triggeringDoesNotStoreHint() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // TRIGGERING（觸發中）不寫入 hint
             JsonObject triggeringEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERING",
@@ -858,7 +858,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // TRIGGERED 存入 hint
             JsonObject triggeredEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
@@ -886,7 +886,7 @@ class OrderEventHandlerTest {
         @DisplayName("MARKET FILLED with clientOrderId SL- 前綴 (fallback) → SL_TRIGGERED")
         void marketFilledWithSlClientIdFallback() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // 沒有先收 ALGO_UPDATE，直接收 MARKET FILLED（with SL- clientOrderId）
             JsonObject event = buildOrderTradeUpdateWithClientId(
@@ -906,7 +906,7 @@ class OrderEventHandlerTest {
         @DisplayName("MARKET FILLED with clientOrderId TP- 前綴 (fallback) → TP_TRIGGERED")
         void marketFilledWithTpClientIdFallback() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdateWithClientId(
                     "ETHUSDT", "MARKET", "FILLED", "BUY",
@@ -925,7 +925,7 @@ class OrderEventHandlerTest {
         @DisplayName("MARKET FILLED 無 algo hint 且無 SL/TP 前綴 → 不觸發平倉")
         void marketFilledNoAlgoHintNoPrefix() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             JsonObject event = buildOrderTradeUpdateWithClientId(
                     "BTCUSDT", "MARKET", "FILLED", "BUY",
@@ -946,7 +946,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // ① TP 觸發 (algoId=200, ai=77001)
             JsonObject tpTriggered = buildAlgoUpdate("BTCUSDT", "TAKE_PROFIT_MARKET", "TRIGGERED",
@@ -987,7 +987,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // ① SL 觸發 (algoId=100, ai=88001)
             JsonObject slTriggered = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
@@ -1026,7 +1026,7 @@ class OrderEventHandlerTest {
                     anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // 單獨取消（非 OCO 連帶），沒有其他 sibling hint
             JsonObject slCanceled = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED",
@@ -1044,7 +1044,7 @@ class OrderEventHandlerTest {
         @DisplayName("pending hint 消費後不重複使用")
         void pendingHintConsumedOnce() {
             OrderEventHandler handler = new OrderEventHandler(
-                    tradeRecordService, symbolLockRegistry, notificationSender, gson, "");
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
             // ALGO_UPDATE → 存入 hint（ai=999888777）
             JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
@@ -1068,6 +1068,143 @@ class OrderEventHandlerTest {
                     anyString(), anyDouble(), anyDouble(),
                     anyDouble(), anyDouble(),
                     anyString(), anyString(), anyLong());
+        }
+    }
+
+    // ==================== Admin 通知 ====================
+
+    @Nested
+    @DisplayName("Admin 通知 — adminNotifier")
+    class AdminNotification {
+
+        private String adminTitle;
+        private String adminMessage;
+        private int adminColor;
+
+        private OrderEventHandler.NotificationSender adminNotifier;
+
+        @BeforeEach
+        void setUpAdmin() {
+            adminTitle = null;
+            adminMessage = null;
+            adminColor = 0;
+            adminNotifier = (title, message, color) -> {
+                adminTitle = title;
+                adminMessage = message;
+                adminColor = color;
+            };
+        }
+
+        @Test
+        @DisplayName("SL 觸發 — adminNotifier 收到損益摘要通知")
+        void slTriggered_notifiesAdmin() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 123456789L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // per-user 通知包含完整明細
+            assertThat(lastTitle).contains("止損觸發");
+            assertThat(lastMessage).contains("數量");
+
+            // Admin 通知包含損益摘要
+            assertThat(adminTitle).contains("止損觸發");
+            assertThat(adminMessage).contains("BTCUSDT");
+            assertThat(adminMessage).contains("-1000.00");
+            assertThat(adminColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("TP 觸發 — adminNotifier 收到損益摘要通知")
+        void tpTriggered_notifiesAdmin() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "ETHUSDT", "TAKE_PROFIT_MARKET", "FILLED", "BUY",
+                    3500.0, 1.0, 1.4, "USDT", 200.0, 987654321L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            assertThat(adminTitle).contains("止盈觸發");
+            assertThat(adminMessage).contains("+200.00");
+            assertThat(adminColor).isEqualTo(DiscordWebhookService.COLOR_GREEN);
+        }
+
+        @Test
+        @DisplayName("保護消失 — adminNotifier 收到告警")
+        void protectionLost_notifiesAdmin() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "CANCELED", "SELL",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 555666777L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            assertThat(adminTitle).contains("止損單被取消");
+            assertThat(adminMessage).contains("BTCUSDT");
+            assertThat(adminColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("部分成交 — adminNotifier 收到告警")
+        void partialFill_notifiesAdmin() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier, gson, "");
+
+            JsonObject event = buildPartialFillEvent(
+                    "BTCUSDT", "STOP_MARKET", "SELL", 0.3, 0.5, 111L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            assertThat(adminTitle).contains("部分成交");
+            assertThat(adminColor).isEqualTo(DiscordWebhookService.COLOR_YELLOW);
+        }
+
+        @Test
+        @DisplayName("adminNotifier 為 null — 不拋異常（單用戶模式）")
+        void nullAdminNotifier_doesNotThrow() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 123456789L, 1700000000000L);
+
+            assertThatCode(() -> handler.handleOrderTradeUpdate(event))
+                    .doesNotThrowAnyException();
+
+            // per-user 通知仍正常
+            assertThat(lastTitle).contains("止損觸發");
+        }
+
+        @Test
+        @DisplayName("保護消失但倉位已平 — adminNotifier 也不發通知")
+        void protectionLostNoPosition_noAdminNotification() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(false);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "EXPIRED", "SELL",
+                    0.0, 0.0, 0.0, "USDT", 0.0, 111222333L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // 倉位已平 → 不發告警（per-user 和 admin 都不發）
+            assertThat(lastTitle).isNull();
+            assertThat(adminTitle).isNull();
         }
     }
 

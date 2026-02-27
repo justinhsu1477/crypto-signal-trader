@@ -85,10 +85,11 @@ public class BinanceUserDataStreamService {
         this.multiUserConfig = multiUserConfig;
         this.multiUserManager = multiUserManager;
 
-        // 共用事件處理器（單用戶版 — 全局通知）
+        // 共用事件處理器（單用戶版 — 全局通知，無 Admin 通知）
         this.orderEventHandler = new OrderEventHandler(
                 tradeRecordService, symbolLockRegistry,
                 discordWebhookService::sendNotification,
+                null,
                 gson, "");
 
         // WebSocket 專用 client：無 read timeout + 每 20 秒 ping
