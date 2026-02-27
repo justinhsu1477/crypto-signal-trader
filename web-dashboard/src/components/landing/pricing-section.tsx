@@ -43,7 +43,7 @@ export function PricingSection() {
     },
     {
       nameKey: "landing.pricingBasic",
-      price: "19 USDT",
+      price: "99 USDT",
       featureKeys: [
         "landing.pricingBasicF1",
         "landing.pricingBasicF2",
@@ -56,7 +56,7 @@ export function PricingSection() {
     },
     {
       nameKey: "landing.pricingPro",
-      price: "49 USDT",
+      price: "199 USDT",
       badgeKey: "landing.pricingMostPopular",
       highlighted: true,
       featureKeys: [

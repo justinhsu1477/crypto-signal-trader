@@ -94,8 +94,8 @@ const mockPlans = [
   {
     planId: "basic",
     name: "Basic",
-    priceMonthly: 19,
-    priceUsdt: 19,
+    priceMonthly: 99,
+    priceUsdt: 99,
     maxPositions: 5,
     maxSymbols: 10,
     dcaLayersAllowed: 3,
@@ -106,8 +106,8 @@ const mockPlans = [
   {
     planId: "pro",
     name: "Pro",
-    priceMonthly: 49,
-    priceUsdt: 49,
+    priceMonthly: 199,
+    priceUsdt: 199,
     maxPositions: 20,
     maxSymbols: 50,
     dcaLayersAllowed: 10,
@@ -138,7 +138,7 @@ const mockStatusActive = {
 const mockCheckoutBasic = {
   planId: "basic",
   planName: "Basic",
-  amountUsdt: 19,
+  amountUsdt: 99,
   walletAddress: "TTestWallet123",
   network: "TRC20",
 };
@@ -210,8 +210,8 @@ describe("SubscriptionManager", () => {
         expect(screen.getByText("Free")).toBeInTheDocument();
       });
 
-      expect(screen.getByText("19 USDT")).toBeInTheDocument();
-      expect(screen.getByText("49 USDT")).toBeInTheDocument();
+      expect(screen.getByText("99 USDT")).toBeInTheDocument();
+      expect(screen.getByText("199 USDT")).toBeInTheDocument();
     });
 
     it("shows current badge on the current plan", async () => {
@@ -281,8 +281,8 @@ describe("SubscriptionManager", () => {
 
       await waitFor(() => {
         expect(screen.getByText("TTestWallet123")).toBeInTheDocument();
-        // "19 USDT" appears in both plan card and dialog — use getAllByText
-        const usdtElements = screen.getAllByText(/19\s*USDT/);
+        // "99 USDT" appears in both plan card and dialog — use getAllByText
+        const usdtElements = screen.getAllByText(/99\s*USDT/);
         expect(usdtElements.length).toBeGreaterThanOrEqual(2); // card + dialog
         expect(screen.getByText("TRC20")).toBeInTheDocument();
       });
