@@ -281,14 +281,14 @@ const translations = {
       "zh-TW": "HookFi 徹底改變了我的交易方式。設定一次後它自動處理一切，讓我專注在策略研究上。",
       "zh-CN": "HookFi 彻底改变了我的交易方式。设定一次后它自动处理一切，让我专注在策略研究上。",
     },
-    aboutTestimonialName1: { en: "Alex T.", "zh-TW": "Alex T.", "zh-CN": "Alex T." },
+    aboutTestimonialName1: { en: "蔡璧鴻", "zh-TW": "蔡璧鴻", "zh-CN": "蔡璧鸿" },
     aboutTestimonialRole1: { en: "Crypto Trader", "zh-TW": "加密貨幣交易者", "zh-CN": "加密货币交易者" },
     aboutTestimonial2: {
       en: "The risk management features are what sold me. Daily loss limits and automatic stop-loss give me peace of mind.",
       "zh-TW": "風控功能讓我完全信服。每日虧損上限與自動止損讓我安心交易。",
       "zh-CN": "风控功能让我完全信服。每日亏损上限与自动止损让我安心交易。",
     },
-    aboutTestimonialName2: { en: "Sarah K.", "zh-TW": "Sarah K.", "zh-CN": "Sarah K." },
+    aboutTestimonialName2: { en: "林承毅", "zh-TW": "林承毅", "zh-CN": "林承毅" },
     aboutTestimonialRole2: { en: "DeFi Investor", "zh-TW": "DeFi 投資者", "zh-CN": "DeFi 投资者" },
     // ── Contact section ──
     contactBadge: { en: "Get in Touch", "zh-TW": "聯繫我們", "zh-CN": "联系我们" },
