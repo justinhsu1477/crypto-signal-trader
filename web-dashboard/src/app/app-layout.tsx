@@ -11,19 +11,23 @@ import { AuthLayout } from "@/components/landing/auth-layout";
 import { ErrorBoundary, PageErrorFallback } from "@/components/ui/error-boundary";
 import { Toaster } from "sonner";
 
-const PUBLIC_PATHS = ["/login", "/register", "/verify-email"];
+const AUTH_LAYOUT_PATHS = ["/login", "/register", "/verify-email"];
+const STANDALONE_PUBLIC_PATHS = ["/blog"];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPublicPage = PUBLIC_PATHS.includes(pathname);
+  const isAuthPage = AUTH_LAYOUT_PATHS.includes(pathname);
+  const isStandalonePublic = STANDALONE_PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
   return (
     <ErrorBoundary fallback={<PageErrorFallback />}>
       <Toaster richColors position="top-right" theme="dark" />
       <AuthProvider>
         <I18nProvider>
-          {isPublicPage ? (
+          {isAuthPage ? (
             <AuthLayout>{children}</AuthLayout>
+          ) : isStandalonePublic ? (
+            children
           ) : (
             <AuthGuard>
               <ReferralGuard>

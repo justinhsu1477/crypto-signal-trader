@@ -891,6 +891,26 @@ const translations = {
     degraded: { en: "Degraded", "zh-TW": "降級", "zh-CN": "降级" },
     down: { en: "Down", "zh-TW": "離線", "zh-CN": "离线" },
   },
+  },
+
+  // ─── blog ───
+  blog: {
+    badge: { en: "Blog", "zh-TW": "部落格", "zh-CN": "博客" },
+    title: { en: "Trading Insights & Guides", "zh-TW": "交易洞察與教學", "zh-CN": "交易洞察与教学" },
+    subtitle: {
+      en: "Learn crypto trading strategies, risk management, and how AI-powered automation works.",
+      "zh-TW": "學習加密貨幣交易策略、風險管理，以及 AI 自動化交易的運作方式。",
+      "zh-CN": "学习加密货币交易策略、风险管理，以及 AI 自动化交易的运作方式。",
+    },
+    backToList: { en: "Back to articles", "zh-TW": "返回文章列表", "zh-CN": "返回文章列表" },
+    ctaTitle: { en: "Ready to Start Auto-Trading?", "zh-TW": "準備開始自動交易了嗎？", "zh-CN": "准备开始自动交易了吗？" },
+    ctaDescription: {
+      en: "Join HookFi and let AI handle your trades while you focus on strategy.",
+      "zh-TW": "加入 HookFi，讓 AI 處理你的交易，你專注在策略上。",
+      "zh-CN": "加入 HookFi，让 AI 处理你的交易，你专注在策略上。",
+    },
+    ctaButton: { en: "Get Started Free", "zh-TW": "免費開始", "zh-CN": "免费开始" },
+  },
 } as const;
 
 export default translations;
