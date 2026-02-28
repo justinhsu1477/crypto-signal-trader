@@ -1,9 +1,12 @@
 package com.trader.service;
 
+import com.trader.advisor.dto.SignalScore;
+import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.subscription.repository.SubscriptionRepository;
+import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BroadcastTradeService;
 import com.trader.user.entity.User;
@@ -32,6 +35,8 @@ class BroadcastTradeServiceTest {
     private DiscordWebhookService mockWebhook;
     private UserApiKeyService mockApiKey;
     private SubscriptionRepository mockSubscriptionRepo;
+    private SignalScoringService mockScoring;
+    private TradeRepository mockTradeRepo;
     private ExecutorService executor;
     private BroadcastTradeService service;
 
@@ -42,6 +47,8 @@ class BroadcastTradeServiceTest {
         mockWebhook = mock(DiscordWebhookService.class);
         mockApiKey = mock(UserApiKeyService.class);
         mockSubscriptionRepo = mock(SubscriptionRepository.class);
+        mockScoring = mock(SignalScoringService.class);
+        mockTradeRepo = mock(TradeRepository.class);
 
         // 預設：executeSignalForBroadcast 回傳空結果（既有測試不受影響）
         when(mockBinance.executeSignalForBroadcast(any(), anyString())).thenReturn(List.of());
@@ -54,11 +61,15 @@ class BroadcastTradeServiceTest {
         when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
                 .thenReturn(List.of("u1", "u2", "u3", "u4", "u5"));
 
+        // 預設：AI 評分關閉（回傳 null，既有測試不受影響）
+        when(mockScoring.scoreAsync(any())).thenReturn(CompletableFuture.completedFuture(null));
+
         // 用 2 線程的 pool — 小到可預測，又能測並行
         executor = Executors.newFixedThreadPool(2);
 
         service = new BroadcastTradeService(
-                mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockSubscriptionRepo, executor);
+                mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockSubscriptionRepo,
+                mockScoring, mockTradeRepo, executor);
     }
 
     @AfterEach
@@ -572,6 +583,144 @@ class BroadcastTradeServiceTest {
                     eq("📊 廣播平倉報告"),
                     anyString(),
                     anyInt());
+        }
+    }
+
+    // ==================== AI Signal Scoring ====================
+
+    @Nested
+    @DisplayName("AI 信號評分")
+    class AiSignalScoring {
+
+        private SignalScore sampleScore() {
+            return SignalScore.builder()
+                    .confidence(78)
+                    .riskLevel("MEDIUM")
+                    .reasoning("R:R 1:2.5 合理，但止損幅度偏寬")
+                    .latencyMs(2500)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("評分已就緒 → 用戶通知含 AI 分數")
+        void scoringEnabled_scoreIncludedInNotification() {
+            List<User> users = List.of(createUser("u1", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+
+            // 評分立即就緒（completedFuture）
+            when(mockScoring.scoreAsync(any()))
+                    .thenReturn(CompletableFuture.completedFuture(sampleScore()));
+
+            service.broadcastTrade(createEntryRequest());
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("u1"),
+                    eq("✅ 廣播跟單已執行"),
+                    bodyCaptor.capture(),
+                    eq(DiscordWebhookService.COLOR_GREEN));
+
+            String body = bodyCaptor.getValue();
+            assertThat(body).contains("AI: 78/100");
+            assertThat(body).contains("中風險");
+        }
+
+        @Test
+        @DisplayName("Gemini 超時 → 交易不受影響")
+        void scoringTimeout_tradeStillExecutes() {
+            List<User> users = List.of(createUser("u1", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+
+            // 模擬永不完成的 Future（超時場景）
+            CompletableFuture<SignalScore> neverComplete = new CompletableFuture<>();
+            when(mockScoring.scoreAsync(any())).thenReturn(neverComplete);
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            // 交易照常執行
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("successCount")).isEqualTo(1);
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(any(), eq("u1"));
+
+            // DB 不應被更新（分數為 null）
+            verify(mockTradeRepo, never()).updateAiScore(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("非 ENTRY 信號 → 不評分（scoreAsync 回傳 null）")
+        void nonEntrySignal_noScoring() {
+            List<User> users = List.of(createUser("u1", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+
+            when(mockBinance.executeSignalForBroadcast(any(), eq("u1")))
+                    .thenReturn(List.of(OrderResult.builder()
+                            .success(true).orderId("1").symbol("BTCUSDT")
+                            .price(96500.0).netProfit(100.0).build()));
+
+            TradeRequest closeRequest = new TradeRequest();
+            closeRequest.setAction("CLOSE");
+            closeRequest.setSymbol("BTCUSDT");
+
+            // 預設 scoreAsync 回傳 null（setUp 已設定）
+            service.broadcastTrade(closeRequest);
+
+            // 交易正常完成
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(any(), eq("u1"));
+
+            // 通知不含 AI 分數
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("u1"),
+                    eq("✅ 廣播平倉已執行"),
+                    bodyCaptor.capture(),
+                    eq(DiscordWebhookService.COLOR_GREEN));
+            assertThat(bodyCaptor.getValue()).doesNotContain("AI:");
+        }
+
+        @Test
+        @DisplayName("評分已就緒 → Admin 報告含 AI 評分")
+        void scoringEnabled_adminSummaryIncludesScore() {
+            User admin = User.builder().userId("admin1").email("admin@test.com").passwordHash("h")
+                    .enabled(true).role(User.Role.ADMIN).build();
+            User user1 = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1));
+
+            when(mockScoring.scoreAsync(any()))
+                    .thenReturn(CompletableFuture.completedFuture(sampleScore()));
+
+            service.broadcastTrade(createEntryRequest());
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000).atLeastOnce()).sendNotificationToUser(
+                    eq("admin1"),
+                    eq("📊 廣播跟單報告"),
+                    bodyCaptor.capture(),
+                    anyInt());
+
+            String report = bodyCaptor.getValue();
+            assertThat(report).contains("AI 評分: 78/100");
+            assertThat(report).contains("中風險");
+            assertThat(report).contains("R:R 1:2.5");
+        }
+
+        @Test
+        @DisplayName("評分已就緒 → Trade DB 記錄被批次更新")
+        void scoringEnabled_tradeRecordUpdated() {
+            List<User> users = List.of(createUser("u1", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+
+            when(mockScoring.scoreAsync(any()))
+                    .thenReturn(CompletableFuture.completedFuture(sampleScore()));
+            when(mockTradeRepo.updateAiScore(any(), any(), any(), any())).thenReturn(1);
+
+            service.broadcastTrade(createEntryRequest());
+
+            // 驗證 DB 批次更新被呼叫
+            verify(mockTradeRepo, timeout(5000)).updateAiScore(
+                    eq("BTCUSDT"),
+                    eq(78),
+                    eq("R:R 1:2.5 合理，但止損幅度偏寬"),
+                    any());
         }
     }
 }

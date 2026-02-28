@@ -2,9 +2,11 @@ package com.trader.trading.repository;
 
 import com.trader.trading.entity.Trade;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -245,4 +247,19 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      * 依用戶 ID 查詢所有交易，依建立時間倒序
      */
     List<Trade> findByUserIdOrderByCreatedAtDesc(String userId);
+
+    /**
+     * 批次更新 AI 信號評分
+     * 條件：同 symbol + OPEN 狀態 + 尚未評分 + 入場時間在指定時間之後
+     * 用於廣播跟單後批次寫入 AI 評分結果
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Trade t SET t.aiConfidence = :confidence, t.aiReasoning = :reasoning " +
+           "WHERE t.symbol = :symbol AND t.status = 'OPEN' AND t.aiConfidence IS NULL " +
+           "AND t.entryTime > :since")
+    int updateAiScore(@Param("symbol") String symbol,
+                      @Param("confidence") Integer confidence,
+                      @Param("reasoning") String reasoning,
+                      @Param("since") LocalDateTime since);
 }

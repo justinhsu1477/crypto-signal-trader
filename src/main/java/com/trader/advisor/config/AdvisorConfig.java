@@ -14,6 +14,7 @@ public class AdvisorConfig {
     private final int maxResponseTokens;
     private final int recentTradesCount;
     private final double temperatureValue;
+    private final boolean scoringEnabled;
 
     public AdvisorConfig(
             @DefaultValue("false") boolean enabled,
@@ -22,7 +23,8 @@ public class AdvisorConfig {
             @DefaultValue("0 0 * * * *") String cronExpression,
             @DefaultValue("1024") int maxResponseTokens,
             @DefaultValue("10") int recentTradesCount,
-            @DefaultValue("0.7") double temperatureValue
+            @DefaultValue("0.7") double temperatureValue,
+            @DefaultValue("false") boolean scoringEnabled
     ) {
         this.enabled = enabled;
         this.geminiApiKey = geminiApiKey;
@@ -31,6 +33,7 @@ public class AdvisorConfig {
         this.maxResponseTokens = maxResponseTokens;
         this.recentTradesCount = recentTradesCount;
         this.temperatureValue = temperatureValue;
+        this.scoringEnabled = scoringEnabled;
     }
 
     public boolean isEnabled() {
@@ -59,5 +62,9 @@ public class AdvisorConfig {
 
     public double getTemperatureValue() {
         return temperatureValue;
+    }
+
+    public boolean isScoringEnabled() {
+        return scoringEnabled;
     }
 }
