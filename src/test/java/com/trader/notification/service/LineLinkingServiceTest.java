@@ -9,6 +9,8 @@ import okhttp3.*;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -90,7 +92,7 @@ class LineLinkingServiceTest {
             LineLinkingCode code = LineLinkingCode.builder()
                     .code("ABCD1234")
                     .userId(USER_ID)
-                    .expiresAt(LocalDateTime.now().plusMinutes(5))
+                    .expiresAt(LocalDateTime.now(AppConstants.ZONE_ID).plusMinutes(5))
                     .used(false)
                     .build();
 
@@ -126,7 +128,7 @@ class LineLinkingServiceTest {
             LineLinkingCode code = LineLinkingCode.builder()
                     .code("EXPIRED1")
                     .userId(USER_ID)
-                    .expiresAt(LocalDateTime.now().minusMinutes(1)) // 已過期
+                    .expiresAt(LocalDateTime.now(AppConstants.ZONE_ID).minusMinutes(1)) // 已過期
                     .used(false)
                     .build();
 
