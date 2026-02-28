@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PlanInfo, SubscriptionStatusDetail, CryptoCheckoutInfo } from "@/types";
 import {
   getSubscriptionPlans,
@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Crown, Zap, Shield, Check, Copy, Wallet, Landmark, MessageCircle } from "lucide-react";
+import { Crown, Zap, Shield, Check, Copy, Wallet, Landmark, MessageCircle, RefreshCw } from "lucide-react";
 
 // ===== 台幣轉帳資訊（更改此處即可更新顯示） =====
 const TWD_BANK_INFO = {
@@ -37,12 +37,43 @@ const TWD_BANK_INFO = {
   accountHolder: "—",                   // ← 請填入戶名
 };
 
-const TWD_PRICES: Record<string, number> = {
-  basic: 600,  // Basic 方案台幣價格
-  pro: 1500,   // Pro 方案台幣價格
-};
-
 const ADMIN_CONTACT = "https://t.me/hookfi_support"; // ← 管理員聯繫方式
+
+// 匯率快取（1 小時有效，避免重複請求）
+const RATE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+let cachedRate: { value: number; fetchedAt: number } | null = null;
+
+async function fetchUsdToTwd(): Promise<number> {
+  // 快取有效就直接回傳
+  if (cachedRate && Date.now() - cachedRate.fetchedAt < RATE_CACHE_TTL) {
+    return cachedRate.value;
+  }
+  // Primary: ExchangeRate-API（免費、無需 API Key、CORS OK）
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD");
+    if (res.ok) {
+      const data = await res.json();
+      const rate = data?.rates?.TWD;
+      if (typeof rate === "number" && rate > 0) {
+        cachedRate = { value: rate, fetchedAt: Date.now() };
+        return rate;
+      }
+    }
+  } catch { /* fallback */ }
+  // Fallback: fawazahmed0 currency-api（CDN 託管、無頻率限制）
+  try {
+    const res = await fetch("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json");
+    if (res.ok) {
+      const data = await res.json();
+      const rate = data?.usd?.twd;
+      if (typeof rate === "number" && rate > 0) {
+        cachedRate = { value: rate, fetchedAt: Date.now() };
+        return rate;
+      }
+    }
+  } catch { /* give up */ }
+  throw new Error("Failed to fetch exchange rate");
+}
 // ================================================
 
 type PaymentMethod = "usdt" | "twd";
@@ -68,6 +99,31 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
   const [checkoutInfo, setCheckoutInfo] = useState<CryptoCheckoutInfo | null>(null);
   const [txHash, setTxHash] = useState("");
   const [verifying, setVerifying] = useState(false);
+
+  // Exchange Rate (USD → TWD)
+  const [twdRate, setTwdRate] = useState<number | null>(null);
+  const [rateLoading, setRateLoading] = useState(false);
+  const [rateError, setRateError] = useState(false);
+
+  const loadExchangeRate = useCallback(async () => {
+    setRateLoading(true);
+    setRateError(false);
+    try {
+      const rate = await fetchUsdToTwd();
+      setTwdRate(rate);
+    } catch {
+      setRateError(true);
+    } finally {
+      setRateLoading(false);
+    }
+  }, []);
+
+  // 切換到台幣 tab 時自動載入匯率
+  useEffect(() => {
+    if (paymentMethod === "twd" && twdRate === null && !rateLoading) {
+      loadExchangeRate();
+    }
+  }, [paymentMethod, twdRate, rateLoading, loadExchangeRate]);
 
   // Fetch data
   useEffect(() => {
@@ -513,12 +569,43 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
                 <span className="font-semibold">{checkoutInfo.planName}</span>
               </div>
 
-              {/* TWD Amount */}
-              <div className="flex justify-between items-center p-3 bg-blue-500/10 rounded-lg">
-                <span className="text-sm text-muted-foreground">{t("settings.twdAmount")}</span>
-                <span className="text-lg font-bold text-blue-500">
-                  NT$ {TWD_PRICES[checkoutInfo.planId]?.toLocaleString() ?? "—"}
-                </span>
+              {/* TWD Amount (即時匯率) */}
+              <div className="p-3 bg-blue-500/10 rounded-lg space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">{t("settings.twdAmount")}</span>
+                  {rateLoading ? (
+                    <div className="flex items-center gap-2 text-blue-500">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">{t("common.loading")}</span>
+                    </div>
+                  ) : rateError ? (
+                    <button
+                      onClick={loadExchangeRate}
+                      className="flex items-center gap-1 text-sm text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t("common.retry")}
+                    </button>
+                  ) : twdRate ? (
+                    <span className="text-lg font-bold text-blue-500">
+                      ≈ NT$ {Math.round(checkoutInfo.amountUsdt * twdRate).toLocaleString()}
+                    </span>
+                  ) : null}
+                </div>
+                {twdRate && !rateLoading && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-muted-foreground">
+                      1 USDT ≈ {twdRate.toFixed(2)} TWD
+                    </span>
+                    <button
+                      onClick={loadExchangeRate}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      {t("settings.twdRefreshRate")}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Bank Info Card */}
