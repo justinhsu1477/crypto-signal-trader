@@ -23,6 +23,8 @@ import type {
   PlanInfo,
   SubscriptionStatusDetail,
   CryptoCheckoutInfo,
+  LineBindingStatus,
+  LineLinkingCodeResponse,
   ReferralStatusResponse,
   SubmitUidRequest,
   VerifyEmailRequest,
@@ -380,6 +382,36 @@ export async function deleteDiscordWebhook(
   return request<{ message: string }>(
     `/api/dashboard/discord-webhooks/${webhookId}`,
     { method: "DELETE" }
+  );
+}
+
+// ==================== LINE Binding ====================
+
+export async function getLineBinding(): Promise<LineBindingStatus> {
+  return request<LineBindingStatus>("/api/dashboard/line-binding");
+}
+
+export async function generateLineCode(): Promise<LineLinkingCodeResponse> {
+  return request<LineLinkingCodeResponse>("/api/dashboard/line-binding/generate-code", {
+    method: "POST",
+  });
+}
+
+export async function unbindLine(): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/dashboard/line-binding", {
+    method: "DELETE",
+  });
+}
+
+export async function updateLineNotificationStatus(
+  enabled: boolean
+): Promise<{ lineNotificationEnabled: boolean; message: string }> {
+  return request<{ lineNotificationEnabled: boolean; message: string }>(
+    "/api/dashboard/line-notification-status",
+    {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }
   );
 }
 

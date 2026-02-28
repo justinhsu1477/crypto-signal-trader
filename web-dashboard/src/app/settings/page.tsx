@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { useT } from "@/lib/i18n/i18n-context";
 import { DiscordWebhookManager } from "@/components/settings/discord-webhook-manager";
+import { LineBindingManager } from "@/components/settings/line-binding-manager";
 import { TradeSettingsForm } from "@/components/settings/trade-settings-form";
 import { SubscriptionManager } from "@/components/settings/subscription-manager";
 import {
@@ -630,6 +631,7 @@ export default function SettingsPage() {
   function renderNotifications() {
     return (
       <div className="space-y-6">
+        {/* Discord Section */}
         <div>
           <h2 className="text-lg font-semibold">
             {t("settings.discordNotification")}
@@ -640,6 +642,18 @@ export default function SettingsPage() {
         </div>
         <Separator />
         <DiscordWebhookManager onWebhooksChange={setHasActiveWebhook} />
+
+        {/* LINE Section */}
+        <div className="pt-6">
+          <h2 className="text-lg font-semibold">
+            {t("settings.lineNotification")}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {t("settings.lineNotificationDesc")}
+          </p>
+        </div>
+        <Separator />
+        <LineBindingManager />
       </div>
     );
   }

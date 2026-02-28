@@ -34,11 +34,12 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class DiscordWebhookService implements NotificationService {
 
-    // 顏色常量
-    public static final int COLOR_GREEN  = 0x00FF00;  // 成功
-    public static final int COLOR_RED    = 0xFF0000;  // 失敗
-    public static final int COLOR_YELLOW = 0xFFFF00;  // 警告/跳過
-    public static final int COLOR_BLUE   = 0x3498DB;  // 資訊
+    // 顏色常量已移至 NotificationService 介面（COLOR_GREEN / COLOR_RED / COLOR_YELLOW / COLOR_BLUE）
+    // 保留向後相容別名
+    public static final int COLOR_GREEN  = NotificationService.COLOR_GREEN;
+    public static final int COLOR_RED    = NotificationService.COLOR_RED;
+    public static final int COLOR_YELLOW = NotificationService.COLOR_YELLOW;
+    public static final int COLOR_BLUE   = NotificationService.COLOR_BLUE;
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");

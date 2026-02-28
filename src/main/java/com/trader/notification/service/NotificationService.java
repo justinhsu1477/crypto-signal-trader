@@ -5,12 +5,20 @@ import com.trader.notification.model.NotificationCategory;
 /**
  * 通知服務介面 — 抽象化通知頻道
  *
- * 目前唯一實作：{@link DiscordWebhookService}
- * 未來可擴展：LineNotificationService、TelegramNotificationService 等。
+ * 實作：
+ * - {@link DiscordWebhookService}（Discord Webhook）
+ * - {@link LineNotificationService}（LINE Push API）
+ * - {@link CompositeNotificationService}（@Primary，多頻道派發）
  *
- * int color 參數為 Discord Embed 顏色，其他頻道實作可忽略或映射成嚴重度。
+ * int color 參數源自 Discord Embed 顏色，其他頻道實作可忽略或映射成嚴重度。
  */
 public interface NotificationService {
+
+    // 顏色常量（Discord Embed 顏色，其他頻道可忽略）
+    int COLOR_GREEN  = 0x00FF00;  // 成功
+    int COLOR_RED    = 0xFF0000;  // 失敗
+    int COLOR_YELLOW = 0xFFFF00;  // 警告/跳過
+    int COLOR_BLUE   = 0x3498DB;  // 資訊
 
     /** 發送全局通知（系統級 webhook） */
     void sendNotification(String title, String message, int color);
