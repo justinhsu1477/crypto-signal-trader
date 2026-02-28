@@ -16,6 +16,13 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status IN ('ACTIVE', 'TRIALING')")
     Optional<Subscription> findActiveByUserId(String userId);
 
+    /**
+     * Batch 查詢：取得所有有效訂閱 (ACTIVE/TRIALING) 的 userId
+     * 用於 BroadcastTradeService 避免 N+1 查詢
+     */
+    @Query("SELECT s.userId FROM Subscription s WHERE s.status IN ('ACTIVE', 'TRIALING')")
+    List<String> findUserIdsWithActiveSubscription();
+
     Optional<Subscription> findByStripeSubscriptionId(String stripeSubscriptionId);
 
     Optional<Subscription> findByStripeCustomerId(String stripeCustomerId);

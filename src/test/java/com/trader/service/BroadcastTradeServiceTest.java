@@ -3,6 +3,7 @@ package com.trader.service;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
+import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BroadcastTradeService;
 import com.trader.user.entity.User;
@@ -30,6 +31,7 @@ class BroadcastTradeServiceTest {
     private BinanceFuturesService mockBinance;
     private DiscordWebhookService mockWebhook;
     private UserApiKeyService mockApiKey;
+    private SubscriptionRepository mockSubscriptionRepo;
     private ExecutorService executor;
     private BroadcastTradeService service;
 
@@ -39,6 +41,7 @@ class BroadcastTradeServiceTest {
         mockBinance = mock(BinanceFuturesService.class);
         mockWebhook = mock(DiscordWebhookService.class);
         mockApiKey = mock(UserApiKeyService.class);
+        mockSubscriptionRepo = mock(SubscriptionRepository.class);
 
         // 預設：executeSignalForBroadcast 回傳空結果（既有測試不受影響）
         when(mockBinance.executeSignalForBroadcast(any(), anyString())).thenReturn(List.of());
@@ -47,11 +50,15 @@ class BroadcastTradeServiceTest {
         when(mockApiKey.getUserIdsWithApiKey("BINANCE"))
                 .thenReturn(Set.of("u1", "u2", "u3", "u4", "u5"));
 
+        // 預設：所有用戶都有有效訂閱（既有測試不受影響）
+        when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
+                .thenReturn(List.of("u1", "u2", "u3", "u4", "u5"));
+
         // 用 2 線程的 pool — 小到可預測，又能測並行
         executor = Executors.newFixedThreadPool(2);
 
         service = new BroadcastTradeService(
-                mockUserRepo, mockBinance, mockWebhook, mockApiKey, executor);
+                mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockSubscriptionRepo, executor);
     }
 
     @AfterEach
@@ -149,6 +156,64 @@ class BroadcastTradeServiceTest {
 
             assertThat(result.get("totalUsers")).isEqualTo(1);
             assertThat(result.get("skippedNoApiKey")).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("過濾沒有訂閱的用戶 — 計入 skippedNoSubscription")
+        void filterUsersWithoutSubscription() {
+            List<User> users = List.of(
+                    createUser("u1", true, true),
+                    createUser("u2", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+            // 只有 u1 有訂閱
+            when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of("u1"));
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            assertThat(result.get("totalUsers")).isEqualTo(1);
+            assertThat(result.get("skippedNoSubscription")).isEqualTo(1);
+            verify(mockBinance, never()).executeSignalForBroadcast(any(), eq("u2"));
+        }
+
+        @Test
+        @DisplayName("全部用戶都沒有訂閱 → 返回 message")
+        void allUsersNoSubscription() {
+            List<User> users = List.of(
+                    createUser("u1", true, true),
+                    createUser("u2", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+            when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of());
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(0);
+            assertThat(result.get("skippedNoSubscription")).isEqualTo(2);
+            assertThat(result.get("message")).isNotNull();
+        }
+
+        @Test
+        @DisplayName("訂閱過濾在 API Key 過濾之前 — 無訂閱不計入 skippedNoApiKey")
+        void subscriptionFilterBeforeApiKeyFilter() {
+            List<User> users = List.of(
+                    createUser("u1", true, true),
+                    createUser("u2", true, true),
+                    createUser("u3", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+            // u1, u2 有訂閱; u3 無訂閱
+            when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of("u1", "u2"));
+            // 只有 u1 有 API Key（u2 無 API Key, u3 已被訂閱過濾）
+            when(mockApiKey.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(Set.of("u1"));
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            assertThat(result.get("totalUsers")).isEqualTo(1);
+            assertThat(result.get("skippedNoSubscription")).isEqualTo(1);  // u3
+            assertThat(result.get("skippedNoApiKey")).isEqualTo(1);         // u2
         }
 
         @Test

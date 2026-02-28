@@ -6,6 +6,7 @@ import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.user.service.UserApiKeyService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -30,6 +31,7 @@ public class BroadcastTradeService {
     private final BinanceFuturesService binanceFuturesService;
     private final NotificationService discordWebhookService;
     private final UserApiKeyService userApiKeyService;
+    private final SubscriptionRepository subscriptionRepository;
     private final ExecutorService broadcastExecutor;
 
     private static final long TASK_TIMEOUT_SECONDS = 30;
@@ -39,11 +41,13 @@ public class BroadcastTradeService {
             BinanceFuturesService binanceFuturesService,
             NotificationService discordWebhookService,
             UserApiKeyService userApiKeyService,
+            SubscriptionRepository subscriptionRepository,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor) {
         this.userRepository = userRepository;
         this.binanceFuturesService = binanceFuturesService;
         this.discordWebhookService = discordWebhookService;
         this.userApiKeyService = userApiKeyService;
+        this.subscriptionRepository = subscriptionRepository;
         this.broadcastExecutor = broadcastExecutor;
     }
 
@@ -70,24 +74,37 @@ public class BroadcastTradeService {
                 .filter(user -> user.getRole() != User.Role.ADMIN)
                 .toList();
 
+        // Batch 查詢：一次取得所有有效訂閱的 userId（避免 N+1）
+        Set<String> subscribedUserIds = new HashSet<>(subscriptionRepository.findUserIdsWithActiveSubscription());
+
+        // 過濾：僅保留有有效訂閱 (ACTIVE/TRIALING) 的用戶
+        List<User> subscribedUsers = enabledUsers.stream()
+                .filter(u -> subscribedUserIds.contains(u.getUserId()))
+                .toList();
+
+        int skippedNoSubscription = enabledUsers.size() - subscribedUsers.size();
+        if (skippedNoSubscription > 0) {
+            log.warn("廣播跟單: 跳過 {} 個用戶 (無有效訂閱)", skippedNoSubscription);
+        }
+
         // Batch 查詢：一次取得所有已設定 API Key 的 userId（避免 N+1）
         Set<String> userIdsWithApiKey = userApiKeyService.getUserIdsWithApiKey("BINANCE");
 
-        // 過濾：已設定 API Key（推薦碼已改為軟提醒，不阻擋跟單）
-        List<User> activeUsers = enabledUsers.stream()
+        // 過濾：已設定 API Key
+        List<User> activeUsers = subscribedUsers.stream()
                 .filter(u -> userIdsWithApiKey.contains(u.getUserId()))
                 .toList();
 
-        int skippedCount = enabledUsers.size() - activeUsers.size();
-        if (skippedCount > 0) {
-            log.warn("廣播跟單: 跳過 {} 個用戶 (無 API Key)", skippedCount);
+        int skippedNoApiKey = subscribedUsers.size() - activeUsers.size();
+        if (skippedNoApiKey > 0) {
+            log.warn("廣播跟單: 跳過 {} 個用戶 (無 API Key)", skippedNoApiKey);
         }
 
-        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過 {}), action={} symbol={}",
-                activeUsers.size(), skippedCount, request.getAction(), request.getSymbol());
+        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過無訂閱={}, 跳過無API Key={}), action={} symbol={}",
+                activeUsers.size(), skippedNoSubscription, skippedNoApiKey, request.getAction(), request.getSymbol());
 
         // 廣播前 — 發訊號詳情通知給每位 Admin（per-user webhook）
-        String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size());
+        String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size(), skippedNoSubscription, skippedNoApiKey);
         for (User admin : adminUsers) {
             discordWebhookService.sendNotificationToUser(
                     admin.getUserId(),
@@ -97,14 +114,24 @@ public class BroadcastTradeService {
         }
 
         if (activeUsers.isEmpty()) {
+            String message;
+            if (enabledUsers.isEmpty()) {
+                message = "無啟用用戶";
+            } else if (skippedNoSubscription > 0 && skippedNoApiKey == 0) {
+                message = "所有用戶均無有效訂閱";
+            } else if (skippedNoApiKey > 0 && skippedNoSubscription == 0) {
+                message = "所有用戶均未設定 API Key";
+            } else {
+                message = "所有用戶均未符合條件 (訂閱/API Key)";
+            }
             return Map.of(
                     "status", "COMPLETED",
                     "totalUsers", 0,
                     "successCount", 0,
                     "failCount", 0,
-                    "skippedNoApiKey", skippedCount,
-                    "message", enabledUsers.isEmpty() && skippedCount == 0
-                            ? "無啟用用戶" : "所有用戶均未設定 API Key");
+                    "skippedNoSubscription", skippedNoSubscription,
+                    "skippedNoApiKey", skippedNoApiKey,
+                    "message", message);
         }
 
         // 用共享線程池並行執行（不排隊，全員同時下單）
@@ -196,9 +223,10 @@ public class BroadcastTradeService {
 
             // 廣播完成 — 發彙總報告給每位 Admin（per-user webhook）
             StringBuilder summaryBuilder = new StringBuilder(
-                    String.format("%s %s\n成功: %d 人\n失敗: %d 人\n超時: %d 人\n總計: %d 人",
+                    String.format("%s %s\n成功: %d 人\n失敗: %d 人\n超時: %d 人\n跳過 (無訂閱): %d 人\n跳過 (無 API Key): %d 人\n總計: %d 人",
                     request.getSymbol(), request.getAction(),
-                    successCount.get(), failCount.get(), cancelledCount, activeUsers.size()));
+                    successCount.get(), failCount.get(), cancelledCount,
+                    skippedNoSubscription, skippedNoApiKey, activeUsers.size()));
 
             // CLOSE: 附上 PnL 彙總（總損益 + 平均）
             if (isCloseAction && pnlCount.get() > 0) {
@@ -250,7 +278,8 @@ public class BroadcastTradeService {
                     "totalUsers", activeUsers.size(),
                     "successCount", successCount.get(),
                     "failCount", failCount.get(),
-                    "skippedNoApiKey", skippedCount);
+                    "skippedNoSubscription", skippedNoSubscription,
+                    "skippedNoApiKey", skippedNoApiKey);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("廣播跟單中斷: {}", e.getMessage());
@@ -352,7 +381,8 @@ public class BroadcastTradeService {
      * 組裝廣播訊號詳情（發給 Admin 的 per-user webhook）
      * 包含：action、symbol、side、入場價、止損、止盈、來源、目標用戶數
      */
-    private String formatBroadcastSignalForAdmin(TradeRequest request, int targetUserCount) {
+    private String formatBroadcastSignalForAdmin(TradeRequest request, int targetUserCount,
+                                                   int skippedNoSubscription, int skippedNoApiKey) {
         StringBuilder sb = new StringBuilder();
         sb.append(request.getSymbol());
 
@@ -402,6 +432,12 @@ public class BroadcastTradeService {
             sb.append("來源: ").append(request.getSource()).append("\n");
         }
         sb.append("目標用戶: ").append(targetUserCount).append(" 人");
+        if (skippedNoSubscription > 0) {
+            sb.append("\n跳過 (無訂閱): ").append(skippedNoSubscription).append(" 人");
+        }
+        if (skippedNoApiKey > 0) {
+            sb.append("\n跳過 (無 API Key): ").append(skippedNoApiKey).append(" 人");
+        }
         return sb.toString();
     }
 }
