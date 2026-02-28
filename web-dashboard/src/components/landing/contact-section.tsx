@@ -1,6 +1,6 @@
 "use client";
 
-import { Mail, MessageCircle } from "lucide-react";
+import { Mail, MessageCircle, Send } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-context";
 
 export function ContactSection() {
@@ -19,7 +19,7 @@ export function ContactSection() {
           {t("landing.contactSubtitle")}
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-12">
           <a
             href="mailto:support@hook-fi.com"
             className="rounded-2xl border border-white/5 bg-white/[0.02] p-8 hover:bg-white/[0.04] hover:border-emerald-500/20 transition-all group"
@@ -41,6 +41,17 @@ export function ContactSection() {
             </svg>
             <h3 className="text-lg font-semibold">{t("landing.contactLine")}</h3>
             <p className="text-sm text-muted-foreground mt-2">{t("landing.contactLineDesc")}</p>
+          </a>
+
+          <a
+            href="https://t.me/hookfi_support"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-2xl border border-white/5 bg-white/[0.02] p-8 hover:bg-white/[0.04] hover:border-sky-500/20 transition-all group"
+          >
+            <Send className="h-8 w-8 text-sky-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold">{t("landing.contactTelegram")}</h3>
+            <p className="text-sm text-muted-foreground mt-2">{t("landing.contactTelegramDesc")}</p>
           </a>
 
           <a
