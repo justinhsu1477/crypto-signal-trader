@@ -201,7 +201,8 @@ public class LineLinkingService {
                 "• 付款確認（請附上轉帳截圖）\n" +
                 "• 系統操作問題\n\n" +
                 "我們將在 24 小時內回覆您 ✨\n\n" +
-                "🌐 官網：https://hook-fi.com";
+                "🌐 官網：https://hook-fi.com\n" +
+                "✈️ Telegram：https://t.me/+BbRa0cKxrFM2MmI1";
     }
 
     // ==================== Private Helpers ====================
