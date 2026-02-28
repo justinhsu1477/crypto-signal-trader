@@ -324,8 +324,12 @@ public class DailyReportService {
         sb.append(String.format("📊 昨日總交易: %d 筆（%d 人有交易）\n", totalTrades, usersWithTrades));
         sb.append(String.format("💰 全平台淨利: %s USDT\n", formatProfit(totalNetProfit)));
         if (usersWithTrades > 0) {
-            sb.append(String.format("📈 平均每人: %s USDT", formatProfit(totalNetProfit / usersWithTrades)));
+            sb.append(String.format("📈 平均每人: %s USDT\n", formatProfit(totalNetProfit / usersWithTrades)));
         }
+
+        // AI Token 用量（僅 Admin 彙總報告顯示）
+        sb.append("\n");
+        appendAiTokenUsage(sb);
 
         webhookService.sendNotificationToAdmins(
                 "📊 每日彙總報告 — " + dateStr,
@@ -359,8 +363,8 @@ public class DailyReportService {
         // ===== 5. 累計統計 =====
         appendOverallStats(sb, overallStats);
 
-        // ===== 6. 系統狀態 =====
-        appendSystemStatus(sb);
+        // ===== 6. 系統狀態（單人模式 = Admin，含 AI 用量）=====
+        appendSystemStatus(sb, true);
 
         return sb.toString();
     }
@@ -390,8 +394,8 @@ public class DailyReportService {
         // ===== 5. 累計統計 =====
         appendOverallStats(sb, overallStats);
 
-        // ===== 6. 系統狀態 =====
-        appendSystemStatus(sb);
+        // ===== 6. 系統狀態（per-user 不含 AI 用量，AI 用量只放 Admin 彙總）=====
+        appendSystemStatus(sb, false);
 
         return sb.toString();
     }
@@ -608,7 +612,7 @@ public class DailyReportService {
 
     // ==================== 區塊 6: 系統狀態 ====================
 
-    private void appendSystemStatus(StringBuilder sb) {
+    private void appendSystemStatus(StringBuilder sb, boolean includeAiUsage) {
         sb.append("⚙️ 系統狀態\n");
 
         // Monitor 心跳
@@ -636,7 +640,16 @@ public class DailyReportService {
             sb.append("WebSocket: 查詢失敗\n");
         }
 
-        // AI Token 用量
+        // AI Token 用量（僅 Admin 彙總 / 單人模式顯示）
+        if (includeAiUsage) {
+            appendAiTokenUsage(sb);
+        }
+    }
+
+    /**
+     * AI Token 用量區塊（獨立方法，供 Admin 彙總報告和單人模式使用）
+     */
+    private void appendAiTokenUsage(StringBuilder sb) {
         try {
             Map<String, Long> tokenStats = monitorHeartbeatService.getDailyTokenStats();
             long calls = tokenStats.get("callCount");
