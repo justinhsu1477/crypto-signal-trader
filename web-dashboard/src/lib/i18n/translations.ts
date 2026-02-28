@@ -676,6 +676,33 @@ const translations = {
     paymentTxRequired: { en: "Please enter the transaction hash", "zh-TW": "請輸入交易 Hash", "zh-CN": "请输入交易 Hash" },
     paymentFailed: { en: "Verification failed", "zh-TW": "驗證失敗", "zh-CN": "验证失败" },
     paymentCopied: { en: "Copied to clipboard", "zh-TW": "已複製到剪貼簿", "zh-CN": "已复制到剪贴板" },
+
+    // 付款方式切換
+    payMethodUsdt: { en: "USDT Payment", "zh-TW": "USDT 付款", "zh-CN": "USDT 付款" },
+    payMethodTwd: { en: "Bank Transfer (TWD)", "zh-TW": "台幣轉帳", "zh-CN": "台币转账" },
+
+    // 台幣轉帳資訊
+    twdAmount: { en: "Transfer Amount", "zh-TW": "轉帳金額", "zh-CN": "转账金额" },
+    twdBankName: { en: "Bank", "zh-TW": "銀行", "zh-CN": "银行" },
+    twdBranchCode: { en: "Bank Code", "zh-TW": "銀行代碼", "zh-CN": "银行代码" },
+    twdAccountNumber: { en: "Account Number", "zh-TW": "帳號", "zh-CN": "账号" },
+    twdAccountHolder: { en: "Account Holder", "zh-TW": "戶名", "zh-CN": "户名" },
+    twdNote: {
+      en: "After transferring, please contact admin for verification",
+      "zh-TW": "轉帳完成後，請聯繫管理員確認",
+      "zh-CN": "转账完成后，请联系管理员确认",
+    },
+    twdNoteDetail: {
+      en: "Subscription will be activated within 24 hours after admin confirms the transfer. Please include your registered email in the transfer note for faster processing.",
+      "zh-TW": "管理員確認轉帳後，將於 24 小時內為您開通訂閱。請在轉帳備註填寫您的註冊 Email，以加速處理。",
+      "zh-CN": "管理员确认转账后，将于 24 小时内为您开通订阅。请在转账备注填写您的注册 Email，以加速处理。",
+    },
+    twdContactAdmin: {
+      en: "Contact Admin",
+      "zh-TW": "聯繫管理員",
+      "zh-CN": "联系管理员",
+    },
+
     passwordChangedToast: { en: "Password changed successfully. Logging out in 2 seconds...", "zh-TW": "密碼修改成功，2 秒後自動登出...", "zh-CN": "密码修改成功，2 秒后自动退出..." },
     autoTradeConfirmEnablePrereqs: { en: "Prerequisites met:", "zh-TW": "已滿足前置條件：", "zh-CN": "已满足前置条件：" },
     autoTradeConfirmApiKeyOk: { en: "Binance API Key configured", "zh-TW": "已設定 Binance API Key", "zh-CN": "已配置 Binance API Key" },
