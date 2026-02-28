@@ -9,11 +9,14 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
 
+import org.springframework.core.io.ClassPathResource;
+
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * LINE Rich Menu 管理服務
@@ -300,35 +303,37 @@ public class LineRichMenuService {
         return o;
     }
 
-    // ==================== 圖片產生（Java2D）====================
+    // ==================== 圖片產生（Java2D + Twemoji PNG）====================
+
+    /** Emoji 圖片路徑（Twemoji，CC-BY 4.0） */
+    private static final String EMOJI_DIR = "line/emoji/";
 
     /**
-     * 圖示設計資料：標籤、強調色、圓形內單字 icon
-     * 不使用 emoji（Java2D 在 Linux/Docker 無法渲染 emoji）
-     * 改用彩色圓形 + 中文單字，風格簡潔現代
+     * 每格設計：emoji 檔名、中文標籤
+     * emoji 圖片來自 Twemoji（72×72 PNG），用 drawImage() 縮放繪製
      */
-    private record CellDesign(String label, Color accentColor, String iconChar) {}
+    private record CellDesign(String label, String emojiFile) {}
 
     private byte[] generateDefaultImage() throws IOException {
         CellDesign[] cells = {
-                new CellDesign("官網首頁", new Color(0x4A, 0x9E, 0xFF), "首"),
-                new CellDesign("訂閱方案", new Color(0xFF, 0xB5, 0x20), "訂"),
-                new CellDesign("註冊帳號", new Color(0x4A, 0xDE, 0x80), "冊"),
-                new CellDesign("綁定帳號", new Color(0xA7, 0x8B, 0xFA), "綁"),
-                new CellDesign("聯繫客服", new Color(0xFB, 0x92, 0x3C), "客"),
-                new CellDesign("使用說明", new Color(0x2D, 0xD4, 0xBF), "說"),
+                new CellDesign("官網首頁", "globe.png"),
+                new CellDesign("訂閱方案", "money.png"),
+                new CellDesign("註冊帳號", "memo.png"),
+                new CellDesign("綁定帳號", "link.png"),
+                new CellDesign("聯繫客服", "phone.png"),
+                new CellDesign("使用說明", "book.png"),
         };
         return generateMenuImage(cells);
     }
 
     private byte[] generateBoundImage() throws IOException {
         CellDesign[] cells = {
-                new CellDesign("交易紀錄", new Color(0x4A, 0x9E, 0xFF), "易"),
-                new CellDesign("績效總覽", new Color(0x4A, 0xDE, 0x80), "績"),
-                new CellDesign("通知設定", new Color(0xA7, 0x8B, 0xFA), "設"),
-                new CellDesign("訂閱方案", new Color(0xFF, 0xB5, 0x20), "訂"),
-                new CellDesign("聯繫客服", new Color(0xFB, 0x92, 0x3C), "客"),
-                new CellDesign("官網首頁", new Color(0x2D, 0xD4, 0xBF), "首"),
+                new CellDesign("交易紀錄", "chart-bar.png"),
+                new CellDesign("績效總覽", "chart-up.png"),
+                new CellDesign("通知設定", "gear.png"),
+                new CellDesign("訂閱方案", "money.png"),
+                new CellDesign("聯繫客服", "phone.png"),
+                new CellDesign("官網首頁", "globe.png"),
         };
         return generateMenuImage(cells);
     }
@@ -336,8 +341,9 @@ public class LineRichMenuService {
     /**
      * 產生 Rich Menu 圖片（2500×1686，2×3 格）
      *
-     * 設計：深色背景 + 格線 + 每格彩色圓形 icon + 中文標籤
-     * 需要 CJK 字型（Docker 安裝 fonts-noto-cjk）
+     * 設計：深色背景 + 格線 + Twemoji 彩色 emoji + 中文標籤
+     * emoji 用 drawImage() 繪製（不依賴系統字型）
+     * 中文標籤需要 CJK 字型（Docker 安裝 fonts-noto-cjk）
      */
     private byte[] generateMenuImage(CellDesign[] cells) throws IOException {
         BufferedImage img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
@@ -346,6 +352,7 @@ public class LineRichMenuService {
         // 反鋸齒
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
 
         // 背景
         g.setColor(new Color(0x1A, 0x1A, 0x2E));
@@ -362,11 +369,11 @@ public class LineRichMenuService {
         }
         g.drawLine(0, cellH, WIDTH, cellH);
 
-        // 字型（CJK 字型由 Docker 的 fonts-noto-cjk 提供）
-        Font iconFont = new Font("SansSerif", Font.BOLD, 72);
-        Font labelFont = new Font("SansSerif", Font.PLAIN, 52);
+        // 中文標籤字型（CJK 字型由 Docker 的 fonts-noto-cjk 提供）
+        Font labelFont = new Font("SansSerif", Font.BOLD, 56);
 
-        int circleR = 65;
+        // emoji 繪製尺寸（72px 原圖放大到 120px，在 2500px 寬的圖上看起來清晰）
+        int emojiSize = 120;
 
         for (int i = 0; i < cells.length; i++) {
             CellDesign cell = cells[i];
@@ -375,25 +382,20 @@ public class LineRichMenuService {
             int cx = col * cellW + cellW / 2;
             int cy = row * cellH + cellH / 2;
 
-            // 彩色圓形 icon 背景（略偏上，留空間給文字）
-            int circleCY = cy - 50;
-            g.setColor(cell.accentColor());
-            g.fillOval(cx - circleR, circleCY - circleR, circleR * 2, circleR * 2);
+            // 載入並繪製 emoji PNG（置中偏上）
+            BufferedImage emoji = loadEmojiImage(cell.emojiFile());
+            if (emoji != null) {
+                int emojiX = cx - emojiSize / 2;
+                int emojiY = cy - emojiSize / 2 - 50;
+                g.drawImage(emoji, emojiX, emojiY, emojiSize, emojiSize, null);
+            }
 
-            // 圓形內白色單字
-            g.setFont(iconFont);
-            g.setColor(Color.WHITE);
-            FontMetrics iconFm = g.getFontMetrics();
-            int iconX = cx - iconFm.stringWidth(cell.iconChar()) / 2;
-            int iconY = circleCY + (iconFm.getAscent() - iconFm.getDescent()) / 2;
-            g.drawString(cell.iconChar(), iconX, iconY);
-
-            // 標籤文字（圓形下方）
+            // 中文標籤（emoji 下方）
             g.setFont(labelFont);
             g.setColor(new Color(0xDD, 0xDD, 0xDD));
             FontMetrics labelFm = g.getFontMetrics();
             int labelX = cx - labelFm.stringWidth(cell.label()) / 2;
-            int labelY = circleCY + circleR + 30 + labelFm.getAscent();
+            int labelY = cy + emojiSize / 2 - 50 + 40 + labelFm.getAscent();
             g.drawString(cell.label(), labelX, labelY);
         }
 
@@ -402,6 +404,21 @@ public class LineRichMenuService {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(img, "png", baos);
         return baos.toByteArray();
+    }
+
+    /**
+     * 從 classpath 載入 Twemoji PNG
+     */
+    private BufferedImage loadEmojiImage(String filename) {
+        try {
+            ClassPathResource resource = new ClassPathResource(EMOJI_DIR + filename);
+            try (InputStream is = resource.getInputStream()) {
+                return ImageIO.read(is);
+            }
+        } catch (IOException e) {
+            log.warn("載入 emoji 圖片失敗: {} — {}", filename, e.getMessage());
+            return null;
+        }
     }
 
     // ==================== Helpers ====================
