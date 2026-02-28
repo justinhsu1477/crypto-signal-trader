@@ -19,7 +19,8 @@ import static org.mockito.Mockito.*;
 /**
  * LineLinkingService 單元測試
  *
- * 覆蓋：連結碼產生、綁定流程（有效碼/過期碼/已綁定）、follow/unfollow、解綁
+ * 覆蓋：連結碼產生、綁定流程（有效碼/過期碼/已綁定）、follow/unfollow、解綁、
+ *       Rich Menu 切換、關鍵字回覆（「客服」「綁定」）
  */
 class LineLinkingServiceTest {
 
@@ -27,6 +28,7 @@ class LineLinkingServiceTest {
     private UserLineBindingRepository lineBindingRepository;
     private LineLinkingCodeRepository linkingCodeRepository;
     private OkHttpClient httpClient;
+    private LineRichMenuService richMenuService;
     private LineLinkingService service;
     private Call mockCall;
 
@@ -39,6 +41,7 @@ class LineLinkingServiceTest {
         lineBindingRepository = mock(UserLineBindingRepository.class);
         linkingCodeRepository = mock(LineLinkingCodeRepository.class);
         httpClient = mock(OkHttpClient.class);
+        richMenuService = mock(LineRichMenuService.class);
 
         when(lineConfig.getChannelAccessToken()).thenReturn("test-token");
         when(lineConfig.getLinkingCodeExpiryMinutes()).thenReturn(10);
@@ -46,7 +49,8 @@ class LineLinkingServiceTest {
         mockCall = mock(Call.class);
         when(httpClient.newCall(any())).thenReturn(mockCall);
 
-        service = new LineLinkingService(lineConfig, lineBindingRepository, linkingCodeRepository, httpClient);
+        service = new LineLinkingService(lineConfig, lineBindingRepository,
+                linkingCodeRepository, httpClient, richMenuService);
     }
 
     // ==================== generateLinkingCode ====================
@@ -81,8 +85,8 @@ class LineLinkingServiceTest {
     class HandleMessageTests {
 
         @Test
-        @DisplayName("有效碼 → 建立綁定")
-        void validCodeCreatesBinding() {
+        @DisplayName("有效碼 → 建立綁定 + 切換 Rich Menu")
+        void validCodeCreatesBindingAndSwitchesMenu() {
             LineLinkingCode code = LineLinkingCode.builder()
                     .code("ABCD1234")
                     .userId(USER_ID)
@@ -109,6 +113,9 @@ class LineLinkingServiceTest {
             assertThat(binding.getLineUserId()).isEqualTo(LINE_USER_ID);
             assertThat(binding.isEnabled()).isTrue();
 
+            // 驗證 Rich Menu 切換到已綁定版
+            verify(richMenuService).linkBoundMenu(LINE_USER_ID);
+
             // 驗證回覆成功訊息
             verify(httpClient).newCall(any());
         }
@@ -130,6 +137,7 @@ class LineLinkingServiceTest {
 
             // 不應建立綁定
             verify(lineBindingRepository, never()).save(any());
+            verify(richMenuService, never()).linkBoundMenu(any());
             // 回覆過期訊息
             verify(httpClient).newCall(any());
         }
@@ -149,7 +157,7 @@ class LineLinkingServiceTest {
         }
 
         @Test
-        @DisplayName("非 8 碼文字 → 提示輸入正確碼")
+        @DisplayName("非 8 碼文字 → 提示輸入正確碼（含關鍵字提示）")
         void shortTextShowsHint() {
             when(lineBindingRepository.findByLineUserId(LINE_USER_ID)).thenReturn(Optional.empty());
 
@@ -157,6 +165,50 @@ class LineLinkingServiceTest {
 
             verify(linkingCodeRepository, never()).findByCodeAndUsedFalse(any());
             verify(httpClient).newCall(any()); // 回覆提示
+        }
+    }
+
+    // ==================== 關鍵字回覆 ====================
+
+    @Nested
+    @DisplayName("關鍵字回覆")
+    class KeywordTests {
+
+        @Test
+        @DisplayName("「綁定」→ 回覆綁定指引")
+        void bindKeywordShowsGuide() {
+            when(lineBindingRepository.findByLineUserId(LINE_USER_ID)).thenReturn(Optional.empty());
+
+            service.handleMessage(LINE_USER_ID, "綁定", "reply-token");
+
+            // 不應查連結碼
+            verify(linkingCodeRepository, never()).findByCodeAndUsedFalse(any());
+            // 應回覆訊息
+            verify(httpClient).newCall(any());
+        }
+
+        @Test
+        @DisplayName("「客服」→ 回覆客服資訊")
+        void supportKeywordShowsInfo() {
+            when(lineBindingRepository.findByLineUserId(LINE_USER_ID)).thenReturn(Optional.empty());
+
+            service.handleMessage(LINE_USER_ID, "客服", "reply-token");
+
+            verify(linkingCodeRepository, never()).findByCodeAndUsedFalse(any());
+            verify(httpClient).newCall(any());
+        }
+
+        @Test
+        @DisplayName("已綁定用戶輸入「客服」→ 也能收到客服資訊")
+        void boundUserCanAskSupport() {
+            when(lineBindingRepository.findByLineUserId(LINE_USER_ID)).thenReturn(
+                    Optional.of(UserLineBinding.builder()
+                            .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build()));
+
+            service.handleMessage(LINE_USER_ID, "客服", "reply-token");
+
+            // 不應提示已綁定，而是回覆客服資訊
+            verify(httpClient).newCall(any());
         }
     }
 
@@ -193,9 +245,26 @@ class LineLinkingServiceTest {
     // ==================== unbind ====================
 
     @Test
-    @DisplayName("unbind 刪除綁定記錄")
-    void unbindDeletesRecord() {
+    @DisplayName("unbind → 移除 Rich Menu + 刪除綁定記錄")
+    void unbindRemovesMenuAndDeletesRecord() {
+        UserLineBinding binding = UserLineBinding.builder()
+                .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build();
+        when(lineBindingRepository.findById(USER_ID)).thenReturn(Optional.of(binding));
+
         service.unbind(USER_ID);
+
+        verify(richMenuService).unlinkUserMenu(LINE_USER_ID);
+        verify(lineBindingRepository).deleteById(USER_ID);
+    }
+
+    @Test
+    @DisplayName("unbind 無綁定 → 不呼叫 unlinkUserMenu")
+    void unbindWithoutBindingSkipsMenuUnlink() {
+        when(lineBindingRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+        service.unbind(USER_ID);
+
+        verify(richMenuService, never()).unlinkUserMenu(any());
         verify(lineBindingRepository).deleteById(USER_ID);
     }
 }

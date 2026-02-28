@@ -87,6 +87,9 @@ line:
   channel-access-token: ${LINE_CHANNEL_ACCESS_TOKEN:}
   enabled: ${LINE_ENABLED:false}
   linking-code-expiry-minutes: 10
+  rich-menu:
+    enabled: ${LINE_RICH_MENU_ENABLED:true}
+    web-base-url: ${LINE_WEB_BASE_URL:https://hook-fi.com}
 
 stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}

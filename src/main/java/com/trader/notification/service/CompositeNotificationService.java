@@ -1,6 +1,7 @@
 package com.trader.notification.service;
 
 import com.trader.notification.model.NotificationCategory;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
@@ -19,16 +20,12 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Primary
 @Service
+@RequiredArgsConstructor
 public class CompositeNotificationService implements NotificationService {
 
     private final DiscordWebhookService discordService;
     private final LineNotificationService lineService;
 
-    public CompositeNotificationService(DiscordWebhookService discordService,
-                                        LineNotificationService lineService) {
-        this.discordService = discordService;
-        this.lineService = lineService;
-    }
 
     @Override
     public void sendNotification(String title, String message, int color) {
