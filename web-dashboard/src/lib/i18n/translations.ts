@@ -702,6 +702,11 @@ const translations = {
       "zh-TW": "聯繫管理員",
       "zh-CN": "联系管理员",
     },
+    twdRefreshRate: {
+      en: "Refresh rate",
+      "zh-TW": "更新匯率",
+      "zh-CN": "更新汇率",
+    },
 
     passwordChangedToast: { en: "Password changed successfully. Logging out in 2 seconds...", "zh-TW": "密碼修改成功，2 秒後自動登出...", "zh-CN": "密码修改成功，2 秒后自动退出..." },
     autoTradeConfirmEnablePrereqs: { en: "Prerequisites met:", "zh-TW": "已滿足前置條件：", "zh-CN": "已满足前置条件：" },
