@@ -352,7 +352,7 @@ public class LineRichMenuService {
                 new CellDesign("訂閱方案", "money.png"),
                 new CellDesign("註冊帳號", "memo.png"),
                 new CellDesign("綁定帳號", "link.png"),
-                new CellDesign("聯繫客服", "phone.png"),
+                new CellDesign("聯繫客服", "speech.png"),
                 new CellDesign("使用說明", "book.png"),
         };
         return generateMenuImage(cells);
@@ -364,7 +364,7 @@ public class LineRichMenuService {
                 new CellDesign("績效總覽", "chart-up.png"),
                 new CellDesign("通知設定", "gear.png"),
                 new CellDesign("訂閱方案", "money.png"),
-                new CellDesign("聯繫客服", "phone.png"),
+                new CellDesign("聯繫客服", "speech.png"),
                 new CellDesign("官網首頁", "globe.png"),
         };
         return generateMenuImage(cells);
@@ -386,15 +386,15 @@ public class LineRichMenuService {
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
 
-        // 背景
-        g.setColor(new Color(0x1A, 0x1A, 0x2E));
+        // 純黑背景
+        g.setColor(Color.BLACK);
         g.fillRect(0, 0, WIDTH, HEIGHT);
 
         int cellW = WIDTH / COLS;
         int cellH = HEIGHT / ROWS;
 
-        // 格線
-        g.setColor(new Color(0x2D, 0x2D, 0x44));
+        // 格線（黑底上微微可見）
+        g.setColor(new Color(0x1A, 0x1A, 0x1A));
         g.setStroke(new BasicStroke(3));
         for (int c = 1; c < COLS; c++) {
             g.drawLine(c * cellW, 0, c * cellW, HEIGHT);
@@ -402,10 +402,10 @@ public class LineRichMenuService {
         g.drawLine(0, cellH, WIDTH, cellH);
 
         // 中文標籤字型（CJK 字型由 Docker 的 fonts-noto-cjk 提供）
-        Font labelFont = new Font("SansSerif", Font.BOLD, 56);
+        Font labelFont = new Font("SansSerif", Font.BOLD, 80);
 
-        // emoji 繪製尺寸（72px 原圖放大到 120px，在 2500px 寬的圖上看起來清晰）
-        int emojiSize = 120;
+        // emoji 繪製尺寸（72px 原圖放大到 180px，在 2500px 寬的圖上大而清晰）
+        int emojiSize = 180;
 
         for (int i = 0; i < cells.length; i++) {
             CellDesign cell = cells[i];
@@ -418,16 +418,16 @@ public class LineRichMenuService {
             BufferedImage emoji = loadEmojiImage(cell.emojiFile());
             if (emoji != null) {
                 int emojiX = cx - emojiSize / 2;
-                int emojiY = cy - emojiSize / 2 - 50;
+                int emojiY = cy - emojiSize / 2 - 70;
                 g.drawImage(emoji, emojiX, emojiY, emojiSize, emojiSize, null);
             }
 
             // 中文標籤（emoji 下方）
             g.setFont(labelFont);
-            g.setColor(new Color(0xDD, 0xDD, 0xDD));
+            g.setColor(new Color(0xEE, 0xEE, 0xEE));
             FontMetrics labelFm = g.getFontMetrics();
             int labelX = cx - labelFm.stringWidth(cell.label()) / 2;
-            int labelY = cy + emojiSize / 2 - 50 + 40 + labelFm.getAscent();
+            int labelY = cy + emojiSize / 2 - 70 + 50 + labelFm.getAscent();
             g.drawString(cell.label(), labelX, labelY);
         }
 
