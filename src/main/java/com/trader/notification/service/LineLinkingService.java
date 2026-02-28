@@ -75,8 +75,12 @@ public class LineLinkingService {
     public void handleFollow(String lineUserId, String replyToken) {
         log.info("LINE 用戶加入好友: lineUserId={}", lineUserId);
         replyText(replyToken,
-                "歡迎使用 Crypto Signal Trader！\n\n" +
-                "請在網站設定頁面取得連結碼，然後在此輸入連結碼完成綁定。");
+                "🔗 綁定帳號，接收交易通知\n\n" +
+                "1️⃣ 註冊 / 登入 → https://hook-fi.com\n" +
+                "2️⃣ 前往「設定」→「LINE 通知」\n" +
+                "3️⃣ 點「產生連結碼」\n" +
+                "4️⃣ 將 8 位數連結碼貼到這裡\n\n" +
+                "完成後即可收到即時交易通知 ✅");
     }
 
     /**
