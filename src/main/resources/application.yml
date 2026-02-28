@@ -115,6 +115,7 @@ advisor:
   max-response-tokens: 1024
   recent-trades-count: 10
   temperature-value: 0.7
+  scoring-enabled: ${ADVISOR_SCORING_ENABLED:false}
 
 # ========== Email OTP 驗證 + 密碼重設 ==========
 email:

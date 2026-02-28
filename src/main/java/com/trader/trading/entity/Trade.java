@@ -71,6 +71,10 @@ public class Trade {
     // === 去重 ===
     private String signalHash;           // 訊號去重雜湊 SHA256(symbol|side|entryPrice|stopLoss)
 
+    // === AI 信號評分 ===
+    private Integer aiConfidence;        // AI 信心分數 0-100（null=未評分）
+    private String aiReasoning;          // AI 評分理由（繁中，≤50字）
+
     // === 訊號來源 ===
     private String sourcePlatform;       // 來源平台: DISCORD, TELEGRAM, MANUAL, etc.
     private String sourceChannelId;      // 頻道 ID

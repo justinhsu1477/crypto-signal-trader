@@ -1,9 +1,12 @@
 package com.trader.trading.service;
 
+import com.trader.advisor.dto.SignalScore;
+import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
+import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
@@ -12,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -32,6 +36,8 @@ public class BroadcastTradeService {
     private final NotificationService discordWebhookService;
     private final UserApiKeyService userApiKeyService;
     private final SubscriptionRepository subscriptionRepository;
+    private final SignalScoringService signalScoringService;
+    private final TradeRepository tradeRepository;
     private final ExecutorService broadcastExecutor;
 
     private static final long TASK_TIMEOUT_SECONDS = 30;
@@ -42,12 +48,16 @@ public class BroadcastTradeService {
             NotificationService discordWebhookService,
             UserApiKeyService userApiKeyService,
             SubscriptionRepository subscriptionRepository,
+            SignalScoringService signalScoringService,
+            TradeRepository tradeRepository,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor) {
         this.userRepository = userRepository;
         this.binanceFuturesService = binanceFuturesService;
         this.discordWebhookService = discordWebhookService;
         this.userApiKeyService = userApiKeyService;
         this.subscriptionRepository = subscriptionRepository;
+        this.signalScoringService = signalScoringService;
+        this.tradeRepository = tradeRepository;
         this.broadcastExecutor = broadcastExecutor;
     }
 
@@ -60,6 +70,10 @@ public class BroadcastTradeService {
      * @return 執行結果統計
      */
     public Map<String, Object> broadcastTrade(TradeRequest request) {
+        // 啟動 AI 信號評分（非同步，不阻塞任何交易流程）
+        LocalDateTime broadcastStartTime = LocalDateTime.now();
+        CompletableFuture<SignalScore> scoreFuture = signalScoringService.scoreAsync(request);
+
         // 一次查詢所有用戶，按角色分流：Admin 只收通知不下單
         List<User> allUsers = userRepository.findAll();
 
@@ -166,12 +180,15 @@ public class BroadcastTradeService {
                                 .findFirst().orElse(results.get(0))
                             : null;
 
-                    // 發送 enriched 成功通知給用戶（含實際成交價/PnL）
+                    // 非阻塞檢查：AI 分數是否已就緒？
+                    SignalScore score = scoreFuture.getNow(null);
+
+                    // 發送 enriched 成功通知給用戶（含實際成交價/PnL/AI 評分）
                     String successTitle = isCloseAction ? "✅ 廣播平倉已執行" : "✅ 廣播跟單已執行";
                     discordWebhookService.sendNotificationToUser(
                             user.getUserId(),
                             successTitle,
-                            formatUserResultBody(request, mainResult, userDisplay),
+                            formatUserResultBody(request, mainResult, userDisplay, score),
                             DiscordWebhookService.COLOR_GREEN);
 
                     // 收集成交明細供 Admin 報告（限 maxSuccessDetails 筆）
@@ -221,6 +238,30 @@ public class BroadcastTradeService {
             log.info("廣播跟單完成: 成功={} 失敗={} 超時取消={}",
                     successCount.get(), failCount.get(), cancelledCount);
 
+            // 取得最終 AI 評分（短暫等待，大部分情況分數早已就緒）
+            SignalScore finalScore = null;
+            try {
+                finalScore = scoreFuture.get(3, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                log.debug("AI 評分未及時完成，跳過");
+            } catch (ExecutionException e) {
+                log.warn("AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            }
+
+            // 批次更新此次廣播建立的所有 Trade 記錄
+            if (finalScore != null) {
+                try {
+                    int updated = tradeRepository.updateAiScore(
+                            request.getSymbol(),
+                            finalScore.getConfidence(),
+                            finalScore.getReasoning(),
+                            broadcastStartTime);
+                    log.info("AI 評分已寫入 {} 筆 Trade 記錄 (confidence={})", updated, finalScore.getConfidence());
+                } catch (Exception e) {
+                    log.warn("AI 評分寫入 DB 失敗: {}", e.getMessage());
+                }
+            }
+
             // 廣播完成 — 發彙總報告給每位 Admin（per-user webhook）
             StringBuilder summaryBuilder = new StringBuilder(
                     String.format("%s %s\n成功: %d 人\n失敗: %d 人\n超時: %d 人\n跳過 (無訂閱): %d 人\n跳過 (無 API Key): %d 人\n總計: %d 人",
@@ -234,6 +275,15 @@ public class BroadcastTradeService {
                 double pnlAvg = pnlTotal / pnlCount.get();
                 summaryBuilder.append(String.format("\n\n總損益: %+.2f USDT\n平均: %+.2f USDT",
                         pnlTotal, pnlAvg));
+            }
+
+            // AI 評分（如有）
+            if (finalScore != null) {
+                summaryBuilder.append(String.format("\n\n🤖 AI 評分: %d/100 %s %s\n%s",
+                        finalScore.getConfidence(),
+                        finalScore.getRiskEmoji(),
+                        finalScore.getRiskLevelDisplay(),
+                        finalScore.getReasoning()));
             }
 
             // 附上成交明細（最多 10 筆）
@@ -305,7 +355,7 @@ public class BroadcastTradeService {
     /**
      * 格式化用戶成交通知（enriched，含實際成交價/PnL）
      */
-    private String formatUserResultBody(TradeRequest request, OrderResult result, String userDisplay) {
+    private String formatUserResultBody(TradeRequest request, OrderResult result, String userDisplay, SignalScore score) {
         StringBuilder sb = new StringBuilder();
         sb.append(request.getSymbol());
 
@@ -352,6 +402,16 @@ public class BroadcastTradeService {
 
         sb.append("用戶: ").append(userDisplay);
         sb.append("\n訊號來源: 廣播");
+
+        // AI 評分（若已就緒）
+        if (score != null) {
+            sb.append(String.format("\n🤖 AI: %d/100 %s %s — %s",
+                    score.getConfidence(),
+                    score.getRiskEmoji(),
+                    score.getRiskLevelDisplay(),
+                    score.getReasoning()));
+        }
+
         return sb.toString();
     }
 
