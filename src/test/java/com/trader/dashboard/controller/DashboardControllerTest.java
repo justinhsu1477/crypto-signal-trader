@@ -12,6 +12,9 @@ import com.trader.user.entity.User;
 import com.trader.user.entity.UserDiscordWebhook;
 import com.trader.user.entity.UserTradeSettings;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.subscription.entity.Plan;
+import com.trader.subscription.repository.PlanRepository;
+import com.trader.subscription.service.SubscriptionService;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserDiscordWebhookService;
 import com.trader.user.service.UserTradeSettingsService;
@@ -37,6 +40,8 @@ class DashboardControllerTest {
     private UserDiscordWebhookService webhookService;
     private UserTradeSettingsService tradeSettingsService;
     private DiscordWebhookService discordWebhookService;
+    private SubscriptionService subscriptionService;
+    private PlanRepository planRepository;
     private DashboardController controller;
     private MockedStatic<SecurityUtil> securityUtil;
 
@@ -47,9 +52,20 @@ class DashboardControllerTest {
         webhookService = mock(UserDiscordWebhookService.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
         discordWebhookService = mock(DiscordWebhookService.class);
-        controller = new DashboardController(dashboardService, userRepository, webhookService, tradeSettingsService, discordWebhookService);
+        subscriptionService = mock(SubscriptionService.class);
+        planRepository = mock(PlanRepository.class);
+        controller = new DashboardController(dashboardService, userRepository, webhookService,
+                tradeSettingsService, discordWebhookService, subscriptionService, planRepository);
         securityUtil = mockStatic(SecurityUtil.class);
         securityUtil.when(SecurityUtil::getCurrentUserId).thenReturn("user-123");
+
+        // 預設：Free 方案（大部分測試用）
+        when(subscriptionService.getCurrentPlanId("user-123")).thenReturn("free");
+        Plan freePlan = Plan.builder()
+                .planId("free").name("Free")
+                .maxRiskPercent(0.10).maxPositions(1).maxSymbols(3).dcaLayersAllowed(0)
+                .build();
+        when(planRepository.findById("free")).thenReturn(Optional.of(freePlan));
     }
 
     @AfterEach
@@ -298,15 +314,15 @@ class DashboardControllerTest {
         }
 
         @Test
-        @DisplayName("PUT — 更新成功 — 回傳新設定")
+        @DisplayName("PUT — 更新成功（在方案限制內）— 回傳新設定")
         void updateTradeSettings() {
             UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
-            request.setRiskPercent(0.15);
+            request.setRiskPercent(0.08); // Free 上限 0.10，在範圍內
 
             UserTradeSettings updated = UserTradeSettings.builder()
-                    .userId("user-123").riskPercent(0.15).build();
+                    .userId("user-123").riskPercent(0.08).build();
             TradeSettingsResponse dto = TradeSettingsResponse.builder()
-                    .userId("user-123").riskPercent(0.15).build();
+                    .userId("user-123").riskPercent(0.08).build();
             when(tradeSettingsService.updateSettings("user-123", request)).thenReturn(updated);
             when(tradeSettingsService.toResponse(updated)).thenReturn(dto);
 
@@ -316,10 +332,10 @@ class DashboardControllerTest {
         }
 
         @Test
-        @DisplayName("PUT — 驗證失敗 — 400")
+        @DisplayName("PUT — 值域驗證失敗 — 400")
         void updateTradeSettingsValidationError() {
             UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
-            request.setRiskPercent(5.0); // 超出範圍
+            request.setRiskPercent(5.0); // 超出絕對範圍
 
             when(tradeSettingsService.updateSettings("user-123", request))
                     .thenThrow(new IllegalArgumentException("riskPercent 必須在 0.01 ~ 1.00 之間"));
@@ -330,8 +346,8 @@ class DashboardControllerTest {
         }
 
         @Test
-        @DisplayName("GET defaults — 回傳 free 方案預設值")
-        void getTradeSettingsDefaults() {
+        @DisplayName("GET defaults — Free 用戶回傳 Free 方案限制值")
+        void getTradeSettingsDefaults_freePlan() {
             ResponseEntity<TradeSettingsDefaultsResponse> response = controller.getTradeSettingsDefaults();
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
@@ -341,6 +357,133 @@ class DashboardControllerTest {
             assertThat(body.getMaxPositions()).isEqualTo(1);
             assertThat(body.getMaxSymbols()).isEqualTo(3);
             assertThat(body.getDcaLayersAllowed()).isEqualTo(0);
+        }
+
+        @Test
+        @DisplayName("GET defaults — Pro 用戶回傳 Pro 方案限制值")
+        void getTradeSettingsDefaults_proPlan() {
+            when(subscriptionService.getCurrentPlanId("user-123")).thenReturn("pro");
+            Plan proPlan = Plan.builder()
+                    .planId("pro").name("Pro")
+                    .maxRiskPercent(0.50).maxPositions(20).maxSymbols(50).dcaLayersAllowed(10)
+                    .build();
+            when(planRepository.findById("pro")).thenReturn(Optional.of(proPlan));
+
+            ResponseEntity<TradeSettingsDefaultsResponse> response = controller.getTradeSettingsDefaults();
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            TradeSettingsDefaultsResponse body = response.getBody();
+            assertThat(body.getPlanId()).isEqualTo("pro");
+            assertThat(body.getMaxRiskPercent()).isEqualTo(0.50);
+            assertThat(body.getMaxPositions()).isEqualTo(20);
+            assertThat(body.getMaxSymbols()).isEqualTo(50);
+            assertThat(body.getDcaLayersAllowed()).isEqualTo(10);
+        }
+    }
+
+    // ==================== 方案限制驗證 ====================
+
+    @Nested
+    @DisplayName("trade-settings — 方案限制驗證")
+    class PlanLimitTests {
+
+        @Test
+        @DisplayName("Free 用戶設 riskPercent=0.30 → 400（超過 Free 上限 10%）")
+        void freeUser_riskExceedsLimit() {
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setRiskPercent(0.30); // Free 上限 0.10
+
+            ResponseEntity<?> response = controller.updateTradeSettings(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body.get("error").toString()).contains("Free");
+        }
+
+        @Test
+        @DisplayName("Pro 用戶設 riskPercent=0.30 → 200（在 Pro 上限 50% 內）")
+        void proUser_riskWithinLimit() {
+            when(subscriptionService.getCurrentPlanId("user-123")).thenReturn("pro");
+            Plan proPlan = Plan.builder()
+                    .planId("pro").name("Pro")
+                    .maxRiskPercent(0.50).maxPositions(20).maxSymbols(50).dcaLayersAllowed(10)
+                    .build();
+            when(planRepository.findById("pro")).thenReturn(Optional.of(proPlan));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setRiskPercent(0.30);
+
+            UserTradeSettings updated = UserTradeSettings.builder()
+                    .userId("user-123").riskPercent(0.30).build();
+            TradeSettingsResponse dto = TradeSettingsResponse.builder()
+                    .userId("user-123").riskPercent(0.30).build();
+            when(tradeSettingsService.updateSettings("user-123", request)).thenReturn(updated);
+            when(tradeSettingsService.toResponse(updated)).thenReturn(dto);
+
+            ResponseEntity<?> response = controller.updateTradeSettings(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+        }
+
+        @Test
+        @DisplayName("Free 用戶設 allowedSymbols 4 個 → 400（上限 3）")
+        void freeUser_symbolsExceedLimit() {
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setAllowedSymbols(List.of("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"));
+
+            ResponseEntity<?> response = controller.updateTradeSettings(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body.get("error").toString()).contains("交易對上限");
+        }
+
+        @Test
+        @DisplayName("Basic 用戶設 dcaLayers=5 → 400（Basic 上限 3）")
+        void basicUser_dcaExceedsLimit() {
+            when(subscriptionService.getCurrentPlanId("user-123")).thenReturn("basic");
+            Plan basicPlan = Plan.builder()
+                    .planId("basic").name("Basic")
+                    .maxRiskPercent(0.20).maxPositions(5).maxSymbols(10).dcaLayersAllowed(3)
+                    .build();
+            when(planRepository.findById("basic")).thenReturn(Optional.of(basicPlan));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setMaxDcaLayers(5);
+
+            ResponseEntity<?> response = controller.updateTradeSettings(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body.get("error").toString()).contains("DCA");
+        }
+
+        @Test
+        @DisplayName("Basic 用戶設 riskPercent=0.20 → 200（剛好等於上限）")
+        void basicUser_riskAtExactLimit() {
+            when(subscriptionService.getCurrentPlanId("user-123")).thenReturn("basic");
+            Plan basicPlan = Plan.builder()
+                    .planId("basic").name("Basic")
+                    .maxRiskPercent(0.20).maxPositions(5).maxSymbols(10).dcaLayersAllowed(3)
+                    .build();
+            when(planRepository.findById("basic")).thenReturn(Optional.of(basicPlan));
+
+            UpdateTradeSettingsRequest request = new UpdateTradeSettingsRequest();
+            request.setRiskPercent(0.20); // 剛好等於上限
+
+            UserTradeSettings updated = UserTradeSettings.builder()
+                    .userId("user-123").riskPercent(0.20).build();
+            TradeSettingsResponse dto = TradeSettingsResponse.builder()
+                    .userId("user-123").riskPercent(0.20).build();
+            when(tradeSettingsService.updateSettings("user-123", request)).thenReturn(updated);
+            when(tradeSettingsService.toResponse(updated)).thenReturn(dto);
+
+            ResponseEntity<?> response = controller.updateTradeSettings(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
         }
     }
 
