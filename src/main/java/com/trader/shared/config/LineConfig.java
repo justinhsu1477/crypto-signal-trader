@@ -45,13 +45,16 @@ public class LineConfig {
     @Getter
     public static class RichMenuSettings {
         private final boolean enabled;
+        private final boolean forceRebuild;
         private final String webBaseUrl;
 
         public RichMenuSettings(
                 @DefaultValue("true") boolean enabled,
+                @DefaultValue("false") boolean forceRebuild,
                 @DefaultValue("https://hook-fi.com") String webBaseUrl
         ) {
             this.enabled = enabled;
+            this.forceRebuild = forceRebuild;
             this.webBaseUrl = webBaseUrl;
         }
     }
