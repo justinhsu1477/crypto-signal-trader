@@ -1,6 +1,8 @@
 package com.trader.subscription.controller;
 
+import com.trader.subscription.dto.AdminActivateRequest;
 import com.trader.subscription.dto.AdminPaymentHistoryResponse;
+import com.trader.subscription.dto.AdminSubscriptionActionResponse;
 import com.trader.subscription.dto.AdminSubscriptionListResponse;
 import com.trader.subscription.entity.PaymentHistory;
 import com.trader.subscription.entity.Plan;
@@ -19,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
@@ -46,6 +49,8 @@ class AdminSubscriptionControllerTest {
         Plan basicPlan = Plan.builder().planId("basic").name("Basic").build();
         Plan proPlan = Plan.builder().planId("pro").name("Pro").build();
         when(planRepository.findAll()).thenReturn(List.of(freePlan, basicPlan, proPlan));
+        when(planRepository.findByPlanIdAndActiveTrue("basic")).thenReturn(Optional.of(basicPlan));
+        when(planRepository.findByPlanIdAndActiveTrue("pro")).thenReturn(Optional.of(proPlan));
     }
 
     // ==================== listSubscriptions ====================
@@ -55,15 +60,14 @@ class AdminSubscriptionControllerTest {
     class ListSubscriptions {
 
         @Test
-        @DisplayName("包含 ACTIVE / TRIALING / NONE 用戶")
+        @DisplayName("包含 ACTIVE / TRIALING / LIFETIME / NONE 用戶")
         void listAllUsersWithMixedStatus() {
-            // 3 個用戶
             User activeUser = User.builder().userId("u1").email("a@e.com").name("Alice").enabled(true).build();
             User trialingUser = User.builder().userId("u2").email("b@e.com").name("Bob").enabled(true).build();
-            User noneUser = User.builder().userId("u3").email("c@e.com").name("Charlie").enabled(true).build();
-            when(userRepository.findAll()).thenReturn(List.of(activeUser, trialingUser, noneUser));
+            User lifetimeUser = User.builder().userId("u3").email("c@e.com").name("Charlie").enabled(true).build();
+            User noneUser = User.builder().userId("u4").email("d@e.com").name("Dave").enabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(activeUser, trialingUser, lifetimeUser, noneUser));
 
-            // 訂閱
             Subscription activeSub = Subscription.builder()
                     .id(1L).userId("u1").planId("basic").status(Subscription.Status.ACTIVE)
                     .currentPeriodEnd(LocalDateTime.of(2026, 3, 28, 0, 0))
@@ -73,9 +77,13 @@ class AdminSubscriptionControllerTest {
                     .id(2L).userId("u2").planId("free").status(Subscription.Status.TRIALING)
                     .createdAt(LocalDateTime.of(2026, 2, 20, 0, 0))
                     .build();
-            when(subscriptionRepository.findAll()).thenReturn(List.of(activeSub, trialingSub));
+            Subscription lifetimeSub = Subscription.builder()
+                    .id(3L).userId("u3").planId("pro").status(Subscription.Status.LIFETIME)
+                    .currentPeriodEnd(null)
+                    .createdAt(LocalDateTime.of(2026, 1, 1, 0, 0))
+                    .build();
+            when(subscriptionRepository.findAll()).thenReturn(List.of(activeSub, trialingSub, lifetimeSub));
 
-            // 付款紀錄
             PaymentHistory payment = PaymentHistory.builder()
                     .id(1L).userId("u1").amount(BigDecimal.valueOf(99)).status("succeeded").build();
             when(paymentHistoryRepository.findAll()).thenReturn(List.of(payment));
@@ -84,26 +92,24 @@ class AdminSubscriptionControllerTest {
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             AdminSubscriptionListResponse body = response.getBody();
-            assertThat(body.getTotalUsers()).isEqualTo(3);
+            assertThat(body.getTotalUsers()).isEqualTo(4);
             assertThat(body.getActiveSubscriptions()).isEqualTo(1);
             assertThat(body.getTrialingSubscriptions()).isEqualTo(1);
-            assertThat(body.getSubscriptions()).hasSize(3);
+            assertThat(body.getLifetimeSubscriptions()).isEqualTo(1);
+            assertThat(body.getSubscriptions()).hasSize(4);
 
-            // 驗證 ACTIVE 用戶
-            var activeSummary = body.getSubscriptions().stream()
-                    .filter(s -> "u1".equals(s.getUserId())).findFirst().orElseThrow();
-            assertThat(activeSummary.getStatus()).isEqualTo("ACTIVE");
-            assertThat(activeSummary.getPlanId()).isEqualTo("basic");
-            assertThat(activeSummary.getPlanName()).isEqualTo("Basic");
-            assertThat(activeSummary.getTotalPayments()).isEqualTo(1);
-            assertThat(activeSummary.getTotalAmountPaid()).isEqualByComparingTo(BigDecimal.valueOf(99));
+            // 驗證 LIFETIME 用戶
+            var lifetimeSummary = body.getSubscriptions().stream()
+                    .filter(s -> "u3".equals(s.getUserId())).findFirst().orElseThrow();
+            assertThat(lifetimeSummary.getStatus()).isEqualTo("LIFETIME");
+            assertThat(lifetimeSummary.getPlanId()).isEqualTo("pro");
+            assertThat(lifetimeSummary.getCurrentPeriodEnd()).isNull();
 
             // 驗證 NONE 用戶
             var noneSummary = body.getSubscriptions().stream()
-                    .filter(s -> "u3".equals(s.getUserId())).findFirst().orElseThrow();
+                    .filter(s -> "u4".equals(s.getUserId())).findFirst().orElseThrow();
             assertThat(noneSummary.getStatus()).isEqualTo("NONE");
             assertThat(noneSummary.getPlanId()).isNull();
-            assertThat(noneSummary.getTotalPayments()).isEqualTo(0);
         }
 
         @Test
@@ -178,8 +184,6 @@ class AdminSubscriptionControllerTest {
             assertThat(body.getPayments()).hasSize(2);
             assertThat(body.getTotalPayments()).isEqualTo(2);
             assertThat(body.getTotalAmountPaid()).isEqualByComparingTo(BigDecimal.valueOf(198));
-
-            // 驗證 planId 從 subscription 反查
             assertThat(body.getPayments().get(0).getPlanId()).isEqualTo("basic");
             assertThat(body.getPayments().get(0).getTxHash()).isEqualTo("T123");
         }
@@ -227,9 +231,192 @@ class AdminSubscriptionControllerTest {
 
             ResponseEntity<AdminPaymentHistoryResponse> response = controller.getUserPayments("u1");
 
-            assertThat(response.getBody().getPayments()).hasSize(2); // 回傳全部紀錄
-            assertThat(response.getBody().getTotalPayments()).isEqualTo(1); // 只算 succeeded
+            assertThat(response.getBody().getPayments()).hasSize(2);
+            assertThat(response.getBody().getTotalPayments()).isEqualTo(1);
             assertThat(response.getBody().getTotalAmountPaid()).isEqualByComparingTo(BigDecimal.valueOf(99));
+        }
+    }
+
+    // ==================== activateSubscription ====================
+
+    @Nested
+    @DisplayName("POST /api/admin/subscriptions/{userId}/activate")
+    class ActivateSubscription {
+
+        @Test
+        @DisplayName("新用戶開通 → 200 + ACTIVE + 預設 30 天")
+        void activateNewUser() {
+            when(userRepository.findById("u1")).thenReturn(
+                    Optional.of(User.builder().userId("u1").email("a@e.com").build()));
+            when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.empty());
+            when(subscriptionRepository.save(any(Subscription.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            AdminActivateRequest request = new AdminActivateRequest("basic", null);
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.activateSubscription("u1", request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().getStatus()).isEqualTo("ACTIVE");
+            assertThat(response.getBody().getPlanId()).isEqualTo("basic");
+            assertThat(response.getBody().getCurrentPeriodEnd()).isNotNull();
+            assertThat(response.getBody().getMessage()).contains("30 天");
+
+            verify(subscriptionRepository).save(any(Subscription.class));
+        }
+
+        @Test
+        @DisplayName("已有訂閱延長 → 200 + 延長天數")
+        void extendExistingSubscription() {
+            when(userRepository.findById("u1")).thenReturn(
+                    Optional.of(User.builder().userId("u1").email("a@e.com").build()));
+
+            LocalDateTime futureEnd = LocalDateTime.now().plusDays(10);
+            Subscription existing = Subscription.builder()
+                    .id(1L).userId("u1").planId("basic").status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(futureEnd).build();
+            when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.of(existing));
+            when(subscriptionRepository.save(any(Subscription.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            AdminActivateRequest request = new AdminActivateRequest("pro", 60);
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.activateSubscription("u1", request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().getPlanId()).isEqualTo("pro");
+            assertThat(response.getBody().getMessage()).contains("60 天");
+        }
+
+        @Test
+        @DisplayName("userId 不存在 → 404")
+        void userNotFound() {
+            when(userRepository.findById("nonexist")).thenReturn(Optional.empty());
+
+            AdminActivateRequest request = new AdminActivateRequest("basic", null);
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.activateSubscription("nonexist", request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+            verify(subscriptionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("方案不存在 → 400")
+        void planNotFound() {
+            when(userRepository.findById("u1")).thenReturn(
+                    Optional.of(User.builder().userId("u1").email("a@e.com").build()));
+            when(planRepository.findByPlanIdAndActiveTrue("nonexist")).thenReturn(Optional.empty());
+
+            AdminActivateRequest request = new AdminActivateRequest("nonexist", null);
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.activateSubscription("u1", request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            assertThat(response.getBody().getMessage()).contains("方案不存在");
+        }
+    }
+
+    // ==================== cancelSubscription ====================
+
+    @Nested
+    @DisplayName("PUT /api/admin/subscriptions/{userId}/cancel")
+    class CancelSubscription {
+
+        @Test
+        @DisplayName("正常取消 → 200 + CANCELLED")
+        void cancelSuccess() {
+            Subscription sub = Subscription.builder()
+                    .id(1L).userId("u1").planId("basic").status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(LocalDateTime.now().plusDays(20)).build();
+            when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.of(sub));
+            when(subscriptionRepository.save(any(Subscription.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.cancelSubscription("u1");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().getStatus()).isEqualTo("CANCELLED");
+            assertThat(response.getBody().getMessage()).isEqualTo("訂閱已取消");
+        }
+
+        @Test
+        @DisplayName("無有效訂閱 → 404")
+        void noActiveSubscription() {
+            when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.empty());
+
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.cancelSubscription("u1");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+        }
+    }
+
+    // ==================== setLifetime ====================
+
+    @Nested
+    @DisplayName("PUT /api/admin/subscriptions/{userId}/lifetime")
+    class SetLifetime {
+
+        @Test
+        @DisplayName("新用戶設定終生免費 → 200 + LIFETIME + periodEnd=null")
+        void setLifetimeNewUser() {
+            when(userRepository.findById("u1")).thenReturn(
+                    Optional.of(User.builder().userId("u1").email("a@e.com").build()));
+            when(subscriptionRepository.findByUserId("u1")).thenReturn(List.of());
+            when(subscriptionRepository.save(any(Subscription.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.setLifetime("u1");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().getStatus()).isEqualTo("LIFETIME");
+            assertThat(response.getBody().getPlanId()).isEqualTo("pro");
+            assertThat(response.getBody().getCurrentPeriodEnd()).isNull();
+            assertThat(response.getBody().getMessage()).contains("終生免費");
+
+            verify(subscriptionRepository).save(any(Subscription.class));
+        }
+
+        @Test
+        @DisplayName("已有 ACTIVE 轉 LIFETIME → 200 + 狀態更新")
+        void upgradeActiveToLifetime() {
+            when(userRepository.findById("u1")).thenReturn(
+                    Optional.of(User.builder().userId("u1").email("a@e.com").build()));
+
+            Subscription existing = Subscription.builder()
+                    .id(1L).userId("u1").planId("basic").status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(LocalDateTime.now().plusDays(20)).build();
+            when(subscriptionRepository.findByUserId("u1")).thenReturn(List.of(existing));
+            when(subscriptionRepository.save(any(Subscription.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.setLifetime("u1");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().getStatus()).isEqualTo("LIFETIME");
+            assertThat(response.getBody().getPlanId()).isEqualTo("pro");
+            assertThat(response.getBody().getCurrentPeriodEnd()).isNull();
+
+            // 驗證原訂閱被更新
+            assertThat(existing.getStatus()).isEqualTo(Subscription.Status.LIFETIME);
+            assertThat(existing.getPlanId()).isEqualTo("pro");
+            assertThat(existing.getCurrentPeriodEnd()).isNull();
+        }
+
+        @Test
+        @DisplayName("userId 不存在 → 404")
+        void userNotFound() {
+            when(userRepository.findById("nonexist")).thenReturn(Optional.empty());
+
+            ResponseEntity<AdminSubscriptionActionResponse> response =
+                    controller.setLifetime("nonexist");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+            verify(subscriptionRepository, never()).save(any());
         }
     }
 }

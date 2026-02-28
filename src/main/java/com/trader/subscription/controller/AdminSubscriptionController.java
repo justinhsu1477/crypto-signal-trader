@@ -1,6 +1,8 @@
 package com.trader.subscription.controller;
 
+import com.trader.subscription.dto.AdminActivateRequest;
 import com.trader.subscription.dto.AdminPaymentHistoryResponse;
+import com.trader.subscription.dto.AdminSubscriptionActionResponse;
 import com.trader.subscription.dto.AdminSubscriptionListResponse;
 import com.trader.subscription.dto.AdminSubscriptionListResponse.UserSubscriptionSummary;
 import com.trader.subscription.entity.PaymentHistory;
@@ -11,12 +13,16 @@ import com.trader.subscription.repository.PlanRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.trader.shared.config.AppConstants;
+
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,8 +33,11 @@ import java.util.stream.Collectors;
  * 管理員訂閱管理 API
  *
  * 端點：
- * - GET /api/admin/subscriptions             — 所有用戶訂閱狀態 + 付款摘要
- * - GET /api/admin/subscriptions/{userId}/payments — 指定用戶付款歷史
+ * - GET    /api/admin/subscriptions                   — 所有用戶訂閱狀態 + 付款摘要
+ * - GET    /api/admin/subscriptions/{userId}/payments  — 指定用戶付款歷史
+ * - POST   /api/admin/subscriptions/{userId}/activate  — 手動開通/延長訂閱
+ * - PUT    /api/admin/subscriptions/{userId}/cancel     — 手動取消訂閱
+ * - PUT    /api/admin/subscriptions/{userId}/lifetime   — 設定終生免費
  *
  * 安全：路徑 /api/admin/** 已被 AuthConfig hasRole("ADMIN") 保護
  */
@@ -42,6 +51,8 @@ public class AdminSubscriptionController {
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentHistoryRepository paymentHistoryRepository;
     private final PlanRepository planRepository;
+
+    // ==================== 查詢端點 ====================
 
     /**
      * 列出所有用戶的訂閱狀態 + 付款摘要
@@ -89,12 +100,15 @@ public class AdminSubscriptionController {
                 .filter(s -> "ACTIVE".equals(s.getStatus())).count();
         long trialingSubs = summaries.stream()
                 .filter(s -> "TRIALING".equals(s.getStatus())).count();
+        long lifetimeSubs = summaries.stream()
+                .filter(s -> "LIFETIME".equals(s.getStatus())).count();
 
         return ResponseEntity.ok(AdminSubscriptionListResponse.builder()
                 .subscriptions(summaries)
                 .totalUsers(allUsers.size())
                 .activeSubscriptions(activeSubs)
                 .trialingSubscriptions(trialingSubs)
+                .lifetimeSubscriptions(lifetimeSubs)
                 .build());
     }
 
@@ -161,15 +175,173 @@ public class AdminSubscriptionController {
                 .build());
     }
 
+    // ==================== 管理端點 ====================
+
+    /**
+     * 手動開通或延長訂閱
+     * POST /api/admin/subscriptions/{userId}/activate
+     */
+    @PostMapping("/{userId}/activate")
+    public ResponseEntity<AdminSubscriptionActionResponse> activateSubscription(
+            @PathVariable String userId,
+            @Valid @RequestBody AdminActivateRequest request) {
+
+        // 驗證用戶存在
+        if (userRepository.findById(userId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // 驗證方案存在
+        Optional<Plan> planOpt = planRepository.findByPlanIdAndActiveTrue(request.getPlanId());
+        if (planOpt.isEmpty()) {
+            return ResponseEntity.badRequest().body(AdminSubscriptionActionResponse.builder()
+                    .userId(userId)
+                    .message("方案不存在: " + request.getPlanId())
+                    .build());
+        }
+
+        int days = request.getDays() != null ? request.getDays() : 30;
+        LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
+
+        // 查找現有有效訂閱
+        Optional<Subscription> existingOpt = subscriptionRepository.findActiveByUserId(userId);
+
+        Subscription sub;
+        String action;
+        if (existingOpt.isPresent()) {
+            sub = existingOpt.get();
+            // LIFETIME 用戶只更新方案，不動日期
+            if (sub.getStatus() == Subscription.Status.LIFETIME) {
+                sub.setPlanId(request.getPlanId());
+                action = "方案已更新（終生免費用戶）";
+            } else {
+                // 延長：從現有到期日或今天開始
+                LocalDateTime base = sub.getCurrentPeriodEnd() != null
+                        && sub.getCurrentPeriodEnd().isAfter(now)
+                        ? sub.getCurrentPeriodEnd() : now;
+                sub.setPlanId(request.getPlanId());
+                sub.setStatus(Subscription.Status.ACTIVE);
+                sub.setCurrentPeriodEnd(base.plusDays(days));
+                action = String.format("訂閱已延長 %d 天，到期日: %s",
+                        days, sub.getCurrentPeriodEnd().toLocalDate());
+            }
+        } else {
+            // 新建訂閱
+            sub = Subscription.builder()
+                    .userId(userId)
+                    .planId(request.getPlanId())
+                    .status(Subscription.Status.ACTIVE)
+                    .currentPeriodStart(now)
+                    .currentPeriodEnd(now.plusDays(days))
+                    .build();
+            action = String.format("訂閱已開通 %d 天，到期日: %s",
+                    days, sub.getCurrentPeriodEnd().toLocalDate());
+        }
+
+        subscriptionRepository.save(sub);
+        log.info("Admin 手動操作訂閱: userId={}, planId={}, action={}",
+                userId, request.getPlanId(), action);
+
+        return ResponseEntity.ok(AdminSubscriptionActionResponse.builder()
+                .userId(userId)
+                .planId(sub.getPlanId())
+                .status(sub.getStatus().name())
+                .currentPeriodEnd(sub.getCurrentPeriodEnd())
+                .message(action)
+                .build());
+    }
+
+    /**
+     * 手動取消訂閱
+     * PUT /api/admin/subscriptions/{userId}/cancel
+     */
+    @PutMapping("/{userId}/cancel")
+    public ResponseEntity<AdminSubscriptionActionResponse> cancelSubscription(
+            @PathVariable String userId) {
+
+        Optional<Subscription> subOpt = subscriptionRepository.findActiveByUserId(userId);
+        if (subOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Subscription sub = subOpt.get();
+        LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
+
+        sub.setStatus(Subscription.Status.CANCELLED);
+        sub.setCurrentPeriodEnd(now);
+        subscriptionRepository.save(sub);
+
+        log.info("Admin 手動取消訂閱: userId={}, 原方案={}", userId, sub.getPlanId());
+
+        return ResponseEntity.ok(AdminSubscriptionActionResponse.builder()
+                .userId(userId)
+                .planId(sub.getPlanId())
+                .status("CANCELLED")
+                .currentPeriodEnd(now)
+                .message("訂閱已取消")
+                .build());
+    }
+
+    /**
+     * 設定終生免費
+     * PUT /api/admin/subscriptions/{userId}/lifetime
+     *
+     * 自動給予 Pro 方案權限，currentPeriodEnd = null（永不過期）
+     */
+    @PutMapping("/{userId}/lifetime")
+    public ResponseEntity<AdminSubscriptionActionResponse> setLifetime(
+            @PathVariable String userId) {
+
+        // 驗證用戶存在
+        if (userRepository.findById(userId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
+
+        // 查找現有訂閱（包括已取消的）
+        Optional<Subscription> existingOpt = subscriptionRepository.findByUserId(userId)
+                .stream()
+                .findFirst();
+
+        Subscription sub;
+        if (existingOpt.isPresent()) {
+            sub = existingOpt.get();
+            sub.setStatus(Subscription.Status.LIFETIME);
+            sub.setPlanId("pro");
+            sub.setCurrentPeriodEnd(null);  // 永不過期
+        } else {
+            sub = Subscription.builder()
+                    .userId(userId)
+                    .planId("pro")
+                    .status(Subscription.Status.LIFETIME)
+                    .currentPeriodStart(now)
+                    .currentPeriodEnd(null)  // 永不過期
+                    .build();
+        }
+
+        subscriptionRepository.save(sub);
+        log.info("Admin 設定終生免費: userId={}", userId);
+
+        return ResponseEntity.ok(AdminSubscriptionActionResponse.builder()
+                .userId(userId)
+                .planId("pro")
+                .status("LIFETIME")
+                .currentPeriodEnd(null)
+                .message("已設定為終生免費（Pro 方案）")
+                .build());
+    }
+
     // ==================== private helpers ====================
 
     /**
-     * Build map: userId → 最新的 ACTIVE/TRIALING 訂閱
+     * Build map: userId → 最新的 ACTIVE/TRIALING/LIFETIME 訂閱
      */
     private Map<String, Subscription> buildActiveSubscriptionMap() {
         return subscriptionRepository.findAll().stream()
                 .filter(s -> s.getStatus() == Subscription.Status.ACTIVE
-                        || s.getStatus() == Subscription.Status.TRIALING)
+                        || s.getStatus() == Subscription.Status.TRIALING
+                        || s.getStatus() == Subscription.Status.LIFETIME)
                 .collect(Collectors.toMap(
                         Subscription::getUserId,
                         Function.identity(),
