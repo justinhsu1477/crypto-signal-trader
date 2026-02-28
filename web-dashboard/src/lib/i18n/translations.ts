@@ -326,6 +326,8 @@ const translations = {
     contactEmailDesc: { en: "We usually respond within 24 hours", "zh-TW": "我們通常在 24 小時內回覆", "zh-CN": "我们通常在 24 小时内回复" },
     contactLine: { en: "LINE Support", "zh-TW": "LINE 客服", "zh-CN": "LINE 客服" },
     contactLineDesc: { en: "Chat with us on LINE for quick support", "zh-TW": "透過 LINE 即時諮詢，快速回覆", "zh-CN": "通过 LINE 即时咨询，快速回复" },
+    contactTelegram: { en: "Telegram", "zh-TW": "Telegram", "zh-CN": "Telegram" },
+    contactTelegramDesc: { en: "Message us on Telegram", "zh-TW": "透過 Telegram 聯繫我們", "zh-CN": "通过 Telegram 联系我们" },
     contactDiscord: { en: "Discord Community", "zh-TW": "Discord 社群", "zh-CN": "Discord 社区" },
     contactDiscordDesc: { en: "Join our community for real-time help", "zh-TW": "加入社群獲得即時協助", "zh-CN": "加入社区获得即时帮助" },
   },
