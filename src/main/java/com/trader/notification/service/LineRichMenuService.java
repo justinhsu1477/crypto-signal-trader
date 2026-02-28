@@ -302,36 +302,44 @@ public class LineRichMenuService {
 
     // ==================== 圖片產生（Java2D）====================
 
+    /**
+     * 圖示設計資料：標籤、強調色、圓形內單字 icon
+     * 不使用 emoji（Java2D 在 Linux/Docker 無法渲染 emoji）
+     * 改用彩色圓形 + 中文單字，風格簡潔現代
+     */
+    private record CellDesign(String label, Color accentColor, String iconChar) {}
+
     private byte[] generateDefaultImage() throws IOException {
-        String[][] labels = {
-                {"🌐", "官網首頁"},
-                {"💰", "訂閱方案"},
-                {"📝", "註冊帳號"},
-                {"🔗", "綁定帳號"},
-                {"📞", "聯繫客服"},
-                {"📖", "使用說明"},
+        CellDesign[] cells = {
+                new CellDesign("官網首頁", new Color(0x4A, 0x9E, 0xFF), "首"),
+                new CellDesign("訂閱方案", new Color(0xFF, 0xB5, 0x20), "訂"),
+                new CellDesign("註冊帳號", new Color(0x4A, 0xDE, 0x80), "冊"),
+                new CellDesign("綁定帳號", new Color(0xA7, 0x8B, 0xFA), "綁"),
+                new CellDesign("聯繫客服", new Color(0xFB, 0x92, 0x3C), "客"),
+                new CellDesign("使用說明", new Color(0x2D, 0xD4, 0xBF), "說"),
         };
-        return generateMenuImage(labels);
+        return generateMenuImage(cells);
     }
 
     private byte[] generateBoundImage() throws IOException {
-        String[][] labels = {
-                {"📊", "交易紀錄"},
-                {"📈", "績效總覽"},
-                {"⚙️", "通知設定"},
-                {"💰", "訂閱方案"},
-                {"📞", "聯繫客服"},
-                {"🌐", "官網首頁"},
+        CellDesign[] cells = {
+                new CellDesign("交易紀錄", new Color(0x4A, 0x9E, 0xFF), "易"),
+                new CellDesign("績效總覽", new Color(0x4A, 0xDE, 0x80), "績"),
+                new CellDesign("通知設定", new Color(0xA7, 0x8B, 0xFA), "設"),
+                new CellDesign("訂閱方案", new Color(0xFF, 0xB5, 0x20), "訂"),
+                new CellDesign("聯繫客服", new Color(0xFB, 0x92, 0x3C), "客"),
+                new CellDesign("官網首頁", new Color(0x2D, 0xD4, 0xBF), "首"),
         };
-        return generateMenuImage(labels);
+        return generateMenuImage(cells);
     }
 
     /**
      * 產生 Rich Menu 圖片（2500×1686，2×3 格）
      *
-     * 深色背景 + 格線 + 每格 emoji 標題 + 中文標籤
+     * 設計：深色背景 + 格線 + 每格彩色圓形 icon + 中文標籤
+     * 需要 CJK 字型（Docker 安裝 fonts-noto-cjk）
      */
-    private byte[] generateMenuImage(String[][] labels) throws IOException {
+    private byte[] generateMenuImage(CellDesign[] cells) throws IOException {
         BufferedImage img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = img.createGraphics();
 
@@ -354,29 +362,39 @@ public class LineRichMenuService {
         }
         g.drawLine(0, cellH, WIDTH, cellH);
 
-        // 每格繪製文字
-        Font emojiFont = new Font("SansSerif", Font.PLAIN, 80);
-        Font labelFont = new Font("SansSerif", Font.BOLD, 56);
+        // 字型（CJK 字型由 Docker 的 fonts-noto-cjk 提供）
+        Font iconFont = new Font("SansSerif", Font.BOLD, 72);
+        Font labelFont = new Font("SansSerif", Font.PLAIN, 52);
 
-        for (int i = 0; i < labels.length; i++) {
+        int circleR = 65;
+
+        for (int i = 0; i < cells.length; i++) {
+            CellDesign cell = cells[i];
             int col = i % COLS;
             int row = i / COLS;
             int cx = col * cellW + cellW / 2;
             int cy = row * cellH + cellH / 2;
 
-            // Emoji
-            g.setFont(emojiFont);
-            g.setColor(Color.WHITE);
-            FontMetrics emFm = g.getFontMetrics();
-            String emoji = labels[i][0];
-            g.drawString(emoji, cx - emFm.stringWidth(emoji) / 2, cy - 20);
+            // 彩色圓形 icon 背景（略偏上，留空間給文字）
+            int circleCY = cy - 50;
+            g.setColor(cell.accentColor());
+            g.fillOval(cx - circleR, circleCY - circleR, circleR * 2, circleR * 2);
 
-            // 標籤
+            // 圓形內白色單字
+            g.setFont(iconFont);
+            g.setColor(Color.WHITE);
+            FontMetrics iconFm = g.getFontMetrics();
+            int iconX = cx - iconFm.stringWidth(cell.iconChar()) / 2;
+            int iconY = circleCY + (iconFm.getAscent() - iconFm.getDescent()) / 2;
+            g.drawString(cell.iconChar(), iconX, iconY);
+
+            // 標籤文字（圓形下方）
             g.setFont(labelFont);
-            g.setColor(new Color(0xCC, 0xCC, 0xCC));
-            FontMetrics lbFm = g.getFontMetrics();
-            String label = labels[i][1];
-            g.drawString(label, cx - lbFm.stringWidth(label) / 2, cy + 60);
+            g.setColor(new Color(0xDD, 0xDD, 0xDD));
+            FontMetrics labelFm = g.getFontMetrics();
+            int labelX = cx - labelFm.stringWidth(cell.label()) / 2;
+            int labelY = circleCY + circleR + 30 + labelFm.getAscent();
+            g.drawString(cell.label(), labelX, labelY);
         }
 
         g.dispose();
