@@ -6,6 +6,9 @@ import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.subscription.entity.Plan;
+import com.trader.subscription.repository.PlanRepository;
+import com.trader.subscription.service.SubscriptionService;
 import com.trader.user.dto.TradeSettingsDefaultsResponse;
 import com.trader.user.dto.TradeSettingsResponse;
 import com.trader.user.dto.UpdateTradeSettingsRequest;
@@ -42,6 +45,8 @@ public class DashboardController {
     private final UserDiscordWebhookService webhookService;
     private final UserTradeSettingsService tradeSettingsService;
     private final NotificationService discordWebhookService;
+    private final SubscriptionService subscriptionService;
+    private final PlanRepository planRepository;
 
     /**
      * 首頁總覽
@@ -207,12 +212,21 @@ public class DashboardController {
     /**
      * 更新用戶交易參數（部分更新）
      * PUT /api/dashboard/trade-settings
+     *
+     * 先檢查方案限制，再呼叫 service 做值域驗證 + 儲存。
      */
     @PutMapping("/trade-settings")
     public ResponseEntity<?> updateTradeSettings(
             @RequestBody UpdateTradeSettingsRequest request) {
         String userId = SecurityUtil.getCurrentUserId();
         try {
+            // 檢查訂閱方案限制
+            String planId = subscriptionService.getCurrentPlanId(userId);
+            Plan plan = planRepository.findById(planId).orElse(null);
+            if (plan != null) {
+                validatePlanLimits(request, plan);
+            }
+
             UserTradeSettings updated = tradeSettingsService.updateSettings(userId, request);
             return ResponseEntity.ok(tradeSettingsService.toResponse(updated));
         } catch (IllegalArgumentException e) {
@@ -221,20 +235,56 @@ public class DashboardController {
     }
 
     /**
-     * 查詢方案預設值（用於前端顯示限制）
+     * 查詢用戶方案限制值（前端用於顯示參數上限）
      * GET /api/dashboard/trade-settings/defaults
      */
     @GetMapping("/trade-settings/defaults")
     public ResponseEntity<TradeSettingsDefaultsResponse> getTradeSettingsDefaults() {
-        // MVP: 回傳 free 方案的預設值
-        // TODO: 未來從 subscription + plans 表查詢用戶實際方案
+        String userId = SecurityUtil.getCurrentUserId();
+        String planId = subscriptionService.getCurrentPlanId(userId);
+        Plan plan = planRepository.findById(planId).orElse(null);
+
         return ResponseEntity.ok(TradeSettingsDefaultsResponse.builder()
-                .planId("free")
-                .maxRiskPercent(0.10)
-                .maxPositions(1)
-                .maxSymbols(3)
-                .dcaLayersAllowed(0)
+                .planId(planId)
+                .maxRiskPercent(plan != null && plan.getMaxRiskPercent() != null
+                        ? plan.getMaxRiskPercent() : 0.10)
+                .maxPositions(plan != null && plan.getMaxPositions() != null
+                        ? plan.getMaxPositions() : 1)
+                .maxSymbols(plan != null && plan.getMaxSymbols() != null
+                        ? plan.getMaxSymbols() : 3)
+                .dcaLayersAllowed(plan != null && plan.getDcaLayersAllowed() != null
+                        ? plan.getDcaLayersAllowed() : 0)
                 .build());
+    }
+
+    // ==================== 方案限制驗證 ====================
+
+    /**
+     * 驗證修改請求是否超出用戶方案限制
+     */
+    private void validatePlanLimits(UpdateTradeSettingsRequest req, Plan plan) {
+        if (req.getRiskPercent() != null && plan.getMaxRiskPercent() != null
+                && req.getRiskPercent() > plan.getMaxRiskPercent()) {
+            throw new IllegalArgumentException(
+                    String.format("您的 %s 方案風險上限為 %.0f%%，無法設定 %.0f%%",
+                            plan.getName(),
+                            plan.getMaxRiskPercent() * 100,
+                            req.getRiskPercent() * 100));
+        }
+        if (req.getMaxDcaLayers() != null && plan.getDcaLayersAllowed() != null
+                && req.getMaxDcaLayers() > plan.getDcaLayersAllowed()) {
+            throw new IllegalArgumentException(
+                    String.format("您的 %s 方案 DCA 層數上限為 %d",
+                            plan.getName(),
+                            plan.getDcaLayersAllowed()));
+        }
+        if (req.getAllowedSymbols() != null && plan.getMaxSymbols() != null
+                && req.getAllowedSymbols().size() > plan.getMaxSymbols()) {
+            throw new IllegalArgumentException(
+                    String.format("您的 %s 方案交易對上限為 %d 個",
+                            plan.getName(),
+                            plan.getMaxSymbols()));
+        }
     }
 
     // ==================== Discord Webhook 管理 ====================

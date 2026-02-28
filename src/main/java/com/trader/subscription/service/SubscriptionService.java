@@ -287,7 +287,7 @@ public class SubscriptionService {
 
     // ===================== 工具方法 =====================
 
-    private String getCurrentPlanId(String userId) {
+    public String getCurrentPlanId(String userId) {
         return subscriptionRepository.findActiveByUserId(userId)
                 .map(Subscription::getPlanId)
                 .orElse("free");
