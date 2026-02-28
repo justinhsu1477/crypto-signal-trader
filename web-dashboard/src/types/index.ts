@@ -470,6 +470,67 @@ export interface AdminVerifyRequest {
   notes?: string;
 }
 
+// ==================== Admin Subscriptions ====================
+
+export interface AdminSubscriptionListResponse {
+  subscriptions: AdminSubscriptionSummary[];
+  totalUsers: number;
+  activeSubscriptions: number;
+  trialingSubscriptions: number;
+  lifetimeSubscriptions: number;
+}
+
+export interface AdminSubscriptionSummary {
+  userId: string;
+  email: string;
+  name: string;
+  enabled: boolean;
+  planId: string | null;
+  planName: string | null;
+  status: string;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  subscriptionCreatedAt: string | null;
+  totalPayments: number;
+  totalAmountPaid: number;
+}
+
+export interface AdminPaymentHistoryResponse {
+  userId: string;
+  email: string;
+  name: string;
+  payments: AdminPaymentRecord[];
+  totalPayments: number;
+  totalAmountPaid: number;
+}
+
+export interface AdminPaymentRecord {
+  id: number;
+  txHash: string;
+  network: string;
+  walletAddress: string;
+  amount: number;
+  currency: string;
+  status: string;
+  paidAt: string | null;
+  createdAt: string;
+  subscriptionId: number | null;
+  planId: string | null;
+}
+
+export interface AdminActivateRequest {
+  planId: string;
+  days?: number;
+}
+
+export interface AdminSubscriptionActionResponse {
+  userId: string;
+  planId: string;
+  status: string;
+  currentPeriodEnd: string | null;
+  message: string;
+}
+
 // ==================== System Health ====================
 
 export interface SystemHealthResponse {
