@@ -50,6 +50,7 @@ public class Subscription {
     public enum Status {
         TRIALING,    // 免費試用中
         ACTIVE,      // 付費生效中
+        LIFETIME,    // 終生免費（不受到期排程影響，currentPeriodEnd = null）
         CANCELLED,   // 已取消（期滿後停止）
         PAST_DUE     // 扣款失敗，寬限期中
     }
