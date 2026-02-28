@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { getTradeSettings, updateTradeSettings } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +29,9 @@ export function TradeSettingsForm() {
 
   // Save state
   const [saving, setSaving] = useState(false);
+
+  // Undo: snapshot previous values before save
+  const prevSnapshot = useRef<Record<string, unknown> | null>(null);
 
   // Fetch settings on mount
   useEffect(() => {
@@ -134,7 +137,14 @@ export function TradeSettingsForm() {
         .map((s) => s.trim().toUpperCase())
         .filter((s) => s.length > 0);
 
-      await updateTradeSettings({
+      // Snapshot current values for undo
+      prevSnapshot.current = {
+        riskPercent, maxLeverage, maxDcaLayers, maxPositionSize,
+        dailyLossLimit, dcaRiskMultiplier, allowedSymbols,
+        autoSlEnabled, autoTpEnabled,
+      };
+
+      const payload = {
         riskPercent: riskVal / 100, // Convert percentage to decimal
         maxLeverage: leverageVal,
         maxDcaLayers: dcaVal,
@@ -144,9 +154,44 @@ export function TradeSettingsForm() {
         allowedSymbols: symbols,
         autoSlEnabled,
         autoTpEnabled,
-      });
+      };
 
-      toast.success(t("common.saveSuccess"));
+      await updateTradeSettings(payload);
+
+      toast.success(t("settings.settingsSaved"), {
+        action: {
+          label: t("common.undo"),
+          onClick: () => {
+            if (prevSnapshot.current) {
+              const snap = prevSnapshot.current;
+              setRiskPercent(snap.riskPercent as string);
+              setMaxLeverage(snap.maxLeverage as string);
+              setMaxDcaLayers(snap.maxDcaLayers as string);
+              setMaxPositionSize(snap.maxPositionSize as string);
+              setDailyLossLimit(snap.dailyLossLimit as string);
+              setDcaRiskMultiplier(snap.dcaRiskMultiplier as string);
+              setAllowedSymbols(snap.allowedSymbols as string);
+              setAutoSlEnabled(snap.autoSlEnabled as boolean);
+              setAutoTpEnabled(snap.autoTpEnabled as boolean);
+              // Re-save the old values
+              const oldRisk = parseFloat(snap.riskPercent as string);
+              updateTradeSettings({
+                riskPercent: oldRisk / 100,
+                maxLeverage: parseInt(snap.maxLeverage as string, 10),
+                maxDcaLayers: parseInt(snap.maxDcaLayers as string, 10),
+                maxPositionSizeUsdt: parseFloat(snap.maxPositionSize as string),
+                allowedSymbols: (snap.allowedSymbols as string).split(",").map(s => s.trim().toUpperCase()).filter(s => s.length > 0),
+                autoSlEnabled: snap.autoSlEnabled as boolean,
+                autoTpEnabled: snap.autoTpEnabled as boolean,
+              }).then(() => {
+                toast.success(t("common.undoSuccess"));
+              }).catch(() => {
+                toast.error(t("common.saveFailed"));
+              });
+            }
+          },
+        },
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
@@ -163,7 +208,14 @@ export function TradeSettingsForm() {
   }
 
   if (error) {
-    return <div className="text-red-500 py-4">{error}</div>;
+    return (
+      <div className="flex flex-col items-center gap-3 py-8">
+        <p className="text-sm text-red-500">{error}</p>
+        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+          {t("common.retry")}
+        </Button>
+      </div>
+    );
   }
 
   return (

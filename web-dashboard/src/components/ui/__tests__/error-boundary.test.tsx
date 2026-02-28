@@ -7,7 +7,6 @@ import { ErrorBoundary, SectionErrorFallback, PageErrorFallback } from "../error
 let shouldThrowGlobal = false;
 
 function ThrowError({ shouldThrow }: { shouldThrow?: boolean }) {
-  // 支援 prop 控制或 global 控制（retry 測試需要 global）
   if (shouldThrow ?? shouldThrowGlobal) {
     throw new Error("Test render error");
   }
@@ -17,6 +16,7 @@ function ThrowError({ shouldThrow }: { shouldThrow?: boolean }) {
 /* 壓制 React / jsdom 的 console.error — ErrorBoundary 會觸發大量 log */
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
+  shouldThrowGlobal = false;
 });
 
 /* ================================================================== */
@@ -39,26 +39,25 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
     expect(screen.queryByText("正常內容")).not.toBeInTheDocument();
-    expect(screen.getByText("此區塊發生錯誤")).toBeInTheDocument();
+    // Uses browser locale detection — in jsdom default "en", shows English
+    expect(screen.getByText("Something went wrong in this section")).toBeInTheDocument();
     expect(screen.getByText("Test render error")).toBeInTheDocument();
-    expect(screen.getByText("重試")).toBeInTheDocument();
+    expect(screen.getByText("Retry")).toBeInTheDocument();
   });
 
   it("按「重試」按鈕 → reset 並重新渲染", async () => {
     const user = userEvent.setup();
 
-    // 用 global 控制拋錯行為，這樣 ErrorBoundary reset 後 re-render 時能讀到新值
     shouldThrowGlobal = true;
     render(
       <ErrorBoundary>
         <ThrowError />
       </ErrorBoundary>,
     );
-    expect(screen.getByText("此區塊發生錯誤")).toBeInTheDocument();
+    expect(screen.getByText("Something went wrong in this section")).toBeInTheDocument();
 
-    // 修正拋錯條件後，點重試
     shouldThrowGlobal = false;
-    await user.click(screen.getByText("重試"));
+    await user.click(screen.getByText("Retry"));
 
     expect(screen.getByText("正常內容")).toBeInTheDocument();
   });
@@ -70,7 +69,7 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
     expect(screen.getByText("自訂錯誤畫面")).toBeInTheDocument();
-    expect(screen.queryByText("此區塊發生錯誤")).not.toBeInTheDocument();
+    expect(screen.queryByText("Something went wrong in this section")).not.toBeInTheDocument();
   });
 
   it("onReset callback 被呼叫", async () => {
@@ -83,7 +82,7 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
-    await user.click(screen.getByText("重試"));
+    await user.click(screen.getByText("Retry"));
     expect(onReset).toHaveBeenCalledOnce();
   });
 });
@@ -96,15 +95,15 @@ describe("SectionErrorFallback", () => {
     const onRetry = vi.fn();
     render(<SectionErrorFallback error={new Error("DB timeout")} onRetry={onRetry} />);
 
-    expect(screen.getByText("此區塊發生錯誤")).toBeInTheDocument();
+    expect(screen.getByText("Something went wrong in this section")).toBeInTheDocument();
     expect(screen.getByText("DB timeout")).toBeInTheDocument();
-    expect(screen.getByText("重試")).toBeInTheDocument();
+    expect(screen.getByText("Retry")).toBeInTheDocument();
   });
 
   it("無 onRetry 時不顯示重試按鈕", () => {
     render(<SectionErrorFallback />);
-    expect(screen.getByText("此區塊發生錯誤")).toBeInTheDocument();
-    expect(screen.queryByText("重試")).not.toBeInTheDocument();
+    expect(screen.getByText("Something went wrong in this section")).toBeInTheDocument();
+    expect(screen.queryByText("Retry")).not.toBeInTheDocument();
   });
 });
 
@@ -112,9 +111,16 @@ describe("SectionErrorFallback", () => {
 /*  PageErrorFallback                                                  */
 /* ================================================================== */
 describe("PageErrorFallback", () => {
-  it("顯示全頁錯誤畫面和重新整理按鈕", () => {
+  it("顯示全頁錯誤畫面和 refresh 按鈕", () => {
     render(<PageErrorFallback />);
-    expect(screen.getByText("頁面發生錯誤")).toBeInTheDocument();
-    expect(screen.getByText("重新整理")).toBeInTheDocument();
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    expect(screen.getByText("Refresh Page")).toBeInTheDocument();
+  });
+
+  it("locale detection: 使用 navigator.language 決定語言", () => {
+    // jsdom default navigator.language is "en" → English labels
+    render(<PageErrorFallback />);
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    expect(screen.getByText(/unexpected error/i)).toBeInTheDocument();
   });
 });

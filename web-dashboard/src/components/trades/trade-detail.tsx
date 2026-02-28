@@ -12,6 +12,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/i18n-context";
 
 interface TradeDetailProps {
@@ -86,7 +87,18 @@ export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
         )}
 
         {error && (
-          <div className="text-center py-8 text-red-500">{error}</div>
+          <div className="flex flex-col items-center gap-3 py-8">
+            <p className="text-sm text-red-500">{error}</p>
+            <Button variant="outline" size="sm" onClick={() => {
+              setError(null);
+              setLoading(true);
+              getTradeEvents(tradeId).then((data) => setEvents(data)).catch((err) => {
+                setError(err instanceof Error ? err.message : t("common.loadFailed"));
+              }).finally(() => setLoading(false));
+            }}>
+              {t("common.retry") ?? "Retry"}
+            </Button>
+          </div>
         )}
 
         {!loading && !error && events.length === 0 && (
@@ -113,48 +125,48 @@ export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
                   <div className="text-sm space-y-0.5">
                     {event.price != null && (
                       <p>
-                        <span className="text-muted-foreground">Price:</span>{" "}
+                        <span className="text-muted-foreground">{t("trades.price")}:</span>{" "}
                         {event.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                       </p>
                     )}
                     {event.quantity != null && (
                       <p>
-                        <span className="text-muted-foreground">Quantity:</span>{" "}
+                        <span className="text-muted-foreground">{t("trades.quantity")}:</span>{" "}
                         {event.quantity.toLocaleString("en-US")}
                       </p>
                     )}
                     {event.orderSide && (
                       <p>
-                        <span className="text-muted-foreground">Side:</span>{" "}
+                        <span className="text-muted-foreground">{t("trades.side")}:</span>{" "}
                         {event.orderSide}
                       </p>
                     )}
                     {event.orderType && (
                       <p>
-                        <span className="text-muted-foreground">Order Type:</span>{" "}
+                        <span className="text-muted-foreground">{t("trades.orderType")}:</span>{" "}
                         {event.orderType}
                       </p>
                     )}
                     {event.binanceOrderId && (
                       <p>
-                        <span className="text-muted-foreground">Order ID:</span>{" "}
+                        <span className="text-muted-foreground">{t("trades.orderId")}:</span>{" "}
                         <span className="font-mono text-xs">{event.binanceOrderId}</span>
                       </p>
                     )}
                     {event.detail && (
                       <p>
-                        <span className="text-muted-foreground">Detail:</span>{" "}
+                        <span className="text-muted-foreground">{t("trades.detail")}:</span>{" "}
                         {event.detail}
                       </p>
                     )}
                     {event.success ? (
                       <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/25 text-xs mt-1">
-                        Success
+                        {t("trades.success")}
                       </Badge>
                     ) : (
                       <div className="mt-1">
                         <Badge className="bg-red-500/15 text-red-500 border-red-500/25 text-xs">
-                          Error
+                          {t("trades.error")}
                         </Badge>
                         {event.errorMessage && (
                           <p className="text-xs text-red-500 mt-1">

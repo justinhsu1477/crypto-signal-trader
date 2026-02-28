@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useMemo, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -24,6 +24,12 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showLegalDialog, setShowLegalDialog] = useState(false);
+
+  // Password strength checks (only 8+ chars and mixed case)
+  const passwordChecks = useMemo(() => [
+    { key: "min", passed: password.length >= 8, label: t("register.passwordMinChars") },
+    { key: "mixed", passed: /[A-Z]/.test(password) && /[a-z]/.test(password), label: t("register.passwordMixedCase") },
+  ], [password, t]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -124,6 +130,23 @@ export default function RegisterPage() {
             className="h-11 bg-white/5 border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/20 placeholder:text-white/20"
           />
         </div>
+
+        {/* Password requirements */}
+        {password.length > 0 && (
+          <div className="space-y-1.5 rounded-lg bg-white/[0.02] border border-white/5 px-3 py-2.5">
+            <p className="text-xs font-medium text-muted-foreground">{t("register.passwordRequirements")}</p>
+            {passwordChecks.map((check) => (
+              <div key={check.key} className="flex items-center gap-2 text-xs">
+                <span className={check.passed ? "text-emerald-400" : "text-zinc-500"}>
+                  {check.passed ? "✓" : "○"}
+                </span>
+                <span className={check.passed ? "text-emerald-400" : "text-zinc-500"}>
+                  {check.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Terms agreement checkbox */}
         <div className="flex items-start gap-2 pt-1">

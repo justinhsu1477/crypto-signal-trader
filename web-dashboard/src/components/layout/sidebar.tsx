@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 import {
   LayoutDashboard,
   BarChart3,
@@ -18,11 +19,13 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
 import { LanguageSwitcher } from "@/components/ui/language-switcher";
+import { LogoutDialog } from "@/components/layout/logout-dialog";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { logout, email, role } = useAuth();
   const { t } = useT();
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   const navItems = [
     { href: "/", label: t("nav.overview"), icon: LayoutDashboard },
@@ -108,16 +111,22 @@ export function Sidebar() {
           <LanguageSwitcher />
         </div>
         <button
-          onClick={() => {
-            logout();
-            window.location.href = "/login";
-          }}
+          onClick={() => setLogoutOpen(true)}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
         >
           <LogOut className="h-5 w-5" />
           {t("nav.logout")}
         </button>
       </div>
+
+      <LogoutDialog
+        open={logoutOpen}
+        onOpenChange={setLogoutOpen}
+        onConfirm={() => {
+          logout();
+          window.location.href = "/login";
+        }}
+      />
     </aside>
   );
 }

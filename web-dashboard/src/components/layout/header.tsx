@@ -21,12 +21,14 @@ import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
 import { LanguageSwitcher } from "@/components/ui/language-switcher";
 import { useState } from "react";
+import { LogoutDialog } from "@/components/layout/logout-dialog";
 
 export function Header() {
   const pathname = usePathname();
   const { logout, email, role } = useAuth();
   const { t } = useT();
   const [open, setOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   const navItems = [
     { href: "/", label: t("nav.overview"), icon: LayoutDashboard },
@@ -114,10 +116,7 @@ export function Header() {
                 {email || "User"}
               </div>
               <button
-                onClick={() => {
-                  logout();
-                  window.location.href = "/login";
-                }}
+                onClick={() => setLogoutOpen(true)}
                 className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50"
               >
                 <LogOut className="h-5 w-5" />
@@ -127,6 +126,15 @@ export function Header() {
           </SheetContent>
         </Sheet>
       </div>
+
+      <LogoutDialog
+        open={logoutOpen}
+        onOpenChange={setLogoutOpen}
+        onConfirm={() => {
+          logout();
+          window.location.href = "/login";
+        }}
+      />
     </header>
   );
 }

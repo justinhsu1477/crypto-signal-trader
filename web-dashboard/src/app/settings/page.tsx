@@ -41,6 +41,8 @@ import {
   CreditCard,
   Shield,
   Loader2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 // ─── Settings sections ───
@@ -66,6 +68,8 @@ export default function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [secretKeyInput, setSecretKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showSecretKey, setShowSecretKey] = useState(false);
 
   // ─── Auto Trade state ───
   const [autoTradeStatus, setAutoTradeStatus] =
@@ -82,7 +86,6 @@ export default function SettingsPage() {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwError, setPwError] = useState("");
-  const [pwSuccess, setPwSuccess] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
 
   // ─── Auto Trade confirmation dialog state ───
@@ -270,8 +273,13 @@ export default function SettingsPage() {
         <Separator />
 
         {profileLoading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="space-y-2">
+                <div className="h-3 w-16 bg-muted animate-pulse rounded" />
+                <div className="h-5 w-32 bg-muted animate-pulse rounded" />
+              </div>
+            ))}
           </div>
         )}
 
@@ -329,8 +337,16 @@ export default function SettingsPage() {
         <Separator />
 
         {keysLoading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          <div className="space-y-3">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="h-5 w-20 bg-muted animate-pulse rounded" />
+                  <div className="h-5 w-16 bg-muted animate-pulse rounded-full" />
+                </div>
+                <div className="h-4 w-24 bg-muted animate-pulse rounded" />
+              </div>
+            ))}
           </div>
         )}
 
@@ -414,13 +430,23 @@ export default function SettingsPage() {
                   >
                     API Key
                   </Label>
-                  <Input
-                    id="apiKey"
-                    type="password"
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                    placeholder={t("settings.apiKeyPlaceholder")}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="apiKey"
+                      type={showApiKey ? "text" : "password"}
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      placeholder={t("settings.apiKeyPlaceholder")}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -430,13 +456,23 @@ export default function SettingsPage() {
                   >
                     Secret Key
                   </Label>
-                  <Input
-                    id="secretKey"
-                    type="password"
-                    value={secretKeyInput}
-                    onChange={(e) => setSecretKeyInput(e.target.value)}
-                    placeholder={t("settings.secretKeyPlaceholder")}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="secretKey"
+                      type={showSecretKey ? "text" : "password"}
+                      value={secretKeyInput}
+                      onChange={(e) => setSecretKeyInput(e.target.value)}
+                      placeholder={t("settings.secretKeyPlaceholder")}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSecretKey(!showSecretKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -462,8 +498,14 @@ export default function SettingsPage() {
         <Separator />
 
         {autoTradeLoading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+              <div className="space-y-2">
+                <div className="h-5 w-32 bg-muted animate-pulse rounded" />
+                <div className="h-4 w-48 bg-muted animate-pulse rounded" />
+              </div>
+              <div className="h-6 w-10 bg-muted animate-pulse rounded-full" />
+            </div>
           </div>
         )}
 
@@ -544,10 +586,23 @@ export default function SettingsPage() {
                   ? t("settings.autoTradeConfirmEnableTitle")
                   : t("settings.autoTradeConfirmDisableTitle")}
               </DialogTitle>
-              <DialogDescription>
-                {autoTradeConfirmValue
-                  ? t("settings.autoTradeConfirmEnableDesc")
-                  : t("settings.autoTradeConfirmDisableDesc")}
+              <DialogDescription asChild>
+                <div>
+                  <p>{autoTradeConfirmValue
+                    ? t("settings.autoTradeConfirmEnableDesc")
+                    : t("settings.autoTradeConfirmDisableDesc")}</p>
+                  {autoTradeConfirmValue && (
+                    <div className="mt-3 space-y-1 text-xs">
+                      <p className="font-medium text-foreground">{t("settings.autoTradeConfirmEnablePrereqs")}</p>
+                      <p className="text-emerald-500">✓ {t("settings.autoTradeConfirmApiKeyOk")}</p>
+                      {hasActiveWebhook ? (
+                        <p className="text-emerald-500">✓ {t("settings.autoTradeConfirmWebhookOk")}</p>
+                      ) : (
+                        <p className="text-yellow-500">⚠ {t("settings.autoTradeConfirmNoWebhook")}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 sm:gap-0">
@@ -608,7 +663,6 @@ export default function SettingsPage() {
 
   async function handleChangePassword() {
     setPwError("");
-    setPwSuccess("");
 
     if (newPw.length < 8) {
       setPwError(t("settings.passwordMinLength"));
@@ -626,7 +680,7 @@ export default function SettingsPage() {
         newPassword: newPw,
         confirmPassword: confirmPw,
       });
-      setPwSuccess(t("settings.passwordChanged"));
+      toast.success(t("settings.passwordChangedToast"));
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
@@ -664,12 +718,6 @@ export default function SettingsPage() {
           </p>
         </div>
         <Separator />
-
-        {pwSuccess && (
-          <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 text-sm text-emerald-400">
-            {pwSuccess}
-          </div>
-        )}
 
         {pwError && (
           <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-sm text-red-400">
@@ -796,28 +844,32 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Mobile: horizontal scroll nav */}
-          <div className="flex lg:hidden gap-2 overflow-x-auto pb-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeSection === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveSection(item.id)}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg px-3 py-2 text-sm whitespace-nowrap border transition-colors",
-                    isActive
-                      ? "bg-primary/10 text-primary border-primary/30"
-                      : "text-muted-foreground border-transparent hover:bg-muted"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {t(item.labelKey)}
-                </button>
-              );
-            })}
+          {/* Mobile: horizontal scroll nav with fade indicators */}
+          <div className="relative lg:hidden">
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeSection === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveSection(item.id)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-3 py-2 text-sm whitespace-nowrap border transition-colors",
+                      isActive
+                        ? "bg-primary/10 text-primary border-primary/30"
+                        : "text-muted-foreground border-transparent hover:bg-muted"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {t(item.labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Fade indicators */}
+            <div className="absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none" />
           </div>
         </nav>
 
