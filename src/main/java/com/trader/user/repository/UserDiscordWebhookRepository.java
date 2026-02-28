@@ -2,6 +2,7 @@ package com.trader.user.repository;
 
 import com.trader.user.entity.UserDiscordWebhook;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -9,6 +10,13 @@ import java.util.Optional;
 
 @Repository
 public interface UserDiscordWebhookRepository extends JpaRepository<UserDiscordWebhook, String> {
+
+    /**
+     * Batch 查詢：取得所有有啟用 webhook 的 userId
+     * 用於 DailyReportService 過濾無 webhook 用戶（避免 fallback 到全局 webhook 洗版）
+     */
+    @Query("SELECT DISTINCT w.userId FROM UserDiscordWebhook w WHERE w.enabled = true")
+    List<String> findUserIdsWithEnabledWebhook();
 
     /**
      * 查詢用戶所有啟用的 webhook

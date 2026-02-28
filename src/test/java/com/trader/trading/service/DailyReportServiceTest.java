@@ -6,6 +6,7 @@ import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.user.entity.User;
+import com.trader.user.repository.UserDiscordWebhookRepository;
 import com.trader.user.repository.UserRepository;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
@@ -37,6 +38,7 @@ class DailyReportServiceTest {
     private MultiUserConfig multiUserConfig;
     private UserRepository userRepository;
     private UserApiKeyService userApiKeyService;
+    private UserDiscordWebhookRepository userDiscordWebhookRepository;
     private TradeConfigResolver tradeConfigResolver;
 
     private DailyReportService service;
@@ -119,12 +121,14 @@ class DailyReportServiceTest {
             multiUserConfig = new MultiUserConfig(); // enabled=false（預設）
             userRepository = mock(UserRepository.class);
             userApiKeyService = mock(UserApiKeyService.class);
+            userDiscordWebhookRepository = mock(UserDiscordWebhookRepository.class);
             tradeConfigResolver = mock(TradeConfigResolver.class);
 
             service = new DailyReportService(
                     tradeRecordService, webhookService, binanceFuturesService,
                     userDataStreamService, monitorHeartbeatService, riskConfig,
-                    multiUserConfig, userRepository, userApiKeyService, tradeConfigResolver,
+                    multiUserConfig, userRepository, userApiKeyService,
+                    userDiscordWebhookRepository, tradeConfigResolver,
                     mock(StartOfDayBalanceCache.class));
 
             setupMonitorMocks();
@@ -216,12 +220,18 @@ class DailyReportServiceTest {
             multiUserConfig.setEnabled(true);
             userRepository = mock(UserRepository.class);
             userApiKeyService = mock(UserApiKeyService.class);
+            userDiscordWebhookRepository = mock(UserDiscordWebhookRepository.class);
             tradeConfigResolver = mock(TradeConfigResolver.class);
+
+            // 預設：所有測試用戶都有 per-user webhook（既有測試不受影響）
+            when(userDiscordWebhookRepository.findUserIdsWithEnabledWebhook())
+                    .thenReturn(List.of("user-A", "user-B", "user-C", "user-D", "user-E", "user-X"));
 
             service = new DailyReportService(
                     tradeRecordService, webhookService, binanceFuturesService,
                     userDataStreamService, monitorHeartbeatService, riskConfig,
-                    multiUserConfig, userRepository, userApiKeyService, tradeConfigResolver,
+                    multiUserConfig, userRepository, userApiKeyService,
+                    userDiscordWebhookRepository, tradeConfigResolver,
                     mock(StartOfDayBalanceCache.class));
 
             setupMonitorMocks();

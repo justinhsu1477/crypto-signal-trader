@@ -8,6 +8,7 @@ import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.user.entity.User;
+import com.trader.user.repository.UserDiscordWebhookRepository;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
@@ -19,9 +20,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 每日排程服務
@@ -63,6 +66,7 @@ public class DailyReportService {
     private final MultiUserConfig multiUserConfig;
     private final UserRepository userRepository;
     private final UserApiKeyService userApiKeyService;
+    private final UserDiscordWebhookRepository userDiscordWebhookRepository;
     private final TradeConfigResolver tradeConfigResolver;
     private final StartOfDayBalanceCache startOfDayBalanceCache;
 
@@ -75,6 +79,7 @@ public class DailyReportService {
                               MultiUserConfig multiUserConfig,
                               UserRepository userRepository,
                               UserApiKeyService userApiKeyService,
+                              UserDiscordWebhookRepository userDiscordWebhookRepository,
                               TradeConfigResolver tradeConfigResolver,
                               StartOfDayBalanceCache startOfDayBalanceCache) {
         this.tradeRecordService = tradeRecordService;
@@ -86,6 +91,7 @@ public class DailyReportService {
         this.multiUserConfig = multiUserConfig;
         this.userRepository = userRepository;
         this.userApiKeyService = userApiKeyService;
+        this.userDiscordWebhookRepository = userDiscordWebhookRepository;
         this.tradeConfigResolver = tradeConfigResolver;
         this.startOfDayBalanceCache = startOfDayBalanceCache;
     }
@@ -257,8 +263,16 @@ public class DailyReportService {
      * 4. 一個用戶失敗不影響其他用戶
      */
     private void sendPerUserDailyReports() {
+        // 排除 Admin（Admin 有自己的彙總報告，不需 per-user 摘要）
+        // 排除 discordNotificationEnabled=false 的用戶
+        // 排除無 per-user webhook 的用戶（避免 fallback 到全局 webhook 洗版 Admin 群組）
+        Set<String> userIdsWithWebhook = new HashSet<>(userDiscordWebhookRepository.findUserIdsWithEnabledWebhook());
+
         List<User> users = userRepository.findAll().stream()
                 .filter(User::isEnabled)
+                .filter(user -> user.getRole() != User.Role.ADMIN)
+                .filter(User::isDiscordNotificationEnabled)
+                .filter(user -> userIdsWithWebhook.contains(user.getUserId()))
                 .toList();
 
         LocalDate today = LocalDate.now(AppConstants.ZONE_ID);
