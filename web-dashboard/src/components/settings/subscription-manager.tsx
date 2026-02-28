@@ -6,7 +6,6 @@ import {
   getSubscriptionPlans,
   getSubscriptionStatus,
   cancelSubscription,
-  upgradeSubscription,
   getCheckoutInfo,
   submitPayment,
 } from "@/lib/api";
@@ -174,23 +173,6 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
     }
   }
 
-  async function handleUpgrade(planId: string) {
-    setActionLoading(true);
-    try {
-      await upgradeSubscription({ planId });
-      toast.success(t("settings.upgradeSuccess"));
-      const newStatus = await getSubscriptionStatus();
-      setStatus(newStatus);
-      onStatusChange?.(newStatus.active);
-      const newPlans = await getSubscriptionPlans();
-      setPlans(newPlans);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
   async function handleSubscribe(plan: PlanInfo) {
     setActionLoading(true);
     try {
@@ -315,9 +297,10 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
         size="sm"
         variant={isUpgrade ? "default" : "outline"}
         className="w-full"
-        onClick={() => handleUpgrade(plan.planId)}
+        onClick={() => handleSubscribe(plan)}
         disabled={actionLoading}
       >
+        <Wallet className="h-4 w-4 mr-1" />
         {isUpgrade ? t("settings.upgrade") : t("settings.downgrade")}
       </Button>
     );

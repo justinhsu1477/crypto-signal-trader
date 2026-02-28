@@ -222,31 +222,6 @@ public class SubscriptionService {
         log.info("訂閱已取消: userId={}", userId);
     }
 
-    /**
-     * 升級方案
-     *
-     * 直接更新方案等級，剩餘天數保留。
-     * 如需付差價，後續版本再實作。
-     */
-    @Transactional
-    public void upgrade(String userId, String newPlanId) {
-        Subscription sub = subscriptionRepository.findActiveByUserId(userId)
-                .orElseThrow(() -> new IllegalStateException("用戶沒有有效訂閱，請先訂閱"));
-
-        Plan newPlan = planRepository.findByPlanIdAndActiveTrue(newPlanId)
-                .orElseThrow(() -> new IllegalArgumentException("方案不存在: " + newPlanId));
-
-        if (sub.getPlanId().equals(newPlanId)) {
-            throw new IllegalArgumentException("已經是此方案，無需變更");
-        }
-
-        String oldPlanId = sub.getPlanId();
-        sub.setPlanId(newPlanId);
-        subscriptionRepository.save(sub);
-
-        log.info("方案已升級: userId={}, {} → {}", userId, oldPlanId, newPlanId);
-    }
-
     // ===================== 排程用方法 =====================
 
     /**

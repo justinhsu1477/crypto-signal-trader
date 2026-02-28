@@ -715,60 +715,107 @@ class SubscriptionServiceTest {
         }
     }
 
-    // ==================== upgrade ====================
+    // ==================== 透過付款升級方案 ====================
 
     @Nested
-    @DisplayName("upgrade -- 升級方案")
-    class Upgrade {
+    @DisplayName("upgradeViaPayment -- 透過 submitPayment 升級方案")
+    class UpgradeViaPayment {
 
         @Test
-        @DisplayName("成功升級方案後更新 planId")
-        void successfulUpgradeUpdatesPlanId() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(15));
-            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
+        @DisplayName("basic → pro 付款後 planId 更新為 pro，狀態保持 ACTIVE")
+        void upgradeFromBasicToProViaPayment() {
+            LocalDateTime futureEnd = LocalDateTime.now(ZONE).plusDays(10);
+            Subscription existing = buildActiveSub(USER_ID, "basic", futureEnd);
             Plan pro = buildPlan("pro", "Pro", 49.0);
-            when(planRepository.findByPlanIdAndActiveTrue("pro")).thenReturn(Optional.of(pro));
 
-            service.upgrade(USER_ID, "pro");
+            when(planRepository.findByPlanIdAndActiveTrue("pro")).thenReturn(Optional.of(pro));
+            when(paymentHistoryRepository.findByTxHash(TX_HASH)).thenReturn(Optional.empty());
+            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(existing));
+            when(tronService.verifyTransaction(eq(TX_HASH), any(BigDecimal.class)))
+                    .thenReturn(successResult(49.0));
+
+            String result = service.submitPayment(USER_ID, "pro", TX_HASH);
 
             ArgumentCaptor<Subscription> captor = ArgumentCaptor.forClass(Subscription.class);
             verify(subscriptionRepository).save(captor.capture());
-            assertThat(captor.getValue().getPlanId()).isEqualTo("pro");
+            Subscription saved = captor.getValue();
+
+            assertThat(saved.getPlanId()).isEqualTo("pro");
+            assertThat(saved.getStatus()).isEqualTo(Subscription.Status.ACTIVE);
+            assertThat(result).contains("Pro");
+            assertThat(result).contains("付款驗證成功");
         }
 
         @Test
-        @DisplayName("無有效訂閱時拋出 IllegalStateException")
-        void noActiveSubThrows() {
-            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.empty());
+        @DisplayName("升級付款後 currentPeriodEnd 從原到期日延長 30 天")
+        void upgradeExtendsFromCurrentEnd() {
+            LocalDateTime futureEnd = LocalDateTime.now(ZONE).plusDays(10);
+            Subscription existing = buildActiveSub(USER_ID, "basic", futureEnd);
+            Plan pro = buildPlan("pro", "Pro", 49.0);
 
-            assertThatThrownBy(() -> service.upgrade(USER_ID, "pro"))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("沒有有效訂閱");
+            when(planRepository.findByPlanIdAndActiveTrue("pro")).thenReturn(Optional.of(pro));
+            when(paymentHistoryRepository.findByTxHash(TX_HASH)).thenReturn(Optional.empty());
+            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(existing));
+            when(tronService.verifyTransaction(eq(TX_HASH), any(BigDecimal.class)))
+                    .thenReturn(successResult(49.0));
+
+            service.submitPayment(USER_ID, "pro", TX_HASH);
+
+            ArgumentCaptor<Subscription> captor = ArgumentCaptor.forClass(Subscription.class);
+            verify(subscriptionRepository).save(captor.capture());
+            Subscription saved = captor.getValue();
+
+            // newEnd ≈ futureEnd + 30 days
+            LocalDateTime expectedEnd = futureEnd.plusDays(30);
+            assertThat(saved.getCurrentPeriodEnd()).isAfter(expectedEnd.minusMinutes(1));
+            assertThat(saved.getCurrentPeriodEnd()).isBefore(expectedEnd.plusMinutes(1));
         }
 
         @Test
-        @DisplayName("目標方案不存在時拋出 IllegalArgumentException")
-        void planNotFoundThrows() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(15));
-            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
-            when(planRepository.findByPlanIdAndActiveTrue("nonexistent")).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.upgrade(USER_ID, "nonexistent"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("方案不存在");
-        }
-
-        @Test
-        @DisplayName("已經是同方案時拋出 IllegalArgumentException")
-        void samePlanThrows() {
-            Subscription sub = buildActiveSub(USER_ID, "basic", LocalDateTime.now(ZONE).plusDays(15));
-            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(sub));
+        @DisplayName("降級 pro → basic 付款後 planId 更新為 basic")
+        void downgradeFromProToBasicViaPayment() {
+            LocalDateTime futureEnd = LocalDateTime.now(ZONE).plusDays(5);
+            Subscription existing = buildActiveSub(USER_ID, "pro", futureEnd);
             Plan basic = buildPlan("basic", "Basic", 19.0);
-            when(planRepository.findByPlanIdAndActiveTrue("basic")).thenReturn(Optional.of(basic));
 
-            assertThatThrownBy(() -> service.upgrade(USER_ID, "basic"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("已經是此方案");
+            when(planRepository.findByPlanIdAndActiveTrue("basic")).thenReturn(Optional.of(basic));
+            when(paymentHistoryRepository.findByTxHash(TX_HASH)).thenReturn(Optional.empty());
+            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(existing));
+            when(tronService.verifyTransaction(eq(TX_HASH), any(BigDecimal.class)))
+                    .thenReturn(successResult(19.0));
+
+            service.submitPayment(USER_ID, "basic", TX_HASH);
+
+            ArgumentCaptor<Subscription> captor = ArgumentCaptor.forClass(Subscription.class);
+            verify(subscriptionRepository).save(captor.capture());
+
+            assertThat(captor.getValue().getPlanId()).isEqualTo("basic");
+            assertThat(captor.getValue().getStatus()).isEqualTo(Subscription.Status.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("升級付款正確記錄 PaymentHistory（succeeded + 新方案金額）")
+        void upgradePaymentRecordsHistory() {
+            LocalDateTime futureEnd = LocalDateTime.now(ZONE).plusDays(10);
+            Subscription existing = buildActiveSub(USER_ID, "basic", futureEnd);
+            Plan pro = buildPlan("pro", "Pro", 49.0);
+
+            when(planRepository.findByPlanIdAndActiveTrue("pro")).thenReturn(Optional.of(pro));
+            when(paymentHistoryRepository.findByTxHash(TX_HASH)).thenReturn(Optional.empty());
+            when(subscriptionRepository.findActiveByUserId(USER_ID)).thenReturn(Optional.of(existing));
+            when(tronService.verifyTransaction(eq(TX_HASH), any(BigDecimal.class)))
+                    .thenReturn(successResult(49.0));
+
+            service.submitPayment(USER_ID, "pro", TX_HASH);
+
+            ArgumentCaptor<PaymentHistory> captor = ArgumentCaptor.forClass(PaymentHistory.class);
+            verify(paymentHistoryRepository).save(captor.capture());
+            PaymentHistory saved = captor.getValue();
+
+            assertThat(saved.getStatus()).isEqualTo("succeeded");
+            assertThat(saved.getAmount()).isEqualByComparingTo(BigDecimal.valueOf(49.0));
+            assertThat(saved.getUserId()).isEqualTo(USER_ID);
+            assertThat(saved.getPaidAt()).isNotNull();
         }
     }
 

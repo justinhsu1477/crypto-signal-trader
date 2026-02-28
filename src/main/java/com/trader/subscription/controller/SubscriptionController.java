@@ -21,10 +21,9 @@ import java.util.Map;
  * 端點：
  * - GET  /plans           → 查詢可用方案
  * - POST /checkout        → 取得付款資訊（錢包地址 + USDT 金額）
- * - POST /submit-payment  → 提交 txHash 驗證付款
+ * - POST /submit-payment  → 提交 txHash 驗證付款（也用於升級方案，付費後自動更新 planId）
  * - GET  /status          → 查詢當前訂閱狀態
  * - POST /cancel          → 立即取消訂閱
- * - POST /upgrade         → 升級方案
  */
 @Slf4j
 @RestController
@@ -100,19 +99,4 @@ public class SubscriptionController {
                 .build());
     }
 
-    /**
-     * 升級方案
-     * POST /api/subscription/upgrade
-     * Body: { planId: "pro" }
-     */
-    @PostMapping("/upgrade")
-    public ResponseEntity<MessageResponse> upgrade(
-            @Valid @RequestBody UpgradePlanRequest request) {
-        String userId = SecurityUtil.getCurrentUserId();
-        subscriptionService.upgrade(userId, request.getPlanId());
-        return ResponseEntity.ok(MessageResponse.builder()
-                .status("success")
-                .message("方案已更新為 " + request.getPlanId())
-                .build());
-    }
 }
