@@ -19,18 +19,40 @@ public class LineConfig {
     private final String channelAccessToken;
     private final boolean enabled;
     private final int linkingCodeExpiryMinutes;
+    private final RichMenuSettings richMenu;
 
     public LineConfig(
             String channelId,
             String channelSecret,
             String channelAccessToken,
             @DefaultValue("false") boolean enabled,
-            @DefaultValue("10") int linkingCodeExpiryMinutes
+            @DefaultValue("10") int linkingCodeExpiryMinutes,
+            RichMenuSettings richMenu
     ) {
         this.channelId = channelId;
         this.channelSecret = channelSecret;
         this.channelAccessToken = channelAccessToken;
         this.enabled = enabled;
         this.linkingCodeExpiryMinutes = linkingCodeExpiryMinutes;
+        this.richMenu = richMenu;
+    }
+
+    /**
+     * Rich Menu 設定
+     *
+     * 控制 LINE 底部功能選單的自動建立與動態切換。
+     */
+    @Getter
+    public static class RichMenuSettings {
+        private final boolean enabled;
+        private final String webBaseUrl;
+
+        public RichMenuSettings(
+                @DefaultValue("true") boolean enabled,
+                @DefaultValue("https://hook-fi.com") String webBaseUrl
+        ) {
+            this.enabled = enabled;
+            this.webBaseUrl = webBaseUrl;
+        }
     }
 }

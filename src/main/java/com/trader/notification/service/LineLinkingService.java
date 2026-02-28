@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * LINE 帳號綁定服務
@@ -24,11 +25,13 @@ import java.util.Optional;
  * - 產生連結碼（8 碼，10 分鐘過期）
  * - 處理 LINE Webhook 事件（follow / unfollow / message）
  * - 綁定 / 解除綁定 用戶 LINE 帳號
+ * - 綁定成功 / 解除綁定時切換 Rich Menu
+ * - 關鍵字回覆（「客服」「綁定」）
  *
  * 綁定流程：
  * 1. 用戶在網站點「產生連結碼」→ 後端產生 8 碼存 DB
  * 2. 用戶在 LINE 對話輸入此碼 → LINE Webhook 收到 message event
- * 3. handleMessage() 比對碼 → 建立 user_line_bindings 記錄
+ * 3. handleMessage() 比對碼 → 建立 user_line_bindings 記錄 → 切換 Rich Menu
  */
 @Slf4j
 @Service
@@ -39,12 +42,17 @@ public class LineLinkingService {
     private final UserLineBindingRepository lineBindingRepository;
     private final LineLinkingCodeRepository linkingCodeRepository;
     private final OkHttpClient httpClient;
+    private final LineRichMenuService richMenuService;
 
     private static final String REPLY_API_URL = "https://api.line.me/v2/bot/message/reply";
     private static final MediaType JSON_TYPE = MediaType.get("application/json; charset=utf-8");
     private static final SecureRandom RANDOM = new SecureRandom();
     // 排除容易混淆的字元：O/0/I/1
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+    // 關鍵字集合（全形/半形都支援）
+    private static final Set<String> KEYWORD_BIND = Set.of("綁定", "BIND", "連結");
+    private static final Set<String> KEYWORD_SUPPORT = Set.of("客服", "HELP", "聯繫客服");
 
     /**
      * 產生連結碼（給前端 API 呼叫）
@@ -74,13 +82,7 @@ public class LineLinkingService {
      */
     public void handleFollow(String lineUserId, String replyToken) {
         log.info("LINE 用戶加入好友: lineUserId={}", lineUserId);
-        replyText(replyToken,
-                "🔗 綁定帳號，接收交易通知\n\n" +
-                "1️⃣ 註冊 / 登入 → https://hook-fi.com\n" +
-                "2️⃣ 前往「設定」→「LINE 通知」\n" +
-                "3️⃣ 點「產生連結碼」\n" +
-                "4️⃣ 將 8 位數連結碼貼到這裡\n\n" +
-                "完成後即可收到即時交易通知 ✅");
+        replyText(replyToken, buildBindingGuide());
     }
 
     /**
@@ -96,21 +98,42 @@ public class LineLinkingService {
     }
 
     /**
-     * 處理 message 事件：用戶發送文字 → 嘗試比對連結碼
+     * 處理 message 事件：關鍵字回覆 → 連結碼比對 → 綁定
      */
     @Transactional
     public void handleMessage(String lineUserId, String text, String replyToken) {
+        String trimmed = text.trim();
+        String upper = trimmed.toUpperCase();
+
         // 已綁定的用戶
         Optional<UserLineBinding> existing = lineBindingRepository.findByLineUserId(lineUserId);
         if (existing.isPresent() && existing.get().isEnabled()) {
+            // 已綁定用戶也可以問客服
+            if (KEYWORD_SUPPORT.contains(upper)) {
+                replyText(replyToken, buildSupportMessage());
+                return;
+            }
             replyText(replyToken, "您的 LINE 已綁定帳號。\n如需解除綁定，請至網站設定頁面操作。");
             return;
         }
 
+        // 關鍵字：綁定指引
+        if (KEYWORD_BIND.contains(upper)) {
+            replyText(replyToken, buildBindingGuide());
+            return;
+        }
+
+        // 關鍵字：客服
+        if (KEYWORD_SUPPORT.contains(upper)) {
+            replyText(replyToken, buildSupportMessage());
+            return;
+        }
+
         // 嘗試比對連結碼（8 碼大寫）
-        String code = text.toUpperCase().trim();
+        String code = upper;
         if (code.length() != 8) {
-            replyText(replyToken, "請輸入 8 位數連結碼。\n可在網站「通知設定」取得連結碼。");
+            replyText(replyToken, "請輸入 8 位數連結碼。\n可在網站「通知設定」取得連結碼。\n\n" +
+                    "💡 輸入「綁定」查看綁定步驟\n💡 輸入「客服」聯繫客服");
             return;
         }
 
@@ -132,6 +155,9 @@ public class LineLinkingService {
         binding.setEnabled(true);
         lineBindingRepository.save(binding);
 
+        // 切換到已綁定版 Rich Menu
+        richMenuService.linkBoundMenu(lineUserId);
+
         log.info("LINE 綁定成功: userId={} lineUserId={}", linkCode.getUserId(), lineUserId);
         replyText(replyToken, "✅ 綁定成功！\n您現在會收到交易通知。\n\n如需調整通知設定，請至網站設定頁面。");
     }
@@ -145,11 +171,37 @@ public class LineLinkingService {
 
     /**
      * 解除 LINE 綁定（給前端 API 呼叫）
+     * 先查 lineUserId → 移除 per-user Rich Menu → 刪除綁定
      */
     @Transactional
     public void unbind(String userId) {
+        // 先查 lineUserId，用於移除 Rich Menu
+        lineBindingRepository.findById(userId).ifPresent(binding ->
+                richMenuService.unlinkUserMenu(binding.getLineUserId())
+        );
         lineBindingRepository.deleteById(userId);
         log.info("LINE 已解除綁定: userId={}", userId);
+    }
+
+    // ==================== 訊息模板 ====================
+
+    private String buildBindingGuide() {
+        return "🔗 綁定帳號，接收交易通知\n\n" +
+                "1️⃣ 註冊 / 登入 → https://hook-fi.com\n" +
+                "2️⃣ 前往「設定」→「LINE 通知」\n" +
+                "3️⃣ 點「產生連結碼」\n" +
+                "4️⃣ 將 8 位數連結碼貼到這裡\n\n" +
+                "完成後即可收到即時交易通知 ✅";
+    }
+
+    private String buildSupportMessage() {
+        return "📞 HookFi 客服\n\n" +
+                "如需協助，請直接留言：\n" +
+                "• 訂閱方案諮詢\n" +
+                "• 付款確認（請附上轉帳截圖）\n" +
+                "• 系統操作問題\n\n" +
+                "我們將在 24 小時內回覆您 ✨\n\n" +
+                "🌐 官網：https://hook-fi.com";
     }
 
     // ==================== Private Helpers ====================

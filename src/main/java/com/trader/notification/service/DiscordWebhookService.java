@@ -256,9 +256,7 @@ public class DiscordWebhookService implements NotificationService {
         }
 
         Optional<String> webhookUrl = getUserWebhookUrl(userId);
-        if (webhookUrl.isPresent()) {
-            sendNotificationToUrl(webhookUrl.get(), title, message, color);
-        }
+        webhookUrl.ifPresent(s -> sendNotificationToUrl(s, title, message, color));
     }
 
     /**
