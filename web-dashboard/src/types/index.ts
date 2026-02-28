@@ -302,6 +302,22 @@ export interface CreateWebhookResponse {
   message: string;
 }
 
+// ==================== LINE Binding ====================
+
+export interface LineBindingStatus {
+  userId: string;
+  bound: boolean;
+  lineNotificationEnabled: boolean;
+  displayName?: string;
+  linkedAt?: string;
+}
+
+export interface LineLinkingCodeResponse {
+  code: string;
+  expiresInMinutes: number;
+  message: string;
+}
+
 // ==================== Trade Settings ====================
 
 export interface UserTradeSettings {

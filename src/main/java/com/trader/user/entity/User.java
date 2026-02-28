@@ -44,6 +44,9 @@ public class User {
     @Builder.Default
     private boolean discordNotificationEnabled = true;
 
+    @Builder.Default
+    private boolean lineNotificationEnabled = true;
+
     private LocalDateTime passwordChangedAt;
 
     private LocalDateTime createdAt;

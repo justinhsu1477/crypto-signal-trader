@@ -4,8 +4,11 @@ import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
+import com.trader.notification.service.LineLinkingService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.user.entity.User;
+import com.trader.user.entity.UserLineBinding;
 import com.trader.subscription.entity.Plan;
 import com.trader.subscription.repository.PlanRepository;
 import com.trader.subscription.service.SubscriptionService;
@@ -45,6 +48,7 @@ public class DashboardController {
     private final UserDiscordWebhookService webhookService;
     private final UserTradeSettingsService tradeSettingsService;
     private final NotificationService discordWebhookService;
+    private final LineLinkingService lineLinkingService;
     private final SubscriptionService subscriptionService;
     private final PlanRepository planRepository;
 
@@ -389,5 +393,93 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of(
                 "webhookId", webhookId,
                 "message", "Webhook 已刪除"));
+    }
+
+    // ==================== LINE 通知管理 ====================
+
+    /**
+     * 查詢 LINE 綁定狀態
+     * GET /api/dashboard/line-binding
+     */
+    @GetMapping("/line-binding")
+    public ResponseEntity<Map<String, Object>> getLineBinding() {
+        String userId = SecurityUtil.getCurrentUserId();
+        var binding = lineLinkingService.getBinding(userId);
+        var user = userRepository.findById(userId);
+
+        Map<String, Object> response = new java.util.HashMap<>();
+        response.put("userId", userId);
+        response.put("bound", binding.isPresent() && binding.get().isEnabled());
+        response.put("lineNotificationEnabled", user.map(User::isLineNotificationEnabled).orElse(true));
+        binding.filter(UserLineBinding::isEnabled).ifPresent(b -> {
+            response.put("displayName", b.getDisplayName());
+            response.put("linkedAt", b.getLinkedAt());
+        });
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 產生 LINE 連結碼
+     * POST /api/dashboard/line-binding/generate-code
+     *
+     * 回傳 8 碼連結碼，用戶需在 LINE 對話輸入此碼完成綁定。
+     */
+    @PostMapping("/line-binding/generate-code")
+    public ResponseEntity<Map<String, Object>> generateLineCode() {
+        String userId = SecurityUtil.getCurrentUserId();
+        String code = lineLinkingService.generateLinkingCode(userId);
+        return ResponseEntity.ok(Map.of(
+                "code", code,
+                "expiresInMinutes", 10,
+                "message", "請在 LINE 對話中輸入此連結碼"));
+    }
+
+    /**
+     * 解除 LINE 綁定
+     * DELETE /api/dashboard/line-binding
+     */
+    @DeleteMapping("/line-binding")
+    public ResponseEntity<Map<String, Object>> unbindLine() {
+        String userId = SecurityUtil.getCurrentUserId();
+        lineLinkingService.unbind(userId);
+        discordWebhookService.evictUserCache(userId);  // 清除 composite 快取
+
+        return ResponseEntity.ok(Map.of("message", "LINE 已解除綁定"));
+    }
+
+    /**
+     * 更新 LINE 通知開關
+     * POST /api/dashboard/line-notification-status
+     * Body: { "enabled": true/false }
+     */
+    @PostMapping("/line-notification-status")
+    public ResponseEntity<Map<String, Object>> updateLineNotificationStatus(
+            @RequestBody Map<String, Boolean> body) {
+        String userId = SecurityUtil.getCurrentUserId();
+        Boolean enabled = body.get("enabled");
+
+        if (enabled == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "enabled 欄位不可為空"));
+        }
+
+        var user = userRepository.findById(userId);
+        if (user.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        var userEntity = user.get();
+        userEntity.setLineNotificationEnabled(enabled);
+        userRepository.save(userEntity);
+
+        // 清除通知快取，讓設定即時生效
+        discordWebhookService.evictUserCache(userId);
+
+        log.info("用戶 {} LINE 通知設定已更新: {}", userId, enabled);
+
+        return ResponseEntity.ok(Map.of(
+                "userId", userId,
+                "lineNotificationEnabled", enabled,
+                "message", enabled ? "已啟用 LINE 通知" : "已關閉 LINE 通知"));
     }
 }

@@ -80,6 +80,14 @@ discord:
       enabled: ${DISCORD_WEBHOOK_PER_USER_ENABLED:true}  # true = 使用用戶自定義 webhook，false = 使用全局
       fallback-to-global: ${DISCORD_WEBHOOK_FALLBACK:true}  # 用戶無自定義 webhook 時 fallback 到全局
 
+# ========== LINE Messaging API ==========
+line:
+  channel-id: ${LINE_CHANNEL_ID:}
+  channel-secret: ${LINE_CHANNEL_SECRET:}
+  channel-access-token: ${LINE_CHANNEL_ACCESS_TOKEN:}
+  enabled: ${LINE_ENABLED:false}
+  linking-code-expiry-minutes: 10
+
 stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder}

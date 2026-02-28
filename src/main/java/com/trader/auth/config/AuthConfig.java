@@ -59,6 +59,7 @@ public class AuthConfig {
                         // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/health", "/api/health/deep").permitAll()
+                        .requestMatchers("/api/line/webhook").permitAll()
 
                         // === ADMIN 專用 ===
                         .requestMatchers(
