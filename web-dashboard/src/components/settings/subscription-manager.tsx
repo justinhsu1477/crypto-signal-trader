@@ -10,7 +10,7 @@ import {
   getCheckoutInfo,
   submitPayment,
 } from "@/lib/api";
-import { formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Crown, Zap, Shield, Check, Copy, Wallet } from "lucide-react";
+import { Crown, Zap, Shield, Check, Copy, Wallet, Landmark, MessageCircle } from "lucide-react";
+
+// ===== 台幣轉帳資訊（更改此處即可更新顯示） =====
+const TWD_BANK_INFO = {
+  bankName: "國泰世華銀行",
+  bankCode: "013",
+  accountNumber: "0000-0000-0000-0000", // ← 請填入實際帳號
+  accountHolder: "—",                   // ← 請填入戶名
+};
+
+const TWD_PRICES: Record<string, number> = {
+  basic: 600,  // Basic 方案台幣價格
+  pro: 1500,   // Pro 方案台幣價格
+};
+
+const ADMIN_CONTACT = "https://t.me/hookfi_support"; // ← 管理員聯繫方式
+// ================================================
+
+type PaymentMethod = "usdt" | "twd";
 
 interface SubscriptionManagerProps {
   onStatusChange?: (active: boolean) => void;
@@ -44,8 +62,9 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
   const [actionLoading, setActionLoading] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
-  // USDT Payment Dialog
+  // Payment Dialog
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("usdt");
   const [checkoutInfo, setCheckoutInfo] = useState<CryptoCheckoutInfo | null>(null);
   const [txHash, setTxHash] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -117,12 +136,12 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
   }
 
   async function handleSubscribe(plan: PlanInfo) {
-    // 取得付款資訊
     setActionLoading(true);
     try {
       const info = await getCheckoutInfo(plan.planId);
       setCheckoutInfo(info);
       setTxHash("");
+      setPaymentMethod("usdt");
       setPaymentDialogOpen(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("common.saveFailed"));
@@ -380,20 +399,57 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
         </div>
       </div>
 
-      {/* USDT Payment Dialog */}
+      {/* Payment Dialog (USDT + TWD) */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Wallet className="h-5 w-5" />
-              {t("settings.paymentTitle")}
+              {paymentMethod === "usdt" ? (
+                <Wallet className="h-5 w-5" />
+              ) : (
+                <Landmark className="h-5 w-5" />
+              )}
+              {paymentMethod === "usdt"
+                ? t("settings.paymentTitle")
+                : t("settings.payMethodTwd")}
             </DialogTitle>
             <DialogDescription>
-              {t("settings.paymentDescription")}
+              {paymentMethod === "usdt"
+                ? t("settings.paymentDescription")
+                : t("settings.twdNote")}
             </DialogDescription>
           </DialogHeader>
 
-          {checkoutInfo && (
+          {/* Payment Method Tabs */}
+          <div className="flex gap-1 p-1 bg-muted rounded-lg">
+            <button
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                paymentMethod === "usdt"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setPaymentMethod("usdt")}
+            >
+              <Wallet className="h-4 w-4" />
+              {t("settings.payMethodUsdt")}
+            </button>
+            <button
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                paymentMethod === "twd"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setPaymentMethod("twd")}
+            >
+              <Landmark className="h-4 w-4" />
+              {t("settings.payMethodTwd")}
+            </button>
+          </div>
+
+          {/* ─── USDT Payment Content ─── */}
+          {paymentMethod === "usdt" && checkoutInfo && (
             <div className="space-y-4">
               {/* Plan info */}
               <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
@@ -448,20 +504,92 @@ export function SubscriptionManager({ onStatusChange }: SubscriptionManagerProps
             </div>
           )}
 
+          {/* ─── TWD Bank Transfer Content ─── */}
+          {paymentMethod === "twd" && checkoutInfo && (
+            <div className="space-y-4">
+              {/* Plan info */}
+              <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                <span className="text-sm text-muted-foreground">{t("settings.paymentPlan")}</span>
+                <span className="font-semibold">{checkoutInfo.planName}</span>
+              </div>
+
+              {/* TWD Amount */}
+              <div className="flex justify-between items-center p-3 bg-blue-500/10 rounded-lg">
+                <span className="text-sm text-muted-foreground">{t("settings.twdAmount")}</span>
+                <span className="text-lg font-bold text-blue-500">
+                  NT$ {TWD_PRICES[checkoutInfo.planId]?.toLocaleString() ?? "—"}
+                </span>
+              </div>
+
+              {/* Bank Info Card */}
+              <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">{t("settings.twdBankName")}</span>
+                  <span className="text-sm font-medium">
+                    {TWD_BANK_INFO.bankName}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">{t("settings.twdBranchCode")}</span>
+                  <Badge variant="outline">{TWD_BANK_INFO.bankCode}</Badge>
+                </div>
+                <Separator />
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">{t("settings.twdAccountNumber")}</span>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm font-mono">{TWD_BANK_INFO.accountNumber}</code>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => copyToClipboard(TWD_BANK_INFO.accountNumber.replace(/-/g, ""))}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">{t("settings.twdAccountHolder")}</span>
+                  <span className="text-sm font-medium">{TWD_BANK_INFO.accountHolder}</span>
+                </div>
+              </div>
+
+              {/* Note */}
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg space-y-1">
+                <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                  ⚠️ {t("settings.twdNote")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.twdNoteDetail")}
+                </p>
+              </div>
+            </div>
+          )}
+
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
               onClick={() => setPaymentDialogOpen(false)}
               disabled={verifying}
             >
-              {t("common.cancel")}
+              {t("common.close")}
             </Button>
-            <Button
-              onClick={handleSubmitPayment}
-              disabled={verifying || !txHash.trim()}
-            >
-              {verifying ? t("settings.paymentVerifying") : t("settings.paymentSubmit")}
-            </Button>
+            {paymentMethod === "usdt" && (
+              <Button
+                onClick={handleSubmitPayment}
+                disabled={verifying || !txHash.trim()}
+              >
+                {verifying ? t("settings.paymentVerifying") : t("settings.paymentSubmit")}
+              </Button>
+            )}
+            {paymentMethod === "twd" && (
+              <Button
+                onClick={() => window.open(ADMIN_CONTACT, "_blank")}
+              >
+                <MessageCircle className="h-4 w-4 mr-1" />
+                {t("settings.twdContactAdmin")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
