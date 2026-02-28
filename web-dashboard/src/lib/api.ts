@@ -22,7 +22,6 @@ import type {
   TradeSettingsDefaults,
   PlanInfo,
   SubscriptionStatusDetail,
-  UpgradePlanRequest,
   CryptoCheckoutInfo,
   ReferralStatusResponse,
   SubmitUidRequest,
@@ -397,15 +396,6 @@ export async function getSubscriptionStatus(): Promise<SubscriptionStatusDetail>
 export async function cancelSubscription(): Promise<{ status: string; message: string }> {
   return request<{ status: string; message: string }>("/api/subscription/cancel", {
     method: "POST",
-  });
-}
-
-export async function upgradeSubscription(
-  data: UpgradePlanRequest
-): Promise<{ status: string; message: string }> {
-  return request<{ status: string; message: string }>("/api/subscription/upgrade", {
-    method: "POST",
-    body: JSON.stringify(data),
   });
 }
 

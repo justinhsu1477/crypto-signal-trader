@@ -21,7 +21,7 @@ import static org.mockito.Mockito.*;
  * 測試策略：
  * - mock SubscriptionService，驗證每個端點正確委派
  * - 在 @BeforeEach 設定 SecurityContext，確保 SecurityUtil.getCurrentUserId() 可正常取值
- * - 11 tests across 6 @Nested groups
+ * - 9 tests across 5 @Nested groups
  */
 class SubscriptionControllerTest {
 
@@ -219,39 +219,4 @@ class SubscriptionControllerTest {
         }
     }
 
-    // ==================== POST /upgrade ====================
-
-    @Nested
-    @DisplayName("POST /upgrade")
-    class Upgrade {
-
-        @Test
-        @DisplayName("returns success message with plan id after upgrade")
-        void returnsSuccessMessage() {
-            doNothing().when(subscriptionService).upgrade(USER_ID, "pro");
-
-            UpgradePlanRequest request = new UpgradePlanRequest();
-            request.setPlanId("pro");
-
-            ResponseEntity<MessageResponse> response = controller.upgrade(request);
-
-            assertThat(response.getStatusCode().value()).isEqualTo(200);
-            assertThat(response.getBody().getStatus()).isEqualTo("success");
-            assertThat(response.getBody().getMessage()).isEqualTo("方案已更新為 pro");
-            verify(subscriptionService).upgrade(USER_ID, "pro");
-        }
-
-        @Test
-        @DisplayName("propagates exception when already on same plan")
-        void propagatesExceptionForSamePlan() {
-            doThrow(new IllegalArgumentException("已經是此方案，無需變更"))
-                    .when(subscriptionService).upgrade(USER_ID, "basic");
-
-            UpgradePlanRequest request = new UpgradePlanRequest();
-            request.setPlanId("basic");
-
-            Assertions.assertThrows(IllegalArgumentException.class,
-                    () -> controller.upgrade(request));
-        }
-    }
 }

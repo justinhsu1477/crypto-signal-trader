@@ -362,10 +362,6 @@ export interface SubscriptionStatusDetail {
   network: string | null;
 }
 
-export interface UpgradePlanRequest {
-  planId: string;
-}
-
 export interface CryptoCheckoutInfo {
   planId: string;
   planName: string;
