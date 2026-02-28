@@ -21,6 +21,12 @@ RUN ./gradlew build -x test --no-daemon
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
+# CJK 字型（Rich Menu 圖片產生需要）+ fontconfig
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends fontconfig fonts-noto-cjk && \
+    rm -rf /var/lib/apt/lists/* && \
+    fc-cache -f
+
 RUN mkdir -p /app/data /app/logs
 
 COPY --from=builder /app/build/libs/crypto-signal-trader-1.0.0.jar app.jar
