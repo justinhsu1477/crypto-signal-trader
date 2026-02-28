@@ -111,12 +111,36 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
   if (res.status === 403) {
     const body = await res.text();
-    throw new Error(body || `HTTP 403`);
+    let message = "Access denied";
+    if (body) {
+      try {
+        const parsed = JSON.parse(body);
+        message = parsed.error || parsed.message || parsed.detail || body;
+        // REFERRAL_NOT_VERIFIED → redirect 到推薦碼頁面
+        if (parsed.error === "REFERRAL_NOT_VERIFIED") {
+          if (typeof window !== "undefined" && window.location.pathname !== "/referral") {
+            window.location.href = "/referral";
+          }
+        }
+      } catch {
+        message = body;
+      }
+    }
+    throw new Error(message);
   }
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(body || `HTTP ${res.status}`);
+    let message = `HTTP ${res.status}`;
+    if (body) {
+      try {
+        const parsed = JSON.parse(body);
+        message = parsed.error || parsed.message || parsed.detail || body;
+      } catch {
+        message = body;
+      }
+    }
+    throw new Error(message);
   }
 
   return res.json() as Promise<T>;
@@ -143,7 +167,16 @@ async function publicRequest<T>(url: string, options: RequestInit = {}): Promise
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(body || `HTTP ${res.status}`);
+    let message = `HTTP ${res.status}`;
+    if (body) {
+      try {
+        const parsed = JSON.parse(body);
+        message = parsed.error || parsed.message || parsed.detail || body;
+      } catch {
+        message = body;
+      }
+    }
+    throw new Error(message);
   }
 
   return res.json() as Promise<T>;

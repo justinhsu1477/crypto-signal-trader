@@ -28,6 +28,14 @@ const translations = {
     connected: { en: "Connected", "zh-TW": "已連線", "zh-CN": "已连接" },
     disconnected: { en: "Disconnected", "zh-TW": "未連線", "zh-CN": "未连接" },
     cancel: { en: "Cancel", "zh-TW": "取消", "zh-CN": "取消" },
+    confirm: { en: "Confirm", "zh-TW": "確認", "zh-CN": "确认" },
+    close: { en: "Close", "zh-TW": "關閉", "zh-CN": "关闭" },
+    show: { en: "Show", "zh-TW": "顯示", "zh-CN": "显示" },
+    hide: { en: "Hide", "zh-TW": "隱藏", "zh-CN": "隐藏" },
+    totalRecords: { en: "{count} records total", "zh-TW": "共 {count} 筆", "zh-CN": "共 {count} 条" },
+    undo: { en: "Undo", "zh-TW": "復原", "zh-CN": "撤销" },
+    undoSuccess: { en: "Changes reverted", "zh-TW": "已復原變更", "zh-CN": "已撤销变更" },
+    retry: { en: "Retry", "zh-TW": "重試", "zh-CN": "重试" },
   },
 
   // ─── nav ───
@@ -42,6 +50,8 @@ const translations = {
     adminUsers: { en: "User Management", "zh-TW": "用戶管理", "zh-CN": "用户管理" },
     adminReferrals: { en: "Referral Review", "zh-TW": "推薦碼審核", "zh-CN": "推荐码审核" },
     logout: { en: "Logout", "zh-TW": "登出", "zh-CN": "退出登录" },
+    logoutConfirmTitle: { en: "Confirm Logout", "zh-TW": "確認登出", "zh-CN": "确认退出" },
+    logoutConfirmDesc: { en: "Are you sure you want to logout? You will need to sign in again.", "zh-TW": "確定要登出嗎？您需要重新登入。", "zh-CN": "确定要退出吗？您需要重新登录。" },
     features: { en: "Features", "zh-TW": "功能特色", "zh-CN": "功能特色" },
     pricing: { en: "Pricing", "zh-TW": "方案價格", "zh-CN": "方案价格" },
     about: { en: "About", "zh-TW": "關於我們", "zh-CN": "关于我们" },
@@ -105,6 +115,9 @@ const translations = {
       "zh-TW": "《服務條款與風險聲明》",
       "zh-CN": "《服务条款与风险声明》",
     },
+    passwordRequirements: { en: "Password must contain:", "zh-TW": "密碼需包含：", "zh-CN": "密码需包含：" },
+    passwordMinChars: { en: "At least 8 characters", "zh-TW": "至少 8 個字元", "zh-CN": "至少 8 个字符" },
+    passwordMixedCase: { en: "Both uppercase and lowercase letters", "zh-TW": "包含大小寫字母", "zh-CN": "包含大小写字母" },
   },
 
   // ─── verify email ───
@@ -362,6 +375,14 @@ const translations = {
     },
     tradeEventDetail: { en: "Trade Event Detail", "zh-TW": "交易事件明細", "zh-CN": "交易事件明细" },
     noEvents: { en: "No event records", "zh-TW": "沒有事件紀錄", "zh-CN": "没有事件记录" },
+    price: { en: "Price", "zh-TW": "價格", "zh-CN": "价格" },
+    quantity: { en: "Quantity", "zh-TW": "數量", "zh-CN": "数量" },
+    side: { en: "Side", "zh-TW": "方向", "zh-CN": "方向" },
+    orderType: { en: "Order Type", "zh-TW": "訂單類型", "zh-CN": "订单类型" },
+    orderId: { en: "Order ID", "zh-TW": "訂單編號", "zh-CN": "订单编号" },
+    detail: { en: "Detail", "zh-TW": "詳情", "zh-CN": "详情" },
+    success: { en: "Success", "zh-TW": "成功", "zh-CN": "成功" },
+    error: { en: "Error", "zh-TW": "錯誤", "zh-CN": "错误" },
   },
 
   // ─── performance ───
@@ -654,6 +675,12 @@ const translations = {
     paymentTxRequired: { en: "Please enter the transaction hash", "zh-TW": "請輸入交易 Hash", "zh-CN": "请输入交易 Hash" },
     paymentFailed: { en: "Verification failed", "zh-TW": "驗證失敗", "zh-CN": "验证失败" },
     paymentCopied: { en: "Copied to clipboard", "zh-TW": "已複製到剪貼簿", "zh-CN": "已复制到剪贴板" },
+    passwordChangedToast: { en: "Password changed successfully. Logging out in 2 seconds...", "zh-TW": "密碼修改成功，2 秒後自動登出...", "zh-CN": "密码修改成功，2 秒后自动退出..." },
+    autoTradeConfirmEnablePrereqs: { en: "Prerequisites met:", "zh-TW": "已滿足前置條件：", "zh-CN": "已满足前置条件：" },
+    autoTradeConfirmApiKeyOk: { en: "Binance API Key configured", "zh-TW": "已設定 Binance API Key", "zh-CN": "已配置 Binance API Key" },
+    autoTradeConfirmWebhookOk: { en: "Discord webhook active", "zh-TW": "Discord webhook 已啟用", "zh-CN": "Discord webhook 已启用" },
+    autoTradeConfirmNoWebhook: { en: "No Discord webhook (notifications won't be sent)", "zh-TW": "未設定 Discord webhook（不會收到通知）", "zh-CN": "未配置 Discord webhook（不会收到通知）" },
+    settingsSaved: { en: "Settings saved", "zh-TW": "設定已儲存", "zh-CN": "设置已保存" },
   },
 
   // ─── referral ───

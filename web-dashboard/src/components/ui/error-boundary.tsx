@@ -5,7 +5,56 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 /* ------------------------------------------------------------------ */
-/*  ErrorBoundary — React class component（必須用 class 才能攔截 render 錯誤）*/
+/*  Locale detection helper (no React context dependency)              */
+/* ------------------------------------------------------------------ */
+
+type FallbackLocale = "en" | "zh-TW" | "zh-CN";
+
+function detectLocale(): FallbackLocale {
+  if (typeof navigator === "undefined") return "en";
+  const lang = navigator.language;
+  if (lang.startsWith("zh")) {
+    return lang.includes("CN") || lang.includes("Hans") ? "zh-CN" : "zh-TW";
+  }
+  return "en";
+}
+
+const fallbackLabels: Record<FallbackLocale, {
+  sectionError: string;
+  retry: string;
+  pageError: string;
+  pageErrorDesc: string;
+  refresh: string;
+}> = {
+  en: {
+    sectionError: "Something went wrong in this section",
+    retry: "Retry",
+    pageError: "Something went wrong",
+    pageErrorDesc: "An unexpected error occurred. Please try refreshing the page.",
+    refresh: "Refresh Page",
+  },
+  "zh-TW": {
+    sectionError: "此區塊發生錯誤",
+    retry: "重試",
+    pageError: "頁面發生錯誤",
+    pageErrorDesc: "發生未預期的錯誤，請嘗試重新整理頁面。",
+    refresh: "重新整理",
+  },
+  "zh-CN": {
+    sectionError: "此区块发生错误",
+    retry: "重试",
+    pageError: "页面发生错误",
+    pageErrorDesc: "发生未预期的错误，请尝试刷新页面。",
+    refresh: "刷新页面",
+  },
+};
+
+function getLabels() {
+  return fallbackLabels[detectLocale()];
+}
+
+/* ------------------------------------------------------------------ */
+/*  ErrorBoundary — React class component                              */
 /* ------------------------------------------------------------------ */
 
 interface ErrorBoundaryProps {
@@ -55,7 +104,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 }
 
 /* ------------------------------------------------------------------ */
-/*  SectionErrorFallback — 區塊級 fallback UI                         */
+/*  SectionErrorFallback — section-level fallback UI                   */
 /* ------------------------------------------------------------------ */
 
 interface SectionErrorFallbackProps {
@@ -64,12 +113,14 @@ interface SectionErrorFallbackProps {
 }
 
 export function SectionErrorFallback({ error, onRetry }: SectionErrorFallbackProps) {
+  const labels = getLabels();
+
   return (
     <Card className="border-yellow-500/30">
       <CardContent className="flex flex-col items-center justify-center py-8 text-center">
         <AlertTriangle className="mb-3 h-8 w-8 text-yellow-500" />
         <p className="mb-1 text-sm font-medium text-foreground">
-          此區塊發生錯誤
+          {labels.sectionError}
         </p>
         {error?.message && (
           <p className="mb-3 text-xs text-muted-foreground">{error.message}</p>
@@ -80,7 +131,7 @@ export function SectionErrorFallback({ error, onRetry }: SectionErrorFallbackPro
             className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
           >
             <RefreshCw className="h-3 w-3" />
-            重試
+            {labels.retry}
           </button>
         )}
       </CardContent>
@@ -89,25 +140,27 @@ export function SectionErrorFallback({ error, onRetry }: SectionErrorFallbackPro
 }
 
 /* ------------------------------------------------------------------ */
-/*  PageErrorFallback — 全頁級 fallback（不依賴 i18n context）          */
+/*  PageErrorFallback — full-page fallback (no i18n context)           */
 /* ------------------------------------------------------------------ */
 
 export function PageErrorFallback() {
+  const labels = getLabels();
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4 text-center">
       <AlertTriangle className="mb-4 h-12 w-12 text-yellow-500" />
       <h1 className="mb-2 text-xl font-bold text-foreground">
-        頁面發生錯誤
+        {labels.pageError}
       </h1>
       <p className="mb-4 text-sm text-muted-foreground">
-        Something went wrong. Please try refreshing the page.
+        {labels.pageErrorDesc}
       </p>
       <button
         onClick={() => window.location.reload()}
         className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
       >
         <RefreshCw className="h-4 w-4" />
-        重新整理
+        {labels.refresh}
       </button>
     </div>
   );
