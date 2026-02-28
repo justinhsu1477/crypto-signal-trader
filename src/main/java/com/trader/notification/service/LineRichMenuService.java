@@ -72,11 +72,28 @@ public class LineRichMenuService {
             return;
         }
 
-        log.info("開始初始化 LINE Rich Menu...");
+        boolean forceRebuild = lineConfig.getRichMenu().isForceRebuild();
+        log.info("開始初始化 LINE Rich Menu...{}", forceRebuild ? "（強制重建模式）" : "");
 
         try {
             // 列出所有已存在的 Rich Menu
             JsonArray existingMenus = listRichMenus();
+
+            // 強制重建：刪除既有 Menu，讓後面的邏輯重新建立+上傳圖片
+            if (forceRebuild) {
+                String existingDefault = findMenuByName(existingMenus, MENU_NAME_DEFAULT);
+                String existingBound = findMenuByName(existingMenus, MENU_NAME_BOUND);
+                if (existingDefault != null) {
+                    deleteMenu(existingDefault);
+                    log.info("強制重建：已刪除舊 default Rich Menu: {}", existingDefault);
+                }
+                if (existingBound != null) {
+                    deleteMenu(existingBound);
+                    log.info("強制重建：已刪除舊 bound Rich Menu: {}", existingBound);
+                }
+                // 清空後重新列出（應該不含剛刪的）
+                existingMenus = listRichMenus();
+            }
 
             // 找或建立 default menu
             defaultMenuId = findMenuByName(existingMenus, MENU_NAME_DEFAULT);
@@ -205,6 +222,21 @@ public class LineRichMenuService {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "no body";
                 log.error("上傳 Rich Menu 圖片失敗: HTTP {} - {}", response.code(), errorBody);
+            }
+        }
+    }
+
+    private void deleteMenu(String richMenuId) throws IOException {
+        Request request = new Request.Builder()
+                .url(API_BASE + "/richmenu/" + richMenuId)
+                .addHeader("Authorization", bearer())
+                .delete()
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                String errorBody = response.body() != null ? response.body().string() : "no body";
+                log.warn("刪除 Rich Menu 失敗: HTTP {} - {}", response.code(), errorBody);
             }
         }
     }

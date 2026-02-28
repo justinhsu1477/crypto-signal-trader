@@ -89,6 +89,7 @@ line:
   linking-code-expiry-minutes: 10
   rich-menu:
     enabled: ${LINE_RICH_MENU_ENABLED:true}
+    force-rebuild: ${LINE_RICH_MENU_FORCE_REBUILD:false}
     web-base-url: ${LINE_WEB_BASE_URL:https://hook-fi.com}
 
 stripe:
