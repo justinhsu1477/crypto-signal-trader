@@ -698,9 +698,9 @@ const translations = {
       "zh-CN": "管理员确认转账后，将于 24 小时内为您开通订阅。请在转账备注填写您的注册 Email，以加速处理。",
     },
     twdContactAdmin: {
-      en: "Contact Admin",
-      "zh-TW": "聯繫管理員",
-      "zh-CN": "联系管理员",
+      en: "Contact via LINE",
+      "zh-TW": "LINE 聯繫管理員",
+      "zh-CN": "LINE 联系管理员",
     },
     twdRefreshRate: {
       en: "Refresh rate",

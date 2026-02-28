@@ -36,7 +36,7 @@ const TWD_BANK_INFO = {
   accountHolder: "—",                   // ← 請填入戶名
 };
 
-const ADMIN_CONTACT = "https://t.me/hookfi_support"; // ← 管理員聯繫方式
+const ADMIN_CONTACT = "https://lin.ee/9ga4egy"; // ← LINE 官方帳號
 
 // 匯率快取（1 小時有效，避免重複請求）
 const RATE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
