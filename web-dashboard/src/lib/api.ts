@@ -28,6 +28,10 @@ import type {
   SubmitUidRequest,
   VerifyEmailRequest,
   ResendCodeRequest,
+  AdminSubscriptionListResponse,
+  AdminPaymentHistoryResponse,
+  AdminActivateRequest,
+  AdminSubscriptionActionResponse,
 } from "@/types";
 
 const BASE = "";  // 使用 Next.js rewrites proxy
@@ -483,6 +487,44 @@ export async function adminVerifyReferral(
   return request<{ message: string; userId: string }>(
     "/api/admin/referral/verify",
     { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+// ─── Admin Subscriptions ───
+
+export async function getAdminSubscriptions(): Promise<AdminSubscriptionListResponse> {
+  return request<AdminSubscriptionListResponse>("/api/admin/subscriptions");
+}
+
+export async function getAdminUserPayments(userId: string): Promise<AdminPaymentHistoryResponse> {
+  return request<AdminPaymentHistoryResponse>(`/api/admin/subscriptions/${userId}/payments`);
+}
+
+export async function adminActivateSubscription(
+  userId: string,
+  data: AdminActivateRequest
+): Promise<AdminSubscriptionActionResponse> {
+  return request<AdminSubscriptionActionResponse>(
+    `/api/admin/subscriptions/${userId}/activate`,
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+export async function adminCancelSubscription(
+  userId: string
+): Promise<AdminSubscriptionActionResponse> {
+  return request<AdminSubscriptionActionResponse>(
+    `/api/admin/subscriptions/${userId}/cancel`,
+    { method: "PUT" }
+  );
+}
+
+export async function adminSetLifetime(
+  userId: string
+): Promise<AdminSubscriptionActionResponse> {
+  return request<AdminSubscriptionActionResponse>(
+    `/api/admin/subscriptions/${userId}/lifetime`,
+    { method: "PUT" }
   );
 }
 
