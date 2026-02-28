@@ -17,6 +17,24 @@ services:
       retries: 5
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # Management UI (guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
   trading-api:
     build:
       context: .
@@ -26,6 +44,9 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/health"]
       interval: 10s
@@ -64,3 +85,4 @@ services:
 
 volumes:
   pg-data:
+  rabbitmq-data:

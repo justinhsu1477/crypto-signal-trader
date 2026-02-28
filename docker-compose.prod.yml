@@ -8,6 +8,9 @@
 # DB 連線設定在 .env.prod 中
 
 services:
+  rabbitmq:
+    container_name: rabbitmq-prod
+
   trading-api:
     container_name: trading-api-prod
     ports:

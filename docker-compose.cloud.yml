@@ -14,6 +14,25 @@
 # DB 使用 Neon 雲端，不需本地 PostgreSQL
 
 services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    expose:
+      - "5672"
+    ports:
+      - "127.0.0.1:15672:15672"   # Management UI（僅 localhost，SSH tunnel 存取）
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     container_name: caddy
@@ -36,6 +55,9 @@ services:
       - "8080"
     env_file:
       - .env.prod
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/health"]
       interval: 10s
@@ -58,3 +80,4 @@ services:
 
 volumes:
   caddy_data:
+  rabbitmq_data:

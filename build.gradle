@@ -35,6 +35,9 @@ dependencies {
     // Stripe 訂閱計費
     implementation 'com.stripe:stripe-java:28.2.0'
 
+    // RabbitMQ 訊息佇列（通知非同步化 + 重試 + 持久化）
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
     // OkHttp for Binance API calls
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
