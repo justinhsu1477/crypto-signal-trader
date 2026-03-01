@@ -125,19 +125,18 @@ public class BinanceFuturesService {
             // tradeRecordService 未注入時（如部分測試），安全降級
         }
 
-        String enriched = (displayName != null && !displayName.isBlank())
-                ? "用戶: " + displayName + "\n" + body
-                : body;
-
-        // 1. 全局 webhook（保留）
-        discordWebhookService.sendNotification(title, enriched, color);
-
-        // 2. 多用戶模式：受影響用戶 + Admin
         if (multiUserConfig.isEnabled() && userId != null && !userId.isBlank()) {
-            // 2a. 受影響的用戶（不帶前綴 — 自己的頻道）
+            // 多用戶模式：受影響用戶 per-user + Admin per-user（帶 displayName 前綴）
+            // 不再額外呼叫 sendNotification()，避免 MQ Consumer 重複派發到 admin per-user
             discordWebhookService.sendNotificationToUser(userId, title, body, color);
-            // 2b. 所有 Admin（帶 displayName 前綴 — 知道是誰的事件）
             discordWebhookService.sendNotificationToAdmins(displayName, title, body, color);
+        } else {
+            // 單用戶模式 or 無法識別用戶：走 sendNotification
+            // → MQ admin queue → Consumer 派發到 global + admin per-user（單次呼叫，不重複）
+            String enriched = (displayName != null && !displayName.isBlank())
+                    ? "用戶: " + displayName + "\n" + body
+                    : body;
+            discordWebhookService.sendNotification(title, enriched, color);
         }
     }
 

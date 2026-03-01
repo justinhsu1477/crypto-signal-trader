@@ -69,10 +69,8 @@ public class StartupReconciliationService {
             }
         } catch (Exception e) {
             log.error("啟動對帳失敗: {}", e.getMessage(), e);
-            discordWebhookService.sendNotification(
-                    "⚠️ 啟動對帳失敗",
-                    "原因: " + e.getMessage() + "\n請手動檢查 OPEN/PENDING_CLOSE 交易",
-                    DiscordWebhookService.COLOR_YELLOW);
+            // sendNotificationToAdmins → MQ admin queue → Consumer 派發到 admin per-user
+            // （不再額外呼叫 sendNotification，避免 Consumer 重複派發）
             discordWebhookService.sendNotificationToAdmins(
                     "⚠️ 啟動對帳失敗",
                     "原因: " + e.getMessage() + "\n請手動檢查 OPEN/PENDING_CLOSE 交易",
@@ -186,8 +184,8 @@ public class StartupReconciliationService {
                     : String.join("\n", globalReport);
             String summary = String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n用戶數: %d\n\n%s",
                     totalPendingFixed, totalZombieCleaned, allUserIds.size(), details);
-            discordWebhookService.sendNotification(
-                    "🔄 啟動對帳完成", summary, DiscordWebhookService.COLOR_BLUE);
+            // sendNotificationToAdmins → MQ admin queue → Consumer 派發到 admin per-user
+            // （不再額外呼叫 sendNotification，避免 Consumer 重複派發）
             discordWebhookService.sendNotificationToAdmins(
                     "🔄 啟動對帳完成", summary, DiscordWebhookService.COLOR_BLUE);
         } else {

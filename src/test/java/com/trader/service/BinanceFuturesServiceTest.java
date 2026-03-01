@@ -736,8 +736,8 @@ class BinanceFuturesServiceTest {
         }
 
         @Test
-        @DisplayName("多用戶模式 — 發 global + per-user + admin")
-        void multiUserModeThreeWay() {
+        @DisplayName("多用戶模式 — 發 per-user + admin（不走 sendNotification 避免 MQ 重複）")
+        void multiUserModeTwoWay() {
             multiUserConfig.setEnabled(true);
             TradeRecordService.setCurrentUserId("user-beck");
             TradeRecordService.setCurrentUserDisplayName("Beck Tsai (beck@example.com)");
@@ -753,12 +753,12 @@ class BinanceFuturesServiceTest {
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             service.executeSignal(signal);
 
-            // 1. 全局 webhook
-            verify(mockWebhook, atLeastOnce()).sendNotification(anyString(), anyString(), anyInt());
-            // 2. 受影響用戶 per-user（不帶前綴）
+            // 多用戶模式不再呼叫 sendNotification（避免 MQ Consumer 重複派發到 admin per-user）
+            verify(mockWebhook, never()).sendNotification(anyString(), anyString(), anyInt());
+            // 1. 受影響用戶 per-user（不帶前綴）
             verify(mockWebhook, atLeastOnce()).sendNotificationToUser(
                     anyString(), anyString(), anyString(), anyInt());
-            // 3. Admin（帶 displayName 前綴）
+            // 2. Admin（帶 displayName 前綴）
             verify(mockWebhook, atLeastOnce()).sendNotificationToAdmins(
                     anyString(), anyString(), anyString(), anyInt());
         }

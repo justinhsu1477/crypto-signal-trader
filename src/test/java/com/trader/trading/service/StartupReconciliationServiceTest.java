@@ -251,8 +251,8 @@ class StartupReconciliationServiceTest {
         }
 
         @Test
-        @DisplayName("多用戶清理 — 發送 per-user 通知 + 全局摘要 + admin 通知")
-        void sendsPerUserAndGlobalAndAdminNotification() {
+        @DisplayName("多用戶清理 — 發送 per-user 通知 + admin 摘要（不重複呼叫 sendNotification）")
+        void sendsPerUserAndAdminNotification() {
             Trade trade = createOpenTradeWithUser("trade-z", "ETHUSDT", "SHORT", "user-a");
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
@@ -270,16 +270,14 @@ class StartupReconciliationServiceTest {
                     eq("🔄 啟動對帳完成"),
                     anyString(),
                     eq(DiscordWebhookService.COLOR_BLUE));
-            // 全局摘要
-            verify(discordWebhookService).sendNotification(
-                    eq("🔄 啟動對帳完成"),
-                    anyString(),
-                    eq(DiscordWebhookService.COLOR_BLUE));
-            // Admin 通知（新增）
+            // Admin 摘要（透過 MQ Consumer 派發到 admin per-user）
             verify(discordWebhookService).sendNotificationToAdmins(
                     eq("🔄 啟動對帳完成"),
                     anyString(),
                     eq(DiscordWebhookService.COLOR_BLUE));
+            // 不再額外呼叫 sendNotification（避免 MQ Consumer 重複派發）
+            verify(discordWebhookService, never()).sendNotification(
+                    eq("🔄 啟動對帳完成"), anyString(), anyInt());
         }
 
         @Test
@@ -374,22 +372,22 @@ class StartupReconciliationServiceTest {
     class AdminNotificationTests {
 
         @Test
-        @DisplayName("對帳失敗 — 同時發送 global + admin 告警")
-        void failureSendsGlobalAndAdminNotification() {
+        @DisplayName("對帳失敗 — 發送 admin 告警（不重複呼叫 sendNotification）")
+        void failureSendsAdminNotification() {
             // 讓 findByStatus 拋異常 → 觸發 catch block
             when(tradeRepository.findByStatus("PENDING_CLOSE"))
                     .thenThrow(new RuntimeException("DB connection refused"));
 
             service.reconcileOnStartup();
 
-            verify(discordWebhookService).sendNotification(
-                    eq("⚠️ 啟動對帳失敗"),
-                    contains("DB connection refused"),
-                    eq(DiscordWebhookService.COLOR_YELLOW));
+            // 只呼叫 sendNotificationToAdmins（MQ Consumer 派發到 admin per-user）
             verify(discordWebhookService).sendNotificationToAdmins(
                     eq("⚠️ 啟動對帳失敗"),
                     contains("DB connection refused"),
                     eq(DiscordWebhookService.COLOR_YELLOW));
+            // 不再額外呼叫 sendNotification
+            verify(discordWebhookService, never()).sendNotification(
+                    eq("⚠️ 啟動對帳失敗"), anyString(), anyInt());
         }
 
         @Test

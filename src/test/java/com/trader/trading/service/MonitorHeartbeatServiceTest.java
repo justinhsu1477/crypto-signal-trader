@@ -50,7 +50,7 @@ class MonitorHeartbeatServiceTest {
         void reconnectingSendsAlert() {
             service.receiveHeartbeat("reconnecting", "active", null);
 
-            verify(webhookService).sendNotification(
+            verify(webhookService).sendNotificationToAdmins(
                     contains("中斷"),
                     contains("重連"),
                     eq(DiscordWebhookService.COLOR_RED));
@@ -62,7 +62,7 @@ class MonitorHeartbeatServiceTest {
             service.receiveHeartbeat("reconnecting", "active", null);
             service.receiveHeartbeat("reconnecting", "active", null);
 
-            verify(webhookService, times(1)).sendNotification(
+            verify(webhookService, times(1)).sendNotificationToAdmins(
                     contains("中斷"), anyString(), eq(DiscordWebhookService.COLOR_RED));
         }
 
@@ -72,7 +72,7 @@ class MonitorHeartbeatServiceTest {
             service.receiveHeartbeat("reconnecting", "active", null);
             service.receiveHeartbeat("connected", "active", null);
 
-            verify(webhookService).sendNotification(
+            verify(webhookService).sendNotificationToAdmins(
                     contains("恢復"),
                     contains("恢復"),
                     eq(DiscordWebhookService.COLOR_GREEN));
@@ -83,7 +83,7 @@ class MonitorHeartbeatServiceTest {
         void connectedWithoutPriorAlertNoRecovery() {
             service.receiveHeartbeat("connected", "active", null);
 
-            verify(webhookService, never()).sendNotification(anyString(), anyString(), anyInt());
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
     }
 
@@ -96,7 +96,7 @@ class MonitorHeartbeatServiceTest {
         void aiDisabledAlert() {
             service.receiveHeartbeat("connected", "disabled", null);
 
-            verify(webhookService).sendNotification(
+            verify(webhookService).sendNotificationToAdmins(
                     contains("AI"),
                     contains("AI Signal Parser"),
                     eq(DiscordWebhookService.COLOR_YELLOW));
@@ -108,7 +108,7 @@ class MonitorHeartbeatServiceTest {
             service.receiveHeartbeat("connected", "disabled", null);
             service.receiveHeartbeat("connected", "disabled", null);
 
-            verify(webhookService, times(1)).sendNotification(
+            verify(webhookService, times(1)).sendNotificationToAdmins(
                     contains("AI"), anyString(), eq(DiscordWebhookService.COLOR_YELLOW));
         }
 
@@ -118,7 +118,7 @@ class MonitorHeartbeatServiceTest {
             service.receiveHeartbeat("connected", "disabled", null);
             service.receiveHeartbeat("connected", "active", null);
 
-            verify(webhookService).sendNotification(
+            verify(webhookService).sendNotificationToAdmins(
                     contains("AI Agent 已啟用"),
                     contains("AI 模式"),
                     eq(DiscordWebhookService.COLOR_GREEN));
@@ -129,7 +129,7 @@ class MonitorHeartbeatServiceTest {
         void nullAiStatusIgnored() {
             service.receiveHeartbeat("connected", null, null);
 
-            verify(webhookService, never()).sendNotification(anyString(), anyString(), anyInt());
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
     }
 
@@ -144,7 +144,7 @@ class MonitorHeartbeatServiceTest {
         void neverReceivedNoAlert() {
             service.checkHeartbeat();
 
-            verify(webhookService, never()).sendNotification(anyString(), anyString(), anyInt());
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
 
         @Test
@@ -155,7 +155,7 @@ class MonitorHeartbeatServiceTest {
             service.checkHeartbeat();
 
             // 只有 receiveHeartbeat 不會觸發通知（因為 connected 且未曾斷線）
-            verify(webhookService, never()).sendNotification(anyString(), anyString(), anyInt());
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
 
         @Test
@@ -169,7 +169,7 @@ class MonitorHeartbeatServiceTest {
 
             service.checkHeartbeat();
 
-            verify(webhookService).sendNotification(
+            verify(webhookService).sendNotificationToAdmins(
                     contains("離線"),
                     contains("心跳"),
                     eq(DiscordWebhookService.COLOR_RED));
@@ -186,7 +186,7 @@ class MonitorHeartbeatServiceTest {
             service.checkHeartbeat();
             service.checkHeartbeat();
 
-            verify(webhookService, times(1)).sendNotification(
+            verify(webhookService, times(1)).sendNotificationToAdmins(
                     contains("離線"), anyString(), eq(DiscordWebhookService.COLOR_RED));
         }
 
@@ -203,7 +203,7 @@ class MonitorHeartbeatServiceTest {
             // 恢復心跳（alertSent=true → connected → 發恢復通知）
             service.receiveHeartbeat("connected", "active", null);
 
-            verify(webhookService).sendNotification(
+            verify(webhookService).sendNotificationToAdmins(
                     contains("恢復"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
         }
     }
@@ -271,70 +271,60 @@ class MonitorHeartbeatServiceTest {
         }
     }
 
-    // ==================== notifySystem → 同時通知全局 + Admin ====================
+    // ==================== notifySystem → Admin per-user 通知 ====================
 
     @Nested
-    @DisplayName("notifySystem — 全局 + Admin per-user 同步")
+    @DisplayName("notifySystem — Admin per-user 通知")
     class NotifySystemTests {
 
         @Test
-        @DisplayName("Discord 斷線 — 同時發送 global + admin")
-        void disconnectNotifiesBothGlobalAndAdmin() {
+        @DisplayName("Discord 斷線 — 發送 admin 告警")
+        void disconnectNotifiesAdmin() {
             service.receiveHeartbeat("reconnecting", "active", null);
 
-            verify(webhookService).sendNotification(
-                    contains("中斷"), anyString(), eq(DiscordWebhookService.COLOR_RED));
             verify(webhookService).sendNotificationToAdmins(
                     contains("中斷"), anyString(), eq(DiscordWebhookService.COLOR_RED));
         }
 
         @Test
-        @DisplayName("Discord 恢復 — 同時發送 global + admin")
-        void recoveryNotifiesBothGlobalAndAdmin() {
+        @DisplayName("Discord 恢復 — 發送 admin 通知")
+        void recoveryNotifiesAdmin() {
             service.receiveHeartbeat("reconnecting", "active", null);
             service.receiveHeartbeat("connected", "active", null);
 
-            verify(webhookService).sendNotification(
-                    contains("恢復"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
             verify(webhookService).sendNotificationToAdmins(
                     contains("恢復"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
         }
 
         @Test
-        @DisplayName("AI 未啟用 — 同時發送 global + admin")
-        void aiDisabledNotifiesBothGlobalAndAdmin() {
+        @DisplayName("AI 未啟用 — 發送 admin 告警")
+        void aiDisabledNotifiesAdmin() {
             service.receiveHeartbeat("connected", "disabled", null);
 
-            verify(webhookService).sendNotification(
-                    contains("AI"), anyString(), eq(DiscordWebhookService.COLOR_YELLOW));
             verify(webhookService).sendNotificationToAdmins(
                     contains("AI"), anyString(), eq(DiscordWebhookService.COLOR_YELLOW));
         }
 
         @Test
-        @DisplayName("AI 恢復 — 同時發送 global + admin")
-        void aiRecoveryNotifiesBothGlobalAndAdmin() {
+        @DisplayName("AI 恢復 — 發送 admin 通知")
+        void aiRecoveryNotifiesAdmin() {
             service.receiveHeartbeat("connected", "disabled", null);
             service.receiveHeartbeat("connected", "active", null);
 
-            verify(webhookService).sendNotification(
-                    contains("AI Agent 已啟用"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
             verify(webhookService).sendNotificationToAdmins(
                     contains("AI Agent 已啟用"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
         }
 
         @Test
-        @DisplayName("心跳逾時離線 — 同時發送 global + admin")
+        @DisplayName("心跳逾時離線 — 發送 admin 告警")
         @SuppressWarnings("unchecked")
-        void timeoutNotifiesBothGlobalAndAdmin() {
+        void timeoutNotifiesAdmin() {
             AtomicReference<Instant> lastHeartbeat =
                     (AtomicReference<Instant>) ReflectionTestUtils.getField(service, "lastHeartbeat");
             lastHeartbeat.set(Instant.now().minusSeconds(100));
 
             service.checkHeartbeat();
 
-            verify(webhookService).sendNotification(
-                    contains("離線"), anyString(), eq(DiscordWebhookService.COLOR_RED));
             verify(webhookService).sendNotificationToAdmins(
                     contains("離線"), anyString(), eq(DiscordWebhookService.COLOR_RED));
         }

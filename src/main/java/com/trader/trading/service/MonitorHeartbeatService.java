@@ -70,7 +70,8 @@ public class MonitorHeartbeatService {
      * 心跳類事件不屬於特定用戶，只需通知管理員。
      */
     private void notifySystem(String title, String message, int color) {
-        webhookService.sendNotification(title, message, color);
+        // sendNotificationToAdmins → MQ admin queue → Consumer 派發到 admin per-user
+        // （不再額外呼叫 sendNotification，避免 Consumer 重複派發）
         webhookService.sendNotificationToAdmins(title, message, color);
     }
 
