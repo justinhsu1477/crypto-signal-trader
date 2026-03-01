@@ -62,7 +62,15 @@ public class SignalDeduplicationService {
     }
 
     /**
-     * 檢查 ENTRY 訊號是否重複
+     * CANCEL 訊號的去重窗口（30 秒）
+     * 比 ENTRY 短，因為取消操作本身較快、重發頻率更高
+     */
+    private static final long CANCEL_DEDUP_WINDOW_MS = 30 * 1000;
+
+    // ==================== 公開 API（簽章不變） ====================
+
+    /**
+     * 檢查 ENTRY 訊號是否重複（內存 + DB 雙層）
      *
      * @param signal 已解析的交易訊號
      * @return true = 重複（應拒絕）, false = 非重複（可執行）
@@ -75,31 +83,20 @@ public class SignalDeduplicationService {
 
         String hash = generateHash(signal);
 
-        // ===== 第一層：內存快速檢查（原子操作，防 race condition）=====
-        long now = System.currentTimeMillis();
-        Long previousTime = recentSignals.putIfAbsent(hash, now);
-
-        if (previousTime != null && (now - previousTime) < DEDUP_WINDOW_MS) {
-            long elapsedSec = (now - previousTime) / 1000;
-            log.warn("🔁 重複訊號攔截（內存）: hash={} 距上次 {}秒, 窗口={}秒",
-                    hash.substring(0, 12), elapsedSec, DEDUP_WINDOW_MS / 1000);
+        // 第一層：內存快速檢查
+        if (checkMemoryDedup(hash, DEDUP_WINDOW_MS)) {
+            log.warn("🔁 重複訊號攔截（內存）: hash={}", hash.substring(0, 12));
             return true;
         }
 
-        // putIfAbsent 返回 non-null 但已過期 → 更新時間戳
-        if (previousTime != null) {
-            recentSignals.put(hash, now);
-        }
-
-        // ===== 第二層：DB 持久化檢查 =====
-        // 查詢最近 DEDUP_WINDOW 內是否有相同 signalHash 的 OPEN 或 CLOSED 交易
+        // 第二層：DB 持久化檢查
         LocalDateTime windowStart = LocalDateTime.now(AppConstants.ZONE_ID).minusSeconds(DEDUP_WINDOW_MS / 1000);
         boolean existsInDb = tradeRepository.existsBySignalHashAndCreatedAtAfter(hash, windowStart);
 
         if (existsInDb) {
             log.warn("🔁 重複訊號攔截（DB）: hash={} 在最近 {}分鐘內已有交易紀錄",
                     hash.substring(0, 12), DEDUP_WINDOW_MS / 1000 / 60);
-            recentSignals.put(hash, now);
+            recentSignals.put(hash, System.currentTimeMillis());
             return true;
         }
 
@@ -124,21 +121,9 @@ public class SignalDeduplicationService {
         }
 
         String hash = "CANCEL|" + symbol;
-        long now = System.currentTimeMillis();
-
-        // CANCEL 用較短的窗口: 30 秒（原子操作防 race condition）
-        long cancelWindow = 30 * 1000;
-        Long previousTime = recentSignals.putIfAbsent(hash, now);
-
-        if (previousTime != null && (now - previousTime) < cancelWindow) {
-            log.warn("🔁 重複取消攔截: {} 距上次 {}秒",
-                    symbol, (now - previousTime) / 1000);
+        if (checkMemoryDedup(hash, CANCEL_DEDUP_WINDOW_MS)) {
+            log.warn("🔁 重複取消攔截: {}", symbol);
             return true;
-        }
-
-        // putIfAbsent 返回 non-null 但已過期 → 更新時間戳
-        if (previousTime != null) {
-            recentSignals.put(hash, now);
         }
         return false;
     }
@@ -159,21 +144,9 @@ public class SignalDeduplicationService {
         }
 
         String hash = "CANCEL|" + userId + "|" + symbol;
-        long now = System.currentTimeMillis();
-
-        // CANCEL 用較短的窗口: 30 秒（原子操作防 race condition）
-        long cancelWindow = 30 * 1000;
-        Long previousTime = recentSignals.putIfAbsent(hash, now);
-
-        if (previousTime != null && (now - previousTime) < cancelWindow) {
-            log.warn("🔁 重複取消攔截（per-user）: userId={} {} 距上次 {}秒",
-                    userId, symbol, (now - previousTime) / 1000);
+        if (checkMemoryDedup(hash, CANCEL_DEDUP_WINDOW_MS)) {
+            log.warn("🔁 重複取消攔截（per-user）: userId={} {}", userId, symbol);
             return true;
-        }
-
-        // putIfAbsent 返回 non-null 但已過期 → 更新時間戳
-        if (previousTime != null) {
-            recentSignals.put(hash, now);
         }
         return false;
     }
@@ -183,23 +156,12 @@ public class SignalDeduplicationService {
      * 使用核心交易參數: symbol + side + entryPriceLow + stopLoss
      */
     public String generateHash(TradeSignal signal) {
-        // DCA 時 side 可能為 null（由 BinanceFuturesService 從持倉推斷），用 "DCA" 代替
         String sideStr = signal.getSide() != null ? signal.getSide().name() : "DCA";
-        String raw = String.join("|",
-                signal.getSymbol(),
-                sideStr,
+        return sha256(String.join("|",
+                signal.getSymbol(), sideStr,
                 String.valueOf(signal.getEntryPriceLow()),
                 String.valueOf(signal.getStopLoss())
-        );
-
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hashBytes);
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 一定存在，不會發生
-            throw new RuntimeException("SHA-256 not available", e);
-        }
+        ));
     }
 
     // ==================== Signal-level 去重（全局，廣播入口用） ====================
@@ -244,19 +206,9 @@ public class SignalDeduplicationService {
 
         String userHash = generateUserHash(signal, userId);
 
-        long now = System.currentTimeMillis();
-        Long previousTime = recentSignals.putIfAbsent(userHash, now);
-
-        if (previousTime != null && (now - previousTime) < DEDUP_WINDOW_MS) {
-            long elapsedSec = (now - previousTime) / 1000;
-            log.warn("🔁 重複訊號攔截（per-user）: userId={} hash={} 距上次 {}秒",
-                    userId, userHash.substring(0, 12), elapsedSec);
+        if (checkMemoryDedup(userHash, DEDUP_WINDOW_MS)) {
+            log.warn("🔁 重複訊號攔截（per-user）: userId={} hash={}", userId, userHash.substring(0, 12));
             return true;
-        }
-
-        // putIfAbsent 返回 non-null 但已過期 → 更新時間戳
-        if (previousTime != null) {
-            recentSignals.put(userHash, now);
         }
 
         cleanupIfNeeded();
@@ -274,14 +226,47 @@ public class SignalDeduplicationService {
      */
     public String generateUserHash(TradeSignal signal, String userId) {
         String sideStr = signal.getSide() != null ? signal.getSide().name() : "DCA";
-        String raw = String.join("|",
-                userId,
-                signal.getSymbol(),
-                sideStr,
+        return sha256(String.join("|",
+                userId, signal.getSymbol(), sideStr,
                 String.valueOf(signal.getEntryPriceLow()),
                 String.valueOf(signal.getStopLoss())
-        );
+        ));
+    }
 
+    // ==================== 內部共用方法 ====================
+
+    /**
+     * 內存去重核心邏輯（原子操作，防 race condition）
+     *
+     * 1. putIfAbsent → 首次寫入，回傳 null → 非重複
+     * 2. 已存在且在窗口內 → 重複
+     * 3. 已存在但過期 → 更新時間戳，視為非重複
+     *
+     * @param hash     去重用的 key
+     * @param windowMs 時間窗口（毫秒）
+     * @return true = 重複（窗口內已存在相同 hash）
+     */
+    private boolean checkMemoryDedup(String hash, long windowMs) {
+        long now = System.currentTimeMillis();
+        Long previousTime = recentSignals.putIfAbsent(hash, now);
+
+        if (previousTime == null) {
+            return false; // 首次出現
+        }
+
+        if ((now - previousTime) < windowMs) {
+            return true; // 窗口內重複
+        }
+
+        // 已過期 → 更新時間戳，視為新的一筆
+        recentSignals.put(hash, now);
+        return false;
+    }
+
+    /**
+     * SHA-256 雜湊
+     */
+    private String sha256(String raw) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hashBytes = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
