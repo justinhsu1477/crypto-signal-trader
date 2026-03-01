@@ -678,6 +678,18 @@ public class TradeController {
                     "received", symbol != null ? symbol : "null"));
         }
 
+        // message_id 永久去重：防止 Queue Replay 超過 5 分鐘 hash 窗口後的重複下單
+        // 此檢查不受時間窗口限制，只要 message_id 存在於 signals 表就攔截
+        SignalSource source = request.getSource();
+        if (source != null && source.getMessageId() != null && !source.getMessageId().isBlank()) {
+            if (signalRecordService.isMessageIdProcessed(source.getMessageId())) {
+                log.warn("廣播跟單: message_id 永久去重攔截 messageId={}", source.getMessageId());
+                return ResponseEntity.ok(Map.of(
+                        "status", "SKIPPED",
+                        "reason", "此訊號已被處理過（message_id 重複）"));
+            }
+        }
+
         // Signal-level 去重：ENTRY / CLOSE / MOVE_SL 訊號在廣播前檢查是否已被處理過
         // 防止 Discord 重連/重發導致同一訊號被多次廣播給所有用戶
         // CANCEL 有自己的去重邏輯（isCancelDuplicate），不在此處理

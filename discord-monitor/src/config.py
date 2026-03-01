@@ -53,12 +53,23 @@ class LoggingConfig:
 
 
 @dataclass
+class QueueConfig:
+    """失敗訊號本地佇列設定。API 當機時暫存訊號，恢復後自動重播。"""
+    enabled: bool = True           # 啟用失敗訊號佇列
+    queue_dir: str = "data"        # 佇列檔案目錄
+    max_size: int = 100            # 最大佇列深度
+    max_age_hours: int = 24        # 超過此時數自動過期
+    max_replay_attempts: int = 5   # 每個訊號最多重播次數
+
+
+@dataclass
 class AppConfig:
     cdp: CdpConfig = field(default_factory=CdpConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     ai: AiConfig = field(default_factory=AiConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    queue: QueueConfig = field(default_factory=QueueConfig)
 
     def validate(self) -> None:
         """驗證必要的配置項目，啟動時呼叫。缺少必要設定時直接報錯退出。"""
@@ -114,6 +125,7 @@ def load_config(path: str) -> AppConfig:
     api_raw = raw.get("api", {})
     ai_raw = raw.get("ai", {})
     logging_raw = raw.get("logging", {})
+    queue_raw = raw.get("queue", {})
 
     return AppConfig(
         cdp=CdpConfig(
@@ -148,5 +160,12 @@ def load_config(path: str) -> AppConfig:
         logging=LoggingConfig(
             level=logging_raw.get("level", "INFO"),
             file=logging_raw.get("file"),
+        ),
+        queue=QueueConfig(
+            enabled=queue_raw.get("enabled", True),
+            queue_dir=queue_raw.get("queue_dir", "data"),
+            max_size=queue_raw.get("max_size", 100),
+            max_age_hours=queue_raw.get("max_age_hours", 24),
+            max_replay_attempts=queue_raw.get("max_replay_attempts", 5),
         ),
     )

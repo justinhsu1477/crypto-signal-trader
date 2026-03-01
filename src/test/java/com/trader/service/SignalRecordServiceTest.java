@@ -216,6 +216,51 @@ class SignalRecordServiceTest {
     }
 
     @Nested
+    @DisplayName("isMessageIdProcessed — message_id 永久去重")
+    class IsMessageIdProcessed {
+
+        @Test
+        @DisplayName("message_id 已存在 → true（應攔截）")
+        void existingMessageId_returnsTrue() {
+            when(signalRepository.existsBySourceMessageId("msg-123")).thenReturn(true);
+
+            assertThat(service.isMessageIdProcessed("msg-123")).isTrue();
+            verify(signalRepository).existsBySourceMessageId("msg-123");
+        }
+
+        @Test
+        @DisplayName("message_id 不存在 → false（放行）")
+        void newMessageId_returnsFalse() {
+            when(signalRepository.existsBySourceMessageId("msg-new")).thenReturn(false);
+
+            assertThat(service.isMessageIdProcessed("msg-new")).isFalse();
+        }
+
+        @Test
+        @DisplayName("null message_id → false（不查 DB，直接放行）")
+        void nullMessageId_returnsFalse() {
+            assertThat(service.isMessageIdProcessed(null)).isFalse();
+            verify(signalRepository, never()).existsBySourceMessageId(any());
+        }
+
+        @Test
+        @DisplayName("空白 message_id → false（不查 DB，直接放行）")
+        void blankMessageId_returnsFalse() {
+            assertThat(service.isMessageIdProcessed("  ")).isFalse();
+            verify(signalRepository, never()).existsBySourceMessageId(any());
+        }
+
+        @Test
+        @DisplayName("DB 查詢例外 → false（放行，不阻塞交易）")
+        void dbException_returnsFalse() {
+            when(signalRepository.existsBySourceMessageId("msg-err"))
+                    .thenThrow(new RuntimeException("DB connection lost"));
+
+            assertThat(service.isMessageIdProcessed("msg-err")).isFalse();
+        }
+    }
+
+    @Nested
     @DisplayName("recordFromRequest")
     class RecordFromRequest {
 

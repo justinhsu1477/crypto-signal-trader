@@ -3,6 +3,7 @@ package com.trader.trading.controller;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
+import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeRequest;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.entity.Trade;
@@ -676,6 +677,102 @@ class TradeControllerTest {
             Map<String, Object> body = (Map<String, Object>) response.getBody();
             assertThat(body).containsEntry("status", "SKIPPED");
             verify(broadcastTradeService, never()).broadcastTrade(any());
+        }
+
+        // ====== message_id 永久去重（Queue Replay 防重複下單） ======
+
+        @Test
+        @DisplayName("message_id 已存在 → SKIPPED（防止 Queue Replay 重複下單）")
+        void broadcastMessageIdDuplicate_skipped() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            request.setSource(SignalSource.builder()
+                    .platform("DISCORD").messageId("msg-123").build());
+
+            when(signalRecordService.isMessageIdProcessed("msg-123")).thenReturn(true);
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("status", "SKIPPED");
+            assertThat(body.get("reason").toString()).contains("message_id");
+            // 不應進入 signal-level 去重或廣播
+            verify(deduplicationService, never()).isSignalProcessed(any());
+            verify(broadcastTradeService, never()).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("message_id 不存在（新訊號）→ 正常通過廣播")
+        void broadcastMessageIdNew_passesThrough() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            request.setSource(SignalSource.builder()
+                    .platform("DISCORD").messageId("msg-new").build());
+
+            when(signalRecordService.isMessageIdProcessed("msg-new")).thenReturn(false);
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 3, "success", 3));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(broadcastTradeService).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("source 為 null → 跳過 message_id 檢查，正常廣播")
+        void broadcastNullSource_skipsMessageIdCheck() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // source is null
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 3, "success", 3));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(signalRecordService, never()).isMessageIdProcessed(any());
+            verify(broadcastTradeService).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("message_id 為空白 → 跳過 message_id 檢查，正常廣播")
+        void broadcastBlankMessageId_skipsCheck() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            request.setSource(SignalSource.builder()
+                    .platform("DISCORD").messageId("  ").build());
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 3, "success", 3));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(signalRecordService, never()).isMessageIdProcessed(any());
+            verify(broadcastTradeService).broadcastTrade(any());
         }
 
         @Test

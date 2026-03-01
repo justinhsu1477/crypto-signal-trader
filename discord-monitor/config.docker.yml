@@ -25,3 +25,11 @@ ai:
 logging:
   level: "INFO"
   file: ""
+
+# 失敗訊號本地佇列 — API 當機時暫存訊號，恢復後自動重播
+queue:
+  enabled: true
+  queue_dir: "data"
+  max_size: 100
+  max_age_hours: 24
+  max_replay_attempts: 5

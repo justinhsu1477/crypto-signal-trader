@@ -41,6 +41,7 @@ class SignalRouter:
         api_client: ApiClient,
         dry_run: bool = False,
         ai_parser=None,
+        signal_queue=None,
     ):
         self.channel_ids = set(discord_config.channel_ids) if discord_config.channel_ids else set()
         self.guild_ids = set(discord_config.guild_ids) if discord_config.guild_ids else None
@@ -48,6 +49,7 @@ class SignalRouter:
         self.api_client = api_client
         self.dry_run = dry_run
         self.ai_parser = ai_parser
+        self.signal_queue = signal_queue
         self.ignore_keywords = discord_config.ignore_keywords or []
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
@@ -224,6 +226,16 @@ class SignalRouter:
                     logger.info("AI trade OK: %s", result.summary[:200])
                 else:
                     logger.warning("AI trade FAILED (HTTP %d): %s", result.status_code, result.error)
+                    # Queue on server-down failures (status_code=0 = 全部 retry 失敗)
+                    # 4xx 是 client 錯誤不存（payload 問題，重播也會失敗）
+                    if self.signal_queue and result.status_code == 0:
+                        self.signal_queue.enqueue(
+                            call_type="send_trade",
+                            payload=parsed,
+                            source=source,
+                            dry_run=self.dry_run,
+                            original_content=content,
+                        )
                 return
             elif parsed and parsed.get("action") == "INFO":
                 logger.debug("AI identified as INFO (TradeActionDetector 未補救), skipping")
@@ -242,6 +254,15 @@ class SignalRouter:
                 result.status_code,
                 result.error,
             )
+            # Queue on server-down failures (status_code=0 = 全部 retry 失敗)
+            if self.signal_queue and result.status_code == 0:
+                self.signal_queue.enqueue(
+                    call_type="send_signal",
+                    payload={"message": content},
+                    source=source,
+                    dry_run=self.dry_run,
+                    original_content=content,
+                )
 
     def _trim_dedup_set(self) -> None:
         """Prevent unbounded memory growth of dedup set."""

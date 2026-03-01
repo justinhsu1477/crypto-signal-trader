@@ -16,7 +16,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_sig_action", columnList = "action"),
         @Index(name = "idx_sig_signal_hash", columnList = "signalHash"),
         @Index(name = "idx_sig_source_platform", columnList = "sourcePlatform"),
-        @Index(name = "idx_sig_created_at", columnList = "createdAt")
+        @Index(name = "idx_sig_created_at", columnList = "createdAt"),
+        @Index(name = "idx_sig_source_message_id", columnList = "sourceMessageId")
 })
 public class Signal {
 
