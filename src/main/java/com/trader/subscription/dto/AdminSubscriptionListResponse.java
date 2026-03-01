@@ -21,7 +21,6 @@ public class AdminSubscriptionListResponse {
     private List<UserSubscriptionSummary> subscriptions;
     private long totalUsers;
     private long activeSubscriptions;
-    private long trialingSubscriptions;
     private long lifetimeSubscriptions;
 
     @Data
@@ -39,7 +38,7 @@ public class AdminSubscriptionListResponse {
         // ── 訂閱資訊 ──
         private String planId;
         private String planName;
-        private String status;           // ACTIVE / TRIALING / LIFETIME / CANCELLED / PAST_DUE / NONE
+        private String status;           // ACTIVE / LIFETIME / CANCELLED / PAST_DUE / NONE
         private LocalDateTime currentPeriodStart;
         private LocalDateTime currentPeriodEnd;
         private LocalDateTime subscriptionCreatedAt;

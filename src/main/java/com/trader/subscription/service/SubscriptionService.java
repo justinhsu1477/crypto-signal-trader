@@ -10,6 +10,8 @@ import com.trader.subscription.entity.Subscription;
 import com.trader.subscription.repository.PaymentHistoryRepository;
 import com.trader.subscription.repository.PlanRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
+import com.trader.user.entity.User;
+import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ public class SubscriptionService {
     private final PaymentHistoryRepository paymentHistoryRepository;
     private final CryptoPaymentConfig cryptoConfig;
     private final TronService tronService;
+    private final UserRepository userRepository;
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Taipei");
 
@@ -95,7 +98,7 @@ public class SubscriptionService {
     }
 
     /**
-     * 檢查用戶是否有有效訂閱（ACTIVE 或 TRIALING）
+     * 檢查用戶是否有有效訂閱（ACTIVE 或 LIFETIME）
      */
     public boolean isUserActive(String userId) {
         return subscriptionRepository.findActiveByUserId(userId).isPresent();
@@ -225,7 +228,7 @@ public class SubscriptionService {
     // ===================== 排程用方法 =====================
 
     /**
-     * 檢查並標記到期訂閱
+     * 檢查並標記到期訂閱，同時關閉用戶的 autoTrade
      */
     @Transactional
     public List<Subscription> expireOverdueSubscriptions() {
@@ -238,6 +241,16 @@ public class SubscriptionService {
         for (Subscription sub : activeSubs) {
             sub.setStatus(Subscription.Status.CANCELLED);
             subscriptionRepository.save(sub);
+
+            // 訂閱到期 → 自動關閉 autoTrade
+            userRepository.findById(sub.getUserId()).ifPresent(user -> {
+                if (user.isAutoTradeEnabled()) {
+                    user.setAutoTradeEnabled(false);
+                    userRepository.save(user);
+                    log.info("訂閱到期，已自動關閉 autoTrade: userId={}", sub.getUserId());
+                }
+            });
+
             log.info("訂閱已到期: userId={}, plan={}, endDate={}",
                     sub.getUserId(), sub.getPlanId(), sub.getCurrentPeriodEnd());
         }

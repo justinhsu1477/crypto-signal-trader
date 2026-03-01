@@ -488,7 +488,6 @@ export interface AdminSubscriptionListResponse {
   subscriptions: AdminSubscriptionSummary[];
   totalUsers: number;
   activeSubscriptions: number;
-  trialingSubscriptions: number;
   lifetimeSubscriptions: number;
 }
 

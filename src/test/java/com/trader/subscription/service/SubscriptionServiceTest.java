@@ -10,6 +10,8 @@ import com.trader.subscription.entity.Subscription;
 import com.trader.subscription.repository.PaymentHistoryRepository;
 import com.trader.subscription.repository.PlanRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
+import com.trader.user.entity.User;
+import com.trader.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -35,6 +37,7 @@ class SubscriptionServiceTest {
     private PaymentHistoryRepository paymentHistoryRepository;
     private CryptoPaymentConfig cryptoConfig;
     private TronService tronService;
+    private UserRepository userRepository;
     private SubscriptionService service;
 
     private static final String USER_ID = "user-123";
@@ -51,6 +54,7 @@ class SubscriptionServiceTest {
         paymentHistoryRepository = mock(PaymentHistoryRepository.class);
         cryptoConfig = mock(CryptoPaymentConfig.class);
         tronService = mock(TronService.class);
+        userRepository = mock(UserRepository.class);
 
         when(cryptoConfig.getSubscriptionDays()).thenReturn(30);
         when(cryptoConfig.getWalletAddress()).thenReturn(WALLET_ADDRESS);
@@ -61,7 +65,8 @@ class SubscriptionServiceTest {
                 planRepository,
                 paymentHistoryRepository,
                 cryptoConfig,
-                tronService
+                tronService,
+                userRepository
         );
     }
 
@@ -899,6 +904,48 @@ class SubscriptionServiceTest {
             assertThat(result).hasSize(2);
             assertThat(result).extracting(Subscription::getUserId).containsExactly("u1", "u2");
             verify(subscriptionRepository, times(2)).save(any());
+        }
+
+        @Test
+        @DisplayName("到期時自動關閉 autoTrade")
+        void expireDisablesAutoTrade() {
+            Subscription expired = Subscription.builder()
+                    .id(1L).userId("u1").planId("basic")
+                    .status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).minusDays(1))
+                    .build();
+            when(subscriptionRepository.findAll()).thenReturn(List.of(expired));
+
+            User user = User.builder().userId("u1").autoTradeEnabled(true).build();
+            when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+
+            service.expireOverdueSubscriptions();
+
+            // 訂閱被取消
+            assertThat(expired.getStatus()).isEqualTo(Subscription.Status.CANCELLED);
+            // autoTrade 被關閉
+            assertThat(user.isAutoTradeEnabled()).isFalse();
+            verify(userRepository).save(user);
+        }
+
+        @Test
+        @DisplayName("到期用戶 autoTrade 已關閉 → 不重複 save user")
+        void expireSkipsAlreadyDisabledAutoTrade() {
+            Subscription expired = Subscription.builder()
+                    .id(1L).userId("u1").planId("basic")
+                    .status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(LocalDateTime.now(ZONE).minusDays(1))
+                    .build();
+            when(subscriptionRepository.findAll()).thenReturn(List.of(expired));
+
+            User user = User.builder().userId("u1").autoTradeEnabled(false).build();
+            when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+
+            service.expireOverdueSubscriptions();
+
+            assertThat(expired.getStatus()).isEqualTo(Subscription.Status.CANCELLED);
+            // autoTrade 本來就是 false，不需 save user
+            verify(userRepository, never()).save(any());
         }
     }
 

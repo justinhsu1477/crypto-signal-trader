@@ -130,6 +130,12 @@ public class DashboardController {
             return ResponseEntity.notFound().build();
         }
 
+        // 開啟 autoTrade 需要有效訂閱
+        if (enabled && !subscriptionService.isUserActive(userId)) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "error", "需要有效訂閱才能啟用自動跟單"));
+        }
+
         var userEntity = user.get();
         userEntity.setAutoTradeEnabled(enabled);
         userRepository.save(userEntity);

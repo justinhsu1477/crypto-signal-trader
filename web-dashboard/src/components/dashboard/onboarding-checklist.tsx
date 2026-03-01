@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Circle, X, Rocket, Settings, Bell } from "lucide-react";
+import { CheckCircle2, Circle, X, Rocket, Settings, Bell, CreditCard } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-context";
 import type { DashboardOverview } from "@/types";
 
@@ -45,6 +45,13 @@ export function OnboardingChecklist({ data }: OnboardingChecklistProps) {
       required: true,
       href: "/settings",
       icon: <Settings className="h-4 w-4" />,
+    },
+    {
+      key: "subscription",
+      done: data.subscription?.active ?? false,
+      required: true,
+      href: "/settings",
+      icon: <CreditCard className="h-4 w-4" />,
     },
     {
       key: "autoTrade",
