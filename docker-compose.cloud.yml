@@ -21,6 +21,8 @@ services:
       - "5672"
     ports:
       - "127.0.0.1:15672:15672"   # Management UI（僅 localhost，SSH tunnel 存取）
+    env_file:
+      - .env.prod
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
