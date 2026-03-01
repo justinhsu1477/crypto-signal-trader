@@ -395,6 +395,34 @@ const translations = {
     detail: { en: "Detail", "zh-TW": "詳情", "zh-CN": "详情" },
     success: { en: "Success", "zh-TW": "成功", "zh-CN": "成功" },
     error: { en: "Error", "zh-TW": "錯誤", "zh-CN": "错误" },
+    exportCsv: { en: "Export CSV", "zh-TW": "匯出 CSV", "zh-CN": "导出 CSV" },
+    exporting: { en: "Exporting...", "zh-TW": "匯出中...", "zh-CN": "导出中..." },
+    exportFailed: { en: "Export failed", "zh-TW": "匯出失敗", "zh-CN": "导出失败" },
+  },
+
+  // ─── status (public) ───
+  status: {
+    title: { en: "System Status", "zh-TW": "系統狀態", "zh-CN": "系统状态" },
+    overall: { en: "Overall Status", "zh-TW": "整體狀態", "zh-CN": "整体状态" },
+    operational: { en: "Operational", "zh-TW": "正常運作", "zh-CN": "正常运行" },
+    degraded: { en: "Degraded", "zh-TW": "效能降低", "zh-CN": "性能降低" },
+    down: { en: "Down", "zh-TW": "服務中斷", "zh-CN": "服务中断" },
+    allOperational: { en: "All Systems Operational", "zh-TW": "所有系統運作正常", "zh-CN": "所有系统运行正常" },
+    someIssues: { en: "Some Systems Are Experiencing Issues", "zh-TW": "部分系統出現異常", "zh-CN": "部分系统出现异常" },
+    lastChecked: { en: "Last checked", "zh-TW": "最後檢查", "zh-CN": "最后检查" },
+    autoRefresh: { en: "Auto-refreshes every 60 seconds", "zh-TW": "每 60 秒自動更新", "zh-CN": "每 60 秒自动更新" },
+    service: {
+      Database: { en: "Database", "zh-TW": "資料庫", "zh-CN": "数据库" },
+      TradingEngine: { en: "Trading Engine", "zh-TW": "交易引擎", "zh-CN": "交易引擎" },
+      NotificationSystem: { en: "Notification System", "zh-TW": "通知系統", "zh-CN": "通知系统" },
+      SignalMonitor: { en: "Signal Monitor", "zh-TW": "訊號監控", "zh-CN": "信号监控" },
+    },
+    serviceDesc: {
+      Database: { en: "Primary database connection", "zh-TW": "主要資料庫連線", "zh-CN": "主要数据库连接" },
+      TradingEngine: { en: "Binance API connectivity", "zh-TW": "幣安 API 連線", "zh-CN": "币安 API 连接" },
+      NotificationSystem: { en: "Message queue and delivery", "zh-TW": "訊息佇列與推送", "zh-CN": "消息队列与推送" },
+      SignalMonitor: { en: "Discord signal monitoring service", "zh-TW": "Discord 訊號監控服務", "zh-CN": "Discord 信号监控服务" },
+    },
   },
 
   // ─── performance ───

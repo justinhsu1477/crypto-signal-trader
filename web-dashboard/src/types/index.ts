@@ -543,6 +543,20 @@ export interface AdminSubscriptionActionResponse {
   message: string;
 }
 
+// ==================== Public Status ====================
+
+export interface PublicServiceStatus {
+  name: string;
+  status: string;       // UP / DEGRADED / DOWN
+  description: string;
+}
+
+export interface PublicStatusResponse {
+  overallStatus: string; // UP / DEGRADED
+  services: PublicServiceStatus[];
+  checkedAt: string;     // ISO 8601
+}
+
 // ==================== System Health ====================
 
 export interface SystemHealthResponse {

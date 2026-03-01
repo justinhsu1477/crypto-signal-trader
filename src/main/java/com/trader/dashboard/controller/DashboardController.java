@@ -4,6 +4,7 @@ import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
+import com.trader.dashboard.service.TradeExportService;
 import com.trader.notification.service.LineLinkingService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.SecurityUtil;
@@ -25,6 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,6 +47,7 @@ import java.util.Optional;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final TradeExportService tradeExportService;
     private final UserRepository userRepository;
     private final UserDiscordWebhookService webhookService;
     private final UserTradeSettingsService tradeSettingsService;
@@ -87,6 +91,33 @@ public class DashboardController {
             @RequestParam(defaultValue = "20") int size) {
         String userId = SecurityUtil.getCurrentUserId();
         return ResponseEntity.ok(dashboardService.getTradeHistory(userId, page, size));
+    }
+
+    /**
+     * 匯出交易紀錄（CSV）
+     * GET /api/dashboard/trades/export?days=30
+     *
+     * 回傳 CSV 檔案（UTF-8 BOM，Excel 相容）
+     */
+    @GetMapping("/trades/export")
+    public ResponseEntity<byte[]> exportTrades(
+            @RequestParam(defaultValue = "30") int days) {
+        String userId = SecurityUtil.getCurrentUserId();
+        String csv = tradeExportService.generateCsv(userId, days, 500);
+
+        String filename = "trades_" + LocalDate.now(com.trader.shared.config.AppConstants.ZONE_ID) + ".csv";
+        byte[] csvBytes = csv.getBytes(StandardCharsets.UTF_8);
+
+        // UTF-8 BOM 讓 Excel 正確識別中文
+        byte[] bom = new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
+        byte[] result = new byte[bom.length + csvBytes.length];
+        System.arraycopy(bom, 0, result, 0, bom.length);
+        System.arraycopy(csvBytes, 0, result, bom.length, csvBytes.length);
+
+        return ResponseEntity.ok()
+                .header("Content-Type", "text/csv; charset=UTF-8")
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .body(result);
     }
 
     /**

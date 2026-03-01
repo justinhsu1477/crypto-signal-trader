@@ -4,6 +4,7 @@ import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
+import com.trader.dashboard.service.TradeExportService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.user.dto.TradeSettingsDefaultsResponse;
 import com.trader.user.dto.TradeSettingsResponse;
@@ -37,6 +38,7 @@ import static org.mockito.Mockito.*;
 class DashboardControllerTest {
 
     private DashboardService dashboardService;
+    private TradeExportService tradeExportService;
     private UserRepository userRepository;
     private UserDiscordWebhookService webhookService;
     private UserTradeSettingsService tradeSettingsService;
@@ -50,6 +52,7 @@ class DashboardControllerTest {
     @BeforeEach
     void setUp() {
         dashboardService = mock(DashboardService.class);
+        tradeExportService = mock(TradeExportService.class);
         userRepository = mock(UserRepository.class);
         webhookService = mock(UserDiscordWebhookService.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
@@ -57,7 +60,7 @@ class DashboardControllerTest {
         lineLinkingService = mock(LineLinkingService.class);
         subscriptionService = mock(SubscriptionService.class);
         planRepository = mock(PlanRepository.class);
-        controller = new DashboardController(dashboardService, userRepository, webhookService,
+        controller = new DashboardController(dashboardService, tradeExportService, userRepository, webhookService,
                 tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository);
         securityUtil = mockStatic(SecurityUtil.class);
         securityUtil.when(SecurityUtil::getCurrentUserId).thenReturn("user-123");
@@ -642,6 +645,42 @@ class DashboardControllerTest {
 
             assertThat(response.getStatusCode().value()).isEqualTo(403);
             assertThat(response.getBody().get("error").toString()).contains("無權操作");
+        }
+    }
+
+    // ==================== Trade Export ====================
+
+    @Nested
+    @DisplayName("trades/export — CSV 匯出")
+    class TradeExportTests {
+
+        @Test
+        @DisplayName("匯出成功 — 回傳 CSV 內容 + 正確 header")
+        void exportTradesSuccess() {
+            String csvContent = "Date,Symbol,Side\n2026-03-01,BTCUSDT,LONG\n";
+            when(tradeExportService.generateCsv("user-123", 30, 500)).thenReturn(csvContent);
+
+            ResponseEntity<byte[]> response = controller.exportTrades(30);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getHeaders().getFirst("Content-Type")).contains("text/csv");
+            assertThat(response.getHeaders().getFirst("Content-Disposition")).contains("attachment");
+            assertThat(response.getHeaders().getFirst("Content-Disposition")).contains("trades_");
+            assertThat(response.getBody()).isNotNull();
+            // body 以 UTF-8 BOM 開頭
+            assertThat(response.getBody()[0]).isEqualTo((byte) 0xEF);
+            assertThat(response.getBody()[1]).isEqualTo((byte) 0xBB);
+            assertThat(response.getBody()[2]).isEqualTo((byte) 0xBF);
+        }
+
+        @Test
+        @DisplayName("匯出呼叫 service 帶正確參數")
+        void exportTradesCallsService() {
+            when(tradeExportService.generateCsv("user-123", 60, 500)).thenReturn("");
+
+            controller.exportTrades(60);
+
+            verify(tradeExportService).generateCsv("user-123", 60, 500);
         }
     }
 }

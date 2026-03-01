@@ -331,6 +331,57 @@ export async function getTradeHistory(page: number, size: number): Promise<Trade
   return request<TradeHistoryResponse>(`/api/dashboard/trades?page=${page}&size=${size}`);
 }
 
+// ==================== Trade Export ====================
+
+export async function exportTrades(days: number = 30): Promise<void> {
+  const res = await fetch(`${BASE}/api/dashboard/trades/export?days=${days}`, {
+    credentials: "include",
+  });
+
+  if (res.status === 401) {
+    if (!refreshPromise) {
+      refreshPromise = tryRefreshToken().finally(() => {
+        refreshPromise = null;
+      });
+    }
+    const refreshed = await refreshPromise;
+    if (refreshed) {
+      const retryRes = await fetch(`${BASE}/api/dashboard/trades/export?days=${days}`, {
+        credentials: "include",
+      });
+      if (retryRes.ok) {
+        const blob = await retryRes.blob();
+        downloadBlob(blob, retryRes);
+        return;
+      }
+    }
+    clearAuthAndRedirect();
+    throw new Error("Unauthorized");
+  }
+
+  if (!res.ok) {
+    throw new Error(`Export failed: HTTP ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  downloadBlob(blob, res);
+}
+
+function downloadBlob(blob: Blob, res: Response): void {
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const filename = match?.[1] || `trades_${new Date().toISOString().slice(0, 10)}.csv`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ==================== Trade Detail ====================
 
 export async function getTradeEvents(tradeId: string): Promise<TradeEvent[]> {
@@ -345,6 +396,14 @@ export async function getMonitorStatus(): Promise<MonitorStatus> {
 
 export async function getStreamStatus(): Promise<StreamStatus> {
   return request<StreamStatus>("/api/stream-status");
+}
+
+// ==================== Public Status ====================
+
+import type { PublicStatusResponse } from "@/types";
+
+export async function getPublicSystemStatus(): Promise<PublicStatusResponse> {
+  return publicRequest<PublicStatusResponse>("/api/status");
 }
 
 // ==================== Auto Trade ====================
