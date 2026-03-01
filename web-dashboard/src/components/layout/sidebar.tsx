@@ -41,6 +41,7 @@ export function Sidebar() {
     { href: "/admin/users", label: t("nav.adminUsers"), icon: Users },
     { href: "/admin/referrals", label: t("nav.adminReferrals"), icon: ClipboardCheck },
     { href: "/admin/subscriptions", label: t("nav.adminSubscriptions"), icon: CreditCard },
+    { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },
   ];
 
   const isAdmin = role === "ADMIN";
