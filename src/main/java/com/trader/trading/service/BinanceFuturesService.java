@@ -1826,10 +1826,12 @@ public class BinanceFuturesService {
                 ReentrantLock cancelLock = symbolLockRegistry.getLock(symbol);
                 cancelLock.lock();
                 try {
-                    cancelAllOrders(symbol);
-                    tradeRecordService.recordCancel(symbol, userId);  // 使用 explicit-userId 版本
-                } catch (Exception e) {
-                    log.error("取消紀錄寫入失敗: {}", e.getMessage());
+                    cancelAllOrders(symbol);  // 失敗會拋出，讓 BroadcastTradeService 計為失敗
+                    try {
+                        tradeRecordService.recordCancel(symbol, userId);
+                    } catch (Exception e) {
+                        log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                    }
                 } finally {
                     cancelLock.unlock();
                 }
