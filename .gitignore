@@ -36,6 +36,7 @@ env/
 discord-monitor/discord-monitor.log
 discord-monitor/probe_*.py
 discord-monitor/probe_*.js
+discord-monitor/data/
 
 # === H2 Database ===
 data/

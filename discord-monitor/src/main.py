@@ -13,6 +13,7 @@ import sys
 from .api_client import ApiClient
 from .cdp_client import CdpClient
 from .config import load_config
+from .signal_queue import SignalQueue
 from .signal_router import SignalRouter
 
 logger = logging.getLogger("discord_monitor")
@@ -60,6 +61,16 @@ async def main() -> None:
     api_client = ApiClient(config.api)
     await api_client.start()
 
+    # Initialize signal queue (本地持久化，API 當機時暫存訊號)
+    signal_queue = None
+    if config.queue.enabled:
+        signal_queue = SignalQueue(config.queue)
+        queued_count = signal_queue.size()
+        if queued_count > 0:
+            logger.info("📥 訊號佇列已載入: %d 筆待重播", queued_count)
+        else:
+            logger.info("Signal queue enabled (dir: %s)", config.queue.queue_dir)
+
     # Health check
     healthy = await api_client.check_health()
     if not healthy:
@@ -80,7 +91,7 @@ async def main() -> None:
         logger.info("AI parser disabled — using regex-only mode")
 
     # Build components
-    router = SignalRouter(config.discord, api_client, dry_run=dry_run, ai_parser=ai_parser)
+    router = SignalRouter(config.discord, api_client, dry_run=dry_run, ai_parser=ai_parser, signal_queue=signal_queue)
     cdp_client = CdpClient(config.cdp)
 
     # Heartbeat background task
@@ -90,15 +101,27 @@ async def main() -> None:
     ai_active = ai_parser is not None and ai_parser.client is not None
 
     async def heartbeat_loop(status_fn):
-        """Send heartbeat to Spring Boot API every HEARTBEAT_INTERVAL seconds."""
+        """Send heartbeat to Spring Boot API every HEARTBEAT_INTERVAL seconds.
+
+        同時負責 queue replay：heartbeat 成功 + queue 有資料 → 自動重播。
+        """
         while True:
             try:
                 token_stats = ai_parser.get_token_stats() if ai_parser else None
-                await api_client.send_heartbeat(
+                heartbeat_ok = await api_client.send_heartbeat(
                     status_fn(),
                     ai_status="active" if ai_active else "disabled",
                     ai_token_stats=token_stats,
                 )
+
+                # Queue replay: API 恢復時自動重播暫存的訊號
+                if heartbeat_ok and signal_queue and signal_queue.size() > 0:
+                    logger.info(
+                        "🔄 API 已恢復，開始重播 %d 筆佇列訊號...",
+                        signal_queue.size(),
+                    )
+                    await _replay_queue(api_client, signal_queue)
+
             except Exception as e:
                 logger.debug("Heartbeat error (non-fatal): %s", e)
             await asyncio.sleep(HEARTBEAT_INTERVAL)
@@ -155,6 +178,91 @@ async def main() -> None:
 
     await api_client.close()
     logger.info("Discord Monitor stopped.")
+
+
+async def _replay_queue(api_client: ApiClient, queue: SignalQueue) -> None:
+    """依序重播佇列中的訊號。遇到 5xx/網路錯誤立即停止（API 可能又掛了）。
+
+    重播策略：
+    - FIFO 順序（最舊的先）
+    - 200 成功 → dequeue 移除
+    - 4xx client 錯誤 → 移除（payload 有問題，重播也會失敗）
+    - 5xx / 網路錯 → increment_attempt + 停止（等下一輪 heartbeat）
+    - 超過 max_replay_attempts → 移除 + 警告 log
+
+    去重保護鏈：
+    - Server 5分鐘 hash 去重 → 返回 200 SKIPPED → dequeue ✅
+    - Server message_id 永久去重 → 返回 200 SKIPPED → dequeue ✅
+    - 不會造成重複下單
+    """
+    entries = queue.peek_all()
+    success_count = 0
+    fail_count = 0
+
+    for entry in entries:
+        call_type = entry.get("call_type")
+        payload = entry.get("payload", {})
+        source = entry.get("source")
+        dry_run = entry.get("dry_run", False)
+        entry_id = entry.get("id", "unknown")
+        attempt_count = entry.get("attempt_count", 0)
+
+        # 超過最大重播次數 → 移除
+        if attempt_count >= queue.config.max_replay_attempts:
+            logger.warning(
+                "⚠️ 佇列訊號 %s 已重播 %d 次仍失敗，移除: %s %s",
+                entry_id, attempt_count,
+                payload.get("action", ""),
+                payload.get("symbol", ""),
+            )
+            queue.dequeue(entry_id)
+            continue
+
+        logger.info(
+            "▶️ 重播佇列訊號 %s: %s %s %s (attempt %d)",
+            entry_id, call_type,
+            payload.get("action", ""),
+            payload.get("symbol", payload.get("message", "")[:60]),
+            attempt_count + 1,
+        )
+
+        if call_type == "send_trade":
+            result = await api_client.send_trade(payload, dry_run=dry_run, source=source)
+        elif call_type == "send_signal":
+            result = await api_client.send_signal(
+                payload.get("message", ""), dry_run=dry_run, source=source,
+            )
+        else:
+            logger.warning("未知 call_type %s，移除佇列訊號 %s", call_type, entry_id)
+            queue.dequeue(entry_id)
+            continue
+
+        if result.success:
+            logger.info("✅ 重播成功 %s: %s", entry_id, result.summary[:200])
+            queue.dequeue(entry_id)
+            success_count += 1
+        elif 400 <= result.status_code < 500:
+            # 4xx = client 錯誤（payload 問題、去重攔截等），不值得重試
+            logger.warning(
+                "🚫 重播被拒 %s (HTTP %d): %s — 已移除",
+                entry_id, result.status_code, result.error,
+            )
+            queue.dequeue(entry_id)
+        else:
+            # 5xx / 網路錯 → API 可能又掛了，停止重播等下一輪
+            fail_count += 1
+            logger.warning(
+                "❌ 重播失敗 %s (HTTP %d): %s — 停止重播，等下一輪 heartbeat",
+                entry_id, result.status_code, result.error,
+            )
+            queue.increment_attempt(entry_id)
+            break  # 不繼續重播，等下一輪 heartbeat
+
+    if success_count > 0 or fail_count > 0:
+        logger.info(
+            "📊 佇列重播結果: 成功=%d, 失敗=%d, 剩餘=%d",
+            success_count, fail_count, queue.size(),
+        )
 
 
 def run() -> None:

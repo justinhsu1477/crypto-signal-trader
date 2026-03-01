@@ -134,6 +134,26 @@ public class SignalRecordService {
         }
     }
 
+    /**
+     * message_id 永久去重：檢查此 Discord message_id 是否已有訊號紀錄。
+     * 用於 Queue Replay 場景 — 即使超過 5 分鐘 hash 去重窗口，
+     * 也能透過 message_id 攔截重複訊號，防止重複下單。
+     *
+     * @param messageId Discord 訊息 ID
+     * @return true = 已存在（應跳過）, false = 未處理過
+     */
+    public boolean isMessageIdProcessed(String messageId) {
+        if (messageId == null || messageId.isBlank()) {
+            return false;
+        }
+        try {
+            return signalRepository.existsBySourceMessageId(messageId);
+        } catch (Exception e) {
+            log.error("message_id 去重查詢失敗（non-blocking, 放行）: {}", e.getMessage());
+            return false; // 查詢失敗時放行，不阻塞交易
+        }
+    }
+
     private TradeSignal.SignalType parseSignalType(String action) {
         if (action == null) return TradeSignal.SignalType.ENTRY;
         try {
