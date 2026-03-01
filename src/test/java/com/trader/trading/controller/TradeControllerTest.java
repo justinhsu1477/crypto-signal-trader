@@ -39,6 +39,7 @@ class TradeControllerTest {
     private MonitorHeartbeatService heartbeatService;
     private BinanceUserDataStreamService userDataStreamService;
     private SignalRecordService signalRecordService;
+    private SymbolLockRegistry symbolLockRegistry;
 
     private TradeController controller;
 
@@ -54,11 +55,13 @@ class TradeControllerTest {
         heartbeatService = mock(MonitorHeartbeatService.class);
         userDataStreamService = mock(BinanceUserDataStreamService.class);
         signalRecordService = mock(SignalRecordService.class);
+        symbolLockRegistry = new SymbolLockRegistry();
 
         controller = new TradeController(
                 binanceFuturesService, broadcastTradeService, signalParserService,
                 riskConfig, tradeRecordService, deduplicationService,
-                webhookService, heartbeatService, userDataStreamService, signalRecordService);
+                webhookService, heartbeatService, userDataStreamService, signalRecordService,
+                symbolLockRegistry);
 
         // 預設白名單通過
         when(riskConfig.isSymbolAllowed(anyString())).thenReturn(true);
@@ -144,6 +147,39 @@ class TradeControllerTest {
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             verify(binanceFuturesService, never()).cancelAllOrders(any());
+        }
+
+        @Test
+        @DisplayName("CANCEL 失敗 — cancelAllOrders 異常應向上傳播")
+        void cancelFailurePropagates() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.CANCEL).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(deduplicationService.isCancelDuplicate("BTCUSDT")).thenReturn(false);
+            when(binanceFuturesService.cancelAllOrders("BTCUSDT"))
+                    .thenThrow(new RuntimeException("Binance API error"));
+
+            assertThatThrownBy(() -> controller.executeSignal(Map.of("message", "cancel btc")))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Binance API error");
+        }
+
+        @Test
+        @DisplayName("CANCEL 成功但 recordCancel 失敗 — 不影響取消結果")
+        void cancelSuccessEvenIfRecordFails() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.CANCEL).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(deduplicationService.isCancelDuplicate("BTCUSDT")).thenReturn(false);
+            when(binanceFuturesService.cancelAllOrders("BTCUSDT")).thenReturn("OK");
+            doThrow(new RuntimeException("DB error")).when(tradeRecordService).recordCancel("BTCUSDT");
+
+            ResponseEntity<?> response = controller.executeSignal(Map.of("message", "cancel btc"));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("action", "CANCEL");
         }
 
         @Test

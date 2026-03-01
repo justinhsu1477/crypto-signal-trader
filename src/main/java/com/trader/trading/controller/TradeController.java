@@ -15,6 +15,7 @@ import com.trader.trading.service.SignalDeduplicationService;
 import com.trader.trading.service.SignalParserService;
 import com.trader.trading.service.BinanceUserDataStreamService;
 import com.trader.trading.service.SignalRecordService;
+import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,7 @@ import com.trader.shared.config.RiskConfig;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 測試用 API 控制器
@@ -48,6 +50,7 @@ public class TradeController {
     private final MonitorHeartbeatService heartbeatService;
     private final BinanceUserDataStreamService userDataStreamService;
     private final SignalRecordService signalRecordService;
+    private final SymbolLockRegistry symbolLockRegistry;
 
     /**
      * 查詢帳戶餘額
@@ -140,11 +143,18 @@ public class TradeController {
                         DiscordWebhookService.COLOR_YELLOW);
                 return ResponseEntity.ok(Map.of("action", "CANCEL", "status", "SKIPPED", "reason", "重複取消訊號"));
             }
-            String result = binanceFuturesService.cancelAllOrders(signal.getSymbol());
+            ReentrantLock cancelLock = symbolLockRegistry.getLock(signal.getSymbol());
+            cancelLock.lock();
+            String result;
             try {
-                tradeRecordService.recordCancel(signal.getSymbol());
-            } catch (Exception e) {
-                log.error("取消紀錄寫入失敗: {}", e.getMessage());
+                result = binanceFuturesService.cancelAllOrders(signal.getSymbol());
+                try {
+                    tradeRecordService.recordCancel(signal.getSymbol());
+                } catch (Exception e) {
+                    log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                }
+            } finally {
+                cancelLock.unlock();
             }
             webhookService.sendNotification(
                     "🚫 CANCEL 取消掛單",
@@ -377,11 +387,18 @@ public class TradeController {
                             DiscordWebhookService.COLOR_YELLOW);
                     return ResponseEntity.ok(Map.of("action", "CANCEL", "status", "SKIPPED", "reason", "重複取消訊號"));
                 }
-                String cancelResult = binanceFuturesService.cancelAllOrders(symbol);
+                ReentrantLock cancelLock = symbolLockRegistry.getLock(symbol);
+                cancelLock.lock();
+                String cancelResult;
                 try {
-                    tradeRecordService.recordCancel(symbol);
-                } catch (Exception e) {
-                    log.error("取消紀錄寫入失敗: {}", e.getMessage());
+                    cancelResult = binanceFuturesService.cancelAllOrders(symbol);
+                    try {
+                        tradeRecordService.recordCancel(symbol);
+                    } catch (Exception e) {
+                        log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                    }
+                } finally {
+                    cancelLock.unlock();
                 }
                 String cancelTitle = "🚫 CANCEL 取消掛單 (API)";
                 String cancelBody = symbol + " — 已取消所有掛單";
