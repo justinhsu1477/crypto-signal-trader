@@ -4,6 +4,7 @@ import com.trader.auth.dto.LoginRequest;
 import com.trader.auth.dto.LoginResponse;
 import com.trader.auth.dto.RegisterRequest;
 import com.trader.auth.exception.EmailNotVerifiedException;
+import com.trader.auth.util.EmailNormalizer;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,13 +40,19 @@ public class AuthService {
      */
     @Transactional
     public User register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email 已被註冊: " + request.getEmail());
+        String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+
+        if (!request.isTermsAccepted()) {
+            throw new IllegalArgumentException("必須同意服務條款與風險聲明");
+        }
+
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+            throw new IllegalArgumentException("Email 已被註冊: " + normalizedEmail);
         }
 
         User user = User.builder()
                 .userId(UUID.randomUUID().toString())
-                .email(request.getEmail())
+                .email(normalizedEmail)
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName())
                 .emailVerified(false)
@@ -56,7 +63,7 @@ public class AuthService {
         log.info("用戶註冊成功（待驗證）: email={}", user.getEmail());
 
         // 發送 OTP 驗證碼
-        emailVerificationService.generateAndSend(user.getEmail());
+        emailVerificationService.generateAndSend(normalizedEmail);
 
         return user;
     }
@@ -70,7 +77,8 @@ public class AuthService {
      * @return LoginResponse (含 JWT + refresh token)
      */
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
+        String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new IllegalArgumentException("帳號或密碼錯誤"));
 
         if (!user.isEnabled()) {

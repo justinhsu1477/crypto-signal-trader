@@ -47,7 +47,7 @@ class EmailVerificationServiceTest {
         @Test
         @DisplayName("成功 → 儲存 OTP 並呼叫發信")
         void success_savesCodeAndSendsEmail() {
-            when(codeRepository.countByEmailAndCreatedAtAfter(anyString(), any())).thenReturn(0L);
+            when(codeRepository.countByEmailIgnoreCaseAndCreatedAtAfter(anyString(), any())).thenReturn(0L);
             when(codeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             service.generateAndSend("user@example.com");
@@ -57,16 +57,16 @@ class EmailVerificationServiceTest {
 
             EmailVerificationCode saved = captor.getValue();
             assertThat(saved.getEmail()).isEqualTo("user@example.com");
-            assertThat(saved.getCode()).hasSize(6).matches("\\d{6}");
+            assertThat(saved.getCode()).hasSize(64).matches("[0-9a-f]{64}");
             assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(AppConstants.ZONE_ID));
 
-            verify(resendEmailService).sendOtpEmail(eq("user@example.com"), eq(saved.getCode()));
+            verify(resendEmailService).sendOtpEmail(eq("user@example.com"), matches("\\d{6}"));
         }
 
         @Test
         @DisplayName("超過每小時發送上限 → 拋出 IllegalStateException")
         void rateLimitExceeded_throwsException() {
-            when(codeRepository.countByEmailAndCreatedAtAfter(anyString(), any())).thenReturn(5L);
+            when(codeRepository.countByEmailIgnoreCaseAndCreatedAtAfter(anyString(), any())).thenReturn(5L);
 
             assertThatThrownBy(() -> service.generateAndSend("user@example.com"))
                     .isInstanceOf(IllegalStateException.class)
@@ -79,7 +79,7 @@ class EmailVerificationServiceTest {
         @Test
         @DisplayName("未達上限 → 正常發送")
         void belowLimit_sendsNormally() {
-            when(codeRepository.countByEmailAndCreatedAtAfter(anyString(), any())).thenReturn(4L);
+            when(codeRepository.countByEmailIgnoreCaseAndCreatedAtAfter(anyString(), any())).thenReturn(4L);
             when(codeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             assertThatCode(() -> service.generateAndSend("user@example.com"))
@@ -107,7 +107,7 @@ class EmailVerificationServiceTest {
                     .expiresAt(LocalDateTime.now(AppConstants.ZONE_ID).plusMinutes(5))
                     .build();
 
-            when(codeRepository.findTopByEmailAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
+            when(codeRepository.findTopByEmailIgnoreCaseAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
                     .thenReturn(Optional.of(entity));
             when(codeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -121,7 +121,7 @@ class EmailVerificationServiceTest {
         @Test
         @DisplayName("找不到 code → 拋出「驗證碼不存在或已過期」")
         void noCode_throwsException() {
-            when(codeRepository.findTopByEmailAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
+            when(codeRepository.findTopByEmailIgnoreCaseAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
                     .thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.verifyCode("user@example.com", "000000"))
@@ -141,7 +141,7 @@ class EmailVerificationServiceTest {
                     .expiresAt(LocalDateTime.now(AppConstants.ZONE_ID).minusMinutes(1))
                     .build();
 
-            when(codeRepository.findTopByEmailAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
+            when(codeRepository.findTopByEmailIgnoreCaseAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
                     .thenReturn(Optional.of(entity));
 
             assertThatThrownBy(() -> service.verifyCode("user@example.com", "123456"))
@@ -161,7 +161,7 @@ class EmailVerificationServiceTest {
                     .expiresAt(LocalDateTime.now(AppConstants.ZONE_ID).plusMinutes(5))
                     .build();
 
-            when(codeRepository.findTopByEmailAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
+            when(codeRepository.findTopByEmailIgnoreCaseAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
                     .thenReturn(Optional.of(entity));
 
             assertThatThrownBy(() -> service.verifyCode("user@example.com", "999999"))
@@ -181,7 +181,7 @@ class EmailVerificationServiceTest {
                     .expiresAt(LocalDateTime.now(AppConstants.ZONE_ID).plusMinutes(5))
                     .build();
 
-            when(codeRepository.findTopByEmailAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
+            when(codeRepository.findTopByEmailIgnoreCaseAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
                     .thenReturn(Optional.of(entity));
             when(codeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -206,7 +206,7 @@ class EmailVerificationServiceTest {
                     .expiresAt(LocalDateTime.now(AppConstants.ZONE_ID).plusMinutes(5))
                     .build();
 
-            when(codeRepository.findTopByEmailAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
+            when(codeRepository.findTopByEmailIgnoreCaseAndUsedFalseOrderByCreatedAtDesc("user@example.com"))
                     .thenReturn(Optional.of(entity));
             when(codeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -233,8 +233,8 @@ class EmailVerificationServiceTest {
                     .emailVerified(false)
                     .build();
 
-            when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
-            when(codeRepository.countByEmailAndCreatedAtAfter(anyString(), any())).thenReturn(0L);
+            when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+            when(codeRepository.countByEmailIgnoreCaseAndCreatedAtAfter(anyString(), any())).thenReturn(0L);
             when(codeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             assertThatCode(() -> service.resendCode("user@example.com"))
@@ -246,7 +246,7 @@ class EmailVerificationServiceTest {
         @Test
         @DisplayName("用戶不存在 → 拋出「找不到此 Email 的帳號」")
         void userNotFound_throwsException() {
-            when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+            when(userRepository.findByEmailIgnoreCase("nobody@example.com")).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.resendCode("nobody@example.com"))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -264,7 +264,7 @@ class EmailVerificationServiceTest {
                     .emailVerified(true)
                     .build();
 
-            when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
 
             assertThatThrownBy(() -> service.resendCode("user@example.com"))
                     .isInstanceOf(IllegalArgumentException.class)

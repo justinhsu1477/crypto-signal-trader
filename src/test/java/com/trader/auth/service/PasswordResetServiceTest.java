@@ -115,7 +115,7 @@ class PasswordResetServiceTest {
         @Test
         @DisplayName("email 不存在 → 靜默返回（不拋例外）")
         void emailNotFound_silent() {
-            when(userRepository.findByEmail("unknown@test.com")).thenReturn(Optional.empty());
+            when(userRepository.findByEmailIgnoreCase("unknown@test.com")).thenReturn(Optional.empty());
 
             assertThatCode(() -> service.requestPasswordReset("unknown@test.com"))
                     .doesNotThrowAnyException();
@@ -128,7 +128,7 @@ class PasswordResetServiceTest {
         @DisplayName("rate limit 超過 → 靜默返回")
         void rateLimitExceeded_silent() {
             User user = User.builder().userId("user-1").email("test@test.com").build();
-            when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("test@test.com")).thenReturn(Optional.of(user));
             when(resetTokenRepository.countByUserIdAndCreatedAtAfter(eq("user-1"), any()))
                     .thenReturn(3L); // >= maxResetPerQuarterHour
 
@@ -142,7 +142,7 @@ class PasswordResetServiceTest {
         @DisplayName("成功 → 存 token + 寄信")
         void success_savesTokenAndSendsEmail() {
             User user = User.builder().userId("user-1").email("test@test.com").build();
-            when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("test@test.com")).thenReturn(Optional.of(user));
             when(resetTokenRepository.countByUserIdAndCreatedAtAfter(eq("user-1"), any()))
                     .thenReturn(0L);
 

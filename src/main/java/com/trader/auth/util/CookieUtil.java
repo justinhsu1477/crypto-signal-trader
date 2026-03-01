@@ -23,9 +23,13 @@ public final class CookieUtil {
      * HttpOnly + Secure + SameSite=Strict, Path=/api, Max-Age=1800 (30min)
      */
     public static void addAccessTokenCookie(HttpServletResponse response, String token, long maxAgeSeconds) {
+        addAccessTokenCookie(response, token, maxAgeSeconds, true);
+    }
+
+    public static void addAccessTokenCookie(HttpServletResponse response, String token, long maxAgeSeconds, boolean secure) {
         ResponseCookie cookie = ResponseCookie.from(ACCESS_TOKEN_COOKIE, token)
                 .httpOnly(true)
-                .secure(true)
+                .secure(secure)
                 .sameSite("Strict")
                 .path("/api")
                 .maxAge(maxAgeSeconds)
@@ -38,9 +42,13 @@ public final class CookieUtil {
      * HttpOnly + Secure + SameSite=Strict, Path=/api/auth, Max-Age=259200 (3 days)
      */
     public static void addRefreshTokenCookie(HttpServletResponse response, String token, long maxAgeSeconds) {
+        addRefreshTokenCookie(response, token, maxAgeSeconds, true);
+    }
+
+    public static void addRefreshTokenCookie(HttpServletResponse response, String token, long maxAgeSeconds, boolean secure) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, token)
                 .httpOnly(true)
-                .secure(true)
+                .secure(secure)
                 .sameSite("Strict")
                 .path("/api/auth")
                 .maxAge(maxAgeSeconds)
@@ -52,16 +60,20 @@ public final class CookieUtil {
      * 清除所有認證 Cookie（登出時使用）
      */
     public static void clearAuthCookies(HttpServletResponse response) {
+        clearAuthCookies(response, true);
+    }
+
+    public static void clearAuthCookies(HttpServletResponse response, boolean secure) {
         ResponseCookie clearAccess = ResponseCookie.from(ACCESS_TOKEN_COOKIE, "")
                 .httpOnly(true)
-                .secure(true)
+                .secure(secure)
                 .sameSite("Strict")
                 .path("/api")
                 .maxAge(0)
                 .build();
         ResponseCookie clearRefresh = ResponseCookie.from(REFRESH_TOKEN_COOKIE, "")
                 .httpOnly(true)
-                .secure(true)
+                .secure(secure)
                 .sameSite("Strict")
                 .path("/api/auth")
                 .maxAge(0)

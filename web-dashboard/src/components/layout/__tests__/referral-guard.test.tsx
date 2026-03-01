@@ -1,23 +1,20 @@
-/**
- * ReferralGuard 元件測試
- *
- * 測試重點：
- * 1. isChecking → 顯示 spinner
- * 2. verified → 顯示 children
- * 3. needsReferral → 顯示 Dialog 對話框
- */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ReferralGuard } from "../referral-guard";
+import userEvent from "@testing-library/user-event";
+import { ReferralBanner } from "../referral-guard";
 
-// ─── Mock useReferralGuard ───
 const mockUseReferralGuard = vi.fn();
 
 vi.mock("@/lib/use-referral-guard", () => ({
-  useReferralGuard: () => mockUseReferralGuard(),
+  useReferralGuard: (...args: unknown[]) => mockUseReferralGuard(...args),
 }));
 
-// ─── Mock i18n ───
+vi.mock("@/lib/auth-context", () => ({
+  useAuth: () => ({
+    role: "USER",
+  }),
+}));
+
 vi.mock("@/lib/i18n/i18n-context", () => ({
   useT: () => ({
     t: (key: string) => key,
@@ -26,69 +23,47 @@ vi.mock("@/lib/i18n/i18n-context", () => ({
   }),
 }));
 
-// ─── Mock next/navigation ───
-const mockPush = vi.fn();
+describe("ReferralBanner", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.clearAllMocks();
+  });
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
-}));
-
-describe("ReferralGuard", () => {
-  it("isChecking=true → 顯示 spinner，不顯示 children", () => {
+  it("isChecking=true → 不顯示 banner", () => {
     mockUseReferralGuard.mockReturnValue({
       isChecking: true,
-      isVerified: false,
       needsReferral: false,
     });
 
-    render(
-      <ReferralGuard>
-        <div data-testid="child-content">Dashboard</div>
-      </ReferralGuard>
-    );
+    render(<ReferralBanner />);
 
-    expect(screen.queryByTestId("child-content")).not.toBeInTheDocument();
-    const spinner = document.querySelector(".animate-spin");
-    expect(spinner).toBeInTheDocument();
+    expect(screen.queryByText("referral.bannerMessage")).not.toBeInTheDocument();
   });
 
-  it("isChecking=false, isVerified=true → 顯示 children", () => {
+  it("needsReferral=false → 不顯示 banner", () => {
     mockUseReferralGuard.mockReturnValue({
       isChecking: false,
-      isVerified: true,
       needsReferral: false,
     });
 
-    render(
-      <ReferralGuard>
-        <div data-testid="child-content">Dashboard</div>
-      </ReferralGuard>
-    );
+    render(<ReferralBanner />);
 
-    expect(screen.getByTestId("child-content")).toBeInTheDocument();
-    const spinner = document.querySelector(".animate-spin");
-    expect(spinner).not.toBeInTheDocument();
+    expect(screen.queryByText("referral.bannerMessage")).not.toBeInTheDocument();
   });
 
-  it("needsReferral=true → 顯示 Dialog 對話框 + children（背景）", () => {
+  it("needsReferral=true → 顯示 banner，並可 dismiss", async () => {
     mockUseReferralGuard.mockReturnValue({
       isChecking: false,
-      isVerified: false,
       needsReferral: true,
     });
+    const user = userEvent.setup();
 
-    render(
-      <ReferralGuard>
-        <div data-testid="child-content">Dashboard</div>
-      </ReferralGuard>
-    );
+    render(<ReferralBanner />);
 
-    // children 仍然渲染（作為背景）
-    expect(screen.getByTestId("child-content")).toBeInTheDocument();
+    expect(screen.getByText("referral.bannerMessage")).toBeInTheDocument();
+    expect(screen.getByText("referral.bannerAction")).toBeInTheDocument();
 
-    // Dialog 文案存在
-    expect(screen.getByText("referral.guardTitle")).toBeInTheDocument();
-    expect(screen.getByText("referral.guardDescription")).toBeInTheDocument();
-    expect(screen.getByText("referral.guardAction")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText("referral.bannerMessage")).not.toBeInTheDocument();
   });
 });

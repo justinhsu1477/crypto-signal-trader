@@ -30,6 +30,7 @@ export default function RegisterPage() {
     { key: "min", passed: password.length >= 8, label: t("register.passwordMinChars") },
     { key: "mixed", passed: /[A-Z]/.test(password) && /[a-z]/.test(password), label: t("register.passwordMixedCase") },
   ], [password, t]);
+  const isPasswordValid = passwordChecks.every((check) => check.passed);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -37,7 +38,7 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      await register({ name, email, password });
+      await register({ name, email, password, termsAccepted: agreedToTerms });
       router.push(`/verify-email?email=${encodeURIComponent(email)}`);
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -179,7 +180,7 @@ export default function RegisterPage() {
         <Button
           type="submit"
           className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
-          disabled={isLoading || !agreedToTerms}
+          disabled={isLoading || !agreedToTerms || !isPasswordValid}
         >
           {isLoading ? (
             <>

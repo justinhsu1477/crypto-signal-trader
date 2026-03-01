@@ -6,12 +6,12 @@
  * 2. 方案卡片：名稱、USDT 價格、current badge、free 文字
  * 3. USDT 付款 Dialog：開啟、錢包地址、金額、複製按鈕、txHash 驗證、提交成功/失敗
  * 4. 取消訂閱：確認 Dialog → 呼叫 API
- * 5. 升級方案：升級按鈕 → 呼叫 API
+ * 5. 升級方案：升級按鈕 → 開啟付款流程
  *
  * ~16 tests
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SubscriptionManager } from "../subscription-manager";
 
@@ -19,7 +19,6 @@ import { SubscriptionManager } from "../subscription-manager";
 const mockGetSubscriptionPlans = vi.fn();
 const mockGetSubscriptionStatus = vi.fn();
 const mockCancelSubscription = vi.fn();
-const mockUpgradeSubscription = vi.fn();
 const mockGetCheckoutInfo = vi.fn();
 const mockSubmitPayment = vi.fn();
 
@@ -27,7 +26,6 @@ vi.mock("@/lib/api", () => ({
   getSubscriptionPlans: (...args: unknown[]) => mockGetSubscriptionPlans(...args),
   getSubscriptionStatus: (...args: unknown[]) => mockGetSubscriptionStatus(...args),
   cancelSubscription: (...args: unknown[]) => mockCancelSubscription(...args),
-  upgradeSubscription: (...args: unknown[]) => mockUpgradeSubscription(...args),
   getCheckoutInfo: (...args: unknown[]) => mockGetCheckoutInfo(...args),
   submitPayment: (...args: unknown[]) => mockSubmitPayment(...args),
 }));
@@ -458,10 +456,12 @@ describe("SubscriptionManager", () => {
         expect(screen.getByText("settings.paymentVerifying")).toBeInTheDocument();
       });
 
-      // Cleanup: resolve the pending promise
-      resolvePayment!({
-        status: "success",
-        message: "ok",
+      // Cleanup: resolve the pending promise and flush state updates
+      await act(async () => {
+        resolvePayment!({
+          status: "success",
+          message: "ok",
+        });
       });
     });
   });
@@ -550,27 +550,15 @@ describe("SubscriptionManager", () => {
       expect(screen.getByText("settings.upgrade")).toBeInTheDocument();
     });
 
-    it("calls upgrade API when upgrade button clicked", async () => {
+    it("upgrade button click → opens checkout dialog", async () => {
       setupActiveMocks();
-      mockUpgradeSubscription.mockResolvedValue({
-        status: "success",
-        message: "方案已更新為 pro",
+      mockGetCheckoutInfo.mockResolvedValue({
+        planId: "pro",
+        planName: "Pro",
+        amountUsdt: 199,
+        walletAddress: "TProWallet123",
+        network: "TRC20",
       });
-      // After upgrade, refresh status
-      const proStatus = { ...mockStatusActive, planId: "pro", planName: "Pro" };
-      mockGetSubscriptionStatus
-        .mockResolvedValueOnce(mockStatusActive) // initial
-        .mockResolvedValue(proStatus); // after upgrade
-      const upgradedPlans = mockPlans.map((p) =>
-        p.planId === "pro" ? { ...p, current: true } : { ...p, current: false }
-      );
-      mockGetSubscriptionPlans
-        .mockResolvedValueOnce(
-          mockPlans.map((p) =>
-            p.planId === "basic" ? { ...p, current: true } : { ...p, current: false }
-          )
-        ) // initial
-        .mockResolvedValue(upgradedPlans); // after upgrade
 
       const user = userEvent.setup();
       render(<SubscriptionManager />);
@@ -584,8 +572,9 @@ describe("SubscriptionManager", () => {
       await user.click(upgradeButton);
 
       await waitFor(() => {
-        expect(mockUpgradeSubscription).toHaveBeenCalledWith({ planId: "pro" });
-        expect(mockToastSuccess).toHaveBeenCalled();
+        expect(mockGetCheckoutInfo).toHaveBeenCalledWith("pro");
+        expect(screen.getByText("settings.paymentTitle")).toBeInTheDocument();
+        expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
       });
     });
   });

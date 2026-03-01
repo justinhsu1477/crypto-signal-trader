@@ -12,7 +12,7 @@
  * 8. API 載入失敗 → 顯示錯誤
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ReferralPage from "../page";
 
@@ -304,8 +304,7 @@ describe("複製功能", () => {
     expect(copyBtn).toBeInTheDocument();
     expect(copyBtn).not.toBeDisabled();
 
-    // 直接觸發 onClick
-    copyBtn!.click();
+    fireEvent.click(copyBtn!);
 
     // navigator.clipboard.writeText 被呼叫
     await waitFor(() => {

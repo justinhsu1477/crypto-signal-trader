@@ -50,8 +50,9 @@ class AuthServiceTest {
             request.setEmail("test@example.com");
             request.setPassword("password123");
             request.setName("Test User");
+            request.setTermsAccepted(true);
 
-            when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
+            when(userRepository.existsByEmailIgnoreCase("test@example.com")).thenReturn(false);
             when(passwordEncoder.encode("password123")).thenReturn("$2a$10$hashedPassword");
             when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -75,8 +76,9 @@ class AuthServiceTest {
             request.setEmail("test@example.com");
             request.setPassword("password123");
             request.setName("Test User");
+            request.setTermsAccepted(true);
 
-            when(userRepository.existsByEmail(anyString())).thenReturn(false);
+            when(userRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
             when(passwordEncoder.encode(anyString())).thenReturn("hashed");
             when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -92,8 +94,9 @@ class AuthServiceTest {
             request.setEmail("test@example.com");
             request.setPassword("password123");
             request.setName("Test User");
+            request.setTermsAccepted(true);
 
-            when(userRepository.existsByEmail(anyString())).thenReturn(false);
+            when(userRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
             when(passwordEncoder.encode(anyString())).thenReturn("hashed");
             when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -109,8 +112,9 @@ class AuthServiceTest {
             request.setEmail("test@example.com");
             request.setPassword("password123");
             request.setName("Test User");
+            request.setTermsAccepted(true);
 
-            when(userRepository.existsByEmail(anyString())).thenReturn(false);
+            when(userRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
             when(passwordEncoder.encode(anyString())).thenReturn("hashed");
             when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -125,12 +129,29 @@ class AuthServiceTest {
             RegisterRequest request = new RegisterRequest();
             request.setEmail("existing@example.com");
             request.setPassword("password123");
+            request.setTermsAccepted(true);
 
-            when(userRepository.existsByEmail("existing@example.com")).thenReturn(true);
+            when(userRepository.existsByEmailIgnoreCase("existing@example.com")).thenReturn(true);
 
             assertThatThrownBy(() -> authService.register(request))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Email 已被註冊");
+
+            verify(userRepository, never()).save(any());
+            verify(emailVerificationService, never()).generateAndSend(anyString());
+        }
+
+        @Test
+        @DisplayName("未同意條款 → 拋出 IllegalArgumentException")
+        void registerWithoutTermsAccepted_throwsException() {
+            RegisterRequest request = new RegisterRequest();
+            request.setEmail("new@example.com");
+            request.setPassword("Password123");
+            request.setTermsAccepted(false);
+
+            assertThatThrownBy(() -> authService.register(request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("必須同意服務條款");
 
             verify(userRepository, never()).save(any());
             verify(emailVerificationService, never()).generateAndSend(anyString());
@@ -142,8 +163,9 @@ class AuthServiceTest {
             RegisterRequest request = new RegisterRequest();
             request.setEmail("new@example.com");
             request.setPassword("password123");
+            request.setTermsAccepted(true);
 
-            when(userRepository.existsByEmail(anyString())).thenReturn(false);
+            when(userRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
             when(passwordEncoder.encode(anyString())).thenReturn("hashed");
             when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -175,7 +197,7 @@ class AuthServiceTest {
                     .emailVerified(true)
                     .build();
 
-            when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("test@example.com")).thenReturn(Optional.of(user));
             when(passwordEncoder.matches("password123", "$2a$10$hashedPassword")).thenReturn(true);
             when(jwtService.generateToken("test-uuid", "USER")).thenReturn("jwt-access-token");
             when(jwtService.generateRefreshToken("test-uuid", "USER")).thenReturn("jwt-refresh-token");
@@ -206,7 +228,7 @@ class AuthServiceTest {
                     .emailVerified(false)
                     .build();
 
-            when(userRepository.findByEmail("unverified@example.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("unverified@example.com")).thenReturn(Optional.of(user));
             when(passwordEncoder.matches("password123", "$2a$10$hashedPassword")).thenReturn(true);
 
             assertThatThrownBy(() -> authService.login(request))
@@ -231,7 +253,7 @@ class AuthServiceTest {
                     .emailVerified(true)
                     .build();
 
-            when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("test@example.com")).thenReturn(Optional.of(user));
             when(passwordEncoder.matches("wrong-password", "$2a$10$hashedPassword")).thenReturn(false);
 
             assertThatThrownBy(() -> authService.login(request))
@@ -248,7 +270,7 @@ class AuthServiceTest {
             request.setEmail("nonexistent@example.com");
             request.setPassword("password123");
 
-            when(userRepository.findByEmail("nonexistent@example.com")).thenReturn(Optional.empty());
+            when(userRepository.findByEmailIgnoreCase("nonexistent@example.com")).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> authService.login(request))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -270,7 +292,7 @@ class AuthServiceTest {
                     .emailVerified(true)
                     .build();
 
-            when(userRepository.findByEmail("disabled@example.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("disabled@example.com")).thenReturn(Optional.of(user));
 
             assertThatThrownBy(() -> authService.login(request))
                     .isInstanceOf(IllegalArgumentException.class)

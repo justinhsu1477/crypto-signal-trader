@@ -125,6 +125,24 @@ describe("publicRequest Error Parsing", () => {
     ).rejects.toThrow("Invalid email or password");
   });
 
+  it("login EMAIL_NOT_VERIFIED → preserves JSON payload for redirect", async () => {
+    mockFetch.mockReturnValueOnce(
+      textResponse(JSON.stringify({ error: "EMAIL_NOT_VERIFIED", email: "unverified@test.com" }), 403)
+    );
+
+    const api = await loadApi();
+
+    try {
+      await api.login({ email: "unverified@test.com", password: "pw" });
+      throw new Error("expected login to fail");
+    } catch (err: unknown) {
+      expect(err).toBeInstanceOf(Error);
+      const parsed = JSON.parse((err as Error).message) as { error: string; email: string };
+      expect(parsed.error).toBe("EMAIL_NOT_VERIFIED");
+      expect(parsed.email).toBe("unverified@test.com");
+    }
+  });
+
   it("register failure → parses JSON message body", async () => {
     mockFetch.mockReturnValueOnce(
       textResponse(JSON.stringify({ message: "Email already registered" }), 409)
@@ -132,7 +150,7 @@ describe("publicRequest Error Parsing", () => {
 
     const api = await loadApi();
     await expect(
-      api.register({ email: "dup@test.com", password: "pw", name: "Test" })
+      api.register({ email: "dup@test.com", password: "pw", name: "Test", termsAccepted: true })
     ).rejects.toThrow("Email already registered");
   });
 });

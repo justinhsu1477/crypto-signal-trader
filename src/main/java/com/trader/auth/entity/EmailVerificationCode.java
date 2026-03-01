@@ -24,7 +24,8 @@ public class EmailVerificationCode {
     @Column(nullable = false)
     private String email;
 
-    @Column(nullable = false, length = 6)
+    // 儲存 OTP hash（為了向後相容，舊資料可能仍是 6 位數明文）
+    @Column(nullable = false, length = 128)
     private String code;
 
     @Builder.Default

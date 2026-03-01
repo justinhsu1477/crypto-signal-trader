@@ -5,6 +5,7 @@ import com.trader.auth.dto.ChangePasswordRequest;
 import com.trader.auth.dto.ResetPasswordRequest;
 import com.trader.auth.entity.PasswordResetToken;
 import com.trader.auth.repository.PasswordResetTokenRepository;
+import com.trader.auth.util.EmailNormalizer;
 import com.trader.shared.config.AppConstants;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -86,10 +87,11 @@ public class PasswordResetService {
      */
     @Transactional
     public void requestPasswordReset(String email) {
+        String normalizedEmail = EmailNormalizer.normalize(email);
         // 1. 找用戶 — 找不到就靜默 return（防枚舉）
-        var userOpt = userRepository.findByEmail(email);
+        var userOpt = userRepository.findByEmailIgnoreCase(normalizedEmail);
         if (userOpt.isEmpty()) {
-            log.debug("密碼重設請求：email 不存在（靜默處理）: {}", email);
+            log.debug("密碼重設請求：email 不存在（靜默處理）: {}", normalizedEmail);
             return;
         }
 
