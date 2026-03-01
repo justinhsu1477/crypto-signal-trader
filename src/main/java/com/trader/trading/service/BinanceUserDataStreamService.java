@@ -251,9 +251,8 @@ public class BinanceUserDataStreamService {
             if (alertSent) {
                 alertSent = false;
                 String msg = "WebSocket 連線已重新建立\n自動觸發止損/止盈將正常同步至 DB";
-                discordWebhookService.sendNotification(
-                        "✅ Binance User Data Stream 已恢復", msg,
-                        DiscordWebhookService.COLOR_GREEN);
+                // sendNotificationToAdmins → MQ admin queue → Consumer 派發到 admin per-user
+                // （不再額外呼叫 sendNotification，避免 Consumer 重複派發）
                 discordWebhookService.sendNotificationToAdmins(
                         "✅ Binance User Data Stream 已恢復", msg,
                         DiscordWebhookService.COLOR_GREEN);
@@ -329,9 +328,8 @@ public class BinanceUserDataStreamService {
                     String msg = "WebSocket 連線中斷: " + t.getMessage()
                             + "\n自動觸發止損/止盈暫時無法同步至 DB"
                             + "\n正在嘗試自動重連...";
-                    discordWebhookService.sendNotification(
-                            "🚨 Binance User Data Stream 斷線", msg,
-                            DiscordWebhookService.COLOR_RED);
+                    // sendNotificationToAdmins → MQ admin queue → Consumer 派發到 admin per-user
+                    // （不再額外呼叫 sendNotification，避免 Consumer 重複派發）
                     discordWebhookService.sendNotificationToAdmins(
                             "🚨 Binance User Data Stream 斷線", msg,
                             DiscordWebhookService.COLOR_RED);
@@ -354,9 +352,8 @@ public class BinanceUserDataStreamService {
         if (attempt > MAX_RECONNECT_ATTEMPTS) {
             log.error("WebSocket 重連次數已達上限 ({})，停止重試", MAX_RECONNECT_ATTEMPTS);
             String msg = String.format("已嘗試 %d 次重連，全部失敗\n請手動重啟服務！", MAX_RECONNECT_ATTEMPTS);
-            discordWebhookService.sendNotification(
-                    "🚨 User Data Stream 重連失敗", msg,
-                    DiscordWebhookService.COLOR_RED);
+            // sendNotificationToAdmins → MQ admin queue → Consumer 派發到 admin per-user
+            // （不再額外呼叫 sendNotification，避免 Consumer 重複派發）
             discordWebhookService.sendNotificationToAdmins(
                     "🚨 User Data Stream 重連失敗", msg,
                     DiscordWebhookService.COLOR_RED);
