@@ -4,6 +4,7 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -49,6 +50,9 @@ public class RateLimitFilter implements Filter {
 
     /** key = "IP:group" → 計數器 */
     private final ConcurrentHashMap<String, RateEntry> counters = new ConcurrentHashMap<>();
+
+    @Value("${security.trusted-proxies:127.0.0.1,::1,0:0:0:0:0:0:0:1}")
+    private String trustedProxies;
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -119,6 +123,11 @@ public class RateLimitFilter implements Filter {
     // ========== internal ==========
 
     private String getClientIp(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        if (!isTrustedProxy(remoteAddr)) {
+            return remoteAddr;
+        }
+
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isEmpty()) {
             return forwarded.split(",")[0].trim();
@@ -127,7 +136,27 @@ public class RateLimitFilter implements Filter {
         if (realIp != null && !realIp.isEmpty()) {
             return realIp;
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
+    }
+
+    private boolean isTrustedProxy(String remoteAddr) {
+        if (remoteAddr == null || remoteAddr.isBlank()) {
+            return false;
+        }
+        if ("127.0.0.1".equals(remoteAddr)
+                || "::1".equals(remoteAddr)
+                || "0:0:0:0:0:0:0:1".equals(remoteAddr)) {
+            return true;
+        }
+        if (trustedProxies == null || trustedProxies.isBlank()) {
+            return false;
+        }
+        for (String configured : trustedProxies.split(",")) {
+            if (remoteAddr.equals(configured.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static class RateEntry {

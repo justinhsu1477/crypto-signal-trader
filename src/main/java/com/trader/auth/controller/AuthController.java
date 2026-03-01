@@ -7,6 +7,7 @@ import com.trader.auth.service.EmailVerificationService;
 import com.trader.auth.service.JwtService;
 import com.trader.auth.service.PasswordResetService;
 import com.trader.auth.util.CookieUtil;
+import com.trader.auth.util.EmailNormalizer;
 import com.trader.shared.dto.ErrorResponse;
 import com.trader.shared.service.AuditService;
 import com.trader.user.entity.User;
@@ -16,6 +17,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -36,6 +38,9 @@ public class AuthController {
     private final PasswordResetService passwordResetService;
     private final UserRepository userRepository;
     private final JwtService jwtService;
+
+    @Value("${security.trusted-proxies:127.0.0.1,::1,0:0:0:0:0:0:0:1}")
+    private String trustedProxies;
 
     /**
      * 用戶註冊
@@ -77,9 +82,11 @@ public class AuthController {
 
             // 設定 HttpOnly Cookie
             CookieUtil.addAccessTokenCookie(httpResponse, response.getToken(),
-                    jwtService.getExpirationMs() / 1000);
+                    jwtService.getExpirationMs() / 1000,
+                    jwtService.isCookieSecure());
             CookieUtil.addRefreshTokenCookie(httpResponse, response.getRefreshToken(),
-                    jwtService.getRefreshExpirationMs() / 1000);
+                    jwtService.getRefreshExpirationMs() / 1000,
+                    jwtService.isCookieSecure());
 
             auditService.log(
                     response.getUserId(),
@@ -117,7 +124,8 @@ public class AuthController {
         try {
             emailVerificationService.verifyCode(request.getEmail(), request.getCode());
 
-            User user = userRepository.findByEmail(request.getEmail())
+            String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+            User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                     .orElseThrow(() -> new IllegalArgumentException("找不到此 Email 的帳號"));
             user.setEmailVerified(true);
             userRepository.save(user);
@@ -126,7 +134,7 @@ public class AuthController {
             return ResponseEntity.ok(Map.of("message", "Email 驗證成功"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()
-                    .body(ErrorResponse.builder().error(e.getMessage()).build());
+                    .body(ErrorResponse.builder().error("驗證失敗，請確認驗證碼或重新發送").build());
         }
     }
 
@@ -140,8 +148,8 @@ public class AuthController {
             emailVerificationService.resendCode(request.getEmail());
             return ResponseEntity.ok(Map.of("message", "驗證碼已重新發送"));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest()
-                    .body(ErrorResponse.builder().error(e.getMessage()).build());
+            // 防枚舉：不透露 email 是否存在/是否已驗證
+            return ResponseEntity.ok(Map.of("message", "若此 Email 尚未完成驗證，驗證碼已發送"));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(ErrorResponse.builder().error(e.getMessage()).build());
@@ -172,9 +180,11 @@ public class AuthController {
 
             // 設定新的 HttpOnly Cookie
             CookieUtil.addAccessTokenCookie(httpResponse, response.getToken(),
-                    jwtService.getExpirationMs() / 1000);
+                    jwtService.getExpirationMs() / 1000,
+                    jwtService.isCookieSecure());
             CookieUtil.addRefreshTokenCookie(httpResponse, response.getRefreshToken(),
-                    jwtService.getRefreshExpirationMs() / 1000);
+                    jwtService.getRefreshExpirationMs() / 1000,
+                    jwtService.isCookieSecure());
 
             auditService.log(
                     response.getUserId(),
@@ -196,7 +206,7 @@ public class AuthController {
                     "FAILED", clientIp, e.getMessage());
 
             // 清除無效的 Cookie
-            CookieUtil.clearAuthCookies(httpResponse);
+            CookieUtil.clearAuthCookies(httpResponse, jwtService.isCookieSecure());
 
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ErrorResponse.builder().error(e.getMessage()).build());
@@ -212,7 +222,7 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest httpRequest,
                                     HttpServletResponse httpResponse) {
-        CookieUtil.clearAuthCookies(httpResponse);
+        CookieUtil.clearAuthCookies(httpResponse, jwtService.isCookieSecure());
 
         String clientIp = getClientIp(httpRequest);
         Authentication auth = org.springframework.security.core.context.SecurityContextHolder
@@ -247,7 +257,7 @@ public class AuthController {
             passwordResetService.changePassword(userId, request);
 
             // 清除 Cookie → 強制重新登入
-            CookieUtil.clearAuthCookies(httpResponse);
+            CookieUtil.clearAuthCookies(httpResponse, jwtService.isCookieSecure());
 
             auditService.log(userId, "CHANGE_PASSWORD", "/api/auth/change-password",
                     "SUCCESS", clientIp, "");
@@ -324,6 +334,11 @@ public class AuthController {
     }
 
     private String getClientIp(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        if (!isTrustedProxy(remoteAddr)) {
+            return remoteAddr;
+        }
+
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isEmpty()) {
             return forwarded.split(",")[0].trim();
@@ -332,6 +347,26 @@ public class AuthController {
         if (realIp != null && !realIp.isEmpty()) {
             return realIp;
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
+    }
+
+    private boolean isTrustedProxy(String remoteAddr) {
+        if (remoteAddr == null || remoteAddr.isBlank()) {
+            return false;
+        }
+        if ("127.0.0.1".equals(remoteAddr)
+                || "::1".equals(remoteAddr)
+                || "0:0:0:0:0:0:0:1".equals(remoteAddr)) {
+            return true;
+        }
+        if (trustedProxies == null || trustedProxies.isBlank()) {
+            return false;
+        }
+        for (String configured : trustedProxies.split(",")) {
+            if (remoteAddr.equals(configured.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

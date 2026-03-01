@@ -188,10 +188,39 @@ async function publicRequest<T>(url: string, options: RequestInit = {}): Promise
 }
 
 export async function login(data: LoginRequest): Promise<LoginResponse> {
-  return publicRequest<LoginResponse>("/api/auth/login", {
+  const res = await fetch(`${BASE}/api/auth/login`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
     body: JSON.stringify(data),
   });
+
+  if (!res.ok) {
+    const body = await res.text();
+    let parsed: Record<string, unknown> | null = null;
+
+    if (body) {
+      try {
+        parsed = JSON.parse(body) as Record<string, unknown>;
+      } catch {
+        parsed = null;
+      }
+    }
+
+    // 未驗證 Email：保留後端完整 JSON（包含 email）給 login page 做導向。
+    if (res.status === 403 && parsed?.error === "EMAIL_NOT_VERIFIED") {
+      throw new Error(body);
+    }
+
+    const rawMessage =
+      parsed?.error ?? parsed?.message ?? parsed?.detail ?? body ?? `HTTP ${res.status}`;
+    const message = typeof rawMessage === "string" ? rawMessage : `HTTP ${res.status}`;
+    throw new Error(message);
+  }
+
+  return res.json() as Promise<LoginResponse>;
 }
 
 export async function register(data: RegisterRequest): Promise<RegisterResponse> {

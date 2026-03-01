@@ -257,7 +257,7 @@ class AuthControllerTest {
             VerifyEmailRequest req = new VerifyEmailRequest("test@email.com", "123456");
 
             User user = User.builder().userId("u1").email("test@email.com").build();
-            when(userRepository.findByEmail("test@email.com")).thenReturn(Optional.of(user));
+            when(userRepository.findByEmailIgnoreCase("test@email.com")).thenReturn(Optional.of(user));
 
             ResponseEntity<?> response = controller.verifyEmail(req);
 
@@ -298,15 +298,15 @@ class AuthControllerTest {
         }
 
         @Test
-        @DisplayName("Email 不存在（IllegalArgument）→ 400")
-        void emailNotFound_returns400() {
+        @DisplayName("Email 不存在（IllegalArgument）→ 200（防枚舉）")
+        void emailNotFound_returns200() {
             ResendCodeRequest req = new ResendCodeRequest("noexist@email.com");
 
             doThrow(new IllegalArgumentException("找不到此 Email"))
                     .when(emailVerificationService).resendCode(anyString());
 
             ResponseEntity<?> response = controller.resendCode(req);
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         }
 
         @Test

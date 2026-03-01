@@ -29,6 +29,9 @@ public class JwtService {
     @Value("${jwt.refresh-expiration-ms:604800000}")
     private long refreshExpirationMs;
 
+    @Value("${jwt.cookie-secure:true}")
+    private boolean cookieSecure;
+
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
@@ -153,5 +156,12 @@ public class JwtService {
      */
     public long getRefreshExpirationMs() {
         return refreshExpirationMs;
+    }
+
+    /**
+     * Cookie 是否強制 Secure（HTTPS only）
+     */
+    public boolean isCookieSecure() {
+        return cookieSecure;
     }
 }

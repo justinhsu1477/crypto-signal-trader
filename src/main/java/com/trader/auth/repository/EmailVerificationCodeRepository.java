@@ -16,10 +16,14 @@ public interface EmailVerificationCodeRepository extends JpaRepository<EmailVeri
      */
     Optional<EmailVerificationCode> findTopByEmailAndUsedFalseOrderByCreatedAtDesc(String email);
 
+    Optional<EmailVerificationCode> findTopByEmailIgnoreCaseAndUsedFalseOrderByCreatedAtDesc(String email);
+
     /**
      * 統計指定時間之後的發送次數（rate limit 用）
      */
     long countByEmailAndCreatedAtAfter(String email, LocalDateTime since);
+
+    long countByEmailIgnoreCaseAndCreatedAtAfter(String email, LocalDateTime since);
 
     /**
      * 清除過期驗證碼
