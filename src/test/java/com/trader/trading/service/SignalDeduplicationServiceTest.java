@@ -401,6 +401,97 @@ class SignalDeduplicationServiceTest {
         }
     }
 
+    // ==================== 過期重入（checkMemoryDedup 驗證） ====================
+
+    @Nested
+    @DisplayName("過期重入")
+    class ExpiredReentryTests {
+
+        @Test
+        @DisplayName("ENTRY 過期後重新放行")
+        @SuppressWarnings("unchecked")
+        void entryExpiredThenAllowed() throws Exception {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+            when(tradeRepository.existsBySignalHashAndCreatedAtAfter(anyString(), any()))
+                    .thenReturn(false);
+
+            // 第一次通過
+            assertThat(service.isDuplicate(signal)).isFalse();
+            // 第二次被擋（窗口內）
+            assertThat(service.isDuplicate(signal)).isTrue();
+
+            // 模擬過期：把快取時間戳設為 6 分鐘前
+            Field cacheField = SignalDeduplicationService.class.getDeclaredField("recentSignals");
+            cacheField.setAccessible(true);
+            ConcurrentHashMap<String, Long> cache =
+                    (ConcurrentHashMap<String, Long>) cacheField.get(service);
+            String hash = service.generateHash(signal);
+            cache.put(hash, System.currentTimeMillis() - 6 * 60 * 1000);
+
+            // 過期後再次放行
+            assertThat(service.isDuplicate(signal)).isFalse();
+        }
+
+        @Test
+        @DisplayName("CANCEL 過期後重新放行")
+        @SuppressWarnings("unchecked")
+        void cancelExpiredThenAllowed() throws Exception {
+            // 第一次通過
+            assertThat(service.isCancelDuplicate("ETHUSDT")).isFalse();
+            // 第二次被擋
+            assertThat(service.isCancelDuplicate("ETHUSDT")).isTrue();
+
+            // 模擬過期：把快取時間戳設為 31 秒前
+            Field cacheField = SignalDeduplicationService.class.getDeclaredField("recentSignals");
+            cacheField.setAccessible(true);
+            ConcurrentHashMap<String, Long> cache =
+                    (ConcurrentHashMap<String, Long>) cacheField.get(service);
+            cache.put("CANCEL|ETHUSDT", System.currentTimeMillis() - 31 * 1000);
+
+            // 過期後再次放行
+            assertThat(service.isCancelDuplicate("ETHUSDT")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Per-User CANCEL 過期後重新放行")
+        @SuppressWarnings("unchecked")
+        void perUserCancelExpiredThenAllowed() throws Exception {
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isFalse();
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isTrue();
+
+            Field cacheField = SignalDeduplicationService.class.getDeclaredField("recentSignals");
+            cacheField.setAccessible(true);
+            ConcurrentHashMap<String, Long> cache =
+                    (ConcurrentHashMap<String, Long>) cacheField.get(service);
+            cache.put("CANCEL|user-A|BTCUSDT", System.currentTimeMillis() - 31 * 1000);
+
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Per-User ENTRY 過期後重新放行")
+        @SuppressWarnings("unchecked")
+        void perUserEntryExpiredThenAllowed() throws Exception {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000).stopLoss(94000).build();
+
+            assertThat(service.isUserDuplicate(signal, "user-A")).isFalse();
+            assertThat(service.isUserDuplicate(signal, "user-A")).isTrue();
+
+            Field cacheField = SignalDeduplicationService.class.getDeclaredField("recentSignals");
+            cacheField.setAccessible(true);
+            ConcurrentHashMap<String, Long> cache =
+                    (ConcurrentHashMap<String, Long>) cacheField.get(service);
+            String userHash = service.generateUserHash(signal, "user-A");
+            cache.put(userHash, System.currentTimeMillis() - 6 * 60 * 1000);
+
+            assertThat(service.isUserDuplicate(signal, "user-A")).isFalse();
+        }
+    }
+
     // ==================== 快取清理 ====================
 
     @Nested
