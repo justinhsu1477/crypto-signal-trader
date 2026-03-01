@@ -101,8 +101,8 @@ class BinanceUserDataStreamReconnectTest {
             assertThat(service.getReconnectAttempts())
                     .isEqualTo(BinanceUserDataStreamService.MAX_RECONNECT_ATTEMPTS + 1);
 
-            // 應該發送紅色告警通知
-            verify(discordWebhookService).sendNotification(
+            // 應該發送紅色告警通知（走 sendNotificationToAdmins，不走 sendNotification 避免 MQ 重複派發）
+            verify(discordWebhookService).sendNotificationToAdmins(
                     contains("重連失敗"),
                     contains("手動重啟"),
                     eq(DiscordWebhookService.COLOR_RED));
@@ -313,7 +313,7 @@ class BinanceUserDataStreamReconnectTest {
             assertThat(service.getReconnectAttempts()).isEqualTo(1);
             assertThat(service.isConnected()).isFalse();
 
-            verify(discordWebhookService).sendNotification(
+            verify(discordWebhookService).sendNotificationToAdmins(
                     contains("斷線"),
                     contains("Connection reset"),
                     eq(DiscordWebhookService.COLOR_RED));
@@ -330,7 +330,7 @@ class BinanceUserDataStreamReconnectTest {
             listener.onFailure(mockWs, new RuntimeException("error 3"), null);
 
             // alertSent flag 保護：只有第一次發紅色告警
-            verify(discordWebhookService, times(1)).sendNotification(
+            verify(discordWebhookService, times(1)).sendNotificationToAdmins(
                     contains("斷線"),
                     anyString(),
                     eq(DiscordWebhookService.COLOR_RED));
@@ -348,7 +348,7 @@ class BinanceUserDataStreamReconnectTest {
             Response mockResponse = mock(Response.class);
             listener.onOpen(mockWs, mockResponse);
 
-            verify(discordWebhookService).sendNotification(
+            verify(discordWebhookService).sendNotificationToAdmins(
                     contains("已恢復"),
                     contains("重新建立"),
                     eq(DiscordWebhookService.COLOR_GREEN));
