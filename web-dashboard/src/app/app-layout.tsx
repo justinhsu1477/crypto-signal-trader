@@ -12,7 +12,7 @@ import { ErrorBoundary, PageErrorFallback } from "@/components/ui/error-boundary
 import { Toaster } from "sonner";
 
 const AUTH_LAYOUT_PATHS = ["/login", "/register", "/verify-email", "/forgot-password", "/reset-password"];
-const STANDALONE_PUBLIC_PATHS = ["/blog"];
+const STANDALONE_PUBLIC_PATHS = ["/blog", "/status"];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

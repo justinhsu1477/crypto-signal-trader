@@ -5,6 +5,7 @@ import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
+import com.trader.dashboard.service.TradeExportService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.notification.service.LineLinkingService;
 import com.trader.notification.service.NotificationService;
@@ -38,6 +39,7 @@ import static org.mockito.Mockito.*;
 class DashboardControllerTest {
 
     private DashboardService dashboardService;
+    private TradeExportService tradeExportService;
     private UserRepository userRepository;
     private UserDiscordWebhookService webhookService;
     private UserTradeSettingsService tradeSettingsService;
@@ -50,6 +52,7 @@ class DashboardControllerTest {
     @BeforeEach
     void setUp() {
         dashboardService = mock(DashboardService.class);
+        tradeExportService = mock(TradeExportService.class);
         userRepository = mock(UserRepository.class);
         webhookService = mock(UserDiscordWebhookService.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
@@ -57,7 +60,7 @@ class DashboardControllerTest {
         lineLinkingService = mock(LineLinkingService.class);
         subscriptionService = mock(SubscriptionService.class);
         planRepository = mock(PlanRepository.class);
-        controller = new DashboardController(dashboardService, userRepository, webhookService, tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository);
+        controller = new DashboardController(dashboardService, tradeExportService, userRepository, webhookService, tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository);
     }
 
     // ==================== /overview ====================

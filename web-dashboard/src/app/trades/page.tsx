@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { TradeHistoryResponse } from "@/types";
-import { getTradeHistory } from "@/lib/api";
+import { getTradeHistory, exportTrades } from "@/lib/api";
 import { TradeTable } from "@/components/trades/trade-table";
 import { TradeDetail } from "@/components/trades/trade-detail";
 import { useT } from "@/lib/i18n/i18n-context";
+import { Download } from "lucide-react";
+import { toast } from "sonner";
 
 export default function TradesPage() {
   const { t } = useT();
@@ -15,6 +17,7 @@ export default function TradesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,9 +47,30 @@ export default function TradesPage() {
     };
   }, [page, size, t]);
 
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      await exportTrades(30);
+    } catch {
+      toast.error(t("trades.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  }, [t]);
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">{t("trades.title")}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">{t("trades.title")}</h1>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none transition-colors"
+        >
+          <Download className="h-4 w-4" />
+          {exporting ? t("trades.exporting") : t("trades.exportCsv")}
+        </button>
+      </div>
 
       {loading && (
         <div className="flex items-center justify-center py-20">
