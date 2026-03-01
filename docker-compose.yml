@@ -22,10 +22,7 @@ services:
     container_name: rabbitmq
     ports:
       - "5672:5672"     # AMQP
-      - "15672:15672"   # Management UI (guest/guest)
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+      - "15672:15672"   # Management UI
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
