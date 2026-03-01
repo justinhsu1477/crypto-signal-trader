@@ -15,6 +15,7 @@ import java.time.Duration;
  * Resend API 發信服務
  *
  * enabled=false 時只 log OTP 不發信（開發環境）
+ * HTML 內容由 EmailTemplateService 渲染。
  */
 @Slf4j
 @Service
@@ -25,6 +26,7 @@ public class ResendEmailService {
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     private final EmailConfig emailConfig;
+    private final EmailTemplateService emailTemplateService;
 
     /**
      * 發送 OTP 驗證碼 Email
@@ -39,7 +41,7 @@ public class ResendEmailService {
         }
 
         String subject = "HookFi — 您的驗證碼 " + code;
-        String html = buildOtpHtml(code, emailConfig.getOtpExpiryMinutes());
+        String html = emailTemplateService.renderOtpEmail(code, emailConfig.getOtpExpiryMinutes());
 
         try {
             String jsonBody = buildRequestBody(
@@ -89,7 +91,7 @@ public class ResendEmailService {
         }
 
         String subject = "HookFi — 重設您的密碼";
-        String html = buildPasswordResetHtml(resetUrl, emailConfig.getResetTokenExpiryMinutes());
+        String html = emailTemplateService.renderPasswordResetEmail(resetUrl, emailConfig.getResetTokenExpiryMinutes());
 
         try {
             String jsonBody = buildRequestBody(
@@ -137,60 +139,6 @@ public class ResendEmailService {
                 "\"subject\":\"" + escapeJson(subject) + "\"," +
                 "\"html\":\"" + escapeJson(html) + "\"" +
                 "}";
-    }
-
-    /**
-     * 建構 OTP Email HTML 內容
-     */
-    String buildOtpHtml(String code, int expiryMinutes) {
-        return """
-                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
-                  <div style="text-align: center; margin-bottom: 32px;">
-                    <h1 style="color: #10b981; font-size: 24px; margin: 0;">HookFi</h1>
-                    <p style="color: #6b7280; font-size: 14px; margin-top: 8px;">Email 驗證</p>
-                  </div>
-                  <div style="background: #f9fafb; border-radius: 12px; padding: 32px; text-align: center;">
-                    <p style="color: #374151; font-size: 16px; margin: 0 0 24px;">您的驗證碼為：</p>
-                    <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #111827; padding: 16px; background: white; border-radius: 8px; display: inline-block;">
-                      %s
-                    </div>
-                    <p style="color: #6b7280; font-size: 14px; margin-top: 24px;">
-                      此驗證碼將在 <strong>%d 分鐘</strong>後過期
-                    </p>
-                  </div>
-                  <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 24px;">
-                    如果這不是您本人的操作，請忽略此郵件。
-                  </p>
-                </div>
-                """.formatted(code, expiryMinutes);
-    }
-
-    /**
-     * 建構密碼重設 Email HTML 內容
-     */
-    String buildPasswordResetHtml(String resetUrl, int expiryMinutes) {
-        return """
-                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
-                  <div style="text-align: center; margin-bottom: 32px;">
-                    <h1 style="color: #10b981; font-size: 24px; margin: 0;">HookFi</h1>
-                    <p style="color: #6b7280; font-size: 14px; margin-top: 8px;">密碼重設</p>
-                  </div>
-                  <div style="background: #f9fafb; border-radius: 12px; padding: 32px; text-align: center;">
-                    <p style="color: #374151; font-size: 16px; margin: 0 0 24px;">
-                      我們收到了您的密碼重設請求。<br>請點擊下方按鈕設定新密碼：
-                    </p>
-                    <a href="%s" style="display: inline-block; background: #10b981; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-                      重設密碼
-                    </a>
-                    <p style="color: #6b7280; font-size: 14px; margin-top: 24px;">
-                      此連結將在 <strong>%d 分鐘</strong>後過期
-                    </p>
-                  </div>
-                  <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 24px;">
-                    如果這不是您本人的操作，請忽略此郵件，您的密碼不會被變更。
-                  </p>
-                </div>
-                """.formatted(resetUrl, expiryMinutes);
     }
 
     private static String escapeJson(String value) {
