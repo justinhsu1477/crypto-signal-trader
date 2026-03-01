@@ -91,7 +91,7 @@ public class BroadcastTradeService {
         // Batch 查詢：一次取得所有有效訂閱的 userId（避免 N+1）
         Set<String> subscribedUserIds = new HashSet<>(subscriptionRepository.findUserIdsWithActiveSubscription());
 
-        // 過濾：僅保留有有效訂閱 (ACTIVE/TRIALING) 的用戶
+        // 過濾：僅保留有有效訂閱 (ACTIVE/LIFETIME) 的用戶
         List<User> subscribedUsers = enabledUsers.stream()
                 .filter(u -> subscribedUserIds.contains(u.getUserId()))
                 .toList();

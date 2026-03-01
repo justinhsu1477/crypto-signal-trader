@@ -36,19 +36,18 @@ public class Subscription {
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    private Status status = Status.TRIALING;
+    private Status status = Status.ACTIVE;
 
     /** 當期開始時間 */
     private LocalDateTime currentPeriodStart;
 
-    /** 當期結束時間（過了這個時間 Stripe 會自動扣款或取消） */
+    /** 當期結束時間（過了這個時間排程會自動標記取消） */
     private LocalDateTime currentPeriodEnd;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     public enum Status {
-        TRIALING,    // 免費試用中
         ACTIVE,      // 付費生效中
         LIFETIME,    // 終生免費（不受到期排程影響，currentPeriodEnd = null）
         CANCELLED,   // 已取消（期滿後停止）

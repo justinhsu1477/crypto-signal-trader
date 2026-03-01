@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { UserProfile, ApiKeyMetadata, AutoTradeStatus } from "@/types";
+import type { UserProfile, ApiKeyMetadata, AutoTradeStatus, SubscriptionStatusDetail } from "@/types";
 import {
   getUserProfile,
   getApiKeys,
@@ -10,6 +10,7 @@ import {
   updateAutoTradeStatus,
   changePassword,
   apiLogout,
+  getSubscriptionStatus,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,9 @@ export default function SettingsPage() {
   const [autoTradeError, setAutoTradeError] = useState<string | null>(null);
   const [autoTradeUpdating, setAutoTradeUpdating] = useState(false);
 
+  // ─── Subscription state ───
+  const [subscriptionActive, setSubscriptionActive] = useState(false);
+
   // ─── Webhook readiness ───
   const [hasActiveWebhook, setHasActiveWebhook] = useState(false);
 
@@ -97,7 +101,7 @@ export default function SettingsPage() {
   const hasBinanceKey = apiKeys.some(
     (k) => k.exchange === "BINANCE" && k.hasApiKey
   );
-  const canEnableAutoTrade = hasBinanceKey;
+  const canEnableAutoTrade = hasBinanceKey && subscriptionActive;
 
   // ─── Sidebar nav items ───
   const navItems: {
@@ -213,6 +217,12 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, [t]);
+
+  useEffect(() => {
+    getSubscriptionStatus()
+      .then((data) => setSubscriptionActive(data.active))
+      .catch(() => setSubscriptionActive(false));
+  }, []);
 
   // ─── Handlers ───
   async function handleSaveApiKey() {
@@ -543,6 +553,9 @@ export default function SettingsPage() {
                 <ul className="list-disc list-inside text-xs space-y-0.5">
                   {!hasBinanceKey && (
                     <li>❌ {t("settings.autoTradeMissingApiKey")}</li>
+                  )}
+                  {!subscriptionActive && (
+                    <li>❌ {t("settings.autoTradeMissingSubscription")}</li>
                   )}
                 </ul>
               </div>

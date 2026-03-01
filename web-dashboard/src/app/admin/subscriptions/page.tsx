@@ -17,7 +17,6 @@ import type {
 import {
   Users,
   CreditCard,
-  Clock,
   Crown,
   Zap,
   XCircle,
@@ -33,7 +32,6 @@ import { toast } from "sonner";
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { bg: string; text: string; label: string }> = {
     ACTIVE: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Active" },
-    TRIALING: { bg: "bg-blue-500/20", text: "text-blue-400", label: "Trialing" },
     LIFETIME: { bg: "bg-purple-500/20", text: "text-purple-400", label: "Lifetime" },
     CANCELLED: { bg: "bg-red-500/20", text: "text-red-400", label: "Cancelled" },
     PAST_DUE: { bg: "bg-yellow-500/20", text: "text-yellow-400", label: "Past Due" },
@@ -349,7 +347,6 @@ export default function AdminSubscriptionsPage() {
   const stats = [
     { label: t("admin.totalUsers"), value: data.totalUsers, icon: Users, color: "text-blue-500" },
     { label: t("admin.activeSubscriptions"), value: data.activeSubscriptions, icon: CreditCard, color: "text-emerald-500" },
-    { label: t("admin.trialingSubscriptions"), value: data.trialingSubscriptions, icon: Clock, color: "text-yellow-500" },
     { label: t("admin.lifetimeSubscriptions"), value: data.lifetimeSubscriptions, icon: Crown, color: "text-purple-500" },
   ];
 
@@ -410,7 +407,7 @@ export default function AdminSubscriptionsPage() {
             <tbody>
               {filtered.map((sub) => {
                 const isProcessing = processing === sub.userId;
-                const isActive = ["ACTIVE", "TRIALING", "LIFETIME"].includes(sub.status);
+                const isActive = ["ACTIVE", "LIFETIME"].includes(sub.status);
                 return (
                   <tr
                     key={sub.userId}

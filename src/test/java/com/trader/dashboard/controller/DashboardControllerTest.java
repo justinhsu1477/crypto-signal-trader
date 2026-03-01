@@ -154,10 +154,11 @@ class DashboardControllerTest {
         }
 
         @Test
-        @DisplayName("POST — 啟用 — 儲存並回傳")
+        @DisplayName("POST — 啟用（有訂閱）— 儲存並回傳")
         void postEnableAutoTrade() {
             User user = User.builder().userId("user-123").autoTradeEnabled(false).build();
             when(userRepository.findById("user-123")).thenReturn(Optional.of(user));
+            when(subscriptionService.isUserActive("user-123")).thenReturn(true);
 
             ResponseEntity<Map<String, Object>> response =
                     controller.updateAutoTradeStatus(Map.of("enabled", true));
@@ -166,6 +167,21 @@ class DashboardControllerTest {
             assertThat(response.getBody().get("autoTradeEnabled")).isEqualTo(true);
             verify(userRepository).save(user);
             assertThat(user.isAutoTradeEnabled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("POST — 啟用（無訂閱）— 403")
+        void postEnableAutoTradeNoSubscription() {
+            User user = User.builder().userId("user-123").autoTradeEnabled(false).build();
+            when(userRepository.findById("user-123")).thenReturn(Optional.of(user));
+            when(subscriptionService.isUserActive("user-123")).thenReturn(false);
+
+            ResponseEntity<Map<String, Object>> response =
+                    controller.updateAutoTradeStatus(Map.of("enabled", true));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(403);
+            assertThat(response.getBody().get("error").toString()).contains("訂閱");
+            verify(userRepository, never()).save(any());
         }
 
         @Test

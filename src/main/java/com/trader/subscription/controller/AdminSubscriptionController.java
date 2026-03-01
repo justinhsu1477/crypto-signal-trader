@@ -98,8 +98,6 @@ public class AdminSubscriptionController {
 
         long activeSubs = summaries.stream()
                 .filter(s -> "ACTIVE".equals(s.getStatus())).count();
-        long trialingSubs = summaries.stream()
-                .filter(s -> "TRIALING".equals(s.getStatus())).count();
         long lifetimeSubs = summaries.stream()
                 .filter(s -> "LIFETIME".equals(s.getStatus())).count();
 
@@ -107,7 +105,6 @@ public class AdminSubscriptionController {
                 .subscriptions(summaries)
                 .totalUsers(allUsers.size())
                 .activeSubscriptions(activeSubs)
-                .trialingSubscriptions(trialingSubs)
                 .lifetimeSubscriptions(lifetimeSubs)
                 .build());
     }
@@ -335,12 +332,11 @@ public class AdminSubscriptionController {
     // ==================== private helpers ====================
 
     /**
-     * Build map: userId → 最新的 ACTIVE/TRIALING/LIFETIME 訂閱
+     * Build map: userId → 最新的 ACTIVE/LIFETIME 訂閱
      */
     private Map<String, Subscription> buildActiveSubscriptionMap() {
         return subscriptionRepository.findAll().stream()
                 .filter(s -> s.getStatus() == Subscription.Status.ACTIVE
-                        || s.getStatus() == Subscription.Status.TRIALING
                         || s.getStatus() == Subscription.Status.LIFETIME)
                 .collect(Collectors.toMap(
                         Subscription::getUserId,

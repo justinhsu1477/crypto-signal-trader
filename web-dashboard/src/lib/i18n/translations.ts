@@ -51,6 +51,7 @@ const translations = {
     adminUsers: { en: "User Management", "zh-TW": "用戶管理", "zh-CN": "用户管理" },
     adminReferrals: { en: "Referral Review", "zh-TW": "推薦碼審核", "zh-CN": "推荐码审核" },
     adminSubscriptions: { en: "Subscriptions", "zh-TW": "訂閱管理", "zh-CN": "订阅管理" },
+    adminSettings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置" },
     logout: { en: "Logout", "zh-TW": "登出", "zh-CN": "退出登录" },
     logoutConfirmTitle: { en: "Confirm Logout", "zh-TW": "確認登出", "zh-CN": "确认退出" },
     logoutConfirmDesc: { en: "Are you sure you want to logout? You will need to sign in again.", "zh-TW": "確定要登出嗎？您需要重新登入。", "zh-CN": "确定要退出吗？您需要重新登录。" },
@@ -358,6 +359,11 @@ const translations = {
       "zh-TW": "設定 Binance API Key",
       "zh-CN": "设置 Binance API Key",
     },
+    step_subscription: {
+      en: "Subscribe to a plan",
+      "zh-TW": "訂閱方案",
+      "zh-CN": "订阅方案",
+    },
     step_autoTrade: {
       en: "Enable Auto Trade",
       "zh-TW": "開啟自動跟單",
@@ -553,6 +559,16 @@ const translations = {
       en: "Binance API Key not configured",
       "zh-TW": "尚未設定 Binance API Key",
       "zh-CN": "尚未配置 Binance API Key",
+    },
+    autoTradeMissingSubscription: {
+      en: "No active subscription",
+      "zh-TW": "尚未訂閱方案",
+      "zh-CN": "尚未订阅方案",
+    },
+    subscriptionRequired: {
+      en: "An active subscription is required to enable auto trade. Please subscribe to a plan first.",
+      "zh-TW": "需要有效訂閱才能啟用自動跟單，請先訂閱方案。",
+      "zh-CN": "需要有效订阅才能启用自动跟单，请先订阅方案。",
     },
     autoTradeMissingWebhook: {
       en: "Discord Webhook not configured",
@@ -1049,7 +1065,6 @@ const translations = {
     totalPaid: { en: "Total Paid", "zh-TW": "已付金額", "zh-CN": "已付金额" },
     payments: { en: "Payments", "zh-TW": "付款", "zh-CN": "付款" },
     activeSubscriptions: { en: "Active", "zh-TW": "付費中", "zh-CN": "付费中" },
-    trialingSubscriptions: { en: "Trialing", "zh-TW": "試用中", "zh-CN": "试用中" },
     lifetimeSubscriptions: { en: "Lifetime", "zh-TW": "終生免費", "zh-CN": "终生免费" },
     noSubscription: { en: "No Subscription", "zh-TW": "無訂閱", "zh-CN": "无订阅" },
     activate: { en: "Activate", "zh-TW": "開通", "zh-CN": "开通" },
@@ -1082,6 +1097,7 @@ const translations = {
     healthy: { en: "Healthy", "zh-TW": "正常", "zh-CN": "正常" },
     degraded: { en: "Degraded", "zh-TW": "降級", "zh-CN": "降级" },
     down: { en: "Down", "zh-TW": "離線", "zh-CN": "离线" },
+    adminSettings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置" },
   },
 
   // ─── blog ───

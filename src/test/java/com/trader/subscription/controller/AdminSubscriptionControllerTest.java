@@ -60,21 +60,21 @@ class AdminSubscriptionControllerTest {
     class ListSubscriptions {
 
         @Test
-        @DisplayName("包含 ACTIVE / TRIALING / LIFETIME / NONE 用戶")
+        @DisplayName("包含 ACTIVE / CANCELLED / LIFETIME / NONE 用戶")
         void listAllUsersWithMixedStatus() {
             User activeUser = User.builder().userId("u1").email("a@e.com").name("Alice").enabled(true).build();
-            User trialingUser = User.builder().userId("u2").email("b@e.com").name("Bob").enabled(true).build();
+            User cancelledUser = User.builder().userId("u2").email("b@e.com").name("Bob").enabled(true).build();
             User lifetimeUser = User.builder().userId("u3").email("c@e.com").name("Charlie").enabled(true).build();
             User noneUser = User.builder().userId("u4").email("d@e.com").name("Dave").enabled(true).build();
-            when(userRepository.findAll()).thenReturn(List.of(activeUser, trialingUser, lifetimeUser, noneUser));
+            when(userRepository.findAll()).thenReturn(List.of(activeUser, cancelledUser, lifetimeUser, noneUser));
 
             Subscription activeSub = Subscription.builder()
                     .id(1L).userId("u1").planId("basic").status(Subscription.Status.ACTIVE)
                     .currentPeriodEnd(LocalDateTime.of(2026, 3, 28, 0, 0))
                     .createdAt(LocalDateTime.of(2026, 2, 28, 0, 0))
                     .build();
-            Subscription trialingSub = Subscription.builder()
-                    .id(2L).userId("u2").planId("free").status(Subscription.Status.TRIALING)
+            Subscription cancelledSub = Subscription.builder()
+                    .id(2L).userId("u2").planId("free").status(Subscription.Status.CANCELLED)
                     .createdAt(LocalDateTime.of(2026, 2, 20, 0, 0))
                     .build();
             Subscription lifetimeSub = Subscription.builder()
@@ -82,7 +82,7 @@ class AdminSubscriptionControllerTest {
                     .currentPeriodEnd(null)
                     .createdAt(LocalDateTime.of(2026, 1, 1, 0, 0))
                     .build();
-            when(subscriptionRepository.findAll()).thenReturn(List.of(activeSub, trialingSub, lifetimeSub));
+            when(subscriptionRepository.findAll()).thenReturn(List.of(activeSub, cancelledSub, lifetimeSub));
 
             PaymentHistory payment = PaymentHistory.builder()
                     .id(1L).userId("u1").amount(BigDecimal.valueOf(99)).status("succeeded").build();
@@ -94,7 +94,6 @@ class AdminSubscriptionControllerTest {
             AdminSubscriptionListResponse body = response.getBody();
             assertThat(body.getTotalUsers()).isEqualTo(4);
             assertThat(body.getActiveSubscriptions()).isEqualTo(1);
-            assertThat(body.getTrialingSubscriptions()).isEqualTo(1);
             assertThat(body.getLifetimeSubscriptions()).isEqualTo(1);
             assertThat(body.getSubscriptions()).hasSize(4);
 
