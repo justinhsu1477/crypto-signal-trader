@@ -1819,15 +1819,19 @@ public class BinanceFuturesService {
                 broadcastResults = results;
             }
             case "CANCEL" -> {
-                if (deduplicationService.isCancelDuplicate(symbol)) {
+                if (deduplicationService.isCancelDuplicate(symbol, userId)) {
                     log.warn("廣播跟單: 重複取消跳過 userId={} symbol={}", userId, symbol);
                     return List.of();  // 靜默跳過，不拋異常
                 }
-                cancelAllOrders(symbol);
+                ReentrantLock cancelLock = symbolLockRegistry.getLock(symbol);
+                cancelLock.lock();
                 try {
+                    cancelAllOrders(symbol);
                     tradeRecordService.recordCancel(symbol, userId);  // 使用 explicit-userId 版本
                 } catch (Exception e) {
                     log.error("取消紀錄寫入失敗: {}", e.getMessage());
+                } finally {
+                    cancelLock.unlock();
                 }
             }
             default -> throw new IllegalArgumentException("不支援的 action: " + action);

@@ -203,6 +203,36 @@ class SignalDeduplicationServiceTest {
         }
     }
 
+    // ==================== Per-User CANCEL 去重（廣播用） ====================
+
+    @Nested
+    @DisplayName("Per-User CANCEL 去重 (isCancelDuplicate with userId)")
+    class PerUserCancelDeduplicationTests {
+
+        @Test
+        @DisplayName("不同用戶取消同 symbol → 都不被擋")
+        void perUserCancel_differentUsersNotBlocked() {
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isFalse();
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-B")).isFalse();
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-C")).isFalse();
+        }
+
+        @Test
+        @DisplayName("同用戶取消同 symbol 30s 內 → 第二次被擋")
+        void perUserCancel_sameUserBlocked() {
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isFalse();
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isTrue();
+        }
+
+        @Test
+        @DisplayName("dedup 關閉 → 全部放行")
+        void perUserCancel_dedupDisabled() {
+            when(riskConfig.isDedupEnabled()).thenReturn(false);
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isFalse();
+            assertThat(service.isCancelDuplicate("BTCUSDT", "user-A")).isFalse();
+        }
+    }
+
     // ==================== Per-User 去重（Execution-level） ====================
 
     @Nested

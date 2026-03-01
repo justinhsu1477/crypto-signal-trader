@@ -7,6 +7,7 @@ import org.junit.jupiter.api.*;
 import org.mockito.*;
 
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -1198,6 +1199,61 @@ class OrderEventHandlerTest {
             // 倉位已平 → 不發告警（per-user 和 admin 都不發）
             assertThat(lastTitle).isNull();
             assertThat(adminTitle).isNull();
+        }
+    }
+
+    // ==================== handleProtectionLost SymbolLock ====================
+
+    @Nested
+    @DisplayName("handleProtectionLost — SymbolLock 與 CANCEL 同步")
+    class ProtectionLostLock {
+
+        @Test
+        @DisplayName("鎖被佔住（CANCEL 進行中）→ 超時跳過，不呼叫 recordProtectionLost")
+        void lockHeld_skipsProcessing() throws InterruptedException {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
+            // 設短超時避免測試等 3 秒
+            handler.protectionLostLockTimeoutMs = 100;
+
+            // 預先佔住 BTCUSDT 的鎖（模擬 CANCEL 持鎖中）
+            ReentrantLock lock = symbolLockRegistry.getLock("BTCUSDT");
+            lock.lock();
+            try {
+                // 在另一個執行緒觸發 ALGO_UPDATE CANCELED
+                Thread t = new Thread(() -> {
+                    JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED",
+                            12345L, "SL-1700000-a1b2");
+                    handler.handleAlgoUpdate(event);
+                });
+                t.start();
+                t.join(2000);  // 等待最多 2 秒（含 100ms tryLock 超時）
+
+                // tryLock 超時 → 不應呼叫 recordProtectionLost
+                verify(tradeRecordService, never()).recordProtectionLost(
+                        anyString(), anyString(), anyString(), anyString());
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Test
+        @DisplayName("鎖可用 → 正常呼叫 recordProtectionLost")
+        void lockAvailable_normalProcessing() {
+            when(tradeRecordService.recordProtectionLost(
+                    anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
+            handler.protectionLostLockTimeoutMs = 100;
+
+            // 鎖沒被佔 → 正常走 recordProtectionLost
+            JsonObject event = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "CANCELED",
+                    12345L, "SL-1700000-a1b2");
+            handler.handleAlgoUpdate(event);
+
+            verify(tradeRecordService).recordProtectionLost(
+                    eq("BTCUSDT"), eq("STOP_MARKET"), eq("12345"), eq("CANCELED"));
         }
     }
 

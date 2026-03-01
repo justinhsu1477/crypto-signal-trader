@@ -144,6 +144,41 @@ public class SignalDeduplicationService {
     }
 
     /**
+     * 檢查 CANCEL 訊號是否重複（per-user，廣播用）
+     *
+     * 廣播取消時，每個用戶需獨立執行 cancel，
+     * hash 包含 userId，不同用戶不會互相阻擋。
+     *
+     * @param symbol 交易對
+     * @param userId 用戶 ID
+     * @return true = 重複（應拒絕）
+     */
+    public boolean isCancelDuplicate(String symbol, String userId) {
+        if (!riskConfig.isDedupEnabled()) {
+            return false;
+        }
+
+        String hash = "CANCEL|" + userId + "|" + symbol;
+        long now = System.currentTimeMillis();
+
+        // CANCEL 用較短的窗口: 30 秒（原子操作防 race condition）
+        long cancelWindow = 30 * 1000;
+        Long previousTime = recentSignals.putIfAbsent(hash, now);
+
+        if (previousTime != null && (now - previousTime) < cancelWindow) {
+            log.warn("🔁 重複取消攔截（per-user）: userId={} {} 距上次 {}秒",
+                    userId, symbol, (now - previousTime) / 1000);
+            return true;
+        }
+
+        // putIfAbsent 返回 non-null 但已過期 → 更新時間戳
+        if (previousTime != null) {
+            recentSignals.put(hash, now);
+        }
+        return false;
+    }
+
+    /**
      * 生成訊號的去重 Hash
      * 使用核心交易參數: symbol + side + entryPriceLow + stopLoss
      */

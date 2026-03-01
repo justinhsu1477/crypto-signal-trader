@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -33,6 +34,14 @@ public class OrderEventHandler {
     private final NotificationSender adminNotifier;  // nullable — 單用戶模式為 null
     private final Gson gson;
     private final String logPrefix;  // 日誌前綴：空字串 or "用戶 {userId} "
+
+    /**
+     * handleProtectionLost tryLock 等待上限（毫秒）
+     * CANCEL 持鎖期間 WebSocket 收到 ALGO_UPDATE CANCELED 會嘗試 tryLock；
+     * 超時代表 CANCEL 正在執行（會處理 trade 狀態），安全跳過。
+     * package-private 供測試覆寫。
+     */
+    long protectionLostLockTimeoutMs = 3000;
 
     /**
      * Algo 觸發暫存資料：包含 exitReason、觸發後 MARKET 單 orderId、以及 symbol
@@ -308,27 +317,51 @@ public class OrderEventHandler {
 
         log.warn("{}{} 被{}: {} orderId={}", logPrefix, label, reason, symbol, orderId);
 
-        boolean hasOpenTrade;
+        // 取得 symbol 鎖，與 CANCEL 流程同步：
+        // CANCEL 持鎖期間 cancelAllOrders() + recordCancel() 一起完成，
+        // 本方法等鎖取得後再查 DB，就能看到 CANCELLED 狀態而正確跳過。
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+        boolean lockAcquired;
         try {
-            hasOpenTrade = tradeRecordService.recordProtectionLost(symbol, orderType, orderId, reason);
-        } catch (Exception e) {
-            log.error("{}記錄保護消失事件失敗: {}", logPrefix, e.getMessage());
-            // 查詢失敗時保守處理：假設仍有持倉，發送告警
-            hasOpenTrade = true;
-        }
-
-        if (!hasOpenTrade) {
-            // 倉位已平倉，SL/TP 過期屬正常連帶行為，不需發送緊急告警
-            log.info("{}{}單{}但倉位已平，跳過告警: {} orderId={}",
-                    logPrefix, label, reason, symbol, orderId);
+            lockAcquired = lock.tryLock(protectionLostLockTimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("{}handleProtectionLost 等鎖被中斷，安全跳過: {} orderId={}", logPrefix, symbol, orderId);
             return;
         }
 
-        // 降級為 log-only：多數保護消失事件是廣播平倉的連帶取消（race condition 導致 hasOpenTrade 誤判）
-        // 真正的保護消失可透過日誌監控發現
-        log.warn("{}{}單被取消（仍有持倉）: {} orderId={} 原因={} — {}",
-                logPrefix, label, symbol, orderId, reason,
-                isSL ? "持倉已失去止損保護" : "止盈保護已消失，止損仍有效");
+        if (!lockAcquired) {
+            // 超時 = CANCEL 正在持鎖處理中，安全跳過（CANCEL 會負責更新 trade 狀態）
+            log.info("{}handleProtectionLost 等鎖超時（CANCEL 進行中），跳過: {} orderId={}",
+                    logPrefix, symbol, orderId);
+            return;
+        }
+
+        try {
+            boolean hasOpenTrade;
+            try {
+                hasOpenTrade = tradeRecordService.recordProtectionLost(symbol, orderType, orderId, reason);
+            } catch (Exception e) {
+                log.error("{}記錄保護消失事件失敗: {}", logPrefix, e.getMessage());
+                // 查詢失敗時保守處理：假設仍有持倉，發送告警
+                hasOpenTrade = true;
+            }
+
+            if (!hasOpenTrade) {
+                // 倉位已平倉，SL/TP 過期屬正常連帶行為，不需發送緊急告警
+                log.info("{}{}單{}但倉位已平，跳過告警: {} orderId={}",
+                        logPrefix, label, reason, symbol, orderId);
+                return;
+            }
+
+            // 降級為 log-only：多數保護消失事件是廣播平倉的連帶取消（race condition 導致 hasOpenTrade 誤判）
+            // 真正的保護消失可透過日誌監控發現
+            log.warn("{}{}單被取消（仍有持倉）: {} orderId={} 原因={} — {}",
+                    logPrefix, label, symbol, orderId, reason,
+                    isSL ? "持倉已失去止損保護" : "止盈保護已消失，止損仍有效");
+        } finally {
+            lock.unlock();
+        }
     }
 
     private void processStreamClose(String symbol, double exitPrice, double exitQty,
