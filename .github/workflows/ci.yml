@@ -76,10 +76,10 @@ jobs:
           update-comment: true
 
   # ============================================================
-  # 3. 前端檢查 & 建構（Next.js）
+  # 3. 前端檢查、測試 & 建構（Next.js）
   # ============================================================
   frontend:
-    name: ⚛️ 前端檢查 & 建構
+    name: ⚛️ 前端檢查、測試 & 建構
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +97,10 @@ jobs:
       - name: ESLint 檢查
         working-directory: web-dashboard
         run: npm run lint
+
+      - name: 前端測試
+        working-directory: web-dashboard
+        run: npm test
 
       - name: 建構
         working-directory: web-dashboard

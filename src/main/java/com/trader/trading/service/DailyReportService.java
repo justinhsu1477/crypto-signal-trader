@@ -127,7 +127,7 @@ public class DailyReportService {
     private void cleanupGlobal() {
         log.info("排程殭屍 Trade 清理開始...");
         Map<String, Object> result = tradeRecordService.cleanupStaleTrades(
-                symbol -> binanceFuturesService.getCurrentPositionAmount(symbol));
+                binanceFuturesService::getCurrentPositionAmount);
 
         int cleaned = (int) result.get("cleaned");
         int skipped = (int) result.get("skipped");
