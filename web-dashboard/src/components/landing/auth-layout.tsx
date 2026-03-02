@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { PublicNavbar } from "./public-navbar";
@@ -134,7 +135,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
               <ul className="space-y-2.5">
                 <li><a href="#pricing" className="text-sm text-gray-500 hover:text-black transition-colors">{t("landing.pricingBadge")}</a></li>
                 <li><a href="#security" className="text-sm text-gray-500 hover:text-black transition-colors">{t("landing.featureSecurityTitle")}</a></li>
-                <li><a href="/blog" className="text-sm text-gray-500 hover:text-black transition-colors">Blog</a></li>
+                <li><Link href="/blog" className="text-sm text-gray-500 hover:text-black transition-colors">Blog</Link></li>
               </ul>
             </div>
 

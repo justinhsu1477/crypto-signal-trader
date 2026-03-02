@@ -47,7 +47,10 @@ vi.mock("next/link", () => ({
 // Mock next/image
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
-    const { alt, src, ...rest } = props;
+    const { alt, src, fill, priority, ...rest } = props;
+    void fill;
+    void priority;
+    // eslint-disable-next-line @next/next/no-img-element
     return <img alt={alt as string} src={src as string} {...rest} />;
   },
 }));
@@ -101,7 +104,6 @@ describe("PublicNavbar", () => {
     const { container } = render(<PublicNavbar />);
 
     const nav = container.querySelector("nav") as HTMLElement;
-    const styles = window.getComputedStyle(nav);
 
     expect(nav.style.backdropFilter).toContain("blur");
   });

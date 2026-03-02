@@ -71,7 +71,6 @@ export function OnboardingChecklist({ data }: OnboardingChecklistProps) {
 
   // 必要項目全完成 → 自動隱藏
   const requiredDone = items.filter((i) => i.required).every((i) => i.done);
-  const allDone = items.every((i) => i.done);
   const completedCount = items.filter((i) => i.done).length;
 
   if (dismissed || requiredDone) return null;

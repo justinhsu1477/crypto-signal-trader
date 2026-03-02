@@ -36,7 +36,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initAuth = async () => {
       try {
         const user = await fetchCurrentUser();
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration: must check auth state after mount
         setState({
           isAuthenticated: true,
           userId: user.userId,
@@ -46,7 +45,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       } catch {
         // 未登入或 cookie 過期
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration
         setState({
           isAuthenticated: false,
           userId: null,

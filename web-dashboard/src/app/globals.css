@@ -48,7 +48,7 @@
 }
 
 :root {
-  --font-geist-sans: "Manrope", "Inter", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
+  --font-geist-sans: var(--font-manrope), "Manrope", "Inter", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
     "Segoe UI", "Helvetica Neue", Arial, system-ui, -apple-system, sans-serif;
   --font-geist-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
