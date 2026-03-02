@@ -90,11 +90,49 @@ class RateLimitFilterTest {
         }
 
         @Test
-        @DisplayName("不在列表中的路徑 — null")
+        @DisplayName("status — 匹配 status group（公開端點）")
+        void statusPath() {
+            RateLimitFilter.RateLimitRule rule = filter.matchRule("/api/status");
+            assertThat(rule).isNotNull();
+            assertThat(rule.group).isEqualTo("status");
+            assertThat(rule.maxPerMinute).isEqualTo(10);
+        }
+
+        @Test
+        @DisplayName("trades — 匹配 query group")
+        void tradesPath() {
+            RateLimitFilter.RateLimitRule rule = filter.matchRule("/api/trades/history");
+            assertThat(rule).isNotNull();
+            assertThat(rule.group).isEqualTo("query");
+            assertThat(rule.maxPerMinute).isEqualTo(30);
+        }
+
+        @Test
+        @DisplayName("subscription + user 共享 user-ops group")
+        void userOpsSharedGroup() {
+            RateLimitFilter.RateLimitRule subRule = filter.matchRule("/api/subscription/status");
+            RateLimitFilter.RateLimitRule userRule = filter.matchRule("/api/user/profile");
+            assertThat(subRule).isNotNull();
+            assertThat(userRule).isNotNull();
+            assertThat(subRule.group).isEqualTo("user-ops");
+            assertThat(userRule.group).isEqualTo("user-ops");
+        }
+
+        @Test
+        @DisplayName("admin — 匹配 admin group")
+        void adminPath() {
+            RateLimitFilter.RateLimitRule rule = filter.matchRule("/api/admin/users");
+            assertThat(rule).isNotNull();
+            assertThat(rule.group).isEqualTo("admin");
+            assertThat(rule.maxPerMinute).isEqualTo(30);
+        }
+
+        @Test
+        @DisplayName("不在列表中的路徑 — null（health、heartbeat 不限流）")
         void unmatchedPath() {
             assertThat(filter.matchRule("/api/balance")).isNull();
             assertThat(filter.matchRule("/api/health")).isNull();
-            assertThat(filter.matchRule("/api/monitor/heartbeat")).isNull();
+            assertThat(filter.matchRule("/api/heartbeat")).isNull();
         }
     }
 
