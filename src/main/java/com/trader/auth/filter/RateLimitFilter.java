@@ -25,9 +25,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li>/api/execute-trade     → 30/min（交易執行）</li>
  *   <li>/api/broadcast-trade   → 10/min（廣播跟單）</li>
  *   <li>/api/dashboard/**      → 60/min（前端查詢）</li>
+ *   <li>/api/status            → 10/min（公開狀態頁，查 DB+MQ+Binance）</li>
+ *   <li>/api/subscription/**   → 30/min（訂閱操作）</li>
+ *   <li>/api/user/**           → 30/min（用戶設定）</li>
+ *   <li>/api/referral/**       → 20/min（推薦系統）</li>
+ *   <li>/api/trades/**         → 30/min（交易紀錄查詢）</li>
+ *   <li>/api/stats/**          → 30/min（統計數據）</li>
+ *   <li>/api/admin/**          → 30/min（管理後台）</li>
  * </ul>
  *
- * 不在列表中的路徑不限流（如 /api/health、/api/monitor/**）。
+ * 不限流的路徑：/api/health（Docker 探活）、/api/heartbeat（Monitor 心跳）。
  *
  * Rate key = IP + 路徑分組（同一組端點共享計數）。
  * 放在 Security Filter 之前，被拒的請求不會進入認證流程。
@@ -41,11 +48,23 @@ public class RateLimitFilter implements Filter {
 
     /** 限流規則：path prefix → (group name, max requests per minute) */
     static final List<RateLimitRule> RULES = List.of(
+            // === 公開端點（無 JWT，最需要限流）===
             new RateLimitRule("/api/auth/",           "auth",      10),
+            new RateLimitRule("/api/status",           "status",    10),
+            // === 交易端點（ADMIN / Monitor）===
             new RateLimitRule("/api/execute-signal",   "trade",     30),
             new RateLimitRule("/api/execute-trade",    "trade",     30),
             new RateLimitRule("/api/broadcast-trade",  "broadcast", 10),
-            new RateLimitRule("/api/dashboard/",       "dashboard", 60)
+            // === 前端查詢 ===
+            new RateLimitRule("/api/dashboard/",       "dashboard", 60),
+            new RateLimitRule("/api/trades/",          "query",     30),
+            new RateLimitRule("/api/stats/",           "query",     30),
+            // === 用戶操作 ===
+            new RateLimitRule("/api/subscription/",    "user-ops",  30),
+            new RateLimitRule("/api/user/",            "user-ops",  30),
+            new RateLimitRule("/api/referral/",        "user-ops",  20),
+            // === 管理後台 ===
+            new RateLimitRule("/api/admin/",           "admin",     30)
     );
 
     /** key = "IP:group" → 計數器 */
