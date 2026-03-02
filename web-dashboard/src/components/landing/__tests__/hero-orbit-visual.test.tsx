@@ -6,7 +6,10 @@ import { HeroOrbitVisual } from "../hero-orbit-visual";
 import { vi } from "vitest";
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
-    const { alt, src, ...rest } = props;
+    const { alt, src, fill, priority, ...rest } = props;
+    void fill;
+    void priority;
+    // eslint-disable-next-line @next/next/no-img-element
     return <img alt={alt as string} src={src as string} {...rest} />;
   },
 }));

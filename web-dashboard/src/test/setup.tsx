@@ -13,9 +13,11 @@ vi.mock("next/navigation", () => ({
 // Mock Next.js Image
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
-    // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-    const { fill, priority, ...rest } = props;
-    return <img {...rest} />;
+    const { fill, priority, alt, src, ...rest } = props;
+    void fill;
+    void priority;
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img alt={alt as string} src={src as string} {...rest} />;
   },
 }));
 

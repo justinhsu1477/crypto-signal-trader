@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // 每個 test 前 re-import 確保乾淨狀態
 async function loadApi() {
   // 清除 module cache 讓每次 import 拿到新的 module state
-  const modulePath = "@/lib/api";
   vi.resetModules();
   return await import("@/lib/api");
 }

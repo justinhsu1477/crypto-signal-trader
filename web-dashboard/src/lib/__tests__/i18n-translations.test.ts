@@ -15,35 +15,6 @@ describe("i18n Translations", () => {
   });
 
   describe("landing section keys", () => {
-    // Helper function to validate that all keys have all locales
-    function validateTranslationKey(
-      translations: Record<string, Record<Locale, string>>,
-      keyPath: string
-    ) {
-      const keys = keyPath.split(".");
-      let obj: any = translations;
-
-      for (const key of keys) {
-        if (!obj[key]) {
-          return {
-            valid: false,
-            error: `Key path not found: ${keyPath}`,
-          };
-        }
-        obj = obj[key];
-      }
-
-      // Check if obj is a translation object with all locales
-      const hasAllLocales = locales.every((locale) => locale in obj);
-      const localesPresent = Object.keys(obj);
-
-      return {
-        valid: hasAllLocales,
-        localesPresent,
-        missing: locales.filter((locale) => !obj[locale]),
-      };
-    }
-
     // Define landing-related keys that should exist
     const landingKeys = [
       // Hero section
@@ -166,6 +137,9 @@ describe("i18n Translations", () => {
     ];
 
     it("has all landing translation keys with all locales (sample validation)", () => {
+      // Verify the landing keys list is comprehensive
+      expect(landingKeys.length).toBeGreaterThan(50);
+
       // We'll do a spot check on critical keys
       // A full validation would require importing the actual translations object
 

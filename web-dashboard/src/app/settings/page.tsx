@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { UserProfile, ApiKeyMetadata, AutoTradeStatus, SubscriptionStatusDetail } from "@/types";
+import type { UserProfile, ApiKeyMetadata, AutoTradeStatus } from "@/types";
 import {
   getUserProfile,
   getApiKeys,
