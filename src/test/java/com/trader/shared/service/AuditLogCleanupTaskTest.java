@@ -1,5 +1,6 @@
 package com.trader.shared.service;
 
+import com.trader.shared.config.AppConstants;
 import com.trader.shared.repository.AuditLogRepository;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
@@ -44,8 +45,8 @@ class AuditLogCleanupTaskTest {
             verify(auditLogRepository).deleteByTimestampBefore(captor.capture());
 
             LocalDateTime cutoff = captor.getValue();
-            // cutoff 應該大約在 60 天前（容許 1 分鐘誤差）
-            LocalDateTime expected = LocalDateTime.now().minusDays(60);
+            // cutoff 應該大約在 60 天前（用 AppConstants.ZONE_ID 與程式碼一致，容許 1 分鐘誤差）
+            LocalDateTime expected = LocalDateTime.now(AppConstants.ZONE_ID).minusDays(60);
             assertThat(cutoff).isBefore(expected.plusMinutes(1));
             assertThat(cutoff).isAfter(expected.minusMinutes(1));
         }
