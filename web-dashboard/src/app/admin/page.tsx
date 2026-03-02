@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus } from "@/lib/api";
-import type { AdminSystemOverview, SystemHealthResponse, StreamStatusResponse } from "@/types";
+import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats } from "@/lib/api";
+import type { AdminSystemOverview, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse } from "@/types";
 import {
   Users,
   UserCheck,
@@ -17,6 +17,7 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
+  HardDrive,
 } from "lucide-react";
 
 function StatusDot({ status }: { status: string }) {
@@ -34,6 +35,7 @@ export default function AdminOverviewPage() {
   const [data, setData] = useState<AdminSystemOverview | null>(null);
   const [health, setHealth] = useState<SystemHealthResponse | null>(null);
   const [stream, setStream] = useState<StreamStatusResponse | null>(null);
+  const [dbStats, setDbStats] = useState<DatabaseStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
 
@@ -42,10 +44,12 @@ export default function AdminOverviewPage() {
       getAdminSystemOverview().catch(() => null),
       getSystemHealth().catch(() => null),
       getAdminStreamStatus().catch(() => null),
-    ]).then(([overview, h, s]) => {
+      getAdminDatabaseStats().catch(() => null),
+    ]).then(([overview, h, s, db]) => {
       setData(overview);
       setHealth(h);
       setStream(s);
+      setDbStats(db);
       setLoading(false);
     });
   }, []);
@@ -193,6 +197,68 @@ export default function AdminOverviewPage() {
           </div>
         </div>
       </div>
+
+      {/* Database Storage */}
+      {dbStats && (
+        <div className="rounded-xl border border-border bg-card">
+          <div className="p-4 border-b border-border">
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-blue-500" />
+              <h2 className="text-lg font-semibold">{t("admin.databaseStorage")}</h2>
+            </div>
+          </div>
+          <div className="p-4 space-y-4">
+            {/* Usage bar */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">{t("admin.storageUsage")}</span>
+                <span className="text-sm font-medium">
+                  {(dbStats.totalSizeBytes / 1024 / 1024).toFixed(1)} MB / {(dbStats.storageLimitBytes / 1024 / 1024).toFixed(0)} MB ({dbStats.usagePercent}%)
+                </span>
+              </div>
+              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    dbStats.usagePercent > 85
+                      ? "bg-red-500"
+                      : dbStats.usagePercent > 70
+                        ? "bg-yellow-500"
+                        : "bg-green-500"
+                  }`}
+                  style={{ width: `${Math.min(dbStats.usagePercent, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">{t("admin.neonFreeTier")}</p>
+            </div>
+
+            {/* Table breakdown */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="text-left px-3 py-2 font-medium">{t("admin.tableName")}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t("admin.rows")}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t("admin.size")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dbStats.tables.map((table) => (
+                    <tr key={table.tableName} className="border-b border-border/50">
+                      <td className="px-3 py-2 font-mono text-xs">{table.tableName}</td>
+                      <td className="px-3 py-2 text-right">{table.rowCount.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs">
+                        {table.totalBytes >= 1024 * 1024
+                          ? `${(table.totalBytes / 1024 / 1024).toFixed(1)} MB`
+                          : `${(table.totalBytes / 1024).toFixed(1)} KB`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

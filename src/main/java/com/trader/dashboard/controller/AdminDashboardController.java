@@ -2,6 +2,8 @@ package com.trader.dashboard.controller;
 
 import com.trader.dashboard.dto.AdminSystemOverview;
 import com.trader.dashboard.dto.AdminSystemOverview.UserTradingSummary;
+import com.trader.dashboard.dto.DatabaseStatsResponse;
+import com.trader.dashboard.dto.DatabaseStatsResponse.TableStats;
 import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
@@ -13,6 +15,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -28,8 +34,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminDashboardController {
 
+    private static final long NEON_FREE_TIER_BYTES = 512L * 1024 * 1024; // 512 MB
+
     private final DashboardService dashboardService;
     private final UserRepository userRepository;
+    private final DataSource dataSource;
 
     /**
      * 系統全域概覽 — 所有用戶匯總 + per-user 摘要
@@ -140,5 +149,57 @@ public class AdminDashboardController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(dashboardService.getTradeHistory(userId, page, size));
+    }
+
+    /**
+     * 資料庫使用量統計 — 查詢 PG 系統表
+     */
+    @GetMapping("/database-stats")
+    public ResponseEntity<DatabaseStatsResponse> getDatabaseStats() {
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement()) {
+
+            // 1. 總 DB 大小
+            long totalSizeBytes = 0;
+            try (ResultSet rs = stmt.executeQuery("SELECT pg_database_size(current_database())")) {
+                if (rs.next()) {
+                    totalSizeBytes = rs.getLong(1);
+                }
+            }
+
+            // 2. 各表大小 + 行數
+            List<TableStats> tables = new ArrayList<>();
+            String tableSql = """
+                    SELECT
+                        relname AS table_name,
+                        n_live_tup AS row_count,
+                        pg_total_relation_size(schemaname || '.' || relname) AS total_bytes
+                    FROM pg_stat_user_tables
+                    WHERE schemaname = 'public'
+                    ORDER BY pg_total_relation_size(schemaname || '.' || relname) DESC
+                    """;
+            try (ResultSet rs = stmt.executeQuery(tableSql)) {
+                while (rs.next()) {
+                    tables.add(TableStats.builder()
+                            .tableName(rs.getString("table_name"))
+                            .rowCount(rs.getLong("row_count"))
+                            .totalBytes(rs.getLong("total_bytes"))
+                            .build());
+                }
+            }
+
+            double usagePercent = totalSizeBytes * 100.0 / NEON_FREE_TIER_BYTES;
+
+            return ResponseEntity.ok(DatabaseStatsResponse.builder()
+                    .totalSizeBytes(totalSizeBytes)
+                    .storageLimitBytes(NEON_FREE_TIER_BYTES)
+                    .usagePercent(Math.round(usagePercent * 10.0) / 10.0)
+                    .tables(tables)
+                    .build());
+
+        } catch (Exception e) {
+            log.error("查詢資料庫統計失敗: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }

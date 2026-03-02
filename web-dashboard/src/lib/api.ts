@@ -567,6 +567,7 @@ import type {
   AdminVerifyRequest,
   SystemHealthResponse,
   StreamStatusResponse,
+  DatabaseStatsResponse,
 } from "@/types";
 
 export async function getAdminSystemOverview(): Promise<AdminSystemOverview> {
@@ -646,4 +647,10 @@ export async function getSystemHealth(): Promise<SystemHealthResponse> {
 
 export async function getAdminStreamStatus(): Promise<StreamStatusResponse> {
   return request<StreamStatusResponse>("/api/stream-status");
+}
+
+// ─── Admin Database Stats ───
+
+export async function getAdminDatabaseStats(): Promise<DatabaseStatsResponse> {
+  return request<DatabaseStatsResponse>("/api/admin/dashboard/database-stats");
 }

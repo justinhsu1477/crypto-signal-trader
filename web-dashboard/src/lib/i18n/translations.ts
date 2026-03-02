@@ -1176,6 +1176,14 @@ const translations = {
     degraded: { en: "Degraded", "zh-TW": "降級", "zh-CN": "降级" },
     down: { en: "Down", "zh-TW": "離線", "zh-CN": "离线" },
     adminSettings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置" },
+    // Database Stats
+    databaseStorage: { en: "Database Storage", "zh-TW": "資料庫儲存", "zh-CN": "数据库存储" },
+    storageUsage: { en: "Storage Usage", "zh-TW": "儲存用量", "zh-CN": "存储用量" },
+    tableName: { en: "Table", "zh-TW": "資料表", "zh-CN": "数据表" },
+    rows: { en: "Rows", "zh-TW": "筆數", "zh-CN": "行数" },
+    size: { en: "Size", "zh-TW": "大小", "zh-CN": "大小" },
+    neonFreeTier: { en: "Neon Free Tier", "zh-TW": "Neon 免費版", "zh-CN": "Neon 免费版" },
+    dbStatsError: { en: "Failed to load database stats", "zh-TW": "載入資料庫統計失敗", "zh-CN": "加载数据库统计失败" },
   },
 
   // ─── blog ───
