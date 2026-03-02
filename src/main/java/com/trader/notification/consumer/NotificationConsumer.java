@@ -26,9 +26,9 @@ import org.springframework.stereotype.Component;
  *   導致 retry 設定變成死設定。用 auto ACK 讓 exception 向上拋，retry 才能正常運作。
  *
  * 消費流程：
- *   notification.user  → consumeUserNotification()  → sendNotificationToUser()   (per-user webhook)
+ *   notification.user  → consumeUserNotification()  → sendNotificationToUser()       (per-user webhook)
  *   notification.admin → consumeAdminNotification() →
- *     SYSTEM type              → sendNotification()            (全局 webhook only)
+ *     SYSTEM type              → sendNotificationToAdmins()    (Admin per-user — 多用戶模式)
  *     ADMIN  type + displayName → sendNotificationToAdmins(dn) (Admin per-user + 用戶前綴)
  *     ADMIN  type               → sendNotificationToAdmins()   (Admin per-user only)
  * </pre>
@@ -74,9 +74,11 @@ public class NotificationConsumer {
      * 消費管理員 / 系統通知（notification.admin queue）
      *
      * 路由邏輯（三種 type 完全分離，不重複派發）：
-     * - SYSTEM              → sendNotification()             全局 webhook only
+     * - SYSTEM              → sendNotificationToAdmins()     Admin per-user（多用戶模式：系統通知也給 Admin 看）
      * - ADMIN + displayName → sendNotificationToAdmins(dn)   Admin per-user（帶用戶前綴）
      * - ADMIN               → sendNotificationToAdmins()     Admin per-user only
+     *
+     * 切回單用戶模式時，只需把 SYSTEM 分支改回 sendNotification()，Producer 零改動。
      */
     @RabbitListener(queues = RabbitMQConfig.QUEUE_ADMIN)
     public void consumeAdminNotification(NotificationMessage msg) {
@@ -84,9 +86,10 @@ public class NotificationConsumer {
                 msg.getType(), msg.getTitle(), msg.getDisplayName());
 
         if (msg.getType() == NotificationMessage.NotificationType.SYSTEM) {
-            // 全局通知 → 只發到全局 webhook（不發到 admin per-user）
-            discordService.sendNotification(msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotification(msg.getTitle(), msg.getMessage(), msg.getColor());
+            // 系統通知 → 多用戶模式下路由到 Admin per-user（全局 webhook 已停用）
+            // 切回單用戶模式時，改回 sendNotification() 即可
+            discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+            lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
         } else if (msg.getDisplayName() != null && !msg.getDisplayName().isBlank()) {
             // 帶用戶名前綴的 admin 通知（風控告警等）
             discordService.sendNotificationToAdmins(
