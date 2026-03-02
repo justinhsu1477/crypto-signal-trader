@@ -26,8 +26,11 @@ import org.springframework.stereotype.Component;
  *   導致 retry 設定變成死設定。用 auto ACK 讓 exception 向上拋，retry 才能正常運作。
  *
  * 消費流程：
- *   notification.user  → consumeUserNotification()  → Discord/LINE sendNotificationToUser()
- *   notification.admin → consumeAdminNotification() → Discord/LINE sendNotificationToAdmins() 或 sendNotification()
+ *   notification.user  → consumeUserNotification()  → sendNotificationToUser()   (per-user webhook)
+ *   notification.admin → consumeAdminNotification() →
+ *     SYSTEM type              → sendNotification()            (全局 webhook only)
+ *     ADMIN  type + displayName → sendNotificationToAdmins(dn) (Admin per-user + 用戶前綴)
+ *     ADMIN  type               → sendNotificationToAdmins()   (Admin per-user only)
  * </pre>
  */
 @Slf4j
@@ -68,26 +71,30 @@ public class NotificationConsumer {
     }
 
     /**
-     * 消費管理員通知（notification.admin queue）
+     * 消費管理員 / 系統通知（notification.admin queue）
      *
-     * 路由邏輯：
-     * - 有 displayName → sendNotificationToAdmins(displayName, ...) 帶用戶前綴
-     * - 無 displayName → sendNotification(...) + sendNotificationToAdmins(...) 系統級通知
+     * 路由邏輯（三種 type 完全分離，不重複派發）：
+     * - SYSTEM              → sendNotification()             全局 webhook only
+     * - ADMIN + displayName → sendNotificationToAdmins(dn)   Admin per-user（帶用戶前綴）
+     * - ADMIN               → sendNotificationToAdmins()     Admin per-user only
      */
     @RabbitListener(queues = RabbitMQConfig.QUEUE_ADMIN)
     public void consumeAdminNotification(NotificationMessage msg) {
-        log.debug("消費 ADMIN 通知: title={}, displayName={}", msg.getTitle(), msg.getDisplayName());
+        log.debug("消費 ADMIN 通知: type={}, title={}, displayName={}",
+                msg.getType(), msg.getTitle(), msg.getDisplayName());
 
-        if (msg.getDisplayName() != null && !msg.getDisplayName().isBlank()) {
+        if (msg.getType() == NotificationMessage.NotificationType.SYSTEM) {
+            // 全局通知 → 只發到全局 webhook（不發到 admin per-user）
+            discordService.sendNotification(msg.getTitle(), msg.getMessage(), msg.getColor());
+            lineService.sendNotification(msg.getTitle(), msg.getMessage(), msg.getColor());
+        } else if (msg.getDisplayName() != null && !msg.getDisplayName().isBlank()) {
             // 帶用戶名前綴的 admin 通知（風控告警等）
             discordService.sendNotificationToAdmins(
                     msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
             lineService.sendNotificationToAdmins(
                     msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
         } else {
-            // 系統級通知（原 sendNotification + sendNotificationToAdmins）
-            discordService.sendNotification(msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotification(msg.getTitle(), msg.getMessage(), msg.getColor());
+            // Admin 通知 → 只發到 admin per-user webhook（不發到全局）
             discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
             lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
         }

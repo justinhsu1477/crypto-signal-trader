@@ -46,7 +46,7 @@ class CompositeNotificationServiceTest {
                 eq(RabbitMQConfig.EXCHANGE), eq(RabbitMQConfig.ROUTING_KEY_ADMIN), captor.capture());
 
         NotificationMessage msg = captor.getValue();
-        assertThat(msg.getType()).isEqualTo(NotificationMessage.NotificationType.ADMIN);
+        assertThat(msg.getType()).isEqualTo(NotificationMessage.NotificationType.SYSTEM);
         assertThat(msg.getTitle()).isEqualTo("標題");
         assertThat(msg.getMessage()).isEqualTo("內容");
         assertThat(msg.getColor()).isEqualTo(NotificationService.COLOR_GREEN);

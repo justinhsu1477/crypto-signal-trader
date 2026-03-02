@@ -24,10 +24,10 @@ import java.time.LocalDateTime;
  *   - RabbitTemplate.convertAndSend() 自動用 Jackson JSON 序列化
  *   - Graceful Degradation：MQ 掛了降級回直接呼叫 → 不影響通知功能
  *
- * 路由規則：
- *   sendNotification()         → ADMIN queue（系統級通知）
- *   sendNotificationToUser()   → USER queue（用戶個人通知）
- *   sendNotificationToAdmins() → ADMIN queue（Admin 通知）
+ * 路由規則（全局與 Admin 完全分離，不重複派發）：
+ *   sendNotification()         → ADMIN queue（type=SYSTEM → 全局 webhook only）
+ *   sendNotificationToUser()   → USER queue（type=USER → per-user webhook）
+ *   sendNotificationToAdmins() → ADMIN queue（type=ADMIN → Admin per-user only）
  *
  * 標記 @Primary，所有注入 NotificationService 的地方都會拿到此 bean。
  * </pre>
@@ -47,7 +47,7 @@ public class CompositeNotificationService implements NotificationService {
     @Override
     public void sendNotification(String title, String message, int color) {
         NotificationMessage msg = NotificationMessage.builder()
-                .type(NotificationType.ADMIN)
+                .type(NotificationType.SYSTEM)
                 .title(title)
                 .message(message)
                 .color(color)
