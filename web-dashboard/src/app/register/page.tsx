@@ -52,40 +52,39 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-8 shadow-2xl shadow-black/20">
+    <div className="rounded-[30px] bg-white p-8 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
       {/* Logo + Brand */}
       <div className="flex flex-col items-center mb-6">
         <div className="relative mb-4">
-          <div className="absolute inset-0 rounded-2xl bg-emerald-500/20 blur-xl" />
           <Image
             src="/logo.jpg"
             alt="HookFi"
-            width={64}
-            height={64}
-            className="relative rounded-2xl shadow-lg shadow-black/30"
+            width={56}
+            height={56}
+            className="relative rounded-2xl shadow-sm"
           />
         </div>
-        <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
+        <h1 className="text-xl font-extrabold tracking-tight text-black">
           HookFi
         </h1>
       </div>
 
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold">{t("register.createAccount")}</h2>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h2 className="text-2xl font-bold text-black">{t("register.createAccount")}</h2>
+        <p className="text-sm text-gray-500 mt-1">
           {t("register.subtitle")}
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-sm text-red-400">
+          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-600">
             {error}
           </div>
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="name" className="text-sm text-muted-foreground">
+          <Label htmlFor="name" className="text-sm text-gray-600">
             {t("register.name")}
           </Label>
           <Input
@@ -96,12 +95,12 @@ export default function RegisterPage() {
             onChange={(e) => setName(e.target.value)}
             required
             autoComplete="name"
-            className="h-11 bg-white/5 border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/20 placeholder:text-white/20"
+            className="h-11 bg-gray-50 border-gray-200 text-black focus:border-black focus:ring-black/10 placeholder:text-gray-400"
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-sm text-muted-foreground">
+          <Label htmlFor="email" className="text-sm text-gray-600">
             {t("login.email")}
           </Label>
           <Input
@@ -112,12 +111,12 @@ export default function RegisterPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            className="h-11 bg-white/5 border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/20 placeholder:text-white/20"
+            className="h-11 bg-gray-50 border-gray-200 text-black focus:border-black focus:ring-black/10 placeholder:text-gray-400"
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password" className="text-sm text-muted-foreground">
+          <Label htmlFor="password" className="text-sm text-gray-600">
             {t("login.password")}
           </Label>
           <Input
@@ -128,20 +127,20 @@ export default function RegisterPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="new-password"
-            className="h-11 bg-white/5 border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/20 placeholder:text-white/20"
+            className="h-11 bg-gray-50 border-gray-200 text-black focus:border-black focus:ring-black/10 placeholder:text-gray-400"
           />
         </div>
 
         {/* Password requirements */}
         {password.length > 0 && (
-          <div className="space-y-1.5 rounded-lg bg-white/[0.02] border border-white/5 px-3 py-2.5">
-            <p className="text-xs font-medium text-muted-foreground">{t("register.passwordRequirements")}</p>
+          <div className="space-y-1.5 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5">
+            <p className="text-xs font-medium text-gray-600">{t("register.passwordRequirements")}</p>
             {passwordChecks.map((check) => (
               <div key={check.key} className="flex items-center gap-2 text-xs">
-                <span className={check.passed ? "text-emerald-400" : "text-zinc-500"}>
+                <span className={check.passed ? "text-green-600" : "text-gray-400"}>
                   {check.passed ? "✓" : "○"}
                 </span>
-                <span className={check.passed ? "text-emerald-400" : "text-zinc-500"}>
+                <span className={check.passed ? "text-green-600" : "text-gray-400"}>
                   {check.label}
                 </span>
               </div>
@@ -163,14 +162,14 @@ export default function RegisterPage() {
                 setAgreedToTerms(false);
               }
             }}
-            className="mt-1 h-4 w-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/20 cursor-pointer accent-emerald-500"
+            className="mt-1 h-4 w-4 rounded border-gray-300 bg-white text-black focus:ring-black/20 cursor-pointer accent-black"
           />
-          <label htmlFor="agree-terms" className="text-xs text-zinc-400 leading-relaxed">
+          <label htmlFor="agree-terms" className="text-xs text-gray-500 leading-relaxed">
             {t("register.agreeTermsPrefix")}
             <button
               type="button"
               onClick={() => setShowLegalDialog(true)}
-              className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors"
+              className="text-black hover:text-gray-700 underline underline-offset-2 transition-colors font-medium"
             >
               {t("register.termsAndConditions")}
             </button>
@@ -179,7 +178,7 @@ export default function RegisterPage() {
 
         <Button
           type="submit"
-          className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full h-11 bg-black hover:bg-gray-800 text-white font-bold rounded-full transition-all duration-200 hover:shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           disabled={isLoading || !agreedToTerms || !isPasswordValid}
         >
           {isLoading ? (
@@ -198,11 +197,11 @@ export default function RegisterPage() {
           onAgree={() => setAgreedToTerms(true)}
         />
 
-        <p className="text-center text-sm text-muted-foreground pt-2">
+        <p className="text-center text-sm text-gray-500 pt-2">
           {t("register.hasAccount")}
           <Link
             href="/login"
-            className="font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+            className="font-medium text-black hover:text-gray-700 transition-colors underline underline-offset-2"
           >
             {t("register.backToLogin")}
           </Link>
