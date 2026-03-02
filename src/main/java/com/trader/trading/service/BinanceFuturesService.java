@@ -931,26 +931,40 @@ public class BinanceFuturesService {
                 }
             }
             if (positionAmt == 0) {
-                // 無持倉但可能有未成交的 LIMIT 入場掛單 → 全部取消
-                log.info("CLOSE 訊號但無持倉，取消 {} 所有掛單", symbol);
+                // 先判斷是否有未成交的 LIMIT 入場掛單，再統一取消所有掛單
+                boolean hadPendingOrders = hasOpenEntryOrders(symbol);
                 cancelAllOrders(symbol);
                 try {
                     tradeRecordService.recordCancel(symbol);
                 } catch (Exception e) {
                     log.warn("取消紀錄寫入失敗: {}", e.getMessage());
                 }
-                // 廣播 context → 不發 notifyGlobal（BroadcastTradeService 統一處理失敗通知 + Admin 彙總）
-                // 單用戶/直接 API → 仍發 notifyGlobal
-                if (!isBroadcastContext()) {
-                    notifyGlobal(
-                            "🚫 CLOSE 但無持倉 — 已取消掛單",
-                            String.format("%s\n訊號要求平倉，但無實際持倉\n已取消所有未成交掛單（入場/SL/TP）",
-                                    symbol),
-                            DiscordWebhookService.COLOR_YELLOW);
+
+                if (hadPendingOrders) {
+                    // 場景 A：有未成交委託 → 撤銷成功（正常風控動作）
+                    log.info("CLOSE 訊號: {} 未成交委託已撤銷，無需平倉", symbol);
+                    if (!isBroadcastContext()) {
+                        notifyGlobal(
+                                "📋 CLOSE — 未成交委託已撤銷",
+                                String.format("%s\n入場委託未成交，已撤銷所有掛單（入場/SL/TP）", symbol),
+                                DiscordWebhookService.COLOR_YELLOW);
+                    }
+                    return List.of(OrderResult.builder()
+                            .success(true)
+                            .symbol(symbol)
+                            .errorMessage("未成交委託已撤銷，無需平倉")
+                            .build());
                 } else {
-                    log.info("廣播 CLOSE 無持倉，跳過 notifyGlobal: {}", symbol);
+                    // 場景 B：無持倉也無掛單 → 忽略
+                    log.warn("CLOSE 訊號: {} 無持倉也無掛單，忽略", symbol);
+                    if (!isBroadcastContext()) {
+                        notifyGlobal(
+                                "ℹ️ CLOSE — 無持倉也無掛單",
+                                String.format("%s\n訊號要求平倉，但無持倉也無未成交掛單", symbol),
+                                DiscordWebhookService.COLOR_YELLOW);
+                    }
+                    return List.of(OrderResult.fail("無持倉也無掛單，CLOSE 訊號忽略"));
                 }
-                return List.of(OrderResult.fail("無持倉，已取消掛單"));
             }
         }
 
@@ -1803,7 +1817,9 @@ public class BinanceFuturesService {
                 List<OrderResult> results = executeClose(signal);
                 boolean ok = !results.isEmpty() && results.get(0).isSuccess();
                 if (!ok) {
-                    throw new RuntimeException("CLOSE 失敗: " + symbol);
+                    String msg = results.isEmpty() ? "CLOSE 失敗"
+                            : results.get(0).getErrorMessage();
+                    throw new RuntimeException(msg + ": " + symbol);
                 }
                 broadcastResults = results;
             }

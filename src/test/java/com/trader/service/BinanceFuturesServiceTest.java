@@ -507,18 +507,39 @@ class BinanceFuturesServiceTest {
         }
 
         @Test
-        @DisplayName("無持倉 → 取消所有掛單後返回")
-        void closeNoPosition() {
+        @DisplayName("無持倉但有未成交委託 → 撤銷掛單 → 返回 SUCCESS")
+        void closeNoPositionWithPendingOrders() {
             doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn(true).when(service).hasOpenEntryOrders(anyString());
             doReturn("{}").when(service).cancelAllOrders(anyString());
 
-            // 沒有 fallback（DB 也沒有 OPEN trade）
             when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);
 
             verify(service).cancelAllOrders(anyString());
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isTrue();
+            assertThat(results.get(0).getErrorMessage()).contains("未成交委託已撤銷");
+        }
+
+        @Test
+        @DisplayName("無持倉也無掛單 → 返回 FAIL 並忽略")
+        void closeNoPositionNoPendingOrders() {
+            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn(false).when(service).hasOpenEntryOrders(anyString());
+            doReturn("{}").when(service).cancelAllOrders(anyString());
+
+            when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+
+            TradeSignal signal = buildCloseSignal(1.0);
+            List<OrderResult> results = service.executeClose(signal);
+
+            verify(service).cancelAllOrders(anyString());
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isFalse();
+            assertThat(results.get(0).getErrorMessage()).contains("無持倉也無掛單");
         }
     }
 
@@ -701,15 +722,16 @@ class BinanceFuturesServiceTest {
         @DisplayName("無持倉平倉通知 — 包含 userId")
         void closeNoPositionNotificationContainsUserId() {
             doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn(false).when(service).hasOpenEntryOrders(anyString());
             doReturn("{}").when(service).cancelAllOrders(anyString());
             when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
             service.executeClose(signal);
 
-            // 無持倉平倉通知應包含 displayName
+            // 無持倉平倉通知應包含 displayName（場景 B：無掛單）
             verify(mockWebhook).sendNotification(
-                    contains("無持倉"),
+                    contains("無持倉也無掛單"),
                     contains("用戶: Test User (test@example.com)"),
                     anyInt());
         }

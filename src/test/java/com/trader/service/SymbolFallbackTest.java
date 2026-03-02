@@ -115,6 +115,7 @@ class SymbolFallbackTest {
         void noOpenTradesFallbackFails() {
             doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
             when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of());
+            doReturn(false).when(service).hasOpenEntryOrders(anyString());
             doReturn("{}").when(service).cancelAllOrders(anyString());
 
             TradeSignal closeSignal = TradeSignal.builder()
@@ -138,6 +139,7 @@ class SymbolFallbackTest {
             Trade t1 = Trade.builder().tradeId("t1").symbol("ETHUSDT").side("LONG").status("OPEN").build();
             Trade t2 = Trade.builder().tradeId("t2").symbol("SOLUSDT").side("SHORT").status("OPEN").build();
             when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of(t1, t2));
+            doReturn(false).when(service).hasOpenEntryOrders(anyString());
             doReturn("{}").when(service).cancelAllOrders(anyString());
 
             TradeSignal closeSignal = TradeSignal.builder()
