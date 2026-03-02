@@ -48,7 +48,7 @@
 }
 
 :root {
-  --font-geist-sans: "Inter", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
+  --font-geist-sans: "Manrope", "Inter", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
     "Segoe UI", "Helvetica Neue", Arial, system-ui, -apple-system, sans-serif;
   --font-geist-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
@@ -145,8 +145,28 @@
 }
 
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-32px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(32px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes count-up-blur {
+  from { opacity: 0; filter: blur(8px); transform: translateY(12px); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
 }
 
 .animate-fade-in {
@@ -154,17 +174,83 @@
 }
 
 .animate-fade-in-up {
-  animation: fade-in-up 0.7s ease-out both;
+  animation: fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.animation-delay-200 {
-  animation-delay: 200ms;
+.animate-fade-in-scale {
+  animation: fade-in-scale 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.animation-delay-300 {
-  animation-delay: 300ms;
+.animation-delay-100 { animation-delay: 100ms; }
+.animation-delay-200 { animation-delay: 200ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-400 { animation-delay: 400ms; }
+.animation-delay-500 { animation-delay: 500ms; }
+.animation-delay-600 { animation-delay: 600ms; }
+
+/* ── Scroll-reveal system ── */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.scroll-reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
 }
 
-.animation-delay-400 {
-  animation-delay: 400ms;
+.scroll-reveal-scale {
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.scroll-reveal-scale.revealed {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Stagger children inside a revealed container */
+.scroll-reveal.revealed > .stagger-child,
+.scroll-reveal-scale.revealed > .stagger-child {
+  animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.scroll-reveal.revealed > .stagger-child:nth-child(1) { animation-delay: 0ms; }
+.scroll-reveal.revealed > .stagger-child:nth-child(2) { animation-delay: 100ms; }
+.scroll-reveal.revealed > .stagger-child:nth-child(3) { animation-delay: 200ms; }
+.scroll-reveal.revealed > .stagger-child:nth-child(4) { animation-delay: 300ms; }
+.scroll-reveal.revealed > .stagger-child:nth-child(5) { animation-delay: 400ms; }
+.scroll-reveal.revealed > .stagger-child:nth-child(6) { animation-delay: 500ms; }
+
+/* ── Hero logo animations (light theme) ── */
+@keyframes hero-float-light {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  25% { transform: translate3d(0, -12px, 0) scale(1.015); }
+  50% { transform: translate3d(4px, -18px, 0) scale(1.025); }
+  75% { transform: translate3d(-4px, -10px, 0) scale(1.01); }
+}
+
+@keyframes hero-glow-light {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.06); }
+}
+
+.hero-float-light {
+  animation: hero-float-light 5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  filter: drop-shadow(0 20px 50px rgba(0,0,0,0.06));
+}
+
+.hero-glow-light {
+  background:
+    radial-gradient(circle at 40% 35%, rgba(255,180,200,0.25), transparent 55%),
+    radial-gradient(circle at 60% 65%, rgba(180,180,255,0.2), transparent 50%);
+  filter: blur(30px);
+  animation: hero-glow-light 4s ease-in-out infinite;
+}
+
+/* ── Gradient line separator (light theme) ── */
+.gradient-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.1), transparent);
 }

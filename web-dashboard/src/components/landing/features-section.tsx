@@ -1,49 +1,65 @@
 "use client";
 
-import { Zap, Shield, TrendingUp, BarChart3, Lock, Bell } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-context";
+import { useScrollReveal } from "@/hooks/use-scroll-reveal";
 
+/**
+ * Lido-style two-column feature blocks with huge bold typography.
+ */
 export function FeaturesSection() {
   const { t } = useT();
+  const ref = useScrollReveal();
 
-  const features = [
-    { icon: Zap, titleKey: "landing.featureAutoExecTitle", descKey: "landing.featureAutoExecDesc" },
-    { icon: Shield, titleKey: "landing.featureRiskMgmtTitle", descKey: "landing.featureRiskMgmtDesc" },
-    { icon: TrendingUp, titleKey: "landing.featureDcaTitle", descKey: "landing.featureDcaDesc" },
-    { icon: BarChart3, titleKey: "landing.featureAnalyticsTitle", descKey: "landing.featureAnalyticsDesc" },
-    { icon: Lock, titleKey: "landing.featureNonCustodialTitle", descKey: "landing.featureNonCustodialDesc" },
-    { icon: Bell, titleKey: "landing.featureNotificationsTitle", descKey: "landing.featureNotificationsDesc" },
+  const blocks = [
+    {
+      bigLabelKey: "landing.featBigAutoExec",
+      bigDesc: t("landing.featureAutoExecDesc"),
+      rightTitle: t("landing.featureNonCustodialTitle"),
+      rightDesc: t("landing.featureNonCustodialDesc"),
+    },
+    {
+      bigLabelKey: "landing.featBigSmartRisk",
+      bigDesc: t("landing.featureRiskMgmtDesc"),
+      rightTitle: t("landing.featureDcaTitle"),
+      rightDesc: t("landing.featureDcaDesc"),
+    },
   ];
 
   return (
-    <section id="features" className="scroll-mt-nav relative z-10 py-24 px-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-4 py-1.5 text-sm text-emerald-400 mb-4">
-            {t("landing.featuresBadge")}
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
-            {t("landing.featuresTitle")}
-          </h2>
-          <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-            {t("landing.featuresSubtitle")}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((f) => (
-            <div
-              key={f.titleKey}
-              className="group rounded-2xl border border-white/5 bg-white/[0.02] p-6 hover:bg-white/[0.04] hover:border-emerald-500/20 transition-all duration-300"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 mb-4 group-hover:bg-emerald-500/15 transition-colors">
-                <f.icon className="h-6 w-6 text-emerald-400" />
+    <section id="features" className="relative z-10 px-6 md:px-10">
+      <div ref={ref} className="scroll-reveal mx-auto max-w-[1400px]">
+        {blocks.map((block, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-1 items-center gap-10 border-t border-black/[0.08] py-20 md:grid-cols-2 md:gap-10"
+          >
+            {/* Left — huge typography */}
+            <div>
+              <div
+                className="whitespace-pre-line text-6xl font-extrabold leading-[0.95] tracking-tight text-black sm:text-7xl lg:text-8xl"
+                style={{ letterSpacing: "-0.01em" }}
+              >
+                {t(block.bigLabelKey)}
               </div>
-              <h3 className="text-lg font-semibold mb-2">{t(f.titleKey)}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{t(f.descKey)}</p>
+              <p className="mt-4 max-w-[480px] text-base leading-relaxed text-gray-500 lg:text-lg">
+                {block.bigDesc}
+              </p>
             </div>
-          ))}
-        </div>
+
+            {/* Right — supporting info */}
+            <div>
+              <h3
+                className="text-2xl font-normal leading-tight tracking-tight text-black sm:text-3xl lg:text-4xl"
+                style={{ letterSpacing: "-0.01em" }}
+              >
+                {block.rightTitle}
+              </h3>
+              <p className="mt-4 text-sm leading-relaxed text-gray-400 lg:text-base">
+                {block.rightDesc}
+              </p>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
