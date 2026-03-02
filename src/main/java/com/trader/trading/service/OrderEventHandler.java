@@ -402,4 +402,94 @@ public class OrderEventHandler {
             lock.unlock();
         }
     }
+
+    // ==================== ACCOUNT_UPDATE 事件 — 強制平倉偵測 ====================
+
+    /**
+     * 處理 ACCOUNT_UPDATE 事件
+     *
+     * Binance Futures ACCOUNT_UPDATE 包含：
+     * - a.B[]: 餘額變動（balance changes）
+     * - a.P[]: 倉位變動（position changes）
+     * - a.m: 事件原因 (DEPOSIT, WITHDRAW, ORDER, FUNDING_FEE, ADMIN_DEPOSIT, LIQUIDATION...)
+     *
+     * 重點偵測 m == "LIQUIDATION"：用戶被強制平倉
+     */
+    public void handleAccountUpdate(JsonObject event) {
+        try {
+            JsonObject account = event.getAsJsonObject("a");
+            if (account == null) {
+                log.debug("{}ACCOUNT_UPDATE 無 'a' 欄位，忽略", logPrefix);
+                return;
+            }
+
+            String reason = account.has("m") ? account.get("m").getAsString() : "";
+
+            if ("LIQUIDATION".equals(reason)) {
+                handleLiquidationEvent(account);
+            } else {
+                log.debug("{}ACCOUNT_UPDATE reason={} (非強制平倉，忽略)", logPrefix, reason);
+            }
+        } catch (Exception e) {
+            log.error("{}處理 ACCOUNT_UPDATE 失敗: {}", logPrefix, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 處理強制平倉事件
+     *
+     * 從 a.P[] 中找出被平倉的 symbol，記錄事件 + 更新 DB Trade + 發告警。
+     */
+    private void handleLiquidationEvent(JsonObject account) {
+        log.error("{}🚨 偵測到強制平倉 (LIQUIDATION)!", logPrefix);
+
+        // 解析被影響的倉位
+        if (account.has("P") && account.get("P").isJsonArray()) {
+            for (var elem : account.getAsJsonArray("P")) {
+                JsonObject pos = elem.getAsJsonObject();
+                String symbol = pos.has("s") ? pos.get("s").getAsString() : "UNKNOWN";
+                double positionAmt = pos.has("pa") ? pos.get("pa").getAsDouble() : 0;
+                double unrealizedPnl = pos.has("up") ? pos.get("up").getAsDouble() : 0;
+
+                log.error("{}強制平倉倉位: {} amt={} unrealizedPnl={}",
+                        logPrefix, symbol, positionAmt, unrealizedPnl);
+
+                // 記錄到 TradeEvent
+                try {
+                    tradeRecordService.recordOrderEvent(symbol, "LIQUIDATION", null,
+                            gson.toJson(Map.of(
+                                    "positionAmt", positionAmt,
+                                    "unrealizedPnl", unrealizedPnl,
+                                    "reason", "LIQUIDATION")));
+                } catch (Exception e) {
+                    log.error("{}記錄強制平倉事件失敗: {}", logPrefix, e.getMessage());
+                }
+
+                // 如果倉位歸零，嘗試標記 DB Trade 為 CLOSED
+                if (positionAmt == 0) {
+                    try {
+                        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+                        lock.lock();
+                        try {
+                            tradeRecordService.markTradeClosedByLiquidation(symbol);
+                        } finally {
+                            lock.unlock();
+                        }
+                    } catch (Exception e) {
+                        log.error("{}強制平倉標記 Trade CLOSED 失敗: {} - {}",
+                                logPrefix, symbol, e.getMessage());
+                    }
+                }
+
+                // 發送 CRITICAL 告警
+                String alertTitle = "🚨 強制平倉 (LIQUIDATION)";
+                String alertBody = String.format("%s\n倉位數量: %.6f\n未實現損益: %.2f USDT\n⚠️ 請立即檢查帳戶風險！",
+                        symbol, positionAmt, unrealizedPnl);
+                notificationSender.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
+                if (adminNotifier != null) {
+                    adminNotifier.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
+                }
+            }
+        }
+    }
 }

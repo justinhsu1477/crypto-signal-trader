@@ -470,7 +470,7 @@ public class MultiUserDataStreamManager {
                         orderEventHandler.handleAlgoUpdate(json);
                         break;
                     case "ACCOUNT_UPDATE":
-                        log.debug("用戶 {} ACCOUNT_UPDATE received (ignored)", context.getUserId());
+                        orderEventHandler.handleAccountUpdate(json);
                         break;
                     case "listenKeyExpired":
                         log.warn("用戶 {} ListenKey 已過期，排程重連...", context.getUserId());

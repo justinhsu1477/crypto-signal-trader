@@ -238,6 +238,17 @@ public class BinanceFuturesService {
     }
 
     /**
+     * 查詢強制平倉記錄
+     * API: GET /fapi/v1/forceOrders
+     * 回傳最近 7 天的強制平倉訂單（預設 symbol=全部）
+     * API weight: 20（無 symbol）/ 5（指定 symbol）
+     */
+    public String getForceOrders() {
+        String endpoint = "/fapi/v1/forceOrders";
+        return sendSignedGet(endpoint, Map.of());
+    }
+
+    /**
      * 取得市場價格
      * ⚠️ API 失敗時拋出 RuntimeException，避免回傳 0 導致偏離檢查失效
      */
@@ -880,7 +891,17 @@ public class BinanceFuturesService {
                         effectiveRiskAmount, signalHash);
             }
         } catch (Exception e) {
-            log.error("交易紀錄寫入失敗（不影響交易）: {}", e.getMessage());
+            // ⚠️ 嚴重：Binance 已有倉位但 DB 無紀錄 → 隱形倉位
+            log.error("🚨 交易紀錄寫入失敗（Binance 已有倉位但 DB 無紀錄）: {} {} - {}",
+                    symbol, signal.getSide(), e.getMessage(), e);
+            notifyGlobal("🚨 DB 寫入失敗 — 隱形倉位風險",
+                    String.format("%s %s\n入場價: %s | SL: %s\n數量: %s | 槓桿: %dx\n" +
+                                    "原因: %s\n⚠️ Binance 有倉位但 DB 無紀錄，請立即手動確認！",
+                            symbol, signal.getSide(),
+                            entryOrder.getPrice(), sl,
+                            formatQuantity(symbol, quantity), leverage,
+                            e.getMessage()),
+                    DiscordWebhookService.COLOR_RED);
         }
 
         List<OrderResult> results = new ArrayList<>();
