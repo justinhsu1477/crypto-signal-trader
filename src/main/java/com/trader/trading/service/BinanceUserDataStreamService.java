@@ -274,7 +274,7 @@ public class BinanceUserDataStreamService {
                         orderEventHandler.handleAlgoUpdate(json);
                         break;
                     case "ACCOUNT_UPDATE":
-                        log.debug("ACCOUNT_UPDATE received (ignored)");
+                        orderEventHandler.handleAccountUpdate(json);
                         break;
                     case "listenKeyExpired":
                         log.warn("ListenKey 已過期，觸發重連...");

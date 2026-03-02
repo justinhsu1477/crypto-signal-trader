@@ -89,15 +89,17 @@ public class StartupReconciliationService {
 
         int pendingFixed = reconcilePendingCloseTrades(report);
         int zombieCleaned = reconcileZombieOpenTrades(report);
+        int phantomDetected = detectPhantomPositions(report);
 
-        log.info("啟動對帳完成: PENDING_CLOSE 修復={}, 殭屍清理={}", pendingFixed, zombieCleaned);
+        log.info("啟動對帳完成: PENDING_CLOSE 修復={}, 殭屍清理={}, 隱形倉位={}",
+                pendingFixed, zombieCleaned, phantomDetected);
 
-        if (pendingFixed > 0 || zombieCleaned > 0) {
+        if (pendingFixed > 0 || zombieCleaned > 0 || phantomDetected > 0) {
             String details = String.join("\n", report);
             discordWebhookService.sendNotification(
                     "🔄 啟動對帳完成",
-                    String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n\n%s",
-                            pendingFixed, zombieCleaned, details),
+                    String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n隱形倉位偵測: %d 筆\n\n%s",
+                            pendingFixed, zombieCleaned, phantomDetected, details),
                     DiscordWebhookService.COLOR_BLUE);
         } else {
             log.info("啟動對帳: 無需修復，所有 Trade 狀態一致");
@@ -125,23 +127,30 @@ public class StartupReconciliationService {
                 .filter(t -> t.getUserId() != null)
                 .collect(Collectors.groupingBy(Trade::getUserId));
 
-        // 合併所有涉及的 userId
+        // 合併所有涉及的 userId（含有 DB 紀錄的用戶）
         Set<String> allUserIds = new HashSet<>();
         allUserIds.addAll(pendingByUser.keySet());
         allUserIds.addAll(openByUser.keySet());
 
+        // 隱形倉位偵測需要掃描所有有 API Key 的用戶（不只有 DB 紀錄的）
+        Map<String, BinanceKeys> allUserKeys = userApiKeyService.getAllBinanceKeys("BINANCE");
+        allUserIds.addAll(allUserKeys.keySet());
+
         if (allUserIds.isEmpty()) {
-            log.info("啟動對帳（多用戶）: 無 PENDING_CLOSE/OPEN 交易，跳過");
+            log.info("啟動對帳（多用戶）: 無用戶需對帳，跳過");
             return;
         }
 
-        log.info("啟動對帳（多用戶）: {} 個用戶有待對帳交易", allUserIds.size());
+        log.info("啟動對帳（多用戶）: {} 個用戶待對帳", allUserIds.size());
         int totalPendingFixed = 0;
         int totalZombieCleaned = 0;
+        int totalPhantomDetected = 0;
         List<String> globalReport = new ArrayList<>();
 
         for (String userId : allUserIds) {
-            Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+            Optional<BinanceKeys> keysOpt = allUserKeys.containsKey(userId)
+                    ? Optional.of(allUserKeys.get(userId))
+                    : userApiKeyService.getUserBinanceKeys(userId);
             if (keysOpt.isEmpty()) {
                 log.warn("啟動對帳: 用戶 {} 未設定 API Key，跳過", userId);
                 continue;
@@ -154,17 +163,19 @@ public class StartupReconciliationService {
                         pendingByUser.getOrDefault(userId, List.of()));
                 int zCleaned = reconcileZombieOpenTrades(report,
                         openByUser.getOrDefault(userId, List.of()));
+                int phantom = detectPhantomPositions(report,
+                        openByUser.getOrDefault(userId, List.of()), userId);
 
                 totalPendingFixed += pFixed;
                 totalZombieCleaned += zCleaned;
+                totalPhantomDetected += phantom;
 
-                if (pFixed > 0 || zCleaned > 0) {
+                if (pFixed > 0 || zCleaned > 0 || phantom > 0) {
                     globalReport.addAll(report);
-                    // per-user 通知
                     discordWebhookService.sendNotificationToUser(userId,
                             "🔄 啟動對帳完成",
-                            String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆",
-                                    pFixed, zCleaned),
+                            String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n隱形倉位偵測: %d 筆",
+                                    pFixed, zCleaned, phantom),
                             DiscordWebhookService.COLOR_BLUE);
                 }
             } catch (Exception e) {
@@ -174,18 +185,16 @@ public class StartupReconciliationService {
             }
         }
 
-        log.info("啟動對帳（多用戶）完成: PENDING_CLOSE={}, 殭屍={}, 用戶數={}",
-                totalPendingFixed, totalZombieCleaned, allUserIds.size());
+        log.info("啟動對帳（多用戶）完成: PENDING_CLOSE={}, 殭屍={}, 隱形倉位={}, 用戶數={}",
+                totalPendingFixed, totalZombieCleaned, totalPhantomDetected, allUserIds.size());
 
-        // 全局摘要（admin 看總覽）
-        if (totalPendingFixed > 0 || totalZombieCleaned > 0) {
+        if (totalPendingFixed > 0 || totalZombieCleaned > 0 || totalPhantomDetected > 0) {
             String details = globalReport.size() > 10
                     ? String.join("\n", globalReport.subList(0, 10)) + "\n...還有 " + (globalReport.size() - 10) + " 筆"
                     : String.join("\n", globalReport);
-            String summary = String.format("PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n用戶數: %d\n\n%s",
-                    totalPendingFixed, totalZombieCleaned, allUserIds.size(), details);
-            // sendNotificationToAdmins → MQ admin queue → Consumer 派發到 admin per-user
-            // （不再額外呼叫 sendNotification，避免 Consumer 重複派發）
+            String summary = String.format(
+                    "PENDING_CLOSE 修復: %d 筆\n殭屍 Trade 清理: %d 筆\n隱形倉位偵測: %d 筆\n用戶數: %d\n\n%s",
+                    totalPendingFixed, totalZombieCleaned, totalPhantomDetected, allUserIds.size(), details);
             discordWebhookService.sendNotificationToAdmins(
                     "🔄 啟動對帳完成", summary, DiscordWebhookService.COLOR_BLUE);
         } else {
@@ -368,5 +377,72 @@ public class StartupReconciliationService {
         } catch (Exception e) {
             log.warn("啟動對帳 PnL 估算失敗: {} {}", trade.getTradeId(), e.getMessage());
         }
+    }
+
+    // ==================== 反向掃描：Binance→DB 隱形倉位偵測 ====================
+
+    /**
+     * 偵測隱形倉位（單人模式 wrapper）
+     *
+     * 反向掃描：查 Binance 所有持倉，比對 DB 是否有對應 OPEN Trade。
+     * 若 Binance 有持倉但 DB 無紀錄 → 發 CRITICAL 告警。
+     */
+    int detectPhantomPositions(List<String> report) {
+        List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
+        return detectPhantomPositions(report, openTrades, null);
+    }
+
+    /**
+     * 偵測隱形倉位（接收外部 Trade list + userId）
+     *
+     * 比對 Binance 實際持倉 vs DB OPEN Trade，找出「Binance 有但 DB 沒有」的倉位。
+     * 只發告警不自動操作（避免誤判）。
+     */
+    int detectPhantomPositions(List<String> report, List<Trade> openTrades, String userId) {
+        Map<String, Double> positionMap;
+        try {
+            positionMap = binanceFuturesService.getAllPositionAmounts();
+        } catch (Exception e) {
+            log.warn("隱形倉位偵測：查詢 Binance 持倉失敗: {}", e.getMessage());
+            return 0;
+        }
+
+        if (positionMap.isEmpty()) {
+            return 0;
+        }
+
+        // 建立 DB 中 OPEN 交易的 symbol set
+        Set<String> dbOpenSymbols = openTrades.stream()
+                .map(Trade::getSymbol)
+                .collect(Collectors.toSet());
+
+        int detected = 0;
+        for (Map.Entry<String, Double> entry : positionMap.entrySet()) {
+            String symbol = entry.getKey();
+            double positionAmt = entry.getValue();
+
+            if (!dbOpenSymbols.contains(symbol)) {
+                // Binance 有持倉但 DB 無紀錄 → 隱形倉位！
+                detected++;
+                String side = positionAmt > 0 ? "LONG" : "SHORT";
+                String detail = String.format(
+                        "🚨 隱形倉位: %s %s 數量=%.6f (Binance 有持倉但 DB 無紀錄, userId=%s)",
+                        symbol, side, Math.abs(positionAmt), userId);
+                report.add(detail);
+                log.error(detail);
+
+                // 發送 CRITICAL 告警
+                String alertMsg = String.format(
+                        "%s %s\n數量: %.6f\nuserId: %s\n⚠️ Binance 有持倉但 DB 無紀錄！\n請立即手動確認並處理",
+                        symbol, side, Math.abs(positionAmt), userId);
+                discordWebhookService.sendNotificationToAdmins(
+                        "🚨 隱形倉位偵測", alertMsg, DiscordWebhookService.COLOR_RED);
+            }
+        }
+
+        if (detected > 0) {
+            log.warn("隱形倉位偵測完成: 發現 {} 筆 (userId={})", detected, userId);
+        }
+        return detected;
     }
 }

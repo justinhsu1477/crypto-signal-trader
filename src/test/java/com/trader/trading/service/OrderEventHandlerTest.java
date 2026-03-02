@@ -1345,4 +1345,87 @@ class OrderEventHandlerTest {
 
         return event;
     }
+
+    // ==================== ACCOUNT_UPDATE — 強制平倉偵測 ====================
+
+    @Nested
+    @DisplayName("ACCOUNT_UPDATE — 強制平倉偵測")
+    class AccountUpdateTests {
+
+        private OrderEventHandler handler;
+
+        @BeforeEach
+        void initHandler() {
+            handler = new OrderEventHandler(tradeRecordService, symbolLockRegistry,
+                    notificationSender, null, gson, "");
+        }
+
+        @Test
+        @DisplayName("LIQUIDATION 事件 → 記錄 + 標記 Trade + 告警")
+        void liquidationEvent_fullFlow() {
+            JsonObject event = buildAccountUpdateEvent("LIQUIDATION", "BTCUSDT", 0, -500.0);
+
+            handler.handleAccountUpdate(event);
+
+            verify(tradeRecordService).recordOrderEvent(eq("BTCUSDT"), eq("LIQUIDATION"), isNull(), any());
+            verify(tradeRecordService).markTradeClosedByLiquidation("BTCUSDT");
+            assertThat(lastTitle).contains("強制平倉");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+        }
+
+        @Test
+        @DisplayName("非 LIQUIDATION reason → 忽略")
+        void nonLiquidationReason_ignored() {
+            JsonObject event = buildAccountUpdateEvent("ORDER", "BTCUSDT", 0.001, 0);
+
+            handler.handleAccountUpdate(event);
+
+            verify(tradeRecordService, never()).markTradeClosedByLiquidation(any());
+            assertThat(lastTitle).isNull();
+        }
+
+        @Test
+        @DisplayName("無 'a' 欄位 → 安全忽略")
+        void noAccountField_ignored() {
+            JsonObject event = new JsonObject();
+            event.addProperty("e", "ACCOUNT_UPDATE");
+
+            handler.handleAccountUpdate(event);
+
+            verify(tradeRecordService, never()).markTradeClosedByLiquidation(any());
+        }
+
+        @Test
+        @DisplayName("LIQUIDATION 但 positionAmt != 0 → 記錄但不標記 CLOSED")
+        void liquidationPartial_doesNotMarkClosed() {
+            JsonObject event = buildAccountUpdateEvent("LIQUIDATION", "BTCUSDT", 0.0005, -200.0);
+
+            handler.handleAccountUpdate(event);
+
+            verify(tradeRecordService).recordOrderEvent(eq("BTCUSDT"), eq("LIQUIDATION"), isNull(), any());
+            // positionAmt != 0 → 不標記 CLOSED
+            verify(tradeRecordService, never()).markTradeClosedByLiquidation(any());
+        }
+
+        private JsonObject buildAccountUpdateEvent(String reason, String symbol,
+                                                     double positionAmt, double unrealizedPnl) {
+            JsonObject pos = new JsonObject();
+            pos.addProperty("s", symbol);
+            pos.addProperty("pa", positionAmt);
+            pos.addProperty("up", unrealizedPnl);
+
+            com.google.gson.JsonArray positions = new com.google.gson.JsonArray();
+            positions.add(pos);
+
+            JsonObject account = new JsonObject();
+            account.addProperty("m", reason);
+            account.add("P", positions);
+
+            JsonObject event = new JsonObject();
+            event.addProperty("e", "ACCOUNT_UPDATE");
+            event.add("a", account);
+
+            return event;
+        }
+    }
 }

@@ -631,6 +631,30 @@ public class TradeRecordService {
     }
 
     /**
+     * 強制平倉標記 — 將 OPEN Trade 標為 CLOSED (LIQUIDATION)
+     *
+     * 由 ACCOUNT_UPDATE 事件觸發（m=LIQUIDATION 且 positionAmt=0）。
+     * 無法取得真實 exitPrice，不設定 PnL（保留 null 避免誤導）。
+     */
+    @Transactional
+    public void markTradeClosedByLiquidation(String symbol) {
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
+        if (openTradeOpt.isEmpty()) {
+            log.warn("強制平倉標記: 找不到 OPEN Trade for {}", symbol);
+            return;
+        }
+
+        Trade trade = openTradeOpt.get();
+        trade.setStatus("CLOSED");
+        trade.setExitReason("LIQUIDATION");
+        trade.setExitTime(java.time.LocalDateTime.now(AppConstants.ZONE_ID));
+        trade.setUpdatedAt(java.time.LocalDateTime.now(AppConstants.ZONE_ID));
+        tradeRepository.save(trade);
+
+        log.error("強制平倉標記完成: {} {} tradeId={}", symbol, trade.getSide(), trade.getTradeId());
+    }
+
+    /**
      * 通用事件紀錄 — 記錄任何訂單操作的結果（成功或失敗）
      * 適用於不需要更動 Trade 主紀錄，只需新增 TradeEvent 的場景
      *

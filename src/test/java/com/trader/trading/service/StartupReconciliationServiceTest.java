@@ -412,6 +412,83 @@ class StartupReconciliationServiceTest {
         }
     }
 
+    // ==================== 隱形倉位偵測 ====================
+
+    @Nested
+    @DisplayName("隱形倉位偵測（Binance→DB 反向掃描）")
+    class PhantomPositionTests {
+
+        @Test
+        @DisplayName("Binance 有持倉 + DB 有 OPEN → 正常，不告警")
+        void positionMatchesDb_noAlert() {
+            Trade trade = createOpenTrade("t1", "BTCUSDT", "LONG");
+            when(binanceFuturesService.getAllPositionAmounts())
+                    .thenReturn(java.util.Map.of("BTCUSDT", 0.001));
+
+            List<String> report = new ArrayList<>();
+            int detected = service.detectPhantomPositions(report, List.of(trade), null);
+
+            assertThat(detected).isZero();
+            verify(discordWebhookService, never()).sendNotificationToAdmins(
+                    eq("🚨 隱形倉位偵測"), any(), anyInt());
+        }
+
+        @Test
+        @DisplayName("Binance 有持倉但 DB 無紀錄 → CRITICAL 告警")
+        void phantomPosition_sendsAlert() {
+            // DB 無任何 OPEN Trade，但 Binance 有 BTCUSDT 持倉
+            when(binanceFuturesService.getAllPositionAmounts())
+                    .thenReturn(java.util.Map.of("BTCUSDT", 0.001));
+
+            List<String> report = new ArrayList<>();
+            int detected = service.detectPhantomPositions(report, List.of(), null);
+
+            assertThat(detected).isEqualTo(1);
+            assertThat(report.get(0)).contains("隱形倉位");
+            verify(discordWebhookService).sendNotificationToAdmins(
+                    eq("🚨 隱形倉位偵測"), contains("BTCUSDT"), eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("Binance 無持倉 → 不告警")
+        void noPositions_noAlert() {
+            when(binanceFuturesService.getAllPositionAmounts())
+                    .thenReturn(java.util.Map.of());
+
+            List<String> report = new ArrayList<>();
+            int detected = service.detectPhantomPositions(report, List.of(), null);
+
+            assertThat(detected).isZero();
+        }
+
+        @Test
+        @DisplayName("Binance 查詢失敗 → 不告警不拋異常")
+        void apiFails_gracefulSkip() {
+            when(binanceFuturesService.getAllPositionAmounts())
+                    .thenThrow(new RuntimeException("API timeout"));
+
+            List<String> report = new ArrayList<>();
+            int detected = service.detectPhantomPositions(report, List.of(), null);
+
+            assertThat(detected).isZero();
+        }
+
+        @Test
+        @DisplayName("多個持倉部分匹配 → 只偵測缺失的")
+        void partialMatch_onlyDetectsMissing() {
+            Trade trade = createOpenTrade("t1", "BTCUSDT", "LONG");
+            // Binance 有 BTC + ETH，但 DB 只有 BTC
+            when(binanceFuturesService.getAllPositionAmounts())
+                    .thenReturn(java.util.Map.of("BTCUSDT", 0.001, "ETHUSDT", -0.5));
+
+            List<String> report = new ArrayList<>();
+            int detected = service.detectPhantomPositions(report, List.of(trade), null);
+
+            assertThat(detected).isEqualTo(1);
+            assertThat(report.get(0)).contains("ETHUSDT");
+        }
+    }
+
     // ==================== Helper ====================
 
     private Trade createOpenTrade(String tradeId, String symbol, String side) {
