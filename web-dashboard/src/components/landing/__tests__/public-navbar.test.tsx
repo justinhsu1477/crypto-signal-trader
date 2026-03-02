@@ -82,10 +82,11 @@ describe("PublicNavbar", () => {
     expect(screen.getByTestId("language-switcher")).toBeInTheDocument();
   });
 
-  it("renders Sign In and Sign Up buttons on login page", () => {
+  it("renders Sign Up Free button (no Sign In) on login page", () => {
     render(<PublicNavbar />);
 
-    expect(screen.getAllByText("Sign In").length).toBeGreaterThan(0);
+    // On /login page, only "Sign Up Free" CTA is shown (no "Sign In" link)
+    expect(screen.queryByText("Sign In")).not.toBeInTheDocument();
     expect(screen.getAllByText("Sign Up Free").length).toBeGreaterThan(0);
   });
 

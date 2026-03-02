@@ -38,7 +38,7 @@ describe("CryptoBackground", () => {
     const pinkGradient = container.querySelectorAll("div[class*='rounded-full']")[0] as HTMLElement;
     expect(pinkGradient).toBeInTheDocument();
     expect(pinkGradient.style.background).toContain("radial-gradient");
-    expect(pinkGradient.style.background).toContain("rgba(255,180,195");
+    expect(pinkGradient.style.background).toContain("rgba(255, 180, 195");
   });
 
   it("renders lavender radial gradient for bottom-right", () => {
@@ -49,7 +49,7 @@ describe("CryptoBackground", () => {
     )[1] as HTMLElement;
     expect(lavenderGradient).toBeInTheDocument();
     expect(lavenderGradient.style.background).toContain("radial-gradient");
-    expect(lavenderGradient.style.background).toContain("rgba(200,180,255");
+    expect(lavenderGradient.style.background).toContain("rgba(200, 180, 255");
   });
 
   it("renders warm wash gradient in center", () => {
@@ -60,7 +60,7 @@ describe("CryptoBackground", () => {
     )[2] as HTMLElement;
     expect(warmGradient).toBeInTheDocument();
     expect(warmGradient.style.background).toContain("radial-gradient");
-    expect(warmGradient.style.background).toContain("rgba(255,220,200");
+    expect(warmGradient.style.background).toContain("rgba(255, 220, 200");
   });
 
   it("renders 3 gradient divs", () => {
