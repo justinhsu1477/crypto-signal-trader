@@ -538,6 +538,56 @@ const translations = {
     secretKeyPlaceholder: { en: "Enter Secret Key", "zh-TW": "輸入 Secret Key", "zh-CN": "输入 Secret Key" },
     fillRequired: { en: "Please fill in API Key and Secret Key", "zh-TW": "請填寫 API Key 和 Secret Key", "zh-CN": "请填写 API Key 和 Secret Key" },
     saveApiKey: { en: "Save API Key", "zh-TW": "儲存 API Key", "zh-CN": "保存 API Key" },
+    // API Key Tutorial
+    apiKeyTutorialTitle: { en: "How to set up Binance API Key?", "zh-TW": "如何設定幣安 API Key？", "zh-CN": "如何设置币安 API Key？" },
+    apiKeyPrerequisite: {
+      en: "You must activate Binance Futures first: Open Binance App → Futures Trading → Complete the risk assessment quiz",
+      "zh-TW": "必須先開通合約帳戶：開啟幣安 App → 合約交易 → 完成風險測驗",
+      "zh-CN": "必须先开通合约账户：打开币安 App → 合约交易 → 完成风险测评",
+    },
+    apiKeyStep1: {
+      en: "Binance App → Account → API Management → Create API",
+      "zh-TW": "幣安 App → 帳戶 → API 管理 → 建立 API",
+      "zh-CN": "币安 App → 账户 → API 管理 → 创建 API",
+    },
+    apiKeyStep2Title: {
+      en: "Set Permissions (only check these two)",
+      "zh-TW": "設定權限（只需勾選兩個）",
+      "zh-CN": "设置权限（只需勾选两个）",
+    },
+    apiKeyStep2Check1: { en: "Enable Reading", "zh-TW": "啟用讀取", "zh-CN": "启用读取" },
+    apiKeyStep2Check2: { en: "Enable Futures", "zh-TW": "允許合約", "zh-CN": "允许合约" },
+    apiKeyStep2Warning: {
+      en: "Do NOT check \"Enable Withdrawals\" — our system only trades, it will never move your funds",
+      "zh-TW": "不需要勾「允許提領」— 系統只做交易，不會動你的資金",
+      "zh-CN": "不需要勾「允许提现」— 系统只做交易，不会动你的资金",
+    },
+    apiKeyStep3Title: {
+      en: "Set IP Whitelist",
+      "zh-TW": "設定 IP 白名單",
+      "zh-CN": "设置 IP 白名单",
+    },
+    apiKeyStep3Desc: {
+      en: "Select \"Restrict access to trusted IPs only\" → Enter the IP below:",
+      "zh-TW": "選擇「僅限信任的 IP 位址」→ 輸入以下 IP：",
+      "zh-CN": "选择「仅限受信任的 IP 地址」→ 输入以下 IP：",
+    },
+    apiKeyStep3Copied: { en: "Copied!", "zh-TW": "已複製！", "zh-CN": "已复制！" },
+    apiKeyStep4: {
+      en: "Copy your API Key and Secret Key, then paste them into the form below",
+      "zh-TW": "複製 API Key 和 Secret Key，貼到下方表單",
+      "zh-CN": "复制 API Key 和 Secret Key，粘贴到下方表单",
+    },
+    apiKeyStep4Warning: {
+      en: "Secret Key is only shown once — copy it immediately!",
+      "zh-TW": "Secret Key 只會顯示一次，請立即複製！",
+      "zh-CN": "Secret Key 只会显示一次，请立即复制！",
+    },
+    apiKeyStep5: {
+      en: "Click \"Save API Key\" below to complete setup",
+      "zh-TW": "點擊下方「儲存 API Key」即完成設定",
+      "zh-CN": "点击下方「保存 API Key」即完成设置",
+    },
     // Auto Trade
     autoTrade: { en: "Auto Trade Settings", "zh-TW": "自動跟單設定", "zh-CN": "自动跟单设置" },
     autoTradeLabel: { en: "Auto Trade", "zh-TW": "自動跟單", "zh-CN": "自动跟单" },
