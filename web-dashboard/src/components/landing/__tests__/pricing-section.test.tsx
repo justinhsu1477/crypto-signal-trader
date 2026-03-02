@@ -107,8 +107,8 @@ describe("PricingSection", () => {
   it("renders features for all pricing tiers", () => {
     render(<PricingSection />);
 
-    // Starter features
-    expect(screen.getByText("1 signal source")).toBeInTheDocument();
+    // Starter and Basic both have "1 signal source"
+    expect(screen.getAllByText("1 signal source")).toHaveLength(2);
     expect(screen.getByText("3 concurrent positions")).toBeInTheDocument();
     expect(screen.getByText("Basic analytics dashboard")).toBeInTheDocument();
 

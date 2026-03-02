@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AuthLayout } from "../auth-layout";
 
@@ -122,13 +122,24 @@ describe("AuthLayout", () => {
   });
 
   it("renders footer navigation links", () => {
-    render(<AuthLayout><div>Test Child</div></AuthLayout>);
+    const { container } = render(<AuthLayout><div>Test Child</div></AuthLayout>);
 
-    // Footer sections
-    expect(screen.getByText("Features")).toBeInTheDocument();
-    expect(screen.getByText("About")).toBeInTheDocument();
-    expect(screen.getByText("Pricing")).toBeInTheDocument();
-    expect(screen.getByText("Contact")).toBeInTheDocument();
+    // Footer sections — scope to <footer> to avoid collision with mock section components
+    const footer = container.querySelector("footer") as HTMLElement;
+    expect(footer).toBeInTheDocument();
+
+    // "Features" and "Pricing" also appear in mock section components,
+    // so we verify they exist within the footer element specifically.
+    const footerHeadings = footer.querySelectorAll("h4");
+    const headingTexts = Array.from(footerHeadings).map((h) => h.textContent);
+    expect(headingTexts).toContain("Features");
+    expect(headingTexts).toContain("About");
+    expect(headingTexts).toContain("Contact");
+
+    // "Pricing" is a link inside the footer, not a heading
+    const pricingLink = footer.querySelector('a[href="#pricing"]');
+    expect(pricingLink).toBeInTheDocument();
+    expect(pricingLink?.textContent).toBe("Pricing");
   });
 
   it("renders contact information in footer", () => {
@@ -148,9 +159,16 @@ describe("AuthLayout", () => {
     expect(termsLink).toBeInTheDocument();
   });
 
-  it("renders children when showAuthCard is false", () => {
+  it("renders children after clicking Start Trading", () => {
     render(<AuthLayout><div>Test Auth Content</div></AuthLayout>);
 
+    // Initially, hero text is shown (showAuthCard is false), children are not visible
+    expect(screen.queryByText("Test Auth Content")).not.toBeInTheDocument();
+
+    // Click "Start Trading" to switch to auth card view
+    fireEvent.click(screen.getByText("Start Trading"));
+
+    // Now children should be visible
     expect(screen.getByText("Test Auth Content")).toBeInTheDocument();
   });
 
