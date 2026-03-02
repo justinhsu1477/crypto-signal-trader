@@ -1,17 +1,22 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import { getAdminUsers, updateAdminUser } from "@/lib/api";
 import type { AdminUserListResponse, AdminUserSummary } from "@/types";
-import { Users, UserCheck, ShieldCheck, Check, X, Power } from "lucide-react";
+import { Users, UserCheck, ShieldCheck, Check, X, Power, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
+
+type SortField = "email" | "name" | "role" | "enabled" | "autoTradeEnabled" | "createdAt";
+type SortDir = "asc" | "desc";
 
 export default function AdminUsersPage() {
   const { t } = useT();
   const [data, setData] = useState<AdminUserListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<SortField>("createdAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
@@ -51,6 +56,36 @@ export default function AdminUsersPage() {
     } finally {
       setUpdating(null);
     }
+  }
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir(field === "createdAt" ? "desc" : "asc");
+    }
+  }
+
+  const sorted = useMemo(() => {
+    if (!data) return [];
+    return [...data.users].sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const av = a[sortField];
+      const bv = b[sortField];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "boolean") return (av === bv ? 0 : av ? -1 : 1) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [data, sortField, sortDir]);
+
+  function SortIcon({ field }: { field: SortField }) {
+    if (sortField !== field) return <ChevronsUpDown className="h-3 w-3 opacity-40" />;
+    return sortDir === "asc"
+      ? <ChevronUp className="h-3 w-3" />
+      : <ChevronDown className="h-3 w-3" />;
   }
 
   if (loading) {
@@ -98,17 +133,30 @@ export default function AdminUsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-muted-foreground">
-                <th className="text-left px-4 py-3 font-medium">{t("admin.email")}</th>
-                <th className="text-left px-4 py-3 font-medium">{t("admin.name")}</th>
-                <th className="text-center px-4 py-3 font-medium">{t("admin.role")}</th>
-                <th className="text-center px-4 py-3 font-medium">{t("admin.status")}</th>
-                <th className="text-center px-4 py-3 font-medium">{t("admin.autoTrade")}</th>
-                <th className="text-left px-4 py-3 font-medium">{t("admin.createdAt")}</th>
+                {([
+                  { field: "email" as SortField, label: t("admin.email"), align: "text-left" },
+                  { field: "name" as SortField, label: t("admin.name"), align: "text-left" },
+                  { field: "role" as SortField, label: t("admin.role"), align: "text-center" },
+                  { field: "enabled" as SortField, label: t("admin.status"), align: "text-center" },
+                  { field: "autoTradeEnabled" as SortField, label: t("admin.autoTrade"), align: "text-center" },
+                  { field: "createdAt" as SortField, label: t("admin.createdAt"), align: "text-left" },
+                ]).map((col) => (
+                  <th
+                    key={col.field}
+                    onClick={() => toggleSort(col.field)}
+                    className={`${col.align} px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors`}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {col.label}
+                      <SortIcon field={col.field} />
+                    </span>
+                  </th>
+                ))}
                 <th className="text-center px-4 py-3 font-medium">{t("admin.actions")}</th>
               </tr>
             </thead>
             <tbody>
-              {data.users.map((user) => {
+              {sorted.map((user) => {
                 const isUpdating = updating === user.userId;
                 return (
                   <tr
