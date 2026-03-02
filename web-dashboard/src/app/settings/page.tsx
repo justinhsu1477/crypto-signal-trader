@@ -45,6 +45,10 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check,
 } from "lucide-react";
 
 // ─── Settings sections ───
@@ -93,6 +97,10 @@ export default function SettingsPage() {
   const [pwError, setPwError] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
 
+  // ─── API Key Tutorial state ───
+  const [tutorialOpen, setTutorialOpen] = useState<boolean | null>(null);
+  const [ipCopied, setIpCopied] = useState(false);
+
   // ─── Auto Trade confirmation dialog state ───
   const [autoTradeConfirmOpen, setAutoTradeConfirmOpen] = useState(false);
   const [autoTradeConfirmValue, setAutoTradeConfirmValue] = useState(false);
@@ -102,6 +110,13 @@ export default function SettingsPage() {
     (k) => k.exchange === "BINANCE" && k.hasApiKey
   );
   const canEnableAutoTrade = hasBinanceKey && subscriptionActive;
+
+  // ─── Auto-expand tutorial for new users ───
+  useEffect(() => {
+    if (!keysLoading && tutorialOpen === null) {
+      setTutorialOpen(!hasBinanceKey);
+    }
+  }, [keysLoading, hasBinanceKey, tutorialOpen]);
 
   // ─── Sidebar nav items ───
   const navItems: {
@@ -334,6 +349,14 @@ export default function SettingsPage() {
     );
   }
 
+  function handleCopyIp() {
+    navigator.clipboard.writeText("<vm-ip>").then(() => {
+      setIpCopied(true);
+      toast.success(t("settings.apiKeyStep3Copied"));
+      setTimeout(() => setIpCopied(false), 2000);
+    });
+  }
+
   function renderApiKeys() {
     return (
       <div className="space-y-6">
@@ -346,6 +369,103 @@ export default function SettingsPage() {
           </p>
         </div>
         <Separator />
+
+        {/* ─── API Key Setup Tutorial ─── */}
+        <div className="border border-amber-200 dark:border-amber-900 rounded-lg overflow-hidden">
+          {/* Tutorial header — clickable toggle */}
+          <button
+            type="button"
+            onClick={() => setTutorialOpen((prev) => !prev)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors text-left"
+          >
+            <span className="font-medium text-sm text-amber-800 dark:text-amber-200">
+              🔑 {t("settings.apiKeyTutorialTitle")}
+            </span>
+            {tutorialOpen ? (
+              <ChevronUp className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            )}
+          </button>
+
+          {/* Tutorial content — collapsible */}
+          <div
+            className={cn(
+              "grid transition-all duration-300 ease-in-out",
+              tutorialOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            )}
+          >
+            <div className="overflow-hidden">
+              <div className="px-4 py-4 space-y-4 text-sm text-amber-900 dark:text-amber-100">
+                {/* Prerequisite warning */}
+                <div className="p-3 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
+                  <p className="font-medium">⚠️ {t("settings.apiKeyPrerequisite")}</p>
+                </div>
+
+                {/* Steps */}
+                <ol className="space-y-3 list-none">
+                  {/* Step 1 */}
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">1</span>
+                    <p className="pt-0.5">{t("settings.apiKeyStep1")}</p>
+                  </li>
+
+                  {/* Step 2 — Permissions */}
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">2</span>
+                    <div className="space-y-1.5 pt-0.5">
+                      <p className="font-medium">{t("settings.apiKeyStep2Title")}</p>
+                      <div className="space-y-1 text-xs">
+                        <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.apiKeyStep2Check1")}</p>
+                        <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.apiKeyStep2Check2")}</p>
+                        <p className="text-red-600 dark:text-red-400">❌ {t("settings.apiKeyStep2Warning")}</p>
+                      </div>
+                    </div>
+                  </li>
+
+                  {/* Step 3 — IP whitelist */}
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">3</span>
+                    <div className="space-y-1.5 pt-0.5">
+                      <p className="font-medium">{t("settings.apiKeyStep3Title")}</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-300">{t("settings.apiKeyStep3Desc")}</p>
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-amber-300 dark:border-amber-700 rounded-md font-mono text-sm">
+                        <span><vm-ip></span>
+                        <button
+                          type="button"
+                          onClick={handleCopyIp}
+                          className="p-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-800 transition-colors"
+                          title="Copy IP"
+                        >
+                          {ipCopied ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-500" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+
+                  {/* Step 4 — Copy keys */}
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">4</span>
+                    <div className="space-y-1 pt-0.5">
+                      <p>{t("settings.apiKeyStep4")}</p>
+                      <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ {t("settings.apiKeyStep4Warning")}</p>
+                    </div>
+                  </li>
+
+                  {/* Step 5 — Save */}
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">5</span>
+                    <p className="pt-0.5">{t("settings.apiKeyStep5")}</p>
+                  </li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {keysLoading && (
           <div className="space-y-3">
