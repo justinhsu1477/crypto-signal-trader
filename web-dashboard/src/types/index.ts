@@ -588,3 +588,18 @@ export interface StreamStatusResponse {
     reconnectCount: number;
   }>;
 }
+
+// ─── Database Stats ───
+
+export interface DatabaseStatsResponse {
+  totalSizeBytes: number;
+  storageLimitBytes: number;
+  usagePercent: number;
+  tables: DatabaseTableStats[];
+}
+
+export interface DatabaseTableStats {
+  tableName: string;
+  rowCount: number;
+  totalBytes: number;
+}
