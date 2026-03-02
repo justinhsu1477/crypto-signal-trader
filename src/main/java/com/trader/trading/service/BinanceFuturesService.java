@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -215,6 +216,25 @@ public class BinanceFuturesService {
             throw new RuntimeException("查詢持倉失敗，拒絕交易: " + e.getMessage(), e);
         }
         return 0;
+    }
+
+    /**
+     * 批量取得所有持倉數量（symbol → positionAmt）
+     * 只回傳 positionAmt != 0 的幣種，供排程任務一次查完所有持倉。
+     * API weight: 5（同 getPositions）
+     */
+    public Map<String, Double> getAllPositionAmounts() {
+        String response = getPositions();
+        Map<String, Double> result = new HashMap<>();
+        JsonArray positions = gson.fromJson(response, JsonArray.class);
+        for (JsonElement elem : positions) {
+            JsonObject pos = elem.getAsJsonObject();
+            double amt = pos.get("positionAmt").getAsDouble();
+            if (amt != 0) {
+                result.put(pos.get("symbol").getAsString(), amt);
+            }
+        }
+        return result;
     }
 
     /**
