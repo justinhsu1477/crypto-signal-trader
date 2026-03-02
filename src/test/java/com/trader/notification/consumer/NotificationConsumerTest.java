@@ -16,9 +16,10 @@ import static org.mockito.Mockito.*;
  *
  * 驗證：
  * 1. USER 訊息 → 正確呼叫 sendNotificationToUser()
- * 2. ADMIN 訊息（有 displayName）→ 呼叫 sendNotificationToAdmins(displayName, ...)
- * 3. ADMIN 訊息（無 displayName）→ 呼叫 sendNotification() + sendNotificationToAdmins()
- * 4. 失敗 → exception 向上拋（交給 Spring retry → 耗盡 → DLQ）
+ * 2. SYSTEM 訊息 → 只呼叫 sendNotification()（全局 webhook only）
+ * 3. ADMIN 訊息（有 displayName）→ 呼叫 sendNotificationToAdmins(displayName, ...)
+ * 4. ADMIN 訊息（無 displayName）→ 只呼叫 sendNotificationToAdmins()（admin per-user only）
+ * 5. 失敗 → exception 向上拋（交給 Spring retry → 耗盡 → DLQ）
  */
 class NotificationConsumerTest {
 
@@ -114,8 +115,28 @@ class NotificationConsumerTest {
     }
 
     @Test
-    @DisplayName("ADMIN 訊息（無 displayName）→ sendNotification() + sendNotificationToAdmins()")
-    void consumeAdminNotification_withoutDisplayName() {
+    @DisplayName("SYSTEM 訊息 → 只呼叫 sendNotification()（全局 webhook only）")
+    void consumeAdminNotification_systemType_onlyGlobal() {
+        NotificationMessage msg = NotificationMessage.builder()
+                .type(NotificationType.SYSTEM)
+                .title("📊 每日彙總報告")
+                .message("今日損益: +$500")
+                .color(NotificationService.COLOR_BLUE)
+                .build();
+
+        consumer.consumeAdminNotification(msg);
+
+        // SYSTEM → 只發到全局 webhook
+        verify(discordService).sendNotification("📊 每日彙總報告", "今日損益: +$500", NotificationService.COLOR_BLUE);
+        verify(lineService).sendNotification("📊 每日彙總報告", "今日損益: +$500", NotificationService.COLOR_BLUE);
+        // 不應呼叫 admin per-user
+        verify(discordService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+        verify(lineService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("ADMIN 訊息（無 displayName）→ 只呼叫 sendNotificationToAdmins()（admin per-user only）")
+    void consumeAdminNotification_withoutDisplayName_onlyAdminPerUser() {
         NotificationMessage msg = NotificationMessage.builder()
                 .type(NotificationType.ADMIN)
                 .title("🔄 啟動對帳完成")
@@ -125,11 +146,12 @@ class NotificationConsumerTest {
 
         consumer.consumeAdminNotification(msg);
 
-        // 無 displayName = 系統級通知 → 同時呼叫 global + admin
-        verify(discordService).sendNotification("🔄 啟動對帳完成", "PENDING_CLOSE 修復: 2 筆", NotificationService.COLOR_BLUE);
-        verify(lineService).sendNotification("🔄 啟動對帳完成", "PENDING_CLOSE 修復: 2 筆", NotificationService.COLOR_BLUE);
+        // ADMIN（無 displayName）→ 只發到 admin per-user webhook
         verify(discordService).sendNotificationToAdmins("🔄 啟動對帳完成", "PENDING_CLOSE 修復: 2 筆", NotificationService.COLOR_BLUE);
         verify(lineService).sendNotificationToAdmins("🔄 啟動對帳完成", "PENDING_CLOSE 修復: 2 筆", NotificationService.COLOR_BLUE);
+        // 不應呼叫全局 webhook
+        verify(discordService, never()).sendNotification(anyString(), anyString(), anyInt());
+        verify(lineService, never()).sendNotification(anyString(), anyString(), anyInt());
     }
 
     @Test
@@ -143,9 +165,27 @@ class NotificationConsumerTest {
                 .build();
 
         doThrow(new RuntimeException("API timeout"))
-                .when(discordService).sendNotification(anyString(), anyString(), anyInt());
+                .when(discordService).sendNotificationToAdmins(anyString(), anyString(), anyInt());
 
         // exception 必須向上拋，Spring retry interceptor 才能接住重試
+        assertThatThrownBy(() -> consumer.consumeAdminNotification(msg))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("API timeout");
+    }
+
+    @Test
+    @DisplayName("SYSTEM 訊息消費失敗 → exception 向上拋（Spring retry → DLQ）")
+    void consumeAdminNotification_systemFailureThrowsForRetry() {
+        NotificationMessage msg = NotificationMessage.builder()
+                .type(NotificationType.SYSTEM)
+                .title("標題")
+                .message("內容")
+                .color(NotificationService.COLOR_RED)
+                .build();
+
+        doThrow(new RuntimeException("API timeout"))
+                .when(discordService).sendNotification(anyString(), anyString(), anyInt());
+
         assertThatThrownBy(() -> consumer.consumeAdminNotification(msg))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("API timeout");

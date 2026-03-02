@@ -18,8 +18,9 @@ import java.time.LocalDateTime;
  *   - @Builder 讓 Producer 端組裝清楚
  *
  * 路由規則：
- *   USER  → notification.user  queue → 呼叫 sendNotificationToUser(userId, ...)
- *   ADMIN → notification.admin queue → 呼叫 sendNotificationToAdmins(...) 或 sendNotification(...)
+ *   USER   → notification.user  queue → sendNotificationToUser()      (per-user webhook)
+ *   ADMIN  → notification.admin queue → sendNotificationToAdmins()    (Admin per-user only)
+ *   SYSTEM → notification.admin queue → sendNotification()            (全局 webhook only)
  * </pre>
  */
 @Data
@@ -53,12 +54,14 @@ public class NotificationMessage implements Serializable {
     private LocalDateTime timestamp;
 
     /**
-     * 通知類型
+     * 通知類型（決定 Consumer 路由行為）
      */
     public enum NotificationType {
-        /** 用戶個人通知（交易、風控、報表） */
+        /** 用戶個人通知 → per-user webhook */
         USER,
-        /** 管理員通知（系統告警、啟動對帳） */
-        ADMIN
+        /** 管理員通知 → Admin per-user webhook only */
+        ADMIN,
+        /** 系統/全局通知 → 全局 webhook only */
+        SYSTEM
     }
 }
