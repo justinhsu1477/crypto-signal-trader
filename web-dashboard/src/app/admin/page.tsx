@@ -18,6 +18,7 @@ import {
   WifiOff,
   RefreshCw,
   HardDrive,
+  ChevronDown,
 } from "lucide-react";
 
 function StatusDot({ status }: { status: string }) {
@@ -38,6 +39,7 @@ export default function AdminOverviewPage() {
   const [dbStats, setDbStats] = useState<DatabaseStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [dbTablesOpen, setDbTablesOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -201,60 +203,69 @@ export default function AdminOverviewPage() {
       {/* Database Storage */}
       {dbStats && (
         <div className="rounded-xl border border-border bg-card">
-          <div className="p-4 border-b border-border">
-            <div className="flex items-center gap-2">
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-3">
               <HardDrive className="h-4 w-4 text-blue-500" />
-              <h2 className="text-lg font-semibold">{t("admin.databaseStorage")}</h2>
+              <span className="text-lg font-semibold">{t("admin.databaseStorage")}</span>
             </div>
+            {/* Usage bar — always visible */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">{t("admin.storageUsage")}</span>
+              <span className="text-sm font-medium">
+                {(dbStats.totalSizeBytes / 1024 / 1024).toFixed(1)} MB / {(dbStats.storageLimitBytes / 1024 / 1024).toFixed(0)} MB ({dbStats.usagePercent}%)
+              </span>
+            </div>
+            <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  dbStats.usagePercent > 85
+                    ? "bg-red-500"
+                    : dbStats.usagePercent > 70
+                      ? "bg-yellow-500"
+                      : "bg-green-500"
+                }`}
+                style={{ width: `${Math.min(dbStats.usagePercent, 100)}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">{t("admin.neonFreeTier")}</p>
           </div>
-          <div className="p-4 space-y-4">
-            {/* Usage bar */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">{t("admin.storageUsage")}</span>
-                <span className="text-sm font-medium">
-                  {(dbStats.totalSizeBytes / 1024 / 1024).toFixed(1)} MB / {(dbStats.storageLimitBytes / 1024 / 1024).toFixed(0)} MB ({dbStats.usagePercent}%)
-                </span>
-              </div>
-              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    dbStats.usagePercent > 85
-                      ? "bg-red-500"
-                      : dbStats.usagePercent > 70
-                        ? "bg-yellow-500"
-                        : "bg-green-500"
-                  }`}
-                  style={{ width: `${Math.min(dbStats.usagePercent, 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">{t("admin.neonFreeTier")}</p>
-            </div>
 
-            {/* Table breakdown */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="text-left px-3 py-2 font-medium">{t("admin.tableName")}</th>
-                    <th className="text-right px-3 py-2 font-medium">{t("admin.rows")}</th>
-                    <th className="text-right px-3 py-2 font-medium">{t("admin.size")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dbStats.tables.map((table) => (
-                    <tr key={table.tableName} className="border-b border-border/50">
-                      <td className="px-3 py-2 font-mono text-xs">{table.tableName}</td>
-                      <td className="px-3 py-2 text-right">{table.rowCount.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right font-mono text-xs">
-                        {table.totalBytes >= 1024 * 1024
-                          ? `${(table.totalBytes / 1024 / 1024).toFixed(1)} MB`
-                          : `${(table.totalBytes / 1024).toFixed(1)} KB`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Collapsible table breakdown */}
+          <div className="border-t border-border">
+            <button
+              onClick={() => setDbTablesOpen(!dbTablesOpen)}
+              className="flex items-center justify-between w-full px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span>{t("admin.tableName")} ({dbStats.tables.length})</span>
+              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${dbTablesOpen ? "rotate-180" : ""}`} />
+            </button>
+            <div className={`grid transition-all duration-200 ${dbTablesOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+              <div className="overflow-hidden">
+                <div className="overflow-x-auto px-4 pb-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="text-left px-3 py-2 font-medium">{t("admin.tableName")}</th>
+                        <th className="text-right px-3 py-2 font-medium">{t("admin.rows")}</th>
+                        <th className="text-right px-3 py-2 font-medium">{t("admin.size")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dbStats.tables.map((table) => (
+                        <tr key={table.tableName} className="border-b border-border/50">
+                          <td className="px-3 py-2 font-mono text-xs">{table.tableName}</td>
+                          <td className="px-3 py-2 text-right">{table.rowCount.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">
+                            {table.totalBytes >= 1024 * 1024
+                              ? `${(table.totalBytes / 1024 / 1024).toFixed(1)} MB`
+                              : `${(table.totalBytes / 1024).toFixed(1)} KB`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         </div>
