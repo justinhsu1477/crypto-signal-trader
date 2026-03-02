@@ -182,8 +182,8 @@ const translations = {
   // ─── landing ───
   landing: {
     statusBadge: { en: "System Running — 24/7 Auto-Trading", "zh-TW": "系統運行中 — 24/7 全自動交易", "zh-CN": "系统运行中 — 24/7 全自动交易", ja: "Binance非保管自動トレーディング" },
-    heroTitle1: { en: "Trade Crypto with", "zh-TW": "用 AI 訊號", "zh-CN": "用 AI 信号", ja: "自動化する" },
-    heroTitle2: { en: "AI-Powered Signals", "zh-TW": "智能交易加密貨幣", "zh-CN": "智能交易加密货币", ja: "シグナルトレーディング" },
+    heroTitle1: { en: "Automate Your", "zh-TW": "自動化你的", "zh-CN": "自动化你的", ja: "自動化する" },
+    heroTitle2: { en: "Signal Trading", "zh-TW": "訊號交易", "zh-CN": "信号交易", ja: "シグナルトレーディング" },
     heroDescription: {
       en: "Integrating signals from top Discord & Telegram communities, auto-executing trades on Binance. AI risk analysis keeps your investments safe and efficient.",
       "zh-TW": "整合 Discord、Telegram 知名社群策略訊號，自動在幣安執行交易。AI 風控分析，讓您的投資更加安全高效。",
@@ -219,6 +219,18 @@ const translations = {
       ja: "JWT認証＋APIキー暗号化で、資産は保護されています",
     },
     footer: { en: "Smart Crypto Trading Platform", "zh-TW": "智能加密貨幣交易平台", "zh-CN": "智能加密货币交易平台", ja: "スマート暗号資産トレーディングプラットフォーム" },
+    // ── Hero CTA ──
+    startButton: { en: "Start Free", "zh-TW": "免費開始", "zh-CN": "免费开始", ja: "無料で始める" },
+    heroLearnMore: { en: "Learn More", "zh-TW": "了解更多", "zh-CN": "了解更多", ja: "詳しく見る" },
+    startHintRegister: { en: "No credit card required · 7-day free trial", "zh-TW": "無需信用卡 · 7 天免費試用", "zh-CN": "无需信用卡 · 7 天免费试用", ja: "クレジットカード不要 · 7日間無料試用" },
+    startHintLogin: { en: "Welcome back! Sign in to your account.", "zh-TW": "歡迎回來！登入您的帳號。", "zh-CN": "欢迎回来！登录您的账号。", ja: "おかえりなさい！アカウントにログインしてください。" },
+    // ── Features section — big labels ──
+    featBigAutoExec: { en: "Auto\nExecution", "zh-TW": "自動\n執行", "zh-CN": "自动\n执行", ja: "自動\n実行" },
+    featBigSmartRisk: { en: "Smart\nRisk", "zh-TW": "智能\n風控", "zh-CN": "智能\n风控", ja: "スマート\nリスク" },
+    // ── Security section ──
+    securityWord: { en: "NON-CUSTODIAL\nARCHITECTURE", "zh-TW": "非託管\n安全架構", "zh-CN": "非托管\n安全架构", ja: "非保管\nアーキテクチャ" },
+    securityNonCustodialIntro: { en: "Your funds stay in your own exchange account. We never hold or have withdrawal access to your assets.", "zh-TW": "資金始終在您自己的交易所帳戶中。我們永遠不會持有或提取您的資產。", "zh-CN": "资金始终在您自己的交易所账户中。我们永远不会持有或提取您的资产。", ja: "資金はご自身の取引所アカウントに保管されます。私たちは資産を保有・引き出しすることはできません。" },
+    securityProtectedTitle: { en: "Your Assets, Protected", "zh-TW": "您的資產，安全守護", "zh-CN": "您的资产，安全守护", ja: "あなたの資産を保護" },
     // ── Features section ──
     featuresBadge: { en: "Why HookFi", "zh-TW": "為什麼選擇 HookFi", "zh-CN": "为什么选择 HookFi", ja: "なぜHookFiを選ぶ" },
     featuresTitle: { en: "Everything You Need to Trade Smarter", "zh-TW": "智能交易所需的一切", "zh-CN": "智能交易所需的一切", ja: "シンプルなワークフロー、明確なコントロール" },
@@ -226,7 +238,7 @@ const translations = {
       en: "From signal detection to trade execution, HookFi automates your entire trading workflow with institutional-grade risk management.",
       "zh-TW": "從訊號偵測到交易執行，HookFi 以機構級風控自動化您的完整交易流程。",
       "zh-CN": "从信号检测到交易执行，HookFi 以机构级风控自动化您的完整交易流程。",
-      ja: "メール認証",
+      ja: "シグナル検出から取引実行まで、HookFiが機関レベルのリスク管理で取引ワークフロー全体を自動化します。",
     },
     featureAutoExecTitle: { en: "Auto Signal Execution", "zh-TW": "自動訊號執行", "zh-CN": "自动信号执行", ja: "自動シグナル実行" },
     featureAutoExecDesc: {
@@ -277,7 +289,7 @@ const translations = {
       en: "Start free, upgrade when you're ready. No hidden fees, cancel anytime.",
       "zh-TW": "免費開始，準備好再升級。無隱藏費用，隨時取消。",
       "zh-CN": "免费开始，准备好再升级。无隐藏费用，随时取消。",
-      ja: "メール認証",
+      ja: "無料で始めて、準備ができたらアップグレード。隠れた料金なし、いつでもキャンセル可能。",
     },
     pricingStarter: { en: "Starter", "zh-TW": "入門版", "zh-CN": "入门版", ja: "スターター" },
     pricingBasic: { en: "Basic", "zh-TW": "基礎版", "zh-CN": "基础版", ja: "ベーシック" },
@@ -354,7 +366,7 @@ const translations = {
       en: "Reach out via email or join our Discord community for real-time support and trading discussions.",
       "zh-TW": "透過 Email 聯繫我們，或加入 Discord 社群獲取即時支援與交易討論。",
       "zh-CN": "通过 Email 联系我们，或加入 Discord 社区获取实时支持与交易讨论。",
-      ja: "メール認証",
+      ja: "メールでお問い合わせいただくか、Discordコミュニティでリアルタイムサポートをご利用ください。",
     },
     contactEmail: { en: "Email Support", "zh-TW": "Email 支援", "zh-CN": "Email 支持", ja: "メールサポート" },
     contactEmailDesc: { en: "We usually respond within 24 hours", "zh-TW": "我們通常在 24 小時內回覆", "zh-CN": "我们通常在 24 小时内回复", ja: "通常、24時間以内に返信いたします" },
@@ -368,7 +380,7 @@ const translations = {
 
   // ─── dashboard ───
   dashboard: {
-    title: { en: "Overview", "zh-TW": "總覽", "zh-CN": "总览", ja: "メール認証" },
+    title: { en: "Overview", "zh-TW": "總覽", "zh-CN": "总览", ja: "概要" },
     availableBalance: { en: "Available Balance", "zh-TW": "可用餘額", "zh-CN": "可用余额", ja: "利用可能残高" },
     openPositions: { en: "Open Positions", "zh-TW": "持倉數量", "zh-CN": "持仓数量", ja: "オープンポジション" },
     todayPnl: { en: "Today P&L", "zh-TW": "今日盈虧", "zh-CN": "今日盈亏", ja: "今日の利益と損失" },
@@ -384,7 +396,7 @@ const translations = {
 
   // ─── onboarding checklist ───
   onboarding: {
-    title: { en: "Get Started", "zh-TW": "快速上手", "zh-CN": "快速上手", ja: "メール認証" },
+    title: { en: "Get Started", "zh-TW": "快速上手", "zh-CN": "快速上手", ja: "はじめに" },
     optional: { en: "Optional", "zh-TW": "選填", "zh-CN": "选填", ja: "オプション" },
     step_apiKey: {
       en: "Set up Binance API Key",
@@ -414,7 +426,7 @@ const translations = {
 
   // ─── trades ───
   trades: {
-    title: { en: "Trade History", "zh-TW": "交易紀錄", "zh-CN": "交易记录", ja: "メール認証" },
+    title: { en: "Trade History", "zh-TW": "交易紀錄", "zh-CN": "交易记录", ja: "取引履歴" },
     noTrades: { en: "No trade records", "zh-TW": "沒有交易紀錄", "zh-CN": "没有交易记录", ja: "取引記録なし" },
     pagination: {
       en: "Page {current} / {total}, {count} records",
@@ -439,7 +451,7 @@ const translations = {
 
   // ─── status (public) ───
   status: {
-    title: { en: "System Status", "zh-TW": "系統狀態", "zh-CN": "系统状态", ja: "メール認証" },
+    title: { en: "System Status", "zh-TW": "系統狀態", "zh-CN": "系统状态", ja: "システムステータス" },
     overall: { en: "Overall Status", "zh-TW": "整體狀態", "zh-CN": "整体状态", ja: "全体的なステータス" },
     operational: { en: "Operational", "zh-TW": "正常運作", "zh-CN": "正常运行", ja: "正常に運営中" },
     degraded: { en: "Degraded", "zh-TW": "效能降低", "zh-CN": "性能降低", ja: "性能低下" },
@@ -464,7 +476,7 @@ const translations = {
 
   // ─── performance ───
   performance: {
-    title: { en: "Performance Analysis", "zh-TW": "績效分析", "zh-CN": "绩效分析", ja: "メール認証" },
+    title: { en: "Performance Analysis", "zh-TW": "績效分析", "zh-CN": "绩效分析", ja: "パフォーマンス分析" },
     all: { en: "All", "zh-TW": "全部", "zh-CN": "全部", ja: "すべて" },
     winRate: { en: "Win Rate", "zh-TW": "勝率", "zh-CN": "胜率", ja: "勝率" },
     profitFactor: { en: "Profit Factor", "zh-TW": "盈虧比 (Profit Factor)", "zh-CN": "盈亏比 (Profit Factor)", ja: "利益係数（Profit Factor）" },
@@ -472,11 +484,11 @@ const translations = {
     netProfit: { en: "Net Profit", "zh-TW": "淨利潤", "zh-CN": "净利润", ja: "純利益" },
     commission: { en: "Commission {amount} USDT", "zh-TW": "佣金 {amount} USDT", "zh-CN": "佣金 {amount} USDT", ja: "手数料 {amount} USDT" },
     expectancy: { en: "Expectancy", "zh-TW": "期望值", "zh-CN": "期望值", ja: "期待値" },
-    expectancySubtitle: { en: "Expected profit per trade", "zh-TW": "每筆交易預期收益", "zh-CN": "每笔交易预期收益", ja: "メール認証" },
+    expectancySubtitle: { en: "Expected profit per trade", "zh-TW": "每筆交易預期收益", "zh-CN": "每笔交易预期收益", ja: "1取引あたりの期待利益" },
     maxDrawdown: { en: "Max Drawdown", "zh-TW": "最大回撤", "zh-CN": "最大回撤", ja: "サービスダウン" },
-    maxDrawdownSubtitle: { en: "{percent}% / {days} days", "zh-TW": "{percent}% / {days} 天", "zh-CN": "{percent}% / {days} 天", ja: "メール認証" },
+    maxDrawdownSubtitle: { en: "{percent}% / {days} days", "zh-TW": "{percent}% / {days} 天", "zh-CN": "{percent}% / {days} 天", ja: "{percent}% / {days}日間" },
     riskRewardRatio: { en: "Risk/Reward Ratio", "zh-TW": "風險報酬比", "zh-CN": "风险报酬比", ja: "リスク/リワード比率" },
-    riskRewardSubtitle: { en: "Avg profit / Avg loss", "zh-TW": "平均盈利 / 平均虧損", "zh-CN": "平均盈利 / 平均亏损", ja: "メール認証" },
+    riskRewardSubtitle: { en: "Avg profit / Avg loss", "zh-TW": "平均盈利 / 平均虧損", "zh-CN": "平均盈利 / 平均亏损", ja: "平均利益 / 平均損失" },
     consecutiveWins: { en: "Consecutive Wins", "zh-TW": "連續獲利", "zh-CN": "连续获利", ja: "連勝" },
     consecutiveLosses: { en: "Consecutive Losses", "zh-TW": "連續虧損", "zh-CN": "连续亏损", ja: "連敗" },
     times: { en: "{n} times", "zh-TW": "{n} 次", "zh-CN": "{n} 次", ja: "{n} 回" },
@@ -526,7 +538,7 @@ const translations = {
 
   // ─── settings ───
   settings: {
-    title: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置", ja: "メール認証" },
+    title: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置", ja: "設定" },
     // Sidebar nav
     navProfile: { en: "Profile", "zh-TW": "個人資料", "zh-CN": "个人资料", ja: "プロフィール" },
     navApiKeys: { en: "API Keys", "zh-TW": "API 金鑰", "zh-CN": "API 密钥", ja: "APIキー" },
@@ -882,7 +894,7 @@ const translations = {
 
   // ─── referral ───
   referral: {
-    title: { en: "Referral Binding", "zh-TW": "推薦綁定", "zh-CN": "推荐绑定", ja: "メール認証" },
+    title: { en: "Referral Binding", "zh-TW": "推薦綁定", "zh-CN": "推荐绑定", ja: "紹介コード登録" },
     subtitle: {
       en: "Complete the referral binding to start trading",
       "zh-TW": "完成推薦碼綁定即可開始交易",
@@ -972,7 +984,7 @@ const translations = {
       en: "Terms of Service & Risk Disclaimer",
       "zh-TW": "服務條款與風險聲明",
       "zh-CN": "服务条款与风险声明",
-      ja: "メール認証",
+      ja: "利用規約とリスク免責事項",
     },
     description: {
       en: "Please read the following terms carefully. You must scroll to the bottom before agreeing.",
@@ -1233,7 +1245,7 @@ const translations = {
   // ─── blog ───
   blog: {
     badge: { en: "Blog", "zh-TW": "部落格", "zh-CN": "博客" },
-    title: { en: "Trading Insights & Guides", "zh-TW": "交易洞察與教學", "zh-CN": "交易洞察与教学", ja: "メール認証" },
+    title: { en: "Trading Insights & Guides", "zh-TW": "交易洞察與教學", "zh-CN": "交易洞察与教学", ja: "トレーディングインサイト＆ガイド" },
     subtitle: {
       en: "Learn crypto trading strategies, risk management, and how AI-powered automation works.",
       "zh-TW": "學習加密貨幣交易策略、風險管理，以及 AI 自動化交易的運作方式。",
@@ -1253,7 +1265,7 @@ const translations = {
 
   // ─── forgot password ───
   forgotPassword: {
-    title: { en: "Forgot Password", "zh-TW": "忘記密碼", "zh-CN": "忘记密码", ja: "メール認証" },
+    title: { en: "Forgot Password", "zh-TW": "忘記密碼", "zh-CN": "忘记密码", ja: "パスワードをお忘れですか" },
     subtitle: {
       en: "Enter your email and we'll send you a reset link",
       "zh-TW": "輸入您的 Email，我們會寄送密碼重設連結",
@@ -1274,7 +1286,7 @@ const translations = {
 
   // ─── reset password ───
   resetPassword: {
-    title: { en: "Reset Password", "zh-TW": "重設密碼", "zh-CN": "重置密码", ja: "メール認証" },
+    title: { en: "Reset Password", "zh-TW": "重設密碼", "zh-CN": "重置密码", ja: "パスワードリセット" },
     subtitle: {
       en: "Enter your new password",
       "zh-TW": "請輸入您的新密碼",
