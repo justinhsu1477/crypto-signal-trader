@@ -2,7 +2,9 @@
 
 Discord 交易訊號自動跟單系統 — 監聽 Discord 頻道訊號，AI 解析後自動在 Binance Futures 下單。
 
-支援**單人模式**（個人自動交易）與**多用戶模式**（SaaS 訊號廣播跟單）。
+支援**多用戶 SaaS 模式**：訊號廣播跟單、per-user 風控參數、USDT 訂閱計費。
+
+---
 
 ## 系統架構
 
@@ -11,10 +13,11 @@ graph TD
     Discord["Discord Desktop<br/>(CDP 模式)"]
     Monitor["Python Monitor<br/>Gemini AI 解析"]
     API["Spring Boot API<br/>風控 + 下單 + 廣播跟單"]
+    RMQ["RabbitMQ<br/>非同步通知"]
     Binance["Binance Futures API"]
-    WS["WebSocket User Data Stream<br/>SL/TP 觸發 → PnL 通知"]
-    DB[("Neon PostgreSQL<br/>(Singapore)")]
-    Webhook["Discord Webhook<br/>per-user 通知"]
+    WS["Per-User WebSocket<br/>SL/TP 觸發 → PnL 通知"]
+    DB[("Neon PostgreSQL")]
+    Notify["Discord + LINE<br/>per-user 通知"]
 
     Discord -->|"CDP"| Monitor
     Monitor -->|"解析後 JSON + 心跳"| API
@@ -22,20 +25,20 @@ graph TD
     Binance -->|"即時成交回報"| WS
     WS -->|"寫入 DB + 通知"| API
     API --> DB
-    API --> Webhook
+    API --> RMQ --> Notify
 ```
 
-### 雲端部署架構
+### 部署架構
 
 ```mermaid
 graph LR
     User["Browser"]
     CF["Cloudflare<br/>DDoS + SSL"]
     Caddy["Caddy<br/>反向代理"]
-    Dashboard["web-dashboard<br/>Next.js :3000"]
-    TradingAPI["trading-api<br/>Spring Boot :8080"]
+    Dashboard["Next.js :3000"]
+    TradingAPI["Spring Boot :8080"]
     DB[("Neon PostgreSQL")]
-    Monitor["Python Monitor<br/>(本地跑)"]
+    Monitor["Python Monitor<br/>(本地)"]
 
     User -->|"HTTPS"| CF -->|"Origin Cert"| Caddy
     Caddy -->|"/api/*"| TradingAPI
@@ -44,403 +47,172 @@ graph LR
     Monitor -->|"HTTPS /api"| CF
 ```
 
+**基礎設施：** DigitalOcean VM + Cloudflare CDN + Neon Serverless DB + GitHub Actions CI/CD
+
+---
+
 ## 模組架構
 
 ```
 com.trader/
 ├── trading/         # 交易核心（開倉/平倉/風控/WebSocket/廣播跟單）
-├── shared/          # 共用元件（Config/DTO/工具類）
-├── notification/    # 通知（Discord Webhook，per-user 支援）
-├── auth/            # 認證（JWT 登入/註冊 + Monitor API Key）
-├── user/            # 用戶（帳號/加密 API Key/交易參數/Discord Webhook）
-├── subscription/    # 訂閱計費（Stripe Payment Links + Webhook）
+├── notification/    # 多頻道通知（Discord + LINE，RabbitMQ 非同步）
+├── auth/            # 認證（JWT HttpOnly Cookie + Monitor API Key + Email 驗證）
+├── user/            # 用戶（帳號/加密 API Key/交易參數/Webhook）
+├── subscription/    # 訂閱計費（USDT TRC20 鏈上驗證）
 ├── dashboard/       # Dashboard API（績效分析/持倉/交易紀錄）
+├── referral/        # 推薦系統（邀請碼/佣金追蹤）
+├── shared/          # 共用元件（Config/DTO/工具類/Rate Limiter）
 └── advisor/         # AI 交易顧問（Gemini 定時分析）
 ```
 
-### 模組依賴
-
+**模組依賴（不可循環）：**
 ```
-auth → user    subscription → user    dashboard → trading, user, subscription
-trading → shared, notification         shared → (nothing)    user → (nothing)
-```
-
-**規則：** 不可循環依賴，不可反向依賴。
-
----
-
-## 快速開始
-
-### 環境變數
-
-```bash
-cp .env.example .env      # 複製範本，填入 API Keys
-```
-
-關鍵變數：
-
-| 變數 | 說明 |
-|------|------|
-| `BINANCE_API_KEY` / `SECRET_KEY` | 幣安 API |
-| `DISCORD_WEBHOOK_URL` | Discord 通知 |
-| `GEMINI_API_KEY` | AI 訊號解析 |
-| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | PostgreSQL (Neon) |
-| `MULTI_USER_ENABLED` | `false`=單人, `true`=多用戶 |
-| `TRADING_USER_ID` | 單人模式的用戶 ID |
-| `JWT_SECRET` / `AES_ENCRYPTION_KEY` | 認證/加密 |
-
-### 啟動 Discord（CDP 模式）
-
-```bash
-# 先關閉現有 Discord
-killall Discord 2>/dev/null
-
-# 用 CDP 模式重新啟動
-/Applications/Discord.app/Contents/MacOS/Discord --remote-debugging-port=9222
-
-# 等 Discord 完全載入後，確認 CDP 可連
-curl http://127.0.0.1:9222/json
-```
-
-### 啟動
-
-```bash
-# Prod（正式, Neon 雲端 DB）
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-
-# Dev（Testnet, 本地 PostgreSQL）
-docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db up -d --build
-```
-
-### Cloud 部署（Caddy + API + Dashboard，Python 本地跑）
-
-```bash
-# 啟動（首次或重建）
-docker compose -f docker-compose.cloud.yml up -d --build
-
-# 停止
-docker compose -f docker-compose.cloud.yml down
-
-# Python Monitor（本地跑）
-cd discord-monitor && python3 -m src.main --config config.yml
-```
-
-### 驗證
-
-```bash
-# Prod/Dev（直連 Spring Boot）
-curl http://localhost:8080/api/balance
-curl http://localhost:8080/api/monitor-status
-curl http://localhost:8080/api/stream-status
-
-# Cloud（透過 Caddy）
-curl http://localhost/api/health
-open http://localhost          # Dashboard
+auth → user    subscription → user, shared    dashboard → trading, user, subscription, shared
+trading → shared, notification    referral → user, shared    user → (nothing)    shared → (nothing)
 ```
 
 ---
 
-## 交易功能
+## 核心功能
 
-### 以損定倉 (Fixed Fractional Risk)
+### 交易引擎
 
-每筆交易先決定願意虧多少，再反推倉位大小：
-
-```
-1R = 帳戶餘額 × risk-percent
-數量 = 1R / |入場價 - 止損價|
-DCA 補倉 = 2R / |入場價 - 止損價|
-```
-
-**特性：** 止損越窄→倉位越大、帳戶縮水→自動縮倉、DCA 用 2R 加碼。
-
-### 三層倉位保護
-
-| 保護層 | 作用 |
-|--------|------|
-| 名目 cap | 超過 `max-position-usdt` 就縮小 |
-| 保證金 cap | 保證金超過餘額 90% 就縮小 |
-| 最低下單量 | 名目 < 5 USDT 拒絕 |
-
-### DCA 補倉
-
-| 項目 | 說明 |
+| 功能 | 說明 |
 |------|------|
-| 最大層數 | `max-dca-per-symbol`（預設 3 = 首倉 + 2 次補倉） |
-| 補倉倉位 | 2R（`dca-risk-multiplier = 2.0`） |
-| 方向自動判斷 | 跟隨既有持倉 |
-| SL/TP 重掛 | 補倉後自動更新 |
-
-### 部分平倉
-
-`close_ratio: 0.5` → 平掉 50%，剩餘自動重掛 SL/TP。搭配 `new_stop_loss` 可做成本保護。
+| 以損定倉 | `1R = 餘額 × risk%`，倉位 = 1R ÷ 止損距離 |
+| DCA 補倉 | 最多 3 層，2R 加碼，自動重掛 SL/TP |
+| 部分平倉 | 平 50% 後自動重掛 SL/TP，可做成本保護 |
+| Fail-Safe | SL 失敗 → 取消入場 → 市價平倉 → 告警 |
 
 ### 10 層風控
 
 | # | 檢查 |
 |---|------|
 | 1 | 交易對白名單 |
-| 1b | 帳戶餘額查詢（失敗直接拒絕） |
-| 1c | 每日虧損熔斷 |
-| 2 | 最大持倉數（DCA 層數限制） |
-| 2b | 重複掛單檢查 |
-| 2c | 訊號去重（5 分鐘窗口） |
-| 3 | 止損必填 |
-| 4 | 方向驗證（SL 不能在錯誤側） |
-| 5 | 價格偏離檢查（>10% 拒絕） |
-| 7 | 三層倉位保護 |
+| 2 | 帳戶餘額驗證 |
+| 3 | 每日虧損熔斷 |
+| 4 | 持倉數 / DCA 層數限制 |
+| 5 | 重複掛單 + 訊號三層去重 |
+| 6 | 止損必填 + 方向驗證 |
+| 7 | 價格偏離 >10% 拒絕 |
+| 8 | 名目價值 cap |
+| 9 | 保證金 < 90% 餘額 |
+| 10 | 最低下單量 > 5 USDT |
 
-### Fail-Safe 安全機制
+### 多用戶 SaaS
 
-SL 下單失敗 → 取消入場單 → 若失敗 → 市價平倉 → 若全失敗 → Discord 紅色告警。
-
----
-
-## 多用戶模式
-
-透過 `MULTI_USER_ENABLED=true` 啟用，支援 SaaS 訊號廣播跟單。
-
-### 核心機制
-
-| 機制 | 單人模式 (`false`) | 多用戶模式 (`true`) |
-|------|-------------------|-------------------|
-| DB 查詢 | 全局（不分用戶） | 按 userId 隔離 |
-| 交易參數 | 全局 RiskConfig | per-user UserTradeSettings（fallback RiskConfig） |
-| 去重 | 全局 hash | Signal-level 全局 + Execution-level per-user |
-| Discord 通知 | 全局 webhook | per-user webhook（fallback 全局） |
-| 帳戶餘額 | 全局 API Key | per-user 加密 API Key |
-| 每日摘要 | 全局查詢+全局 webhook | 遍歷用戶→個人查詢+個人 webhook |
-| WebSocket | 單連線 | 單連線（per-user 規劃中） |
-
-### 廣播跟單 (BroadcastTradeService)
-
-ADMIN 發送訊號 → 系統遍歷所有 `enabled + autoTradeEnabled + hasApiKey` 的用戶 → 各自用 per-user API Key 下單。
-
-- 共用線程池（core=10, max=50），30 秒超時
-- 兩層去重：Signal-level（全局入口）+ Execution-level（per-user hash）
-- 一個用戶失敗不影響其他用戶
-
-### Per-User 交易參數 (TradeConfigResolver)
-
-多用戶模式下，每個用戶可自訂 risk%、max position、daily loss limit、DCA 層數、槓桿等。未設定的參數 fallback 到全局 RiskConfig。
-
----
-
-## 監控系統
-
-### 心跳機制
-
-Python monitor 每 30 秒回報心跳。Java 偵測：心跳停止 >90 秒（Python 掛了）、`status=reconnecting`（Discord 斷了）。
-
-### WebSocket User Data Stream
-
-| 事件 | 處理 |
+| 機制 | 說明 |
 |------|------|
-| SL/TP 觸發 | 真實出場價+手續費寫入 DB + PnL 通知 |
-| SL/TP 部分觸發 | 追蹤 remainingQuantity，維持 OPEN |
-| SL 被取消 | 🚨 告警（持倉裸奔） |
-| 斷線 | 指數退避重連（1s→60s，上限 20 次） |
+| 廣播跟單 | ADMIN 訊號 → 並行派發所有訂閱用戶（線程池 10~50） |
+| Per-User 隔離 | API Key / 交易紀錄 / 風控參數 / 通知 各自獨立 |
+| Per-User WebSocket | 每個用戶獨立 Data Stream，SL/TP 觸發即時同步 |
+| 訂閱控制 | 未訂閱 / 過期 → 自動跳過廣播 |
 
-**連線維護：** listenKey 每 30 分鐘延長，ping interval 20 秒。
+### 通知系統（RabbitMQ 非同步）
 
-### 每日排程
-
-| 時間 | 排程 | 多用戶模式 |
-|------|------|-----------|
-| 07:55 | 殭屍清理（比對幣安持倉） | 遍歷用戶，per-user API Key 查持倉 |
-| 08:00 | 每日摘要（6 大區塊） | 遍歷用戶，per-user 查詢+webhook |
-
-**每日摘要 6 大區塊：** 帳戶餘額、昨日交易明細、當前持倉、今日風控、累計統計、系統狀態。
-
-### AI 交易顧問
-
-Gemini 2.0 Flash 定時分析近期交易表現（每日 6 次），提供交易建議。
+| 頻道 | 模式 |
+|------|------|
+| Discord Webhook | per-user + Admin 彙總 |
+| LINE Push API | per-user 推播 |
+| RabbitMQ | 2 Queue + DLQ + 指數退避重試 |
 
 ---
 
 ## 安全架構
 
-### 認證方式
-
-| 方式 | 用途 |
+| 層級 | 機制 |
 |------|------|
-| JWT (Bearer token) | 用戶登入後所有 API 呼叫 |
-| Monitor API Key (X-Api-Key) | Python monitor 內部服務 |
-| Stripe Webhook | 訂閱回調（公開端點） |
-
-### 端點權限
-
-| 端點 | 權限 |
-|------|------|
-| `/api/auth/**`, `/api/health` | 公開 |
-| `/api/execute-signal`, `/api/broadcast-trade`, `/api/admin/**` | ADMIN |
-| `/api/execute-trade`, `/api/dashboard/**`, `/api/trades/**` | 認證用戶 |
-| `/api/subscription/webhook` | 公開（Stripe） |
-
-### 資料安全
-
-- 密碼：BCrypt 加密
-- API Key：AES-256-GCM 加密存儲
-- JWT：含 role claim，支援 refresh token 旋轉
-
----
-
-## REST API
-
-### 交易
-
-| 端點 | 方法 | 說明 |
-|------|------|------|
-| `/api/execute-trade` | POST | 結構化 JSON 下單（ENTRY/CLOSE/MOVE_SL/CANCEL） |
-| `/api/execute-signal` | POST | 原始文字解析+下單 (ADMIN) |
-| `/api/broadcast-trade` | POST | 廣播跟單給所有用戶 (ADMIN) |
-| `/api/parse-signal` | POST | 測試解析（不下單）(ADMIN) |
-| `/api/balance` | GET | 帳戶餘額 |
-| `/api/positions` | GET | 當前持倉 |
-| `/api/trades` | GET | 交易紀錄（`?status=OPEN/CLOSED`） |
-| `/api/trades/{id}` | GET | 單筆詳情 |
-| `/api/trades/{id}/events` | GET | 事件日誌 |
-| `/api/stats/summary` | GET | 盈虧統計摘要 |
-| `/api/admin/cleanup-trades` | POST | 手動殭屍清理 (ADMIN) |
-
-### Dashboard
-
-| 端點 | 方法 | 說明 |
-|------|------|------|
-| `/api/dashboard/overview` | GET | 持倉+風控+訂閱摘要 |
-| `/api/dashboard/performance` | GET | 績效分析（勝率/PF/回撤/分組統計） |
-| `/api/dashboard/trades` | GET | 交易紀錄（分頁） |
-| `/api/dashboard/trade-settings` | GET/PUT | 交易參數管理 |
-| `/api/dashboard/discord-webhooks` | GET/POST | Discord Webhook 管理 |
-| `/api/dashboard/auto-trade-status` | GET/POST | 自動跟單開關 |
-
-### 認證 / 用戶
-
-| 端點 | 方法 | 說明 |
-|------|------|------|
-| `/api/auth/register` | POST | 註冊 |
-| `/api/auth/login` | POST | 登入（回傳 JWT + refresh token） |
-| `/api/auth/refresh` | POST | Token 刷新 |
-| `/api/user/me` | GET | 當前用戶資訊 |
-| `/api/user/api-keys` | GET/PUT | API Key 管理（加密存儲） |
-
-### 訂閱
-
-| 端點 | 方法 | 說明 |
-|------|------|------|
-| `/api/subscription/plans` | GET | 可用方案 |
-| `/api/subscription/status` | GET | 訂閱狀態 |
-| `/api/subscription/cancel` | POST | 取消訂閱 |
-| `/api/subscription/upgrade` | POST | 升降級 |
-
-### 監控
-
-| 端點 | 方法 | 說明 |
-|------|------|------|
-| `/api/heartbeat` | POST | Python monitor 心跳 |
-| `/api/monitor-status` | GET | Monitor + AI 狀態 |
-| `/api/stream-status` | GET | WebSocket 連線狀態 |
-
-### execute-trade 範例
-
-```bash
-# ENTRY 開倉
-curl -X POST http://localhost:8080/api/execute-trade \
-  -H "Content-Type: application/json" \
-  -d '{"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":95000,"stop_loss":93000,"take_profit":98000}'
-
-# DCA 補倉
-curl -X POST http://localhost:8080/api/execute-trade \
-  -d '{"action":"ENTRY","symbol":"BTCUSDT","is_dca":true,"entry_price":93000,"new_stop_loss":91000}'
-
-# 平倉 50% + 成本保護
-curl -X POST http://localhost:8080/api/execute-trade \
-  -d '{"action":"CLOSE","symbol":"BTCUSDT","close_ratio":0.5,"new_stop_loss":null}'
-
-# 全部平倉
-curl -X POST http://localhost:8080/api/execute-trade \
-  -d '{"action":"CLOSE","symbol":"BTCUSDT"}'
-```
-
----
-
-## 設定
-
-### 風控參數 (`application.yml`)
-
-```yaml
-binance:
-  risk:
-    risk-percent: 0.20            # 單筆風險比例 (20%)
-    max-position-usdt: 50000      # 單筆最大名目價值
-    max-daily-loss-usdt: 2000     # 每日虧損熔斷上限
-    max-dca-per-symbol: 3         # 同幣種最多 3 層
-    dca-risk-multiplier: 2.0      # 補倉 2R
-    fixed-leverage: 20            # 逐倉槓桿
-    allowed-symbols:
-      - BTCUSDT
-```
-
-### 帳戶規模建議
-
-| 帳戶 | risk-percent | max-daily-loss |
-|------|-------------|---------------|
-| 100~500 USDT | 10~20% | 200~500 |
-| 500~2,000 USDT | 10~20% | 500~1,000 |
-| 2,000~10,000 USDT | 5~20% | 1,000~3,000 |
-| 10,000+ USDT | 2~10% | 2,000~5,000 |
+| 認證 | JWT HttpOnly Cookie（Access 30min / Refresh 3天）+ SameSite=Strict |
+| RBAC | ADMIN / USER 角色，端點層級權限控制 |
+| Monitor | API Key（X-Api-Key）→ ROLE_ADMIN |
+| Rate Limiting | IP-based 多路徑限流（auth 10/min、trade 30/min、dashboard 60/min） |
+| 加密 | API Key: AES-256-GCM / 密碼: BCrypt |
+| Email 驗證 | OTP 驗證碼，註冊後啟用 |
+| 審計 | 登入/登出/密碼變更全記錄（IP + timestamp） |
 
 ---
 
 ## 技術棧
 
-| 元件 | 技術 |
+| 層級 | 技術 |
 |------|------|
-| 交易引擎 | Java 17 + Spring Boot 3.2.5 |
-| 認證 | Spring Security + JWT (JJWT 0.12.6) |
-| AI 解析 | Python 3 + Gemini 2.0 Flash |
-| 前端 | Next.js 14 + React + shadcn/ui |
-| 資料庫 | PostgreSQL 16 (Neon 雲端) + Flyway 遷移 |
-| API 通訊 | OkHttp + WebSocket |
-| 計費 | Stripe (Payment Links + Webhook) |
-| 加密 | AES-256-GCM (API Key) + BCrypt (密碼) |
-| 部署 | Docker Compose (Dev/Prod 分離) |
-| 測試 | JUnit 5 + Mockito — **614 tests passed** |
+| 後端 | Java 17 + Spring Boot 3.2.5 + Gradle |
+| 前端 | Next.js 14 + React + shadcn/ui + i18n（en/zh-TW/zh-CN） |
+| 資料庫 | PostgreSQL 16（Neon Serverless）+ Flyway 遷移 |
+| 訊息佇列 | RabbitMQ 3（非同步通知 + DLQ） |
+| AI | Gemini 2.0 Flash（訊號解析 + 交易顧問） |
+| 訂閱 | USDT TRC20 鏈上驗證（TronGrid API） |
+| 部署 | Docker Compose + Caddy + Cloudflare |
+| CI/CD | GitHub Actions（gitleaks → build → test → Docker → deploy） |
+| 測試 | JUnit 5 + Mockito — **1147+ tests passed** |
 
 ### 資料庫
 
-Flyway 管理 schema 遷移（7 個版本），`ddl-auto: validate` 確保 entity 與 DB 一致。
-
 | 表 | 說明 |
 |---|------|
-| `trades` | 交易主紀錄（入場/出場/盈虧/DCA/訊號來源） |
-| `trade_events` | 事件日誌（ENTRY/CLOSE/SL_LOST/FAIL_SAFE 等） |
-| `users` | 用戶帳號 |
-| `user_api_keys` | 加密 API Key |
-| `user_trade_settings` | per-user 交易參數 |
-| `user_discord_webhooks` | per-user Discord webhook |
-| `subscriptions` | Stripe 訂閱紀錄 |
-| `subscription_plans` | 方案定義 |
-| `payment_history` | 付款紀錄 |
+| `trades` / `trade_events` | 交易紀錄 + 事件日誌 |
+| `signals` | 訊號紀錄（去重用） |
+| `users` / `user_api_keys` | 帳號 + 加密 API Key |
+| `user_trade_settings` / `user_discord_webhooks` | per-user 交易參數 + Webhook |
+| `subscriptions` / `payment_history` | 訂閱 + USDT 付款紀錄 |
+| `referral_links` | 推薦碼 + 佣金追蹤 |
+| `audit_logs` | 安全審計紀錄 |
 
 ---
 
-## 開發路線圖
+## 快速開始
 
-| 狀態 | 項目 |
+```bash
+# 1. 環境變數
+cp .env.example .env    # 填入 API Keys
+
+# 2. Cloud 部署
+docker compose -f docker-compose.cloud.yml up -d --build
+
+# 3. Python Monitor（本地）
+cd discord-monitor && python3 -m src.main --config config.yml
+
+# 4. 驗證
+curl https://your-domain.com/api/health
+```
+
+### 關鍵環境變數
+
+| 變數 | 說明 |
 |------|------|
-| ✅ | 交易核心（開倉/平倉/風控/DCA/WebSocket/部分平倉） |
-| ✅ | Discord 監聽 + Gemini AI 解析 |
-| ✅ | 多用戶架構（userId 隔離/per-user config/廣播跟單/兩層去重） |
-| ✅ | 每日摘要 per-user 改造（per-user API Key 餘額/per-user webhook） |
-| ✅ | 認證系統（JWT + API Key + RBAC） |
-| ✅ | 用戶管理（加密 API Key + 交易參數 + Discord Webhook） |
-| ✅ | Dashboard API（績效分析/回撤/分組統計/20+ 指標） |
-| ✅ | 訂閱計費（Stripe Payment Links + Webhook） |
-| ✅ | AI 交易顧問（Gemini 定時分析） |
-| ✅ | Neon 雲端 DB + Flyway 遷移 |
-| ✅ | Docker Dev/Prod 環境分離 |
-| ✅ | Web Dashboard 前端 (Next.js + shadcn/ui) |
-| 📋 | RabbitMQ 非同步化（目前 Thread Pool 同步） |
-| 📋 | Per-user Binance WebSocket |
-| ✅ | VPS 部署（DigitalOcean + Caddy + Cloudflare） |
+| `BINANCE_API_KEY` / `SECRET_KEY` | 幣安 API |
+| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | PostgreSQL (Neon) |
+| `RABBITMQ_HOST` | RabbitMQ |
+| `MONITOR_API_KEY` | Python Monitor 認證 |
+| `JWT_SECRET` / `AES_ENCRYPTION_KEY` | 認證 / 加密 |
+| `MULTI_USER_ENABLED` | `true` = 多用戶 SaaS |
+
+---
+
+## 監控
+
+| 機制 | 說明 |
+|------|------|
+| 心跳 | Python Monitor 每 30 秒回報，>90 秒告警 |
+| WebSocket | Per-user Data Stream，斷線指數退避重連（1s→60s，20 次上限） |
+| 每日排程 | 07:55 殭屍清理 + 08:00 每日摘要（per-user） |
+| 健康檢查 | `/api/health`（輕量）+ `/api/health/deep`（DB + API 配額） |
+| AI 顧問 | Gemini 每日 6 次分析交易表現 |
+
+---
+
+## 開發狀態
+
+| 狀態 | 功能 |
+|------|------|
+| ✅ | 交易核心（開倉/平倉/DCA/部分平倉/Fail-Safe/10 層風控） |
+| ✅ | Discord CDP 監聽 + Gemini AI 解析 + 本地訊號佇列 |
+| ✅ | 多用戶 SaaS（廣播跟單/per-user 隔離/per-user WebSocket） |
+| ✅ | RabbitMQ 非同步通知（Discord + LINE，DLQ + 重試） |
+| ✅ | 認證系統（JWT HttpOnly + RBAC + Email 驗證 + Rate Limiting） |
+| ✅ | USDT TRC20 訂閱計費（鏈上驗證） |
+| ✅ | 推薦系統（邀請碼 + 佣金追蹤） |
+| ✅ | Web Dashboard（Next.js + i18n 三語系） |
+| ✅ | CI/CD（GitHub Actions → GHCR → DigitalOcean 自動部署） |
+| ✅ | 1147+ 後端測試 + 27 Python 測試 |
