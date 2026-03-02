@@ -48,6 +48,10 @@
 }
 
 :root {
+  --font-geist-sans: "Inter", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
+    "Segoe UI", "Helvetica Neue", Arial, system-ui, -apple-system, sans-serif;
+  --font-geist-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
