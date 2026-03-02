@@ -119,7 +119,8 @@ public class DashboardService {
                 log.warn("用戶 {} 未設定 Binance API Key，無法查詢帳戶餘額", userId);
                 return 0;
             }
-            log.debug("用戶 {} 查詢帳戶餘額（per-user key）", userId);
+            String apiKeyPrefix = keysOpt.get().apiKey().substring(0, 8);
+            log.debug("用戶 {} 查詢帳戶餘額（per-user key, prefix={}...）", userId, apiKeyPrefix);
             BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
             try {
                 double balance = binanceFuturesService.getAvailableBalance();

@@ -167,7 +167,11 @@ public class BinanceFuturesService {
             for (JsonElement elem : balances) {
                 JsonObject bal = elem.getAsJsonObject();
                 if ("USDT".equals(bal.get("asset").getAsString())) {
-                    return bal.get("availableBalance").getAsDouble();
+                    double available = bal.get("availableBalance").getAsDouble();
+                    double wallet = bal.get("balance").getAsDouble();
+                    log.debug("Binance USDT balance 原始回傳: walletBalance={}, availableBalance={}, crossUnPnl={}",
+                            wallet, available, bal.get("crossUnPnl"));
+                    return available;
                 }
             }
             throw new RuntimeException("找不到 USDT 餘額");
