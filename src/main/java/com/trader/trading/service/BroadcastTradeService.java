@@ -401,7 +401,6 @@ public class BroadcastTradeService {
         }
 
         sb.append("用戶: ").append(userDisplay);
-        sb.append("\n訊號來源: 廣播");
 
         // AI 評分（若已就緒）
         if (score != null) {

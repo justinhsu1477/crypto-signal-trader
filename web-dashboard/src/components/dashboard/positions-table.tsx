@@ -40,7 +40,6 @@ export function PositionsTable({ positions }: PositionsTableProps) {
                 <TableHead className="text-right">Entry Price</TableHead>
                 <TableHead className="text-right">Stop Loss</TableHead>
                 <TableHead className="text-center">DCA Count</TableHead>
-                <TableHead>Signal Source</TableHead>
                 <TableHead>Entry Time</TableHead>
               </TableRow>
             </TableHeader>
@@ -68,9 +67,6 @@ export function PositionsTable({ positions }: PositionsTableProps) {
                   </TableCell>
                   <TableCell className="text-center">
                     {pos.dcaCount ?? "\u2014"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {pos.signalSource ?? "\u2014"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(pos.entryTime)}
