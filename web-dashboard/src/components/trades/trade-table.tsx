@@ -79,7 +79,6 @@ export function TradeTable({
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead className="text-right">Net P&L</TableHead>
               <TableHead>Exit Reason</TableHead>
-              <TableHead>Signal Source</TableHead>
               <TableHead className="text-center">DCA</TableHead>
               <TableHead>Entry Time</TableHead>
               <TableHead>Exit Time</TableHead>
@@ -89,7 +88,7 @@ export function TradeTable({
           <TableBody>
             {trades.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                   {t("trades.noTrades")}
                 </TableCell>
               </TableRow>
@@ -115,7 +114,6 @@ export function TradeTable({
                     {formatCurrency(trade.netProfit)}
                   </TableCell>
                   <TableCell>{trade.exitReason ?? "\u2014"}</TableCell>
-                  <TableCell>{trade.signalSource ?? "\u2014"}</TableCell>
                   <TableCell className="text-center">{trade.dcaCount ?? 0}</TableCell>
                   <TableCell>{formatDateTime(trade.entryTime)}</TableCell>
                   <TableCell>{formatDateTime(trade.exitTime)}</TableCell>

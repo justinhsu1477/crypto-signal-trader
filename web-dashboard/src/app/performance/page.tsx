@@ -7,7 +7,7 @@ import { PnlChart } from "@/components/performance/pnl-chart";
 import { SymbolStats } from "@/components/performance/symbol-stats";
 import { SideComparison } from "@/components/performance/side-comparison";
 import { ExitReasonChart } from "@/components/performance/exit-reason-chart";
-import { SignalRanking } from "@/components/performance/signal-ranking";
+
 import { TimeStats } from "@/components/performance/time-stats";
 import { DayOfWeekChart } from "@/components/performance/day-of-week-chart";
 import { DcaAnalysis } from "@/components/performance/dca-analysis";
@@ -113,12 +113,9 @@ export default function PerformancePage() {
         </div>
       </ErrorBoundary>
 
-      {/* Exit Reason + Signal Ranking */}
+      {/* Exit Reason */}
       <ErrorBoundary>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <ExitReasonChart data={data.exitReasonBreakdown} />
-          <SignalRanking data={data.signalSourceRanking} />
-        </div>
+        <ExitReasonChart data={data.exitReasonBreakdown} />
       </ErrorBoundary>
 
       {/* Time Stats */}

@@ -563,16 +563,6 @@ public class TradeController {
             }
         }
 
-        // 顯示訊號來源
-        if (signal.getSource() != null) {
-            SignalSource src = signal.getSource();
-            sb.append("來源: ").append(src.getPlatform());
-            if (src.getAuthorName() != null) {
-                sb.append(" @").append(src.getAuthorName());
-            }
-            sb.append("\n");
-        }
-
         return sb.toString();
     }
 
