@@ -18,8 +18,9 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.trader.shared.config.AppConstants;
+
 import java.io.IOException;
-import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 
@@ -116,7 +117,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             return false;
                         }
                         var tokenIssuedAt = iat.toInstant()
-                                .atZone(ZoneId.systemDefault())
+                                .atZone(AppConstants.ZONE_ID)
                                 .toLocalDateTime();
                         return tokenIssuedAt.isBefore(user.getPasswordChangedAt());
                     })

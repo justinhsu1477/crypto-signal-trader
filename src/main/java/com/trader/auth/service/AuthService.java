@@ -13,7 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.ZoneId;
+import com.trader.shared.config.AppConstants;
+
 import java.util.Date;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -222,7 +223,7 @@ public class AuthService {
             Date iat = jwtService.extractIssuedAt(refreshToken);
             if (iat != null) {
                 var tokenIssuedAt = iat.toInstant()
-                        .atZone(ZoneId.systemDefault())
+                        .atZone(AppConstants.ZONE_ID)
                         .toLocalDateTime();
                 if (tokenIssuedAt.isBefore(user.getPasswordChangedAt())) {
                     log.warn("Refresh Token 已因密碼變更而失效: userId={}", userId);
