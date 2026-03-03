@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +29,8 @@ class AdminUserInitializerTest {
         when(passwordEncoder.encode(any())).thenReturn("$2a$encoded");
 
         initializer = new AdminUserInitializer(userRepository, passwordEncoder);
+        ReflectionTestUtils.setField(initializer, "adminEmail", "admin@hookfi.com");
+        ReflectionTestUtils.setField(initializer, "adminPassword", "Admin1234!");
     }
 
     @Test
@@ -84,5 +87,18 @@ class AdminUserInitializerTest {
         initializer.ensureAdminExists();
 
         verify(passwordEncoder).encode("Admin1234!");
+    }
+
+    @Test
+    @DisplayName("未設定 bootstrap 帳密 → 跳過建立")
+    void skipsWhenBootstrapCredentialsMissing() {
+        ReflectionTestUtils.setField(initializer, "adminEmail", "");
+        ReflectionTestUtils.setField(initializer, "adminPassword", "");
+        when(userRepository.existsByRole(User.Role.ADMIN)).thenReturn(false);
+
+        initializer.ensureAdminExists();
+
+        verify(userRepository, never()).save(any());
+        verify(passwordEncoder, never()).encode(any());
     }
 }
