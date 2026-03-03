@@ -20,4 +20,8 @@ logging:
     com.trader: DEBUG
 
 jwt:
+  secret: dev-only-jwt-secret-not-for-production-must-be-at-least-256-bits-long!!
   cookie-secure: false
+
+encryption:
+  aes-key: dev-only-aes-key-not-for-prod!!

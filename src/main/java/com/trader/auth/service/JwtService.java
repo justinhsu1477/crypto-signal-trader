@@ -146,6 +146,22 @@ public class JwtService {
     }
 
     /**
+     * 從 Token 中提取 type claim（refresh token 帶 "refresh"，access token 無此 claim）
+     *
+     * @param token JWT token
+     * @return type string, 或 null
+     */
+    public String extractType(String token) {
+        Object type = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .get("type");
+        return type != null ? type.toString() : null;
+    }
+
+    /**
      * 取得 Token 過期時間（毫秒）
      */
     public long getExpirationMs() {

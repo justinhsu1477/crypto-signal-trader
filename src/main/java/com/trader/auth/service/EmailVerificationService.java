@@ -37,7 +37,7 @@ public class EmailVerificationService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${email.otp-hash-secret:${jwt.secret}}")
-    private String otpHashSecret = "dev-otp-secret";
+    private String otpHashSecret;
 
     /**
      * 產生 OTP 並發送 Email
