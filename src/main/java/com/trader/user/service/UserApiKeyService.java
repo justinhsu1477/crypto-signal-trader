@@ -1,5 +1,6 @@
 package com.trader.user.service;
 
+import com.trader.shared.exception.AesDecryptionException;
 import com.trader.shared.util.AesEncryptionUtil;
 import com.trader.user.entity.UserApiKey;
 import com.trader.user.repository.UserApiKeyRepository;
@@ -54,6 +55,9 @@ public class UserApiKeyService {
             String apiKey = aesEncryptionUtil.decrypt(entity.getEncryptedApiKey());
             String secretKey = aesEncryptionUtil.decrypt(entity.getEncryptedSecretKey());
             return Optional.of(new BinanceKeys(apiKey, secretKey));
+        } catch (AesDecryptionException e) {
+            log.error("用戶 {} API Key 解密失敗 [{}]: {}", userId, e.getErrorType(), e.getMessage());
+            return Optional.empty();
         } catch (Exception e) {
             log.error("用戶 {} API Key 解密失敗: {}", userId, e.getMessage());
             return Optional.empty();
@@ -100,6 +104,8 @@ public class UserApiKeyService {
                 String apiKey = aesEncryptionUtil.decrypt(entity.getEncryptedApiKey());
                 String secretKey = aesEncryptionUtil.decrypt(entity.getEncryptedSecretKey());
                 result.put(entity.getUserId(), new BinanceKeys(apiKey, secretKey));
+            } catch (AesDecryptionException e) {
+                log.error("用戶 {} API Key 解密失敗 [{}]: {}", entity.getUserId(), e.getErrorType(), e.getMessage());
             } catch (Exception e) {
                 log.error("用戶 {} API Key 解密失敗: {}", entity.getUserId(), e.getMessage());
             }

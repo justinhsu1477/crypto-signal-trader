@@ -1,12 +1,13 @@
 package com.trader.service;
 
+import com.trader.shared.exception.AesDecryptionException;
+import com.trader.shared.exception.AesDecryptionException.ErrorType;
 import com.trader.shared.util.AesEncryptionUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.*;
@@ -18,11 +19,8 @@ class AesEncryptionUtilTest {
     private AesEncryptionUtil aesEncryptionUtil;
 
     @BeforeEach
-    void setUp() throws Exception {
-        aesEncryptionUtil = new AesEncryptionUtil();
-        Field field = AesEncryptionUtil.class.getDeclaredField("aesKey");
-        field.setAccessible(true);
-        field.set(aesEncryptionUtil, TEST_AES_KEY);
+    void setUp() {
+        aesEncryptionUtil = new AesEncryptionUtil(TEST_AES_KEY);
     }
 
     @Nested
@@ -107,7 +105,7 @@ class AesEncryptionUtilTest {
     class TamperDetection {
 
         @Test
-        @DisplayName("修改密文 byte → 解密拋出 RuntimeException")
+        @DisplayName("修改密文 byte → 解密拋出 AesDecryptionException (AUTH_TAG_MISMATCH)")
         void tamperedCiphertext_throwsException() {
             String encrypted = aesEncryptionUtil.encrypt("secret-key");
             byte[] decoded = Base64.getDecoder().decode(encrypted);
@@ -117,17 +115,52 @@ class AesEncryptionUtilTest {
             String tampered = Base64.getEncoder().encodeToString(decoded);
 
             assertThatThrownBy(() -> aesEncryptionUtil.decrypt(tampered))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("解密失敗");
+                    .isInstanceOf(AesDecryptionException.class)
+                    .satisfies(e -> assertThat(((AesDecryptionException) e).getErrorType())
+                            .isEqualTo(ErrorType.AUTH_TAG_MISMATCH));
         }
 
         @Test
-        @DisplayName("垃圾 Base64 字串 → 解密拋出 RuntimeException")
+        @DisplayName("垃圾 Base64 字串 → 解密拋出 AesDecryptionException (DATA_CORRUPTED)")
         void garbageBase64_throwsException() {
             String garbage = Base64.getEncoder().encodeToString("short".getBytes());
 
             assertThatThrownBy(() -> aesEncryptionUtil.decrypt(garbage))
-                    .isInstanceOf(RuntimeException.class);
+                    .isInstanceOf(AesDecryptionException.class)
+                    .satisfies(e -> assertThat(((AesDecryptionException) e).getErrorType())
+                            .isEqualTo(ErrorType.DATA_CORRUPTED));
+        }
+
+        @Test
+        @DisplayName("非 Base64 字串 → 解密拋出 AesDecryptionException (DATA_CORRUPTED)")
+        void invalidBase64_throwsDataCorrupted() {
+            assertThatThrownBy(() -> aesEncryptionUtil.decrypt("!!!not-base64!!!"))
+                    .isInstanceOf(AesDecryptionException.class)
+                    .satisfies(e -> assertThat(((AesDecryptionException) e).getErrorType())
+                            .isEqualTo(ErrorType.DATA_CORRUPTED));
+        }
+
+        @Test
+        @DisplayName("用不同 key 解密 → AUTH_TAG_MISMATCH")
+        void wrongKey_throwsAuthTagMismatch() {
+            String encrypted = aesEncryptionUtil.encrypt("my-secret");
+
+            // 用不同的 key 建構新的 util
+            AesEncryptionUtil wrongKeyUtil = new AesEncryptionUtil("98765432109876543210987654321098");
+
+            assertThatThrownBy(() -> wrongKeyUtil.decrypt(encrypted))
+                    .isInstanceOf(AesDecryptionException.class)
+                    .satisfies(e -> assertThat(((AesDecryptionException) e).getErrorType())
+                            .isEqualTo(ErrorType.AUTH_TAG_MISMATCH));
+        }
+
+        @Test
+        @DisplayName("AesDecryptionException 包含 errorType getter")
+        void exceptionContainsErrorType() {
+            AesDecryptionException ex = new AesDecryptionException(
+                    ErrorType.INVALID_KEY, "test", null);
+            assertThat(ex.getErrorType()).isEqualTo(ErrorType.INVALID_KEY);
+            assertThat(ex.getMessage()).isEqualTo("test");
         }
     }
 
