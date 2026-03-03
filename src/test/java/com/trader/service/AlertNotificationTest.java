@@ -13,6 +13,7 @@ import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.trading.validation.TradeSignalValidator;
 import okhttp3.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,7 +70,8 @@ class AlertNotificationTest {
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, mockTradeConfigResolver,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
+                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                    new TradeSignalValidator(), null));
 
             // 餘額查詢 + 所有前置檢查通過
             doReturn(1000.0).when(service).getAvailableBalance();
@@ -128,7 +130,8 @@ class AlertNotificationTest {
             BinanceFuturesService service = spy(new BinanceFuturesService(
                     null, null, riskConfig, mockTradeRecord, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
+                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                    new TradeSignalValidator(), null));
 
             // 有持倉
             doReturn(0.25).when(service).getCurrentPositionAmount(anyString());
@@ -188,7 +191,8 @@ class AlertNotificationTest {
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
+                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                    new TradeSignalValidator(), null);
 
             // getExchangeInfo 會呼叫 executeRequest → IOException
             assertThatThrownBy(() -> service.getExchangeInfo())
@@ -225,7 +229,8 @@ class AlertNotificationTest {
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
+                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                    new TradeSignalValidator(), null);
 
             // HTTP 非 200 應拋出 RuntimeException（包含 Binance 錯誤訊息）
             assertThatThrownBy(() -> service.getExchangeInfo())
@@ -271,7 +276,8 @@ class AlertNotificationTest {
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
+                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                    new TradeSignalValidator(), null);
 
             OrderResult result = service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25);
 
@@ -299,7 +305,8 @@ class AlertNotificationTest {
             BinanceFuturesService service = new BinanceFuturesService(
                     mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
                     new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter());
+                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                    new TradeSignalValidator(), null);
 
             // 全部重試失敗 → 拋 RuntimeException
             assertThatThrownBy(() -> service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25))

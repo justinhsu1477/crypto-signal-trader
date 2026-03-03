@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats } from "@/lib/api";
-import type { AdminSystemOverview, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse } from "@/types";
+import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats, getAdminMetrics } from "@/lib/api";
+import type { AdminSystemOverview, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse, AdminMetricsResponse } from "@/types";
 import {
   Users,
   UserCheck,
@@ -37,6 +37,7 @@ export default function AdminOverviewPage() {
   const [health, setHealth] = useState<SystemHealthResponse | null>(null);
   const [stream, setStream] = useState<StreamStatusResponse | null>(null);
   const [dbStats, setDbStats] = useState<DatabaseStatsResponse | null>(null);
+  const [metrics, setMetrics] = useState<AdminMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [dbTablesOpen, setDbTablesOpen] = useState(false);
@@ -47,11 +48,13 @@ export default function AdminOverviewPage() {
       getSystemHealth().catch(() => null),
       getAdminStreamStatus().catch(() => null),
       getAdminDatabaseStats().catch(() => null),
-    ]).then(([overview, h, s, db]) => {
+      getAdminMetrics().catch(() => null),
+    ]).then(([overview, h, s, db, m]) => {
       setData(overview);
       setHealth(h);
       setStream(s);
       setDbStats(db);
+      setMetrics(m);
       setLoading(false);
     });
   }, []);
@@ -286,6 +289,96 @@ export default function AdminOverviewPage() {
           </div>
         ))}
       </div>
+
+      {/* System Metrics */}
+      {metrics && (
+        <div className="rounded-xl border border-border bg-card">
+          <div className="p-4 border-b border-border">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              📊 {t("adminMetrics")}
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
+            {/* Order Success Rate */}
+            <div className="p-4 md:border-r border-b md:border-b-0 border-border">
+              <div className="text-xs text-muted-foreground mb-1">{t("metricsOrders")}</div>
+              <div className="text-2xl font-bold">
+                {metrics.orders.total > 0 ? (
+                  <span className={metrics.orders.successRate >= 90 ? "text-green-500" : metrics.orders.successRate >= 70 ? "text-yellow-500" : "text-red-500"}>
+                    {metrics.orders.successRate}%
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </div>
+              <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                <div className="flex justify-between"><span>{t("metricsSuccess")}</span><span className="font-mono">{metrics.orders.success}</span></div>
+                <div className="flex justify-between"><span>{t("metricsFailed")}</span><span className="font-mono">{metrics.orders.failed}</span></div>
+              </div>
+            </div>
+
+            {/* Signals Processed */}
+            <div className="p-4 md:border-r border-b md:border-b-0 border-border">
+              <div className="text-xs text-muted-foreground mb-1">{t("metricsSignals")}</div>
+              <div className="text-2xl font-bold">{metrics.signals.total}</div>
+              <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                {Object.entries(metrics.signals.byType).map(([type, count]) => (
+                  <div key={type} className="flex justify-between">
+                    <span>{type}</span><span className="font-mono">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* API Latency */}
+            <div className="p-4 border-b md:border-b-0 border-border">
+              <div className="text-xs text-muted-foreground mb-1">{t("metricsApi")}</div>
+              <div className="text-2xl font-bold">
+                {metrics.api.totalCalls > 0 ? (
+                  <span>{metrics.api.avgLatencyMs}ms</span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </div>
+              <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                <div className="flex justify-between"><span>{t("metricsP99")}</span><span className="font-mono">{metrics.api.p99LatencyMs}ms</span></div>
+                <div className="flex justify-between"><span>{t("metricsCalls")}</span><span className="font-mono">{metrics.api.totalCalls}</span></div>
+              </div>
+            </div>
+
+            {/* Notifications */}
+            <div className="p-4 md:border-r border-b md:border-b-0 border-border">
+              <div className="text-xs text-muted-foreground mb-1">{t("metricsNotifications")}</div>
+              <div className="text-2xl font-bold">{metrics.notifications.total}</div>
+              <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                {Object.entries(metrics.notifications.byChannel).map(([ch, count]) => (
+                  <div key={ch} className="flex justify-between">
+                    <span className="capitalize">{ch}</span><span className="font-mono">{count}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between"><span>{t("metricsFailRate")}</span><span className="font-mono">{metrics.notifications.failRate}%</span></div>
+              </div>
+            </div>
+
+            {/* System Status */}
+            <div className="p-4 md:col-span-2">
+              <div className="text-xs text-muted-foreground mb-1">{t("metricsSystem")}</div>
+              <div className="text-2xl font-bold">
+                {(() => {
+                  const s = metrics.system.uptimeSeconds;
+                  const d = Math.floor(s / 86400);
+                  const h = Math.floor((s % 86400) / 3600);
+                  const m = Math.floor((s % 3600) / 60);
+                  return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+                })()}
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                <div className="flex justify-between"><span>{t("metricsUptime")}</span><span className="font-mono">{metrics.system.uptimeSeconds.toLocaleString()}s</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* User Summaries Table */}
       <div className="rounded-xl border border-border bg-card">

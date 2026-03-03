@@ -4,6 +4,7 @@ import com.trader.notification.config.RabbitMQConfig;
 import com.trader.notification.model.NotificationCategory;
 import com.trader.notification.model.NotificationMessage;
 import com.trader.notification.model.NotificationMessage.NotificationType;
+import com.trader.shared.service.MetricsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -41,6 +42,7 @@ public class CompositeNotificationService implements NotificationService {
     private final DiscordWebhookService discordService;
     private final LineNotificationService lineService;
     private final RabbitTemplate rabbitTemplate;
+    private final MetricsService metricsService;
 
     // ===== Producer 方法：發訊息到 MQ =====
 
@@ -158,10 +160,21 @@ public class CompositeNotificationService implements NotificationService {
     private void publishOrFallback(String routingKey, NotificationMessage msg, Runnable fallback) {
         try {
             rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, routingKey, msg);
+            // MQ 發送成功 → 記錄指標（實際派送成功/失敗由 Consumer 記錄）
+            recordNotificationMetrics(msg, true);
         } catch (Exception e) {
             log.warn("RabbitMQ 發送失敗，降級回直接呼叫: {}", e.getMessage());
+            recordNotificationMetrics(msg, false);
             fallback.run();
         }
+    }
+
+    /** 記錄通知指標 — 根據 msg 中的 type 推斷頻道 */
+    private void recordNotificationMetrics(NotificationMessage msg, boolean success) {
+        if (metricsService == null) return;
+        // 簡化：system/admin 訊息算 discord+line 各一次，user 訊息算 per-user 一次
+        String channel = msg.getType() == NotificationType.USER ? "user" : "system";
+        metricsService.recordNotification(channel, success);
     }
 
     /**

@@ -31,7 +31,7 @@ class CompositeNotificationServiceTest {
         discordService = mock(DiscordWebhookService.class);
         lineService = mock(LineNotificationService.class);
         rabbitTemplate = mock(RabbitTemplate.class);
-        composite = new CompositeNotificationService(discordService, lineService, rabbitTemplate);
+        composite = new CompositeNotificationService(discordService, lineService, rabbitTemplate, null);
     }
 
     // ===== 正常路徑：發到 MQ =====

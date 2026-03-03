@@ -35,6 +35,10 @@ dependencies {
     // Stripe 訂閱計費
     implementation 'com.stripe:stripe-java:28.2.0'
 
+    // Actuator + Micrometer（Observability — 系統指標 + Prometheus）
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
     // RabbitMQ 訊息佇列（通知非同步化 + 重試 + 持久化）
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
 

@@ -9,6 +9,7 @@ import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.*;
+import com.trader.trading.validation.TradeSignalValidator;
 import com.trader.user.service.UserApiKeyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
@@ -62,7 +63,8 @@ class SymbolFallbackTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new MultiUserConfig(), new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, new StartOfDayBalanceCache(), new com.trader.shared.util.BinanceApiRateLimiter()));
+                mockTradeConfigResolver, new StartOfDayBalanceCache(), new com.trader.shared.util.BinanceApiRateLimiter(),
+                new TradeSignalValidator(), null));
     }
 
     // ==================== CLOSE Symbol Fallback ====================

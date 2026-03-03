@@ -8,6 +8,7 @@ import com.trader.dashboard.dto.DashboardOverview;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
+import com.trader.shared.service.MetricsService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class AdminDashboardController {
     private final DashboardService dashboardService;
     private final UserRepository userRepository;
     private final DataSource dataSource;
+    private final MetricsService metricsService;
 
     /**
      * 系統全域概覽 — 所有用戶匯總 + per-user 摘要
@@ -197,5 +199,13 @@ public class AdminDashboardController {
             log.error("查詢資料庫統計失敗: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    /**
+     * 系統運行指標 — Micrometer 指標摘要（下單/訊號/通知/API延遲）
+     */
+    @GetMapping("/metrics")
+    public ResponseEntity<Map<String, Object>> getMetrics() {
+        return ResponseEntity.ok(metricsService.getMetricsSummary());
     }
 }

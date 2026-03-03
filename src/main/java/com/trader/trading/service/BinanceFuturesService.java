@@ -18,6 +18,8 @@ import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.BinanceApiRateLimiter;
 import com.trader.shared.util.BinanceSignatureUtil;
+import com.trader.shared.service.MetricsService;
+import com.trader.trading.validation.TradeSignalValidator;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
@@ -51,6 +54,8 @@ public class BinanceFuturesService {
     private final TradeConfigResolver tradeConfigResolver;
     private final StartOfDayBalanceCache startOfDayBalanceCache;
     private final BinanceApiRateLimiter binanceApiRateLimiter;
+    private final TradeSignalValidator tradeSignalValidator;
+    private final MetricsService metricsService;  // nullable in tests
     private final Gson gson = new Gson();
 
     /**
@@ -75,7 +80,9 @@ public class BinanceFuturesService {
                                   UserApiKeyService userApiKeyService,
                                   TradeConfigResolver tradeConfigResolver,
                                   StartOfDayBalanceCache startOfDayBalanceCache,
-                                  BinanceApiRateLimiter binanceApiRateLimiter) {
+                                  BinanceApiRateLimiter binanceApiRateLimiter,
+                                  TradeSignalValidator tradeSignalValidator,
+                                  MetricsService metricsService) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.riskConfig = riskConfig;
@@ -89,6 +96,8 @@ public class BinanceFuturesService {
         this.tradeConfigResolver = tradeConfigResolver;
         this.startOfDayBalanceCache = startOfDayBalanceCache;
         this.binanceApiRateLimiter = binanceApiRateLimiter;
+        this.tradeSignalValidator = tradeSignalValidator;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -350,8 +359,14 @@ public class BinanceFuturesService {
         params.put("newClientOrderId", generateClientOrderId("LMT"));
 
         log.info("下限價單: {} {} {} @ {}", symbol, side, quantity, price);
+        long start = System.currentTimeMillis();
         String response = sendSignedPostWithRetry(endpoint, params, "newClientOrderId");
-        return parseOrderResponse(response);
+        OrderResult result = parseOrderResponse(response);
+        if (metricsService != null) {
+            metricsService.recordApiLatency("placeLimitOrder", System.currentTimeMillis() - start);
+            metricsService.recordOrder("LIMIT", result.isSuccess());
+        }
+        return result;
     }
 
     public OrderResult placeMarketOrder(String symbol, String side, double quantity) {
@@ -365,8 +380,14 @@ public class BinanceFuturesService {
         params.put("newClientOrderId", generateClientOrderId("MKT"));
 
         log.info("下市價單: {} {} {}", symbol, side, quantity);
+        long start = System.currentTimeMillis();
         String response = sendSignedPostWithRetry(endpoint, params, "newClientOrderId");
-        return parseOrderResponse(response);
+        OrderResult result = parseOrderResponse(response);
+        if (metricsService != null) {
+            metricsService.recordApiLatency("placeMarketOrder", System.currentTimeMillis() - start);
+            metricsService.recordOrder("MARKET", result.isSuccess());
+        }
+        return result;
     }
 
     public OrderResult placeStopLoss(String symbol, String side, double stopPrice, double quantity) {
@@ -382,9 +403,15 @@ public class BinanceFuturesService {
         params.put("clientAlgoId", generateClientOrderId("SL"));
 
         log.info("設定止損 (Algo): {} {} triggerPrice={}", symbol, side, stopPrice);
+        long start = System.currentTimeMillis();
         String response = sendSignedPostWithRetry(endpoint, params, "clientAlgoId");
-        return parseAlgoOrderResponse(response, symbol, side, "STOP_MARKET", stopPrice,
+        OrderResult result = parseAlgoOrderResponse(response, symbol, side, "STOP_MARKET", stopPrice,
                 Double.parseDouble(formattedQty));
+        if (metricsService != null) {
+            metricsService.recordApiLatency("placeStopLoss", System.currentTimeMillis() - start);
+            metricsService.recordOrder("SL", result.isSuccess());
+        }
+        return result;
     }
 
     public OrderResult placeTakeProfit(String symbol, String side, double stopPrice, double quantity) {
@@ -400,9 +427,15 @@ public class BinanceFuturesService {
         params.put("clientAlgoId", generateClientOrderId("TP"));
 
         log.info("設定止盈 (Algo): {} {} triggerPrice={}", symbol, side, stopPrice);
+        long start = System.currentTimeMillis();
         String response = sendSignedPostWithRetry(endpoint, params, "clientAlgoId");
-        return parseAlgoOrderResponse(response, symbol, side, "TAKE_PROFIT_MARKET", stopPrice,
+        OrderResult result = parseAlgoOrderResponse(response, symbol, side, "TAKE_PROFIT_MARKET", stopPrice,
                 Double.parseDouble(formattedQty));
+        if (metricsService != null) {
+            metricsService.recordApiLatency("placeTakeProfit", System.currentTimeMillis() - start);
+            metricsService.recordOrder("TP", result.isSuccess());
+        }
+        return result;
     }
 
     public String cancelOrder(String symbol, long orderId) {
@@ -555,6 +588,18 @@ public class BinanceFuturesService {
      * 7. Fail-Safe: SL 失敗則取消入場單
      */
     public List<OrderResult> executeSignal(TradeSignal signal) {
+      // 快速驗證：在取得 symbol lock 前攔截無效訊號，防止 NPE 與除以零
+      Optional<String> validationError = tradeSignalValidator.validate(signal);
+      if (validationError.isPresent()) {
+          log.warn("訊號驗證失敗: {}", validationError.get());
+          return List.of(OrderResult.fail("訊號驗證失敗: " + validationError.get()));
+      }
+
+      // 記錄訊號指標
+      if (metricsService != null) {
+          metricsService.recordSignal(signal.getSignalType().name());
+      }
+
       ReentrantLock lock = symbolLockRegistry.getLock(signal.getSymbol());
       lock.lock();
       try {

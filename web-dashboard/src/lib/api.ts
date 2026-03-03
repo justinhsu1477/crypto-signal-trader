@@ -317,6 +317,14 @@ export async function saveApiKey(data: SaveApiKeyRequest): Promise<{ message: st
   });
 }
 
+// ==================== Account Deletion ====================
+
+export async function deleteAccount(): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/user/account", {
+    method: "DELETE",
+  });
+}
+
 // ==================== Dashboard ====================
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
@@ -653,6 +661,14 @@ export async function getAdminStreamStatus(): Promise<StreamStatusResponse> {
 
 export async function getAdminDatabaseStats(): Promise<DatabaseStatsResponse> {
   return request<DatabaseStatsResponse>("/api/admin/dashboard/database-stats");
+}
+
+// ─── Admin Metrics ───
+
+import type { AdminMetricsResponse } from "@/types";
+
+export async function getAdminMetrics(): Promise<AdminMetricsResponse> {
+  return request<AdminMetricsResponse>("/api/admin/dashboard/metrics");
 }
 
 // ─── Admin Announcements ───
