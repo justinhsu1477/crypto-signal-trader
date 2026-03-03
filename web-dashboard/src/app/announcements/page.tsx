@@ -1,46 +1,39 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAnnouncements, markAnnouncementRead, getUnreadAnnouncementCount } from "@/lib/api";
+import { getAnnouncements, markAnnouncementRead } from "@/lib/api";
 import type { AnnouncementResponse, AnnouncementListResponse } from "@/types";
 import { Bell, ChevronLeft, ChevronRight } from "lucide-react";
+import useSWR from "swr";
 
 export default function AnnouncementsPage() {
   const { t } = useT();
-  const [data, setData] = useState<AnnouncementListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const pageSize = 10;
 
-  const fetchData = useCallback(() => {
-    setLoading(true);
-    getAnnouncements(page, pageSize)
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [page]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const { data, mutate, isLoading } = useSWR<AnnouncementListResponse>(
+    ["announcements", page],
+    () => getAnnouncements(page, pageSize)
+  );
 
   async function handleCardClick(ann: AnnouncementResponse) {
     if (ann.isRead) return;
     try {
       await markAnnouncementRead(ann.id);
-      // Update local state
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              announcements: prev.announcements.map((a) =>
-                a.id === ann.id ? { ...a, isRead: true } : a
-              ),
-              unreadCount: Math.max(0, prev.unreadCount - 1),
-            }
-          : prev
-      );
+      // Optimistic update
+      if (data) {
+        mutate(
+          {
+            ...data,
+            announcements: data.announcements.map((a) =>
+              a.id === ann.id ? { ...a, isRead: true } : a
+            ),
+            unreadCount: Math.max(0, data.unreadCount - 1),
+          },
+          false
+        );
+      }
     } catch {
       // silent fail
     }
@@ -88,7 +81,7 @@ export default function AnnouncementsPage() {
     return map[pri] || "border-l-gray-500";
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />

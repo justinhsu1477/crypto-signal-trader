@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import {
   getAdminAnnouncements,
@@ -24,6 +24,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import useSWR from "swr";
 
 type DialogMode = "create" | "edit" | null;
 
@@ -33,8 +34,10 @@ const CHANNEL_OPTIONS = ["ALL", "WEBSOCKET", "DISCORD", "LINE"] as const;
 
 export default function AdminAnnouncementsPage() {
   const { t } = useT();
-  const [announcements, setAnnouncements] = useState<AnnouncementResponse[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: announcements = [], isLoading: loading, mutate } = useSWR<AnnouncementResponse[]>(
+    "admin-announcements",
+    getAdminAnnouncements
+  );
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -45,18 +48,6 @@ export default function AdminAnnouncementsPage() {
   const [formCategory, setFormCategory] = useState<string>("GENERAL");
   const [formPriority, setFormPriority] = useState<string>("NORMAL");
   const [formChannels, setFormChannels] = useState<string>("ALL");
-
-  const fetchAnnouncements = useCallback(() => {
-    setLoading(true);
-    getAdminAnnouncements()
-      .then(setAnnouncements)
-      .catch(() => toast.error(t("announcement.operationFailed")))
-      .finally(() => setLoading(false));
-  }, [t]);
-
-  useEffect(() => {
-    fetchAnnouncements();
-  }, [fetchAnnouncements]);
 
   function resetForm() {
     setFormTitle("");
@@ -108,7 +99,7 @@ export default function AdminAnnouncementsPage() {
         toast.success(t("announcement.createSuccess"));
       }
       closeDialog();
-      fetchAnnouncements();
+      mutate();
     } catch {
       toast.error(t("announcement.operationFailed"));
     } finally {
@@ -129,7 +120,7 @@ export default function AdminAnnouncementsPage() {
       await publishAnnouncement(saved.id);
       toast.success(t("announcement.publishSuccess"));
       closeDialog();
-      fetchAnnouncements();
+      mutate();
     } catch {
       toast.error(t("announcement.operationFailed"));
     } finally {
@@ -142,7 +133,7 @@ export default function AdminAnnouncementsPage() {
     try {
       await publishAnnouncement(id);
       toast.success(t("announcement.publishSuccess"));
-      fetchAnnouncements();
+      mutate();
     } catch {
       toast.error(t("announcement.operationFailed"));
     }
@@ -153,7 +144,7 @@ export default function AdminAnnouncementsPage() {
     try {
       await archiveAnnouncement(id);
       toast.success(t("announcement.archiveSuccess"));
-      fetchAnnouncements();
+      mutate();
     } catch {
       toast.error(t("announcement.operationFailed"));
     }
@@ -164,7 +155,7 @@ export default function AdminAnnouncementsPage() {
     try {
       await deleteAnnouncement(id);
       toast.success(t("announcement.deleteSuccess"));
-      fetchAnnouncements();
+      mutate();
     } catch {
       toast.error(t("announcement.operationFailed"));
     }

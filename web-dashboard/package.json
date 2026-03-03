@@ -22,6 +22,7 @@
     "recharts": "^3.7.0",
     "sockjs-client": "^1.6.1",
     "sonner": "^2.0.7",
+    "swr": "^2.4.1",
     "tailwind-merge": "^3.4.1"
   },
   "devDependencies": {
