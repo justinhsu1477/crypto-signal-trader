@@ -38,6 +38,9 @@ dependencies {
     // RabbitMQ 訊息佇列（通知非同步化 + 重試 + 持久化）
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
 
+    // WebSocket（STOMP over SockJS — 公告即時推送）
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
     // OkHttp for Binance API calls
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 

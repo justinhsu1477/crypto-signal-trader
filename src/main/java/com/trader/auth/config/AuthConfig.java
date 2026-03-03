@@ -78,6 +78,12 @@ public class AuthConfig {
                                 "/api/heartbeat"
                         ).authenticated()
 
+                        // === WebSocket handshake（auth 在 STOMP interceptor 處理）===
+                        .requestMatchers("/ws/**").permitAll()
+
+                        // === 公告 API ===
+                        .requestMatchers("/api/announcements/**").authenticated()
+
                         .requestMatchers("/api/referral/**").authenticated()
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/dashboard/**").authenticated()

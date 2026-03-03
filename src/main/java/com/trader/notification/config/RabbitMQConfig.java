@@ -14,16 +14,22 @@ import org.springframework.context.annotation.Configuration;
  *
  * <pre>
  * 架構：
- *   Direct Exchange (notification.exchange)
+ *   1. Direct Exchange (notification.exchange) — 交易通知
  *       │
  *       ├── routing-key: "user"  → notification.user   (用戶通知)
  *       └── routing-key: "admin" → notification.admin   (系統/Admin 通知)
+ *
+ *   2. Fanout Exchange (announcement.fanout) — 公告推播
+ *       │
+ *       ├── announcement.discord  (Discord 全域推送)
+ *       └── announcement.line     (LINE 逐用戶推送)
  *
  * DLQ（Dead Letter Queue）：
  *   訊息重試 3 次都失敗 → RepublishMessageRecoverer → DLX → notification.dlq
  *
  * 面試重點：
  *   - Direct Exchange = 精確路由（routing-key 完全匹配）
+ *   - Fanout Exchange = 廣播（所有綁定的 queue 都收到，忽略 routing-key）
  *   - durable = true → RabbitMQ 重啟後 queue 還在
  *   - x-dead-letter-exchange → 失敗訊息自動轉到 DLQ
  *   - Jackson2JsonMessageConverter → 跨語言相容的 JSON 序列化
@@ -38,6 +44,11 @@ public class RabbitMQConfig {
     public static final String QUEUE_ADMIN = "notification.admin";
     public static final String ROUTING_KEY_USER = "user";
     public static final String ROUTING_KEY_ADMIN = "admin";
+
+    // ===== 公告 Fanout Exchange =====
+    public static final String ANNOUNCEMENT_EXCHANGE = "announcement.fanout";
+    public static final String QUEUE_ANNOUNCEMENT_DISCORD = "announcement.discord";
+    public static final String QUEUE_ANNOUNCEMENT_LINE = "announcement.line";
 
     // DLQ 相關
     private static final String DLX_EXCHANGE = "notification.dlx";
@@ -96,6 +107,54 @@ public class RabbitMQConfig {
     @Bean
     public Binding dlqBinding(Queue deadLetterQueue, DirectExchange deadLetterExchange) {
         return BindingBuilder.bind(deadLetterQueue).to(deadLetterExchange).with(DLQ_ROUTING_KEY);
+    }
+
+    // ===== Announcement Fanout Exchange =====
+
+    /**
+     * Fanout Exchange：廣播模式
+     *
+     * 面試重點：
+     *   - Direct vs Fanout vs Topic
+     *   - Direct: routing-key 精確匹配（一對一）
+     *   - Fanout: 忽略 routing-key，所有綁定的 queue 都收到（一對多）
+     *   - Topic: routing-key 支援萬用字元 *.# 匹配（靈活路由）
+     *
+     * 公告用 Fanout 因為每則公告要同時送 Discord + LINE，
+     * 各 consumer 獨立消費、獨立重試、互不影響。
+     */
+    @Bean
+    public FanoutExchange announcementFanoutExchange() {
+        return new FanoutExchange(ANNOUNCEMENT_EXCHANGE, true, false);
+    }
+
+    @Bean
+    public Queue announcementDiscordQueue() {
+        return QueueBuilder.durable(QUEUE_ANNOUNCEMENT_DISCORD)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue announcementLineQueue() {
+        return QueueBuilder.durable(QUEUE_ANNOUNCEMENT_LINE)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY)
+                .build();
+    }
+
+    @Bean
+    public Binding announcementDiscordBinding(Queue announcementDiscordQueue,
+                                               FanoutExchange announcementFanoutExchange) {
+        // Fanout 不需要 routing-key（面試：BindingBuilder.bind().to() 沒有 .with()）
+        return BindingBuilder.bind(announcementDiscordQueue).to(announcementFanoutExchange);
+    }
+
+    @Bean
+    public Binding announcementLineBinding(Queue announcementLineQueue,
+                                            FanoutExchange announcementFanoutExchange) {
+        return BindingBuilder.bind(announcementLineQueue).to(announcementFanoutExchange);
     }
 
     // ===== Message Converter =====
