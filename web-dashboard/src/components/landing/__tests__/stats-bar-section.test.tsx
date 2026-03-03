@@ -7,9 +7,9 @@ vi.mock("@/lib/i18n/i18n-context", () => ({
   useT: () => ({
     t: (key: string) => {
       const mockTranslations: Record<string, string> = {
-        "landing.statsBarTrades": "Total Trades Executed",
+        "landing.statsBarUptime": "System Uptime",
         "landing.statsBarSpeed": "Signal Execution",
-        "landing.statsBarWinRate": "Average Win Rate",
+        "landing.statsBarEncryption": "Encryption",
       };
       return mockTranslations[key] || key;
     },
@@ -20,7 +20,7 @@ vi.mock("@/lib/i18n/i18n-context", () => ({
 describe("StatsBarSection", () => {
   it("renders without crashing", () => {
     render(<StatsBarSection />);
-    expect(screen.getByText("Total Trades Executed")).toBeInTheDocument();
+    expect(screen.getByText("System Uptime")).toBeInTheDocument();
   });
 
   it("renders all 3 stats", () => {
@@ -34,9 +34,9 @@ describe("StatsBarSection", () => {
   it("renders stat labels", () => {
     render(<StatsBarSection />);
 
-    expect(screen.getByText("Total Trades Executed")).toBeInTheDocument();
+    expect(screen.getByText("System Uptime")).toBeInTheDocument();
     expect(screen.getByText("Signal Execution")).toBeInTheDocument();
-    expect(screen.getByText("Average Win Rate")).toBeInTheDocument();
+    expect(screen.getByText("Encryption")).toBeInTheDocument();
   });
 
   it("displays correct stat values", () => {
