@@ -21,6 +21,7 @@ import com.trader.user.service.UserDiscordWebhookService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -67,6 +68,7 @@ public class DashboardService {
     /**
      * 取得首頁摘要（帳戶、風控、訂閱、持倉、自動跟單狀態）
      */
+    @Transactional(readOnly = true)
     public DashboardOverview getOverview(String userId) {
         var userOpt = userRepository.findById(userId);
         boolean autoTradeEnabled = userOpt.map(u -> u.isAutoTradeEnabled()).orElse(false);
@@ -197,6 +199,7 @@ public class DashboardService {
     /**
      * 取得績效統計（勝率、PF、訊號來源排名、盈虧曲線、進階分析）
      */
+    @Transactional(readOnly = true)
     public PerformanceStats getPerformance(String userId, int days) {
         LocalDateTime since = LocalDate.now(AppConstants.ZONE_ID).minusDays(days).atStartOfDay();
 
@@ -601,6 +604,7 @@ public class DashboardService {
     /**
      * 取得交易歷史（分頁）
      */
+    @Transactional(readOnly = true)
     public TradeHistoryResponse getTradeHistory(String userId, int page, int size) {
         List<Trade> allClosed = tradeRecordService.findByStatus("CLOSED", userId);
 
@@ -654,6 +658,7 @@ public class DashboardService {
      * 輕量用戶交易統計（僅查 DB，不呼叫 Binance API）
      * 供單一用戶查詢使用（保留向後相容）
      */
+    @Transactional(readOnly = true)
     public Map<String, Object> getLightweightUserStats(String userId) {
         Map<String, Object> todayStats = tradeRecordService.getTodayStats(userId);
         List<Trade> openTrades = tradeRecordService.findAllOpenTrades(userId);
@@ -678,6 +683,7 @@ public class DashboardService {
      *
      * @return Map<userId, stats>，stats 包含 openPositionCount, closedTradeCount, totalNetProfit, todayPnl, todayTradeCount
      */
+    @Transactional(readOnly = true)
     public Map<String, Map<String, Object>> getBatchLightweightUserStats() {
         Map<String, Map<String, Object>> result = new HashMap<>();
 

@@ -5,6 +5,7 @@ import com.trader.user.repository.UserDiscordWebhookRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +52,7 @@ public class UserDiscordWebhookService {
     /**
      * 取得用戶主要的啟用 webhook（用於廣播）
      */
+    @Transactional(readOnly = true)
     public Optional<UserDiscordWebhook> getPrimaryWebhook(String userId) {
         return webhookRepository.findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc(userId);
     }
@@ -58,6 +60,7 @@ public class UserDiscordWebhookService {
     /**
      * 查詢用戶所有啟用的 webhook
      */
+    @Transactional(readOnly = true)
     public List<UserDiscordWebhook> getEnabledWebhooks(String userId) {
         return webhookRepository.findByUserIdAndEnabledTrue(userId);
     }
@@ -65,6 +68,7 @@ public class UserDiscordWebhookService {
     /**
      * 查詢用戶所有 webhook
      */
+    @Transactional(readOnly = true)
     public List<UserDiscordWebhook> getAllWebhooks(String userId) {
         return webhookRepository.findByUserId(userId);
     }

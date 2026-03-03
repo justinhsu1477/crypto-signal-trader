@@ -378,6 +378,7 @@ public class TradeRecordService {
     /**
      * 查詢某幣種目前的 DCA 補倉次數 — 多用戶模式下按 userId 隔離
      */
+    @Transactional(readOnly = true)
     public int getDcaCount(String symbol) {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
@@ -389,6 +390,7 @@ public class TradeRecordService {
     /**
      * 查詢 DCA 補倉次數 — 顯式 userId 版本
      */
+    @Transactional(readOnly = true)
     public int getDcaCount(String symbol, String userId) {
         if (multiUserConfig.isEnabled()) {
             return tradeRepository.findUserDcaCountBySymbol(userId, symbol).orElse(0);
@@ -495,6 +497,7 @@ public class TradeRecordService {
     /**
      * 查詢某交易對 OPEN 中的開倉價（用於成本保護時當作 SL）
      */
+    @Transactional(readOnly = true)
     public Double getEntryPrice(String symbol) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
         return openTradeOpt.map(Trade::getEntryPrice).orElse(null);
@@ -708,6 +711,7 @@ public class TradeRecordService {
     /**
      * 查找目前 OPEN 的交易（對外 API，根據多用戶開關自動隔離）
      */
+    @Transactional(readOnly = true)
     public Optional<Trade> findOpenTrade(String symbol) {
         return resolveOpenTrade(symbol);
     }
@@ -717,6 +721,7 @@ public class TradeRecordService {
      * 用於 CLOSE/MOVE_SL 訊號的 symbol fallback：
      * 如果指定 symbol 無持倉，嘗試找其他 OPEN trade
      */
+    @Transactional(readOnly = true)
     public List<Trade> findAllOpenTrades() {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
@@ -728,6 +733,7 @@ public class TradeRecordService {
     /**
      * 查詢所有 OPEN 交易 — 顯式 userId 版本
      */
+    @Transactional(readOnly = true)
     public List<Trade> findAllOpenTrades(String userId) {
         if (multiUserConfig.isEnabled()) {
             return tradeRepository.findByUserIdAndStatus(userId, "OPEN");
@@ -738,6 +744,7 @@ public class TradeRecordService {
     /**
      * 依狀態查詢交易
      */
+    @Transactional(readOnly = true)
     public List<Trade> findByStatus(String status) {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
@@ -750,6 +757,7 @@ public class TradeRecordService {
      * 依狀態查詢交易 — 顯式 userId 版本
      * 供 DashboardService 等 REST API 層在無 ThreadLocal 時使用
      */
+    @Transactional(readOnly = true)
     public List<Trade> findByStatus(String status, String userId) {
         if (multiUserConfig.isEnabled()) {
             return tradeRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, status);
@@ -760,6 +768,7 @@ public class TradeRecordService {
     /**
      * 查詢所有交易（倒序）
      */
+    @Transactional(readOnly = true)
     public List<Trade> findAll() {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
@@ -772,6 +781,7 @@ public class TradeRecordService {
      * 查詢所有交易（倒序）— 顯式 userId 版本
      * 供 DashboardService 等 REST API 層在無 ThreadLocal 時使用
      */
+    @Transactional(readOnly = true)
     public List<Trade> findAll(String userId) {
         if (multiUserConfig.isEnabled()) {
             return tradeRepository.findByUserIdOrderByCreatedAtDesc(userId);
@@ -782,6 +792,7 @@ public class TradeRecordService {
     /**
      * 查詢單筆交易（多用戶模式下驗證歸屬權，防止跨用戶查詢）
      */
+    @Transactional(readOnly = true)
     public Optional<Trade> findById(String tradeId) {
         Optional<Trade> trade = tradeRepository.findById(tradeId);
         if (multiUserConfig.isEnabled() && trade.isPresent()) {
@@ -797,6 +808,7 @@ public class TradeRecordService {
     /**
      * 查詢某筆交易的所有事件（多用戶模式下先驗證交易歸屬權）
      */
+    @Transactional(readOnly = true)
     public List<TradeEvent> findEvents(String tradeId) {
         if (multiUserConfig.isEnabled()) {
             Optional<Trade> trade = findById(tradeId); // 已含 userId 檢查
@@ -811,6 +823,7 @@ public class TradeRecordService {
      * 查詢今日已實現虧損（回傳負數表示虧損）
      * 用於每日虧損熔斷機制：當 |todayLoss| >= maxDailyLoss 時拒絕新交易
      */
+    @Transactional(readOnly = true)
     public double getTodayRealizedLoss() {
         LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
         List<Trade> closedToday;
@@ -827,6 +840,7 @@ public class TradeRecordService {
      * 查詢指定用戶的今日已實現虧損（explicit-userId 版本）
      * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
      */
+    @Transactional(readOnly = true)
     public double getTodayRealizedLoss(String userId) {
         LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
         List<Trade> closedToday = tradeRepository.findUserClosedTradesAfter(userId, startOfToday);
@@ -845,6 +859,7 @@ public class TradeRecordService {
      * 供每日虧損熔斷等即時查詢使用
      */
     @SuppressWarnings("unchecked")
+    @Transactional(readOnly = true)
     public Map<String, Object> getTodayStats() {
         LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
         LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
@@ -855,6 +870,7 @@ public class TradeRecordService {
      * 取得指定用戶的今日交易統計（explicit-userId 版本）
      * 供 DashboardService 等 REST API 層在無 ThreadLocal 時使用
      */
+    @Transactional(readOnly = true)
     public Map<String, Object> getTodayStats(String userId) {
         LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
         LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
@@ -869,6 +885,7 @@ public class TradeRecordService {
      * @param to   結束時間（不含）
      * @return 已平倉交易列表（按時間排序）
      */
+    @Transactional(readOnly = true)
     public List<Trade> getClosedTradesForRange(LocalDateTime from, LocalDateTime to) {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
@@ -881,6 +898,7 @@ public class TradeRecordService {
      * 取得指定用戶在時間範圍內的已平倉交易列表（explicit-userId 版本）
      * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
      */
+    @Transactional(readOnly = true)
     public List<Trade> getClosedTradesForRange(LocalDateTime from, LocalDateTime to, String userId) {
         return tradeRepository.findUserClosedTradesBetween(userId, from, to);
     }
@@ -892,6 +910,7 @@ public class TradeRecordService {
      * @param from 起始時間（含）
      * @param to   結束時間（不含）
      */
+    @Transactional(readOnly = true)
     public Map<String, Object> getStatsForDateRange(LocalDateTime from, LocalDateTime to) {
         List<Trade> closedTrades;
         List<Trade> openTrades;
@@ -912,6 +931,7 @@ public class TradeRecordService {
      * 取得指定用戶在時間範圍內的交易統計（explicit-userId 版本）
      * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
      */
+    @Transactional(readOnly = true)
     public Map<String, Object> getStatsForDateRange(LocalDateTime from, LocalDateTime to, String userId) {
         List<Trade> closedTrades = tradeRepository.findUserClosedTradesBetween(userId, from, to);
         List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(userId, "OPEN");
@@ -950,6 +970,7 @@ public class TradeRecordService {
      * 盈虧統計摘要
      * 多用戶模式下只統計當前用戶的交易
      */
+    @Transactional(readOnly = true)
     public Map<String, Object> getStatsSummary() {
         long closedCount;
         long winCount;
@@ -986,6 +1007,7 @@ public class TradeRecordService {
      * 指定用戶的盈虧統計摘要（explicit-userId 版本）
      * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
      */
+    @Transactional(readOnly = true)
     public Map<String, Object> getStatsSummary(String userId) {
         long closedCount = tradeRepository.countUserClosedTrades(userId);
         long winCount = tradeRepository.countUserWinningTrades(userId);

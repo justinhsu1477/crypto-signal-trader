@@ -52,6 +52,7 @@ public class SubscriptionService {
     /**
      * 取得所有可用方案
      */
+    @Transactional(readOnly = true)
     public List<PlanResponse> getPlans(String userId) {
         List<Plan> plans = planRepository.findByActiveTrue();
         String currentPlanId = getCurrentPlanId(userId);
@@ -74,6 +75,7 @@ public class SubscriptionService {
     /**
      * 查詢用戶訂閱狀態
      */
+    @Transactional(readOnly = true)
     public SubscriptionStatusResponse getStatus(String userId) {
         Optional<Subscription> subOpt = subscriptionRepository.findActiveByUserId(userId);
         if (subOpt.isEmpty()) {
@@ -100,6 +102,7 @@ public class SubscriptionService {
     /**
      * 檢查用戶是否有有效訂閱（ACTIVE 或 LIFETIME）
      */
+    @Transactional(readOnly = true)
     public boolean isUserActive(String userId) {
         return subscriptionRepository.findActiveByUserId(userId).isPresent();
     }
@@ -111,6 +114,7 @@ public class SubscriptionService {
      *
      * 前端顯示此資訊讓用戶轉帳
      */
+    @Transactional(readOnly = true)
     public CryptoCheckoutResponse getCheckoutInfo(String userId, String planId) {
         Plan plan = planRepository.findByPlanIdAndActiveTrue(planId)
                 .orElseThrow(() -> new IllegalArgumentException("方案不存在: " + planId));
@@ -261,6 +265,7 @@ public class SubscriptionService {
     /**
      * 查詢即將到期的訂閱（N 天內）
      */
+    @Transactional(readOnly = true)
     public List<Subscription> findExpiringSubscriptions(int withinDays) {
         LocalDateTime now = LocalDateTime.now(ZONE);
         LocalDateTime deadline = now.plusDays(withinDays);
@@ -275,6 +280,7 @@ public class SubscriptionService {
 
     // ===================== 工具方法 =====================
 
+    @Transactional(readOnly = true)
     public String getCurrentPlanId(String userId) {
         return subscriptionRepository.findActiveByUserId(userId)
                 .map(Subscription::getPlanId)

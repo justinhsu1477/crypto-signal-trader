@@ -165,6 +165,7 @@ public class AnnouncementService {
      * 修復 N+1 問題：原本 stream().map() 內逐筆呼叫 countByAnnouncementId()（N+1 查詢），
      * 改為 countReadPerAnnouncement() 一次 GROUP BY 取回所有公告的 readCount（2 查詢）。
      */
+    @Transactional(readOnly = true)
     public List<AnnouncementResponse> getAllForAdmin() {
         List<Announcement> announcements = announcementRepository.findAllByOrderByCreatedAtDesc();
 
@@ -187,6 +188,7 @@ public class AnnouncementService {
     // ===== User 查詢 =====
 
     /** User: 已發佈公告（分頁 + 已讀狀態） */
+    @Transactional(readOnly = true)
     public AnnouncementListResponse getPublishedForUser(String userId, int page, int size) {
         Page<Announcement> pageResult = announcementRepository
                 .findByStatusOrderByPublishedAtDesc(Announcement.Status.PUBLISHED, PageRequest.of(page, size));
@@ -228,6 +230,7 @@ public class AnnouncementService {
     }
 
     /** User: 未讀數量 */
+    @Transactional(readOnly = true)
     public long getUnreadCount(String userId) {
         long publishedCount = announcementRepository.countByStatus(Announcement.Status.PUBLISHED);
         long readCount = readTrackingRepository.findReadAnnouncementIdsByUserId(userId).size();

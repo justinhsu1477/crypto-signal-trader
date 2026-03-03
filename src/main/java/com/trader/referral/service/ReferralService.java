@@ -37,6 +37,7 @@ public class ReferralService {
     /**
      * 查詢用戶推薦綁定狀態
      */
+    @Transactional(readOnly = true)
     public ReferralStatusResponse getStatus(String userId) {
         String exchange = referralConfig.getDefaultExchange();
 
@@ -145,6 +146,7 @@ public class ReferralService {
     /**
      * 查詢待驗證列表（管理員用）
      */
+    @Transactional(readOnly = true)
     public List<AdminPendingResponse> getPendingList() {
         List<UserExchangeReferralLink> pendingLinks =
                 linkRepository.findByStatus(ReferralStatus.PENDING);
@@ -168,6 +170,7 @@ public class ReferralService {
      * 判斷用戶是否已通過推薦碼驗證
      * 供 ReferralVerificationFilter 和其他服務使用
      */
+    @Transactional(readOnly = true)
     public boolean isVerified(String userId) {
         return linkRepository.existsByUserIdAndExchangeAndStatus(
                 userId, referralConfig.getDefaultExchange(), ReferralStatus.VERIFIED);
