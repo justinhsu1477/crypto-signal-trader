@@ -429,6 +429,94 @@ class TradeControllerTest {
             ResponseEntity<?> response = controller.executeTrade(request);
             assertThat(response.getStatusCode().value()).isEqualTo(400);
         }
+
+        @Test
+        @DisplayName("訊號過期（超過 5 分鐘）— 400 REJECTED_STALE + Admin 通知")
+        void staleSignal_rejected() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // 設定 10 分鐘前的時間戳
+            request.setSignalTimestamp(System.currentTimeMillis() - 10 * 60 * 1000L);
+
+            ResponseEntity<?> response = controller.executeTrade(request);
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            assertThat(response.getBody().toString()).contains("REJECTED_STALE");
+            // 驗證發送紅色 Admin 通知（🚫 過期訊號已攔截）
+            verify(webhookService).sendNotificationToAdmins(
+                    contains("過期訊號已攔截"),
+                    contains("已拒絕"),
+                    eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("訊號延遲（30s~5min）— 仍執行 + Admin 警告通知")
+        void delayedSignal_executesWithWarning() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // 設定 2 分鐘前的時間戳（30s < 120s < 5min）
+            request.setSignalTimestamp(System.currentTimeMillis() - 120_000L);
+
+            when(binanceFuturesService.executeSignal(any())).thenReturn(
+                    List.of(OrderResult.builder().success(true).orderId("123").quantity(0.01).price(95000).build()));
+
+            ResponseEntity<?> response = controller.executeTrade(request);
+            // 仍正常執行
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            // 驗證發送黃色 Admin 通知（⚠️ 訊號延遲偏高）
+            verify(webhookService).sendNotificationToAdmins(
+                    contains("訊號延遲偏高"),
+                    contains("仍執行"),
+                    eq(DiscordWebhookService.COLOR_YELLOW));
+        }
+
+        @Test
+        @DisplayName("訊號新鮮（30 秒內）— 正常執行，無 Admin 通知")
+        void freshSignal_accepted() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // 設定 10 秒前的時間戳
+            request.setSignalTimestamp(System.currentTimeMillis() - 10_000L);
+
+            when(binanceFuturesService.executeSignal(any())).thenReturn(
+                    List.of(OrderResult.builder().success(true).orderId("123").quantity(0.01).price(95000).build()));
+
+            ResponseEntity<?> response = controller.executeTrade(request);
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            // 新鮮訊號不應發送任何 Admin 通知
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("未提供 signalTimestamp — 向後相容，正常執行，無 Admin 通知")
+        void noTimestamp_backwardCompatible() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // 不設 signalTimestamp
+
+            when(binanceFuturesService.executeSignal(any())).thenReturn(
+                    List.of(OrderResult.builder().success(true).orderId("123").quantity(0.01).price(95000).build()));
+
+            ResponseEntity<?> response = controller.executeTrade(request);
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            // 無時間戳不應發送 Admin 通知
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+        }
     }
 
     // ==================== 查詢類 API ====================
@@ -826,6 +914,87 @@ class TradeControllerTest {
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             verify(deduplicationService, never()).isSignalProcessed(any());
             verify(broadcastTradeService).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("廣播訊號過期 — 400 + 記錄到 signals 表 + Admin 通知")
+        void broadcastStaleSignal_rejected() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // 設定 6 分鐘前的時間戳
+            request.setSignalTimestamp(System.currentTimeMillis() - 6 * 60 * 1000L);
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            assertThat(response.getBody().toString()).contains("REJECTED_STALE");
+            // 驗證過期訊號被記錄到 signals 表
+            verify(signalRecordService).recordFromRequest(
+                    eq("ENTRY"), eq("BTCUSDT"), eq("LONG"),
+                    eq(95000.0), eq(94000.0),
+                    eq("REJECTED"), contains("signal-stale"), isNull(), isNull());
+            verify(broadcastTradeService, never()).broadcastTrade(any());
+            // 驗證發送紅色 Admin 通知
+            verify(webhookService).sendNotificationToAdmins(
+                    contains("過期訊號已攔截"),
+                    contains("已拒絕"),
+                    eq(DiscordWebhookService.COLOR_RED));
+        }
+
+        @Test
+        @DisplayName("廣播訊號延遲（30s~5min）— 仍廣播 + Admin 警告通知")
+        void broadcastDelayedSignal_executesWithWarning() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // 設定 90 秒前的時間戳
+            request.setSignalTimestamp(System.currentTimeMillis() - 90_000L);
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 5, "success", 5));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            // 仍正常廣播
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(broadcastTradeService).broadcastTrade(any());
+            // 驗證發送黃色 Admin 通知
+            verify(webhookService).sendNotificationToAdmins(
+                    contains("訊號延遲偏高"),
+                    contains("仍執行"),
+                    eq(DiscordWebhookService.COLOR_YELLOW));
+        }
+
+        @Test
+        @DisplayName("廣播訊號新鮮 — 正常廣播，無 Admin 通知")
+        void broadcastFreshSignal_accepted() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            // 設定 5 秒前的時間戳
+            request.setSignalTimestamp(System.currentTimeMillis() - 5_000L);
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 5, "success", 5));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(broadcastTradeService).broadcastTrade(any());
+            // 新鮮訊號不應發送 Admin 通知
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
     }
 

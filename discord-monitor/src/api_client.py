@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 import aiohttp
@@ -153,6 +154,7 @@ class ApiClient:
 
         url = f"{self.config.base_url}{endpoint}"
         payload = dict(trade_request)
+        payload["signal_timestamp"] = int(time.time() * 1000)  # epoch millis，供後端時效性驗證
         if source:
             payload["source"] = source
         logger.info("send_trade → %s %s %s", endpoint, trade_request.get("action"), trade_request.get("symbol"))

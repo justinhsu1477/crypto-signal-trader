@@ -52,6 +52,9 @@ public class TradeController {
     private final SignalRecordService signalRecordService;
     private final SymbolLockRegistry symbolLockRegistry;
 
+    /** 訊號最大容許延遲（毫秒）：5 分鐘 */
+    private static final long SIGNAL_MAX_AGE_MS = 5 * 60 * 1000L;
+
     /**
      * 查詢帳戶餘額
      * GET /api/balance
@@ -241,6 +244,14 @@ public class TradeController {
     @PostMapping("/execute-trade")
     public ResponseEntity<?> executeTrade(@RequestBody TradeRequest request) {
         log.info("收到結構化交易請求: action={} symbol={}", request.getAction(), request.getSymbol());
+
+        // 訊號時效性驗證
+        Optional<String> staleError = checkSignalStaleness(request);
+        if (staleError.isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", staleError.get(),
+                    "status", "REJECTED_STALE"));
+        }
 
         // 取得當前用戶 ID（JwtAuthenticationFilter 已設入 ThreadLocal）
         String currentUserId = TradeRecordService.getCurrentUserId();
@@ -496,6 +507,52 @@ public class TradeController {
         return ResponseEntity.ok(result);
     }
 
+    // ==================== 訊號時效性驗證 ====================
+
+    /**
+     * 檢查訊號時效性 — 若 signalTimestamp 存在且超過 SIGNAL_MAX_AGE_MS 則視為過期
+     *
+     * @return Optional 含拒絕原因（過期），empty 表示通過
+     */
+    private Optional<String> checkSignalStaleness(TradeRequest request) {
+        if (request.getSignalTimestamp() == null) {
+            return Optional.empty(); // 未提供時間戳 → 向後相容，不驗證
+        }
+
+        long ageMs = System.currentTimeMillis() - request.getSignalTimestamp();
+
+        // 防禦未來時間戳（時鐘不同步）— 允許 30 秒容差
+        if (ageMs < -30_000) {
+            log.warn("訊號時間戳在未來 {}ms，可能時鐘不同步: {} {}",
+                    Math.abs(ageMs), request.getAction(), request.getSymbol());
+        }
+
+        if (ageMs > SIGNAL_MAX_AGE_MS) {
+            long ageSec = ageMs / 1000;
+            log.warn("訊號過期被拒絕: {} {} 延遲 {}s（上限 {}s）",
+                    request.getAction(), request.getSymbol(), ageSec, SIGNAL_MAX_AGE_MS / 1000);
+            webhookService.sendNotificationToAdmins(
+                    "🚫 過期訊號已攔截",
+                    String.format("%s %s\n延遲: %d 秒（上限 %d 秒）\n原因: Server 重啟後 Queue Replay 補跑\n狀態: 已拒絕，未下單",
+                            request.getAction(), request.getSymbol(), ageSec, SIGNAL_MAX_AGE_MS / 1000),
+                    DiscordWebhookService.COLOR_RED);
+            return Optional.of(String.format("訊號已過期（延遲 %d 秒，上限 %d 秒）", ageSec, SIGNAL_MAX_AGE_MS / 1000));
+        }
+
+        // 延遲超過 30 秒 — 仍執行但通知 Admin 留意
+        if (ageMs > 30_000) {
+            long ageSec = ageMs / 1000;
+            log.warn("訊號延遲偏高: {} {} 延遲 {}ms", request.getAction(), request.getSymbol(), ageMs);
+            webhookService.sendNotificationToAdmins(
+                    "⚠️ 訊號延遲偏高",
+                    String.format("%s %s\n延遲: %d 秒\n可能原因: 網路延遲或 Queue Replay 補跑\n狀態: 仍執行，請留意",
+                            request.getAction(), request.getSymbol(), ageSec),
+                    DiscordWebhookService.COLOR_YELLOW);
+        }
+
+        return Optional.empty();
+    }
+
     // ==================== 訊號來源提取 ====================
 
     /**
@@ -672,6 +729,18 @@ public class TradeController {
     @PostMapping("/broadcast-trade")
     public ResponseEntity<?> broadcastTrade(@RequestBody TradeRequest request) {
         log.info("廣播跟單請求: action={} symbol={}", request.getAction(), request.getSymbol());
+
+        // 訊號時效性驗證
+        Optional<String> staleError = checkSignalStaleness(request);
+        if (staleError.isPresent()) {
+            signalRecordService.recordFromRequest(
+                    request.getAction(), request.getSymbol(), request.getSide(),
+                    request.getEntryPrice(), request.getStopLoss(),
+                    "REJECTED", "signal-stale: " + staleError.get(), null, request.getSource());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", staleError.get(),
+                    "status", "REJECTED_STALE"));
+        }
 
         // 驗證請求
         if (request.getAction() == null) {
