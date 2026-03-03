@@ -180,7 +180,8 @@ public class BroadcastTradeService {
                                 .findFirst().orElse(results.get(0))
                             : null;
 
-                    // 非阻塞檢查：AI 分數是否已就緒？
+                    // 非阻塞檢查：AI 分數是否已就緒？（不等待，避免延遲交易通知）
+                    // 分數主要用於 Admin 報告 + DB 記錄（line 251-273），用戶通知有就顯示、沒有就跳過
                     SignalScore score = scoreFuture.getNow(null);
 
                     // 發送 enriched 成功通知給用戶（含實際成交價/PnL/AI 評分）
