@@ -21,4 +21,15 @@ public interface AnnouncementReadTrackingRepository extends JpaRepository<Announ
 
     /** 取得特定公告的已讀人數 */
     long countByAnnouncementId(Long announcementId);
+
+    /**
+     * 批次取得所有公告的已讀人數（解決 getAllForAdmin N+1 問題）
+     *
+     * 面試重點：用 GROUP BY 一次查回所有公告的 readCount，
+     *           取代逐一 countByAnnouncementId() 的 N+1 查詢。
+     *
+     * 回傳 Object[]：[0] announcementId(Long), [1] readCount(Long)
+     */
+    @Query("SELECT art.announcementId, COUNT(art) FROM AnnouncementReadTracking art GROUP BY art.announcementId")
+    List<Object[]> countReadPerAnnouncement();
 }

@@ -405,6 +405,56 @@ class AnnouncementServiceTest {
         }
     }
 
+    // ==================== getAllForAdmin ====================
+
+    @Nested
+    @DisplayName("getAllForAdmin — Admin 全部公告（批次 readCount）")
+    class GetAllForAdminTests {
+
+        @Test
+        @DisplayName("批次 readCount — 使用 countReadPerAnnouncement 而非逐筆 count（N+1 修復）")
+        void batchReadCount() {
+            Announcement a1 = Announcement.builder().id(1L).title("公告1").content("內容1")
+                    .category(Announcement.Category.GENERAL).priority(Announcement.Priority.NORMAL)
+                    .channels("ALL").status(Announcement.Status.PUBLISHED).createdBy("admin-1").build();
+            Announcement a2 = Announcement.builder().id(2L).title("公告2").content("內容2")
+                    .category(Announcement.Category.UPDATE).priority(Announcement.Priority.HIGH)
+                    .channels("ALL").status(Announcement.Status.DRAFT).createdBy("admin-1").build();
+
+            when(announcementRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(a1, a2));
+            when(readTrackingRepository.countReadPerAnnouncement()).thenReturn(List.of(
+                    new Object[]{1L, 5L},
+                    new Object[]{2L, 0L}
+            ));
+
+            List<AnnouncementResponse> result = service.getAllForAdmin();
+
+            assertThat(result).hasSize(2);
+            assertThat(result.get(0).getReadCount()).isEqualTo(5L);
+            assertThat(result.get(1).getReadCount()).isEqualTo(0L);
+
+            // 驗證使用批次查詢，而非逐筆 countByAnnouncementId
+            verify(readTrackingRepository).countReadPerAnnouncement();
+            verify(readTrackingRepository, never()).countByAnnouncementId(anyLong());
+        }
+
+        @Test
+        @DisplayName("公告無已讀記錄 — readCount 預設 0")
+        void noReadTracking() {
+            Announcement a = Announcement.builder().id(99L).title("New").content("C")
+                    .category(Announcement.Category.GENERAL).priority(Announcement.Priority.NORMAL)
+                    .channels("ALL").status(Announcement.Status.DRAFT).createdBy("admin-1").build();
+
+            when(announcementRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(a));
+            when(readTrackingRepository.countReadPerAnnouncement()).thenReturn(List.of());
+
+            List<AnnouncementResponse> result = service.getAllForAdmin();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getReadCount()).isEqualTo(0L);
+        }
+    }
+
     // ==================== getPublishedForUser ====================
 
     @Nested

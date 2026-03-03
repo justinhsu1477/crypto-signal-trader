@@ -23,7 +23,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 公告服務
@@ -157,12 +159,26 @@ public class AnnouncementService {
         log.info("公告草稿已刪除: id={}, admin={}", id, adminId);
     }
 
-    /** Admin: 取得全部公告（含草稿）+ 已讀統計 */
+    /**
+     * Admin: 取得全部公告（含草稿）+ 已讀統計
+     *
+     * 修復 N+1 問題：原本 stream().map() 內逐筆呼叫 countByAnnouncementId()（N+1 查詢），
+     * 改為 countReadPerAnnouncement() 一次 GROUP BY 取回所有公告的 readCount（2 查詢）。
+     */
     public List<AnnouncementResponse> getAllForAdmin() {
-        return announcementRepository.findAllByOrderByCreatedAtDesc().stream()
+        List<Announcement> announcements = announcementRepository.findAllByOrderByCreatedAtDesc();
+
+        // 批次查詢：一次取回所有公告的已讀人數（取代 N 次 countByAnnouncementId）
+        Map<Long, Long> readCountMap = readTrackingRepository.countReadPerAnnouncement().stream()
+                .collect(Collectors.toMap(
+                        row -> (Long) row[0],
+                        row -> (Long) row[1]
+                ));
+
+        return announcements.stream()
                 .map(a -> {
                     AnnouncementResponse resp = AnnouncementResponse.from(a);
-                    resp.setReadCount(readTrackingRepository.countByAnnouncementId(a.getId()));
+                    resp.setReadCount(readCountMap.getOrDefault(a.getId(), 0L));
                     return resp;
                 })
                 .toList();

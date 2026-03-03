@@ -58,6 +58,14 @@ public class TradeRecordService {
         this.defaultUserId = defaultUserId;
     }
 
+    /**
+     * 取得 TradeRepository（供批次聚合查詢使用，避免 N+1 問題）
+     * 給 DashboardService.getBatchLightweightUserStats() 呼叫。
+     */
+    public TradeRepository getTradeRepository() {
+        return tradeRepository;
+    }
+
     /** 廣播模式下，BinanceFuturesService 會設定當前用戶 ID */
     private static final ThreadLocal<String> CURRENT_USER_ID = new ThreadLocal<>();
     /** 廣播模式下，用於通知顯示的可讀名稱（格式：name (email)） */
@@ -959,7 +967,7 @@ public class TradeRecordService {
             grossWins = tradeRepository.sumUserGrossWins(userId);
             grossLosses = tradeRepository.sumUserGrossLosses(userId);
             totalCommission = tradeRepository.sumUserCommission(userId);
-            openCount = tradeRepository.findByUserIdAndStatus(userId, "OPEN").size();
+            openCount = tradeRepository.countByUserIdAndStatus(userId, "OPEN");
         } else {
             closedCount = tradeRepository.countClosedTrades();
             winCount = tradeRepository.countWinningTrades();
@@ -967,7 +975,7 @@ public class TradeRecordService {
             grossWins = tradeRepository.sumGrossWins();
             grossLosses = tradeRepository.sumGrossLosses();
             totalCommission = tradeRepository.sumCommission();
-            openCount = tradeRepository.findByStatus("OPEN").size();
+            openCount = tradeRepository.countByStatus("OPEN");
         }
 
         return buildStatsSummary(closedCount, winCount, totalNetProfit,
@@ -985,7 +993,7 @@ public class TradeRecordService {
         double grossWins = tradeRepository.sumUserGrossWins(userId);
         double grossLosses = tradeRepository.sumUserGrossLosses(userId);
         double totalCommission = tradeRepository.sumUserCommission(userId);
-        long openCount = tradeRepository.findByUserIdAndStatus(userId, "OPEN").size();
+        long openCount = tradeRepository.countByUserIdAndStatus(userId, "OPEN");
 
         return buildStatsSummary(closedCount, winCount, totalNetProfit,
                 grossWins, grossLosses, totalCommission, openCount);
