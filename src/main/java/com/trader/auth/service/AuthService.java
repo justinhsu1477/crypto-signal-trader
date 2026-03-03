@@ -16,11 +16,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 認證服務
  *
  * 負責用戶註冊、登入、Token 刷新。
+ * 含 per-account 登入失敗鎖定（5 次失敗後鎖定 15 分鐘）。
  */
 @Slf4j
 @Service
@@ -31,6 +34,19 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailVerificationService emailVerificationService;
+
+    // ===== Per-Account 登入失敗鎖定 =====
+    private static final int MAX_LOGIN_ATTEMPTS = 5;
+    private static final long LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 分鐘
+
+    /** key = normalized email → 失敗記錄 */
+    private final ConcurrentHashMap<String, LoginAttempt> loginAttempts = new ConcurrentHashMap<>();
+
+    static class LoginAttempt {
+        final AtomicInteger failCount = new AtomicInteger(0);
+        volatile long lockedUntil = 0;
+        volatile long firstFailTime = 0;
+    }
 
     /**
      * 用戶註冊
@@ -71,27 +87,40 @@ public class AuthService {
     /**
      * 用戶登入
      *
-     * 錯誤訊息統一「帳號或密碼錯誤」，防止 email 列舉攻擊。
+     * 安全機制：
+     * - 錯誤訊息統一「帳號或密碼錯誤」，防止 email 列舉攻擊
+     * - 連續 5 次密碼錯誤 → 帳號鎖定 15 分鐘（per-account，不受 IP 切換影響）
      *
      * @param request 登入請求 (email, password)
      * @return LoginResponse (含 JWT + refresh token)
      */
     public LoginResponse login(LoginRequest request) {
         String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+
+        // 檢查帳號是否被鎖定
+        checkAccountLockout(normalizedEmail);
+
         User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
-                .orElseThrow(() -> new IllegalArgumentException("帳號或密碼錯誤"));
+                .orElseThrow(() -> {
+                    recordLoginFailure(normalizedEmail);
+                    return new IllegalArgumentException("帳號或密碼錯誤");
+                });
 
         if (!user.isEnabled()) {
             throw new IllegalArgumentException("帳號已停用");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            recordLoginFailure(normalizedEmail);
             throw new IllegalArgumentException("帳號或密碼錯誤");
         }
 
         if (!user.isEmailVerified()) {
             throw new EmailNotVerifiedException("EMAIL_NOT_VERIFIED");
         }
+
+        // 登入成功 → 清除失敗記錄
+        clearLoginFailure(normalizedEmail);
 
         String role = user.getRole().name();
         String token = jwtService.generateToken(user.getUserId(), role);
@@ -107,6 +136,65 @@ public class AuthService {
                 .email(user.getEmail())
                 .role(role)
                 .build();
+    }
+
+    // ===== Login Lockout Helpers =====
+
+    private void checkAccountLockout(String email) {
+        LoginAttempt attempt = loginAttempts.get(email);
+        if (attempt == null) return;
+
+        long now = System.currentTimeMillis();
+        if (attempt.lockedUntil > now) {
+            long remainSec = (attempt.lockedUntil - now) / 1000;
+            log.warn("帳號鎖定中: email={}, 剩餘 {}s", email, remainSec);
+            throw new IllegalStateException(
+                    String.format("帳號已被暫時鎖定，請 %d 分鐘後再試", (remainSec / 60) + 1));
+        }
+
+        // 鎖定已過期 → 自動解鎖
+        if (attempt.lockedUntil > 0 && attempt.lockedUntil <= now) {
+            loginAttempts.remove(email);
+        }
+    }
+
+    private void recordLoginFailure(String email) {
+        LoginAttempt attempt = loginAttempts.computeIfAbsent(email, k -> new LoginAttempt());
+        long now = System.currentTimeMillis();
+
+        // 如果距離首次失敗超過 lockout 時長，重新計數
+        if (attempt.firstFailTime > 0 && now - attempt.firstFailTime > LOCKOUT_DURATION_MS) {
+            attempt.failCount.set(0);
+            attempt.lockedUntil = 0;
+        }
+
+        if (attempt.failCount.get() == 0) {
+            attempt.firstFailTime = now;
+        }
+
+        int fails = attempt.failCount.incrementAndGet();
+        log.warn("登入失敗: email={}, 累計={}/{}", email, fails, MAX_LOGIN_ATTEMPTS);
+
+        if (fails >= MAX_LOGIN_ATTEMPTS) {
+            attempt.lockedUntil = now + LOCKOUT_DURATION_MS;
+            log.warn("帳號已鎖定 15 分鐘: email={}", email);
+        }
+    }
+
+    void clearLoginFailure(String email) {
+        loginAttempts.remove(email);
+    }
+
+    /** 供測試用 — 取得目前失敗次數 */
+    int getFailedAttempts(String email) {
+        LoginAttempt attempt = loginAttempts.get(email);
+        return attempt != null ? attempt.failCount.get() : 0;
+    }
+
+    /** 供測試用 — 帳號是否被鎖定 */
+    boolean isAccountLocked(String email) {
+        LoginAttempt attempt = loginAttempts.get(email);
+        return attempt != null && attempt.lockedUntil > System.currentTimeMillis();
     }
 
     /**

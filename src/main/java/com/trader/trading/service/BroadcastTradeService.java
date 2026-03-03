@@ -220,6 +220,9 @@ public class BroadcastTradeService {
                                     userDisplay,
                                     e.getMessage()),
                             DiscordWebhookService.COLOR_RED);
+                } finally {
+                    // 防禦性清除 ThreadLocal — 防止線程池複用時殘留上一用戶的 context
+                    TradeRecordService.clearCurrentUserDisplayName();
                 }
                 return null;
             });

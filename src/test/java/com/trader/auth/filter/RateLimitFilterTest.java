@@ -46,9 +46,27 @@ class RateLimitFilterTest {
     class MatchRuleTests {
 
         @Test
-        @DisplayName("auth 路徑 — 匹配 auth group")
-        void authPath() {
+        @DisplayName("auth/login 路徑 — 匹配 auth-login group（5/min）")
+        void authLoginPath() {
             RateLimitFilter.RateLimitRule rule = filter.matchRule("/api/auth/login");
+            assertThat(rule).isNotNull();
+            assertThat(rule.group).isEqualTo("auth-login");
+            assertThat(rule.maxPerMinute).isEqualTo(5);
+        }
+
+        @Test
+        @DisplayName("auth/reset-password — 匹配 auth-login group（5/min）")
+        void authResetPasswordPath() {
+            RateLimitFilter.RateLimitRule rule = filter.matchRule("/api/auth/reset-password");
+            assertThat(rule).isNotNull();
+            assertThat(rule.group).isEqualTo("auth-login");
+            assertThat(rule.maxPerMinute).isEqualTo(5);
+        }
+
+        @Test
+        @DisplayName("auth 其他路徑 — 匹配 auth group（10/min）")
+        void authOtherPath() {
+            RateLimitFilter.RateLimitRule rule = filter.matchRule("/api/auth/register");
             assertThat(rule).isNotNull();
             assertThat(rule.group).isEqualTo("auth");
             assertThat(rule.maxPerMinute).isEqualTo(10);
@@ -173,39 +191,54 @@ class RateLimitFilterTest {
     // ==================== auth 端點限流 ====================
 
     @Nested
-    @DisplayName("auth 端點 — 10/min")
-    class AuthRateLimitTests {
+    @DisplayName("auth-login 端點 — 5/min")
+    class AuthLoginRateLimitTests {
 
         @Test
-        @DisplayName("前 10 次放行")
-        void first10Allowed() throws Exception {
-            for (int i = 0; i < 10; i++) {
+        @DisplayName("前 5 次放行")
+        void first5Allowed() throws Exception {
+            for (int i = 0; i < 5; i++) {
                 HttpServletRequest request = mockRequest("/api/auth/login", "10.0.0.1");
                 filter.doFilter(request, response, chain);
             }
 
-            verify(chain, times(10)).doFilter(any(), any());
+            verify(chain, times(5)).doFilter(any(), any());
             verify(response, never()).setStatus(429);
         }
 
         @Test
-        @DisplayName("第 11 次 — 429")
-        void eleventhBlocked() throws Exception {
+        @DisplayName("第 6 次 — 429")
+        void sixthBlocked() throws Exception {
             StringWriter sw = new StringWriter();
             PrintWriter pw = new PrintWriter(sw);
 
-            for (int i = 0; i < 11; i++) {
+            for (int i = 0; i < 6; i++) {
                 HttpServletRequest request = mockRequest("/api/auth/login", "11.0.0.1");
                 HttpServletResponse resp = mock(HttpServletResponse.class);
                 when(resp.getWriter()).thenReturn(pw);
                 filter.doFilter(request, resp, chain);
 
-                if (i == 10) {
+                if (i == 5) {
                     verify(resp).setStatus(429);
                 }
             }
 
-            verify(chain, times(10)).doFilter(any(), any());
+            verify(chain, times(5)).doFilter(any(), any());
+        }
+
+        @Test
+        @DisplayName("login 和 register 使用不同 group — 互不影響")
+        void loginAndRegisterSeparateGroups() throws Exception {
+            // 消耗完 login 的 5 次
+            for (int i = 0; i < 5; i++) {
+                HttpServletRequest request = mockRequest("/api/auth/login", "11.0.0.2");
+                filter.doFilter(request, response, chain);
+            }
+
+            // register 仍然可以通過（不同 group）
+            HttpServletRequest regRequest = mockRequest("/api/auth/register", "11.0.0.2");
+            filter.doFilter(regRequest, response, chain);
+            verify(chain, times(6)).doFilter(any(), any());
         }
     }
 
@@ -382,8 +415,8 @@ class RateLimitFilterTest {
         @Test
         @DisplayName("不同 IP 不互相影響")
         void differentIpsIndependent() throws Exception {
-            // IP-A 消耗完 auth 10 次
-            for (int i = 0; i < 10; i++) {
+            // IP-A 消耗完 auth-login 5 次
+            for (int i = 0; i < 5; i++) {
                 HttpServletRequest request = mockRequest("/api/auth/login", "40.0.0.1");
                 filter.doFilter(request, response, chain);
             }
@@ -391,14 +424,14 @@ class RateLimitFilterTest {
             // IP-B 仍然可以通過
             HttpServletRequest request = mockRequest("/api/auth/login", "40.0.0.2");
             filter.doFilter(request, response, chain);
-            verify(chain, times(11)).doFilter(any(), any());
+            verify(chain, times(6)).doFilter(any(), any());
         }
 
         @Test
         @DisplayName("不同 group 不互相影響")
         void differentGroupsIndependent() throws Exception {
-            // 同一 IP，消耗完 auth 10 次
-            for (int i = 0; i < 10; i++) {
+            // 同一 IP，消耗完 auth-login 5 次
+            for (int i = 0; i < 5; i++) {
                 HttpServletRequest request = mockRequest("/api/auth/login", "41.0.0.1");
                 filter.doFilter(request, response, chain);
             }
@@ -406,7 +439,7 @@ class RateLimitFilterTest {
             // 同一 IP，dashboard 仍可通過
             HttpServletRequest request = mockRequest("/api/dashboard/overview", "41.0.0.1");
             filter.doFilter(request, response, chain);
-            verify(chain, times(11)).doFilter(any(), any());
+            verify(chain, times(6)).doFilter(any(), any());
         }
     }
 

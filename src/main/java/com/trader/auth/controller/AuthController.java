@@ -107,6 +107,11 @@ public class AuthController {
         } catch (EmailNotVerifiedException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "EMAIL_NOT_VERIFIED", "email", request.getEmail()));
+        } catch (IllegalStateException e) {
+            // 帳號鎖定（連續登入失敗）
+            auditService.logFailedAuth(request.getEmail(), clientIp, "ACCOUNT_LOCKED");
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(ErrorResponse.builder().error(e.getMessage()).build());
         } catch (IllegalArgumentException e) {
             auditService.logFailedAuth(request.getEmail(), clientIp, e.getMessage());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)

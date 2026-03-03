@@ -302,6 +302,97 @@ class AuthServiceTest {
         }
     }
 
+    // ==================== 登入失敗鎖定 ====================
+
+    @Nested
+    @DisplayName("Per-Account 登入鎖定")
+    class LoginLockout {
+
+        private User validUser;
+
+        @BeforeEach
+        void setUpUser() {
+            validUser = User.builder()
+                    .userId("lock-uuid")
+                    .email("lock@example.com")
+                    .passwordHash("$2a$10$hash")
+                    .role(User.Role.USER)
+                    .enabled(true)
+                    .emailVerified(true)
+                    .build();
+            when(userRepository.findByEmailIgnoreCase("lock@example.com")).thenReturn(Optional.of(validUser));
+            when(passwordEncoder.matches(eq("wrong"), anyString())).thenReturn(false);
+            when(passwordEncoder.matches(eq("correct"), anyString())).thenReturn(true);
+            when(jwtService.generateToken(anyString(), anyString())).thenReturn("token");
+            when(jwtService.generateRefreshToken(anyString(), anyString())).thenReturn("refresh");
+            when(jwtService.getExpirationMs()).thenReturn(86400000L);
+        }
+
+        private LoginRequest loginReq(String password) {
+            LoginRequest req = new LoginRequest();
+            req.setEmail("lock@example.com");
+            req.setPassword(password);
+            return req;
+        }
+
+        @Test
+        @DisplayName("連續 5 次密碼錯誤 → 第 6 次被鎖定（IllegalStateException）")
+        void fiveFailsThenLocked() {
+            // 5 次錯誤密碼
+            for (int i = 0; i < 5; i++) {
+                assertThatThrownBy(() -> authService.login(loginReq("wrong")))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+
+            // 第 6 次 → 即使密碼正確也被鎖定
+            assertThatThrownBy(() -> authService.login(loginReq("correct")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("鎖定");
+        }
+
+        @Test
+        @DisplayName("4 次失敗後成功登入 → 不被鎖定，且後續可正常登入")
+        void fourFailsThenSuccess_clearsCounter() {
+            for (int i = 0; i < 4; i++) {
+                assertThatThrownBy(() -> authService.login(loginReq("wrong")))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+
+            // 第 5 次用正確密碼 → 應成功
+            LoginResponse response = authService.login(loginReq("correct"));
+            assertThat(response.getToken()).isNotNull();
+
+            // 計數已歸零 → 可以再錯 4 次不被鎖
+            for (int i = 0; i < 4; i++) {
+                assertThatThrownBy(() -> authService.login(loginReq("wrong")))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+            // 第 5 次正確密碼仍可登入
+            LoginResponse response2 = authService.login(loginReq("correct"));
+            assertThat(response2.getToken()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("不存在的 Email — 也計入失敗（防列舉）")
+        void nonExistentEmail_countsAsFailure() {
+            when(userRepository.findByEmailIgnoreCase("ghost@example.com")).thenReturn(Optional.empty());
+
+            LoginRequest req = new LoginRequest();
+            req.setEmail("ghost@example.com");
+            req.setPassword("any");
+
+            for (int i = 0; i < 5; i++) {
+                assertThatThrownBy(() -> authService.login(req))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+
+            // 第 6 次被鎖
+            assertThatThrownBy(() -> authService.login(req))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("鎖定");
+        }
+    }
+
     @Nested
     @DisplayName("刷新 Token")
     class RefreshToken {

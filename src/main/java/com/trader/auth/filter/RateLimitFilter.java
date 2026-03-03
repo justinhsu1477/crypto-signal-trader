@@ -49,8 +49,11 @@ public class RateLimitFilter implements Filter {
     /** 限流規則：path prefix → (group name, max requests per minute) */
     static final List<RateLimitRule> RULES = List.of(
             // === 公開端點（無 JWT，最需要限流）===
-            new RateLimitRule("/api/auth/",           "auth",      10),
-            new RateLimitRule("/api/status",           "status",    10),
+            // login / reset-password 獨立限流，比一般 auth 更嚴格
+            new RateLimitRule("/api/auth/login",           "auth-login",   5),
+            new RateLimitRule("/api/auth/reset-password",  "auth-login",   5),
+            new RateLimitRule("/api/auth/",                "auth",        10),
+            new RateLimitRule("/api/status",               "status",      10),
             // === 交易端點（ADMIN / Monitor）===
             new RateLimitRule("/api/execute-signal",   "trade",     30),
             new RateLimitRule("/api/execute-trade",    "trade",     30),
