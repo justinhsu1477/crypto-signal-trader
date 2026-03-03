@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { Suspense, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { PublicNavbar } from "./public-navbar";
 import { CryptoBackground } from "./crypto-background";
 import { HeroOrbitVisual } from "./hero-orbit-visual";
@@ -18,10 +18,20 @@ import { useT } from "@/lib/i18n/i18n-context";
  * Lido-style landing layout: light warm theme, Manrope-inspired typography.
  */
 export function AuthLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense>
+      <AuthLayoutInner>{children}</AuthLayoutInner>
+    </Suspense>
+  );
+}
+
+function AuthLayoutInner({ children }: { children: React.ReactNode }) {
   const { t } = useT();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isLogin = pathname === "/login";
-  const [showAuthCard, setShowAuthCard] = useState(false);
+  const initialShowCard = searchParams.get("action") === "signin";
+  const [showAuthCard, setShowAuthCard] = useState(initialShowCard);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden text-black" style={{ background: "rgb(255,248,247)" }}>

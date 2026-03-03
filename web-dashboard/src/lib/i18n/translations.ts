@@ -185,10 +185,10 @@ const translations = {
     heroTitle1: { en: "Automate Your", "zh-TW": "自動化你的", "zh-CN": "自动化你的", ja: "自動化する" },
     heroTitle2: { en: "Signal Trading", "zh-TW": "訊號交易", "zh-CN": "信号交易", ja: "シグナルトレーディング" },
     heroDescription: {
-      en: "Integrating signals from top Discord & Telegram communities, auto-executing trades on Binance. AI risk analysis keeps your investments safe and efficient.",
-      "zh-TW": "整合 Discord、Telegram 知名社群策略訊號，自動在幣安執行交易。AI 風控分析，讓您的投資更加安全高效。",
-      "zh-CN": "整合 Discord、Telegram 知名社群策略信号，自动在币安执行交易。AI 风控分析，让您的投资更加安全高效。",
-      ja: "シグナルを接続し、リスク管理を設定し、秒単位で実行します。",
+      en: "Connect signals, set risk, execute in seconds.",
+      "zh-TW": "連接訊號、設定風控、秒級執行。",
+      "zh-CN": "连接信号、设定风控、秒级执行。",
+      ja: "シグナル接続、リスク設定、秒速で実行。",
     },
     featureSignalTitle: { en: "Real-time Signals", "zh-TW": "即時訊號", "zh-CN": "实时信号", ja: "リアルタイムシグナル" },
     featureSignalDesc: {
@@ -220,6 +220,7 @@ const translations = {
     },
     footer: { en: "Smart Crypto Trading Platform", "zh-TW": "智能加密貨幣交易平台", "zh-CN": "智能加密货币交易平台", ja: "スマート暗号資産トレーディングプラットフォーム" },
     // ── Hero CTA ──
+    backToIntro: { en: "Back", "zh-TW": "返回", "zh-CN": "返回", ja: "戻る" },
     startButton: { en: "Start Free", "zh-TW": "免費開始", "zh-CN": "免费开始", ja: "無料で始める" },
     heroLearnMore: { en: "Learn More", "zh-TW": "了解更多", "zh-CN": "了解更多", ja: "詳しく見る" },
     startHintRegister: { en: "No credit card required · 7-day free trial", "zh-TW": "無需信用卡 · 7 天免費試用", "zh-CN": "无需信用卡 · 7 天免费试用", ja: "クレジットカード不要 · 7日間無料試用" },
@@ -333,8 +334,8 @@ const translations = {
       ja: "質より量を重視します — 慎重に厳選されたシグナルソースに接続し、すべての取引に機関レベルのリスク管理を適用します。技術優先のアプローチは、実行速度、リスクコントロール、分析ツールの継続的な改善を意味します。",
     },
     // ── Stats bar section ──
-    statsBarTrades: { en: "Total Trades Executed", "zh-TW": "累計執行交易", "zh-CN": "累计执行交易", ja: "システム可用性" },
-    statsBarWinRate: { en: "Average Win Rate", "zh-TW": "平均勝率", "zh-CN": "平均胜率", ja: "暗号化標準" },
+    statsBarUptime: { en: "System Uptime", "zh-TW": "系統運行", "zh-CN": "系统运行", ja: "システム可用性" },
+    statsBarEncryption: { en: "Encryption", "zh-TW": "加密標準", "zh-CN": "加密标准", ja: "暗号化標準" },
     statsBarTraders: { en: "Active Traders", "zh-TW": "活躍交易者", "zh-CN": "活跃交易者", ja: "アカウントモデル" },
     statsBarSpeed: { en: "Signal Execution", "zh-TW": "訊號執行速度", "zh-CN": "信号执行速度", ja: "実行パイプライン" },
     // ── About section — trust badges ──
