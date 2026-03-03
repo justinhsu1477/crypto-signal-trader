@@ -654,3 +654,81 @@ export async function getAdminStreamStatus(): Promise<StreamStatusResponse> {
 export async function getAdminDatabaseStats(): Promise<DatabaseStatsResponse> {
   return request<DatabaseStatsResponse>("/api/admin/dashboard/database-stats");
 }
+
+// ─── Admin Announcements ───
+
+import type {
+  AnnouncementResponse,
+  CreateAnnouncementRequest,
+  AnnouncementListResponse,
+} from "@/types";
+
+export async function getAdminAnnouncements(): Promise<AnnouncementResponse[]> {
+  return request<AnnouncementResponse[]>("/api/admin/announcements");
+}
+
+export async function createAnnouncement(
+  data: CreateAnnouncementRequest
+): Promise<AnnouncementResponse> {
+  return request<AnnouncementResponse>("/api/admin/announcements", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAnnouncement(
+  id: number,
+  data: CreateAnnouncementRequest
+): Promise<AnnouncementResponse> {
+  return request<AnnouncementResponse>(`/api/admin/announcements/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function publishAnnouncement(
+  id: number
+): Promise<{ message: string; announcement: AnnouncementResponse }> {
+  return request<{ message: string; announcement: AnnouncementResponse }>(
+    `/api/admin/announcements/${id}/publish`,
+    { method: "POST" }
+  );
+}
+
+export async function archiveAnnouncement(
+  id: number
+): Promise<{ message: string }> {
+  return request<{ message: string }>(
+    `/api/admin/announcements/${id}/archive`,
+    { method: "PUT" }
+  );
+}
+
+export async function deleteAnnouncement(
+  id: number
+): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/announcements/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ─── User Announcements ───
+
+export async function getAnnouncements(
+  page: number = 0,
+  size: number = 20
+): Promise<AnnouncementListResponse> {
+  return request<AnnouncementListResponse>(
+    `/api/announcements?page=${page}&size=${size}`
+  );
+}
+
+export async function markAnnouncementRead(id: number): Promise<void> {
+  await request<{ message: string }>(`/api/announcements/${id}/read`, {
+    method: "POST",
+  });
+}
+
+export async function getUnreadAnnouncementCount(): Promise<{ count: number }> {
+  return request<{ count: number }>("/api/announcements/unread-count");
+}

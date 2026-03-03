@@ -603,3 +603,37 @@ export interface DatabaseTableStats {
   rowCount: number;
   totalBytes: number;
 }
+
+// ==================== Announcements ====================
+
+export interface AnnouncementResponse {
+  id: number;
+  title: string;
+  content: string;
+  category: "GENERAL" | "MAINTENANCE" | "UPDATE" | "URGENT" | "PROMOTION";
+  priority: "LOW" | "NORMAL" | "HIGH" | "CRITICAL";
+  channels: string;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  publishedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  readCount?: number;
+  isRead?: boolean;
+}
+
+export interface CreateAnnouncementRequest {
+  title: string;
+  content: string;
+  category: string;
+  priority: string;
+  channels: string;
+}
+
+export interface AnnouncementListResponse {
+  announcements: AnnouncementResponse[];
+  totalElements: number;
+  totalPages: number;
+  currentPage: number;
+  unreadCount: number;
+}
