@@ -51,6 +51,13 @@ public class CorsConfig implements WebMvcConfigurer {
                 .allowCredentials(true)
                 .maxAge(3600);
 
+        // WebSocket handshake 也需要 CORS（SockJS 降級走 XHR 時需要）
+        registry.addMapping("/ws/**")
+                .allowedOrigins(origins.toArray(new String[0]))
+                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowCredentials(true)
+                .maxAge(3600);
+
         log.info("CORS 設定已啟用: {}", origins);
     }
 
