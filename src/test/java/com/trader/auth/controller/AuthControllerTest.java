@@ -6,6 +6,7 @@ import com.trader.auth.service.AuthService;
 import com.trader.auth.service.EmailVerificationService;
 import com.trader.auth.service.JwtService;
 import com.trader.auth.service.PasswordResetService;
+import com.trader.auth.util.ClientIpResolver;
 import com.trader.shared.service.AuditService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -32,7 +33,7 @@ import static org.mockito.Mockito.*;
  * - 每個端點的成功/失敗路徑
  * - HttpOnly Cookie 正確設定/清除
  * - 錯誤狀態碼對應（400/401/403/429）
- * - getClientIp 取 X-Forwarded-For / X-Real-IP / remoteAddr
+ * - ClientIpResolver 注入正確解析用戶 IP
  */
 class AuthControllerTest {
 
@@ -42,6 +43,7 @@ class AuthControllerTest {
     private PasswordResetService passwordResetService;
     private UserRepository userRepository;
     private JwtService jwtService;
+    private ClientIpResolver clientIpResolver;
     private AuthController controller;
 
     private HttpServletRequest httpRequest;
@@ -55,15 +57,16 @@ class AuthControllerTest {
         passwordResetService = mock(PasswordResetService.class);
         userRepository = mock(UserRepository.class);
         jwtService = mock(JwtService.class);
+        clientIpResolver = mock(ClientIpResolver.class);
 
         controller = new AuthController(
                 authService, auditService, emailVerificationService,
-                passwordResetService, userRepository, jwtService);
+                passwordResetService, userRepository, jwtService, clientIpResolver);
 
         httpRequest = mock(HttpServletRequest.class);
         httpResponse = mock(HttpServletResponse.class);
 
-        when(httpRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+        when(clientIpResolver.resolve(httpRequest)).thenReturn("127.0.0.1");
         when(jwtService.getExpirationMs()).thenReturn(1800000L);        // 30 min
         when(jwtService.getRefreshExpirationMs()).thenReturn(259200000L); // 3 days
     }
@@ -204,13 +207,13 @@ class AuthControllerTest {
         }
 
         @Test
-        @DisplayName("X-Forwarded-For → 取第一個 IP")
-        void xForwardedFor_extractsFirstIp() {
+        @DisplayName("ClientIpResolver 解析 IP → audit log 記錄正確 IP")
+        void clientIpResolver_usedForAuditLog() {
             LoginRequest req = new LoginRequest();
             req.setEmail("test@email.com");
             req.setPassword("pass");
 
-            when(httpRequest.getHeader("X-Forwarded-For")).thenReturn("1.2.3.4, 5.6.7.8");
+            when(clientIpResolver.resolve(httpRequest)).thenReturn("1.2.3.4");
 
             LoginResponse loginResp = LoginResponse.builder()
                     .token("t").refreshToken("r").userId("u1")
@@ -221,27 +224,6 @@ class AuthControllerTest {
 
             verify(auditService).log(anyString(), eq("LOGIN"), anyString(), eq("SUCCESS"),
                     eq("1.2.3.4"), anyString());
-        }
-
-        @Test
-        @DisplayName("X-Real-IP → 使用 Real-IP")
-        void xRealIp_extractsIp() {
-            LoginRequest req = new LoginRequest();
-            req.setEmail("test@email.com");
-            req.setPassword("pass");
-
-            when(httpRequest.getHeader("X-Forwarded-For")).thenReturn(null);
-            when(httpRequest.getHeader("X-Real-IP")).thenReturn("10.0.0.1");
-
-            LoginResponse loginResp = LoginResponse.builder()
-                    .token("t").refreshToken("r").userId("u1")
-                    .email("test@email.com").role("USER").build();
-            when(authService.login(any())).thenReturn(loginResp);
-
-            controller.login(req, httpRequest, httpResponse);
-
-            verify(auditService).log(anyString(), eq("LOGIN"), anyString(), eq("SUCCESS"),
-                    eq("10.0.0.1"), anyString());
         }
     }
 

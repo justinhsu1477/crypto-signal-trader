@@ -6,6 +6,7 @@ import com.trader.auth.service.AuthService;
 import com.trader.auth.service.EmailVerificationService;
 import com.trader.auth.service.JwtService;
 import com.trader.auth.service.PasswordResetService;
+import com.trader.auth.util.ClientIpResolver;
 import com.trader.auth.util.CookieUtil;
 import com.trader.auth.util.EmailNormalizer;
 import com.trader.shared.dto.ErrorResponse;
@@ -17,7 +18,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -38,9 +38,7 @@ public class AuthController {
     private final PasswordResetService passwordResetService;
     private final UserRepository userRepository;
     private final JwtService jwtService;
-
-    @Value("${security.trusted-proxies:127.0.0.1,::1,0:0:0:0:0:0:0:1}")
-    private String trustedProxies;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * 用戶註冊
@@ -75,7 +73,7 @@ public class AuthController {
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request,
                                    HttpServletRequest httpRequest,
                                    HttpServletResponse httpResponse) {
-        String clientIp = getClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
 
         try {
             LoginResponse response = authService.login(request);
@@ -171,7 +169,7 @@ public class AuthController {
     @PostMapping("/refresh")
     public ResponseEntity<?> refreshToken(HttpServletRequest httpRequest,
                                           HttpServletResponse httpResponse) {
-        String clientIp = getClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
 
         // 從 Cookie 讀取 Refresh Token
         String refreshToken = CookieUtil.extractRefreshToken(httpRequest);
@@ -229,7 +227,7 @@ public class AuthController {
                                     HttpServletResponse httpResponse) {
         CookieUtil.clearAuthCookies(httpResponse, jwtService.isCookieSecure());
 
-        String clientIp = getClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
         Authentication auth = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication();
         String userId = (auth != null && auth.getPrincipal() instanceof String)
@@ -255,7 +253,7 @@ public class AuthController {
                                             Authentication authentication,
                                             HttpServletRequest httpRequest,
                                             HttpServletResponse httpResponse) {
-        String clientIp = getClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
         String userId = (String) authentication.getPrincipal();
 
         try {
@@ -338,40 +336,4 @@ public class AuthController {
         ));
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        String remoteAddr = request.getRemoteAddr();
-        if (!isTrustedProxy(remoteAddr)) {
-            return remoteAddr;
-        }
-
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isEmpty()) {
-            return forwarded.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isEmpty()) {
-            return realIp;
-        }
-        return remoteAddr;
-    }
-
-    private boolean isTrustedProxy(String remoteAddr) {
-        if (remoteAddr == null || remoteAddr.isBlank()) {
-            return false;
-        }
-        if ("127.0.0.1".equals(remoteAddr)
-                || "::1".equals(remoteAddr)
-                || "0:0:0:0:0:0:0:1".equals(remoteAddr)) {
-            return true;
-        }
-        if (trustedProxies == null || trustedProxies.isBlank()) {
-            return false;
-        }
-        for (String configured : trustedProxies.split(",")) {
-            if (remoteAddr.equals(configured.trim())) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

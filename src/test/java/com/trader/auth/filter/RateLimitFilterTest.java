@@ -1,5 +1,6 @@
 package com.trader.auth.filter;
 
+import com.trader.auth.util.ClientIpResolver;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -15,27 +16,29 @@ import static org.mockito.Mockito.*;
  * RateLimitFilter 單元測試
  *
  * 覆蓋：多路徑限流規則、group 共享計數、429 回傳格式、
- *       IP 解析（X-Forwarded-For / X-Real-IP）、cleanup、不同 IP 隔離
+ *       IP 隔離、cleanup
+ *
+ * IP 解析邏輯由 ClientIpResolverTest 獨立覆蓋。
  */
 class RateLimitFilterTest {
 
+    private ClientIpResolver clientIpResolver;
     private RateLimitFilter filter;
     private FilterChain chain;
     private HttpServletResponse response;
 
     @BeforeEach
     void setUp() {
-        filter = new RateLimitFilter();
+        clientIpResolver = mock(ClientIpResolver.class);
+        filter = new RateLimitFilter(clientIpResolver);
         chain = mock(FilterChain.class);
         response = mock(HttpServletResponse.class);
     }
 
-    private HttpServletRequest mockRequest(String path, String ip) {
+    private HttpServletRequest mockRequest(String path, String resolvedIp) {
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURI()).thenReturn(path);
-        when(request.getRemoteAddr()).thenReturn(ip);
-        when(request.getHeader("X-Forwarded-For")).thenReturn(null);
-        when(request.getHeader("X-Real-IP")).thenReturn(null);
+        when(clientIpResolver.resolve(request)).thenReturn(resolvedIp);
         return request;
     }
 
@@ -440,35 +443,6 @@ class RateLimitFilterTest {
             HttpServletRequest request = mockRequest("/api/dashboard/overview", "41.0.0.1");
             filter.doFilter(request, response, chain);
             verify(chain, times(6)).doFilter(any(), any());
-        }
-    }
-
-    // ==================== IP 解析 ====================
-
-    @Nested
-    @DisplayName("IP 解析")
-    class IpParsingTests {
-
-        @Test
-        @DisplayName("X-Forwarded-For 取第一個 IP")
-        void xForwardedForUsesFirstIp() throws Exception {
-            HttpServletRequest request = mockRequest("/api/auth/login", "127.0.0.1");
-            when(request.getHeader("X-Forwarded-For")).thenReturn("50.0.0.1, 60.0.0.1");
-
-            filter.doFilter(request, response, chain);
-
-            verify(chain).doFilter(request, response);
-        }
-
-        @Test
-        @DisplayName("X-Real-IP 優先於 remoteAddr")
-        void xRealIpUsed() throws Exception {
-            HttpServletRequest request = mockRequest("/api/auth/login", "127.0.0.1");
-            when(request.getHeader("X-Real-IP")).thenReturn("70.0.0.1");
-
-            filter.doFilter(request, response, chain);
-
-            verify(chain).doFilter(request, response);
         }
     }
 
