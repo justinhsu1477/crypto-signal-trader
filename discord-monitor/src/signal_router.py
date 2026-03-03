@@ -1,13 +1,18 @@
 """Signal router — filters messages by channel, identifies signal type, forwards to API."""
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 
 from .api_client import ApiClient
 from .config import DiscordConfig
 from .trade_action_detector import detector
 
 logger = logging.getLogger(__name__)
+
+# Pattern: embed title/description containing a quoted timestamp like "2026-03-03 00:48"
+_QUOTED_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}")
 
 # Signal type identification by emoji prefix (only used when AI is disabled)
 SIGNAL_TYPES = {
@@ -53,6 +58,9 @@ class SignalRouter:
         self.ignore_keywords = discord_config.ignore_keywords or []
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
+        # Content-hash dedup: prevent re-processing old signal content that appears in embeds
+        self._content_hashes: set[str] = set()
+        self._max_content_hash_size = 5000
 
     async def handle_message(self, msg: dict) -> None:
         """Called by CdpClient for each MESSAGE_CREATE event.
@@ -78,22 +86,50 @@ class SignalRouter:
         if self.author_ids and msg.get("author_id", "") not in self.author_ids:
             return
 
-        # Build content — 回覆訊息只用 content，跳過 embeds（避免引用的舊訊號混入）
+        # Build content — 多層防護避免引用的舊訊號混入
+        #   Layer 1: has_reference（標準 Discord 回覆）
+        #   Layer 2: has_snapshots（Discord 轉發訊息 / message_snapshots）
+        #   Layer 3: embed 時間戳偵測（Bot/APP 引用舊訊息帶時間戳）
+        #   Layer 4: embed content-hash 去重（embeds 內容與已處理訊號重複）
         is_reply = msg.get("has_reference", False)
+        has_snapshots = msg.get("has_snapshots", False)
+        skip_embeds = is_reply or has_snapshots
+
         parts = []
         content_text = msg.get("content", "")
         if content_text:
             parts.append(content_text)
 
-        if not is_reply:
-            for embed in msg.get("embeds", []):
-                if embed.get("title"):
-                    parts.append(embed["title"])
-                if embed.get("description"):
-                    parts.append(embed["description"])
-        else:
+        if skip_embeds:
             ref_preview = msg.get("referenced_content", "")[:80].replace("\n", " | ")
-            logger.info("⤵️ Reply detected, ignoring referenced content: %s", ref_preview)
+            reason = "reply" if is_reply else "forwarded(snapshots)"
+            logger.info("⤵️ %s detected, ignoring embeds: %s", reason, ref_preview)
+        else:
+            for embed in msg.get("embeds", []):
+                embed_text = "\n".join(
+                    filter(None, [embed.get("title", ""), embed.get("description", "")])
+                )
+                if not embed_text:
+                    continue
+
+                # Layer 3: 偵測含歷史時間戳的 embed（Bot/APP 引用舊訊息）
+                if _QUOTED_TIMESTAMP_RE.search(embed_text):
+                    logger.info(
+                        "⤵️ Embed contains quoted timestamp, skipping: %s",
+                        embed_text[:80].replace("\n", " | "),
+                    )
+                    continue
+
+                # Layer 4: content-hash 去重（embed 內容與已處理訊號重複）
+                embed_hash = self._content_hash(embed_text)
+                if embed_hash in self._content_hashes:
+                    logger.info(
+                        "⤵️ Embed content-hash duplicated (previously processed signal), skipping: %s",
+                        embed_text[:60].replace("\n", " | "),
+                    )
+                    continue
+
+                parts.append(embed_text)
 
         content = "\n".join(parts)
 
@@ -217,6 +253,8 @@ class SignalRouter:
             # 如果有有效的 action（不是 INFO 也不是 UNKNOWN）
             if parsed and parsed.get("action") not in ("INFO", "UNKNOWN"):
                 logger.info("AI parsed → %s %s %s", parsed.get("action"), parsed.get("symbol"), parsed.get("side", ""))
+                # Record content hash for embed dedup (Layer 4 protection)
+                self._record_content_hash(content)
 
                 # TODO: Insert Agent 2 (risk assessment) here in future
                 # TODO: Insert Agent 3 (arbitration) here in future
@@ -264,8 +302,26 @@ class SignalRouter:
                     original_content=content,
                 )
 
+    @staticmethod
+    def _content_hash(text: str) -> str:
+        """Generate a short hash of content for dedup (strip whitespace for robustness)."""
+        normalized = re.sub(r"\s+", "", text)
+        return hashlib.md5(normalized.encode()).hexdigest()[:12]
+
+    def _record_content_hash(self, content: str) -> None:
+        """Record the content hash of a successfully processed signal."""
+        h = self._content_hash(content)
+        self._content_hashes.add(h)
+        self._trim_content_hashes()
+
     def _trim_dedup_set(self) -> None:
         """Prevent unbounded memory growth of dedup set."""
         if len(self._processed_ids) > self._max_dedup_size:
             to_keep = list(self._processed_ids)[self._max_dedup_size // 2:]
             self._processed_ids = set(to_keep)
+
+    def _trim_content_hashes(self) -> None:
+        """Prevent unbounded memory growth of content hash set."""
+        if len(self._content_hashes) > self._max_content_hash_size:
+            to_keep = list(self._content_hashes)[self._max_content_hash_size // 2:]
+            self._content_hashes = set(to_keep)

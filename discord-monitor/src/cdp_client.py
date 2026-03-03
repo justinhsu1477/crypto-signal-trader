@@ -125,6 +125,7 @@ INJECT_JS = """
                     };
                 }),
                 has_reference: !!msg.message_reference,
+                has_snapshots: !!(msg.message_snapshots && msg.message_snapshots.length > 0),
                 referenced_content: (msg.referenced_message && msg.referenced_message.content) || ''
             };
             window.__signalMonitorQueue.push(JSON.stringify(data));
