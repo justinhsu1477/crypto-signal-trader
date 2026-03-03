@@ -78,8 +78,13 @@ jacocoTestCoverageVerification {
     violationRules {
         rule {
             limit {
-                minimum = 0.50  // 50% 門檻
+                minimum = 0.70  // 70% 門檻（金融系統標準）
             }
         }
     }
+}
+
+// 確保 build 時自動執行覆蓋率檢查
+tasks.named('check') {
+    dependsOn jacocoTestCoverageVerification
 }
