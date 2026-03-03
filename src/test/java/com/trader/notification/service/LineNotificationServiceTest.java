@@ -146,6 +146,85 @@ class LineNotificationServiceTest {
         }
     }
 
+    // ==================== 訊息截斷 ====================
+
+    @Nested
+    @DisplayName("LINE 訊息長度截斷")
+    class TruncationTests {
+
+        @Test
+        @DisplayName("短訊息 → 完整發送，無截斷")
+        void shortMessageNotTruncated() {
+            when(lineBindingRepository.findByUserIdAndEnabledTrue(USER_ID))
+                    .thenReturn(Optional.of(UserLineBinding.builder()
+                            .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build()));
+
+            service.sendNotificationToUser(USER_ID, "短標題", "短內容", NotificationService.COLOR_GREEN);
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+            // 驗證 body 包含完整內容
+            String body = bodyToString(captor.getValue());
+            assertThat(body).contains("短標題");
+            assertThat(body).contains("短內容");
+            assertThat(body).doesNotContain("截斷");
+        }
+
+        @Test
+        @DisplayName("超長訊息 → 截斷 + 提示文字")
+        void longMessageTruncated() {
+            when(lineBindingRepository.findByUserIdAndEnabledTrue(USER_ID))
+                    .thenReturn(Optional.of(UserLineBinding.builder()
+                            .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build()));
+
+            // 5000+ 字元的超長訊息
+            String longMessage = "A".repeat(5500);
+            service.sendNotificationToUser(USER_ID, "標題", longMessage, NotificationService.COLOR_GREEN);
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+
+            String body = bodyToString(captor.getValue());
+            // 驗證有截斷提示
+            assertThat(body).contains("截斷");
+            // 驗證 JSON 內的原始文字不會超過 LINE 上限（含 JSON 轉義增幅也安全）
+            assertThat(body.length()).isLessThan(6000);
+        }
+
+        @Test
+        @DisplayName("剛好 4800 字元 → 不截斷")
+        void exactLimitNotTruncated() {
+            when(lineBindingRepository.findByUserIdAndEnabledTrue(USER_ID))
+                    .thenReturn(Optional.of(UserLineBinding.builder()
+                            .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build()));
+
+            // 計算 overhead: title + \n\n + \n\n + footer(~40字元)
+            // 讓 fullText 剛好 = 4800
+            String title = "T";
+            // fullText = title + \n\n + message + \n\n + footer(~60 chars)
+            int overhead = title.length() + 2 + 2 + 60;
+            String message = "B".repeat(4800 - overhead);
+
+            service.sendNotificationToUser(USER_ID, title, message, NotificationService.COLOR_GREEN);
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+            String body = bodyToString(captor.getValue());
+            assertThat(body).doesNotContain("截斷");
+        }
+
+        /** 從 OkHttp Request 擷取 body 字串 */
+        private String bodyToString(Request request) {
+            try {
+                okio.Buffer buffer = new okio.Buffer();
+                request.body().writeTo(buffer);
+                return buffer.readUtf8();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+    }
+
     // ==================== 快取管理 ====================
 
     @Nested

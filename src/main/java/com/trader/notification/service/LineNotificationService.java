@@ -36,6 +36,8 @@ public class LineNotificationService implements NotificationService {
     private static final MediaType JSON_TYPE = MediaType.get("application/json; charset=utf-8");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 分鐘
+    /** LINE 文字訊息上限 5000 字元，預留空間給 JSON 結構與轉義 */
+    private static final int LINE_TEXT_MAX_LENGTH = 4800;
 
     private final OkHttpClient httpClient;
     private final LineConfig lineConfig;
@@ -145,9 +147,31 @@ public class LineNotificationService implements NotificationService {
 
     /**
      * 推送訊息到 LINE 用戶
+     *
+     * LINE 文字訊息上限 5000 字元，超過會被 API 拒絕（HTTP 400）。
+     * 此方法在發送前檢查長度，超過時截斷並加上提示。
      */
     private void pushMessage(String lineUserId, String title, String message) {
         String timestamp = ZonedDateTime.now(AppConstants.ZONE_ID).format(TIME_FMT);
+        String footer = "Crypto Signal Trader | " + timestamp;
+
+        // 組合完整文字，計算實際長度（未 JSON 轉義前）
+        String fullText = title + "\n\n" + message + "\n\n" + footer;
+
+        // 超過 LINE 上限時截斷 message 部分
+        if (fullText.length() > LINE_TEXT_MAX_LENGTH) {
+            String suffix = "\n\n...（訊息過長已截斷）";
+            int overhead = title.length() + "\n\n".length() + suffix.length()
+                    + "\n\n".length() + footer.length();
+            int allowedMessageLen = LINE_TEXT_MAX_LENGTH - overhead;
+            if (allowedMessageLen > 0) {
+                message = message.substring(0, Math.min(message.length(), allowedMessageLen)) + suffix;
+            } else {
+                message = "（訊息過長無法顯示）" + suffix;
+            }
+            log.info("LINE 訊息已截斷: 原始 {} 字元 → {}", fullText.length(), LINE_TEXT_MAX_LENGTH);
+        }
+
         String body = buildPushJson(lineUserId, title, message, timestamp);
 
         Request request = new Request.Builder()
