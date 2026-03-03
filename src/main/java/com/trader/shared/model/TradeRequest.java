@@ -38,4 +38,7 @@ public class TradeRequest {
     private Boolean isDca;       // 是否為補倉訊號（DCA）
 
     private SignalSource source; // 訊號來源 (可選)
+
+    @JsonProperty("signal_timestamp")
+    private Long signalTimestamp;  // 訊號產生時間（epoch millis），用於時效性驗證（可選）
 }
