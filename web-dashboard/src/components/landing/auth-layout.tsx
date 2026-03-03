@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { PublicNavbar } from "./public-navbar";
 import { CryptoBackground } from "./crypto-background";
@@ -32,6 +32,13 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
   const isLogin = pathname === "/login";
   const initialShowCard = searchParams.get("action") === "signin";
   const [showAuthCard, setShowAuthCard] = useState(initialShowCard);
+
+  // 監聽 navbar「登入」按鈕的 custom event
+  useEffect(() => {
+    const handler = () => setShowAuthCard(true);
+    window.addEventListener("show-auth-card", handler);
+    return () => window.removeEventListener("show-auth-card", handler);
+  }, []);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden text-black" style={{ background: "rgb(255,248,247)" }}>
