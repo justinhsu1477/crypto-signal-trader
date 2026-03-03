@@ -10,6 +10,7 @@ import { Header } from "@/components/layout/header";
 import { AuthLayout } from "@/components/landing/auth-layout";
 import { ErrorBoundary, PageErrorFallback } from "@/components/ui/error-boundary";
 import { Toaster } from "sonner";
+import { AnnouncementListener } from "@/components/layout/announcement-listener";
 
 const AUTH_LAYOUT_PATHS = ["/login", "/register", "/verify-email", "/forgot-password", "/reset-password"];
 const STANDALONE_PUBLIC_PATHS = ["/blog", "/status"];
@@ -30,6 +31,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             children
           ) : (
             <AuthGuard>
+              <AnnouncementListener />
               <div className="min-h-screen bg-background">
                 <Sidebar />
                 <div className="md:pl-64">
