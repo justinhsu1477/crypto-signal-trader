@@ -60,6 +60,9 @@ public class AuthConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/health", "/api/health/deep", "/api/status").permitAll()
                         .requestMatchers("/api/line/webhook").permitAll()
+                        // === Actuator 端點 ===
+                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
 
                         // === ADMIN 專用 ===
                         .requestMatchers(

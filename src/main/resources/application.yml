@@ -165,6 +165,20 @@ referral:
   referral-link: ${REFERRAL_LINK:https://www.binance.com/activity/referral-entry/CPA?ref=CPA_GRO_28502_3UMIS}
   referral-code: ${REFERRAL_CODE:GRO_28502_3UMIS}
 
+# ========== Actuator / Prometheus ==========
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
 logging:
   level:
     com.trader: DEBUG

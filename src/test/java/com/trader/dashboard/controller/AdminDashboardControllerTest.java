@@ -38,7 +38,7 @@ class AdminDashboardControllerTest {
         dashboardService = mock(DashboardService.class);
         userRepository = mock(UserRepository.class);
         dataSource = mock(DataSource.class);
-        controller = new AdminDashboardController(dashboardService, userRepository, dataSource);
+        controller = new AdminDashboardController(dashboardService, userRepository, dataSource, null);
     }
 
     // ── system-overview ──

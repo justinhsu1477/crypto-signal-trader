@@ -10,6 +10,7 @@ import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
+import com.trader.trading.validation.TradeSignalValidator;
 import com.trader.user.service.UserApiKeyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
@@ -64,7 +65,8 @@ class TradeLifecycleTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook,
                 new MultiUserConfig(), new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                new TradeSignalValidator(), null));
 
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);

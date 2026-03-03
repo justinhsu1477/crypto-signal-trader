@@ -11,6 +11,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
+import com.trader.trading.validation.TradeSignalValidator;
 import com.trader.user.service.UserApiKeyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
@@ -66,7 +67,8 @@ class BinanceFuturesServiceTest {
                 null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                 riskConfig, mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
                 new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter()));
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
+                new TradeSignalValidator(), null));
 
         // 通用 mock — 大部分測試需要的基礎環境
         when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
@@ -684,7 +686,8 @@ class BinanceFuturesServiceTest {
                     null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
                     riskConfig, mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
                     new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
-                    mockTradeConfigResolver, sodCache, new com.trader.shared.util.BinanceApiRateLimiter()));
+                    mockTradeConfigResolver, sodCache, new com.trader.shared.util.BinanceApiRateLimiter(),
+                    new TradeSignalValidator(), null));
             setupEntryMocks(1000, 0, 95000);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);

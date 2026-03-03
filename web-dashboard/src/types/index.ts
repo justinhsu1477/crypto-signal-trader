@@ -637,3 +637,31 @@ export interface AnnouncementListResponse {
   currentPage: number;
   unreadCount: number;
 }
+
+// ==================== Admin Metrics ====================
+
+export interface AdminMetricsResponse {
+  orders: {
+    total: number;
+    success: number;
+    failed: number;
+    successRate: number;
+  };
+  signals: {
+    total: number;
+    byType: Record<string, number>;
+  };
+  notifications: {
+    total: number;
+    byChannel: Record<string, number>;
+    failRate: number;
+  };
+  api: {
+    avgLatencyMs: number;
+    p99LatencyMs: number;
+    totalCalls: number;
+  };
+  system: {
+    uptimeSeconds: number;
+  };
+}
