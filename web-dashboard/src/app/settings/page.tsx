@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { UserProfile, ApiKeyMetadata, AutoTradeStatus } from "@/types";
 import {
   getUserProfile,
@@ -808,11 +808,18 @@ export default function SettingsPage() {
     );
   }
 
+  // Password strength checks（與 register 一致：8+ 字元 + 大小寫）
+  const passwordChecks = useMemo(() => [
+    { key: "min", passed: newPw.length >= 8, label: t("register.passwordMinChars") },
+    { key: "mixed", passed: /[A-Z]/.test(newPw) && /[a-z]/.test(newPw), label: t("register.passwordMixedCase") },
+  ], [newPw, t]);
+  const isNewPwValid = passwordChecks.every((check) => check.passed);
+
   async function handleChangePassword() {
     setPwError("");
 
-    if (newPw.length < 8) {
-      setPwError(t("settings.passwordMinLength"));
+    if (!isNewPwValid) {
+      setPwError(t("settings.passwordFormatError"));
       return;
     }
     if (newPw !== confirmPw) {
@@ -923,6 +930,22 @@ export default function SettingsPage() {
               minLength={8}
               autoComplete="new-password"
             />
+            {/* Password requirements indicator */}
+            {newPw.length > 0 && (
+              <div className="space-y-1.5 rounded-lg bg-muted/50 border border-border px-3 py-2.5">
+                <p className="text-xs font-medium text-muted-foreground">{t("register.passwordRequirements")}</p>
+                {passwordChecks.map((check) => (
+                  <div key={check.key} className="flex items-center gap-2 text-xs">
+                    <span className={check.passed ? "text-emerald-500" : "text-muted-foreground/50"}>
+                      {check.passed ? "✓" : "○"}
+                    </span>
+                    <span className={check.passed ? "text-emerald-500" : "text-muted-foreground/50"}>
+                      {check.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -942,7 +965,7 @@ export default function SettingsPage() {
 
           <Button
             onClick={handleChangePassword}
-            disabled={pwSaving || !currentPw || !newPw || !confirmPw}
+            disabled={pwSaving || !currentPw || !isNewPwValid || !confirmPw}
           >
             {pwSaving ? (
               <>
