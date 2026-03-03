@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
@@ -242,12 +243,18 @@ public class BroadcastTradeService {
             log.info("廣播跟單完成: 成功={} 失敗={} 超時取消={}",
                     successCount.get(), failCount.get(), cancelledCount);
 
-            // 取得最終 AI 評分（短暫等待，大部分情況分數早已就緒）
+            // 動態等待 AI 評分：Gemini 總可用時間 = 交易執行耗時 + 剩餘等待，上限 6 秒
+            // Gemini Flash 模型回應此類短 prompt 通常 2-3 秒，6 秒綽綽有餘
+            // 交易執行快（1-2秒）時多等一下，交易慢（5秒+）時 Gemini 幾乎必定已完成
             SignalScore finalScore = null;
             try {
-                finalScore = scoreFuture.get(3, TimeUnit.SECONDS);
+                long elapsedMs = Duration.between(broadcastStartTime, LocalDateTime.now()).toMillis();
+                long remainingMs = Math.max(500, 6_000 - elapsedMs); // 最少等 500ms
+                finalScore = scoreFuture.get(remainingMs, TimeUnit.MILLISECONDS);
+                log.debug("AI 評分取得成功，總耗時 {}ms（等待 {}ms）", elapsedMs + remainingMs, remainingMs);
             } catch (TimeoutException e) {
-                log.debug("AI 評分未及時完成，跳過");
+                long totalMs = Duration.between(broadcastStartTime, LocalDateTime.now()).toMillis();
+                log.debug("AI 評分未及時完成（已等 {}ms），跳過", totalMs);
             } catch (ExecutionException e) {
                 log.warn("AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             }
