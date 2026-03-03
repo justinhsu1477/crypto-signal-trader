@@ -29,10 +29,12 @@ public class UserService {
     private final UserTradeSettingsRepository userTradeSettingsRepository;
     private final AesEncryptionUtil aesEncryptionUtil;
 
+    @Transactional(readOnly = true)
     public Optional<User> findById(String userId) {
         return userRepository.findById(userId);
     }
 
+    @Transactional(readOnly = true)
     public Optional<User> findByEmail(String email) {
         return userRepository.findByEmail(email);
     }
@@ -60,6 +62,7 @@ public class UserService {
         return userApiKeyRepository.save(entity);
     }
 
+    @Transactional(readOnly = true)
     public List<UserApiKey> getApiKeys(String userId) {
         return userApiKeyRepository.findByUserId(userId);
     }

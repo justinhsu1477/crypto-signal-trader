@@ -7,6 +7,7 @@ import com.trader.user.repository.UserApiKeyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -36,6 +37,7 @@ public class UserApiKeyService {
      * @param userId 用戶 ID
      * @return 解密後的 apiKey + secretKey，若用戶未設定則返回 empty
      */
+    @Transactional(readOnly = true)
     public Optional<BinanceKeys> getUserBinanceKeys(String userId) {
         Optional<UserApiKey> keyOpt = userApiKeyRepository
                 .findByUserIdAndExchange(userId, "BINANCE");
@@ -67,6 +69,7 @@ public class UserApiKeyService {
     /**
      * 檢查用戶是否已設定 Binance API Key
      */
+    @Transactional(readOnly = true)
     public boolean hasApiKey(String userId) {
         return userApiKeyRepository.findByUserIdAndExchange(userId, "BINANCE").isPresent();
     }
@@ -80,6 +83,7 @@ public class UserApiKeyService {
      * @param exchange 交易所名稱
      * @return 擁有 API Key 的 userId 集合
      */
+    @Transactional(readOnly = true)
     public Set<String> getUserIdsWithApiKey(String exchange) {
         return new HashSet<>(userApiKeyRepository.findUserIdsByExchange(exchange));
     }
@@ -91,6 +95,7 @@ public class UserApiKeyService {
      * @param exchange 交易所名稱
      * @return userId → BinanceKeys 的 Map，只包含解密成功且完整的記錄
      */
+    @Transactional(readOnly = true)
     public Map<String, BinanceKeys> getAllBinanceKeys(String exchange) {
         List<UserApiKey> allKeys = userApiKeyRepository.findByExchange(exchange);
         Map<String, BinanceKeys> result = new HashMap<>();
