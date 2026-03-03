@@ -1,13 +1,17 @@
 package com.trader.shared.util;
 
+import com.trader.shared.exception.AesDecryptionException;
+import com.trader.shared.exception.AesDecryptionException.ErrorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
+import java.security.InvalidKeyException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -25,8 +29,11 @@ public class AesEncryptionUtil {
     private static final int GCM_IV_LENGTH = 12;     // 96 bits
     private static final int GCM_TAG_LENGTH = 128;   // 128 bits
 
-    @Value("${encryption.aes-key}")
-    private String aesKey;
+    private final String aesKey;
+
+    public AesEncryptionUtil(@Value("${encryption.aes-key}") String aesKey) {
+        this.aesKey = aesKey;
+    }
 
     /**
      * AES-256-GCM 加密
@@ -67,6 +74,13 @@ public class AesEncryptionUtil {
         try {
             byte[] decoded = Base64.getDecoder().decode(encrypted);
 
+            if (decoded.length <= GCM_IV_LENGTH) {
+                throw new AesDecryptionException(
+                        ErrorType.DATA_CORRUPTED,
+                        "密文長度不足（至少需要 IV " + GCM_IV_LENGTH + " bytes，實際 " + decoded.length + " bytes）",
+                        null);
+            }
+
             ByteBuffer buffer = ByteBuffer.wrap(decoded);
             byte[] iv = new byte[GCM_IV_LENGTH];
             buffer.get(iv);
@@ -81,8 +95,28 @@ public class AesEncryptionUtil {
             cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
 
             return new String(cipher.doFinal(ciphertext));
+        } catch (AesDecryptionException e) {
+            throw e; // 已分類，直接拋出
+        } catch (IllegalArgumentException e) {
+            throw new AesDecryptionException(
+                    ErrorType.DATA_CORRUPTED,
+                    "Base64 解碼失敗，密文格式損壞",
+                    e);
+        } catch (AEADBadTagException e) {
+            throw new AesDecryptionException(
+                    ErrorType.AUTH_TAG_MISMATCH,
+                    "GCM 認證標籤不符（可能原因：AES Key 不正確 或密文被篡改）",
+                    e);
+        } catch (InvalidKeyException e) {
+            throw new AesDecryptionException(
+                    ErrorType.INVALID_KEY,
+                    "加密金鑰格式不正確",
+                    e);
         } catch (Exception e) {
-            throw new RuntimeException("解密失敗", e);
+            throw new AesDecryptionException(
+                    ErrorType.UNKNOWN,
+                    "解密失敗: " + e.getMessage(),
+                    e);
         }
     }
 }
