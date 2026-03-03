@@ -3,6 +3,7 @@ package com.trader.notification.consumer;
 import com.trader.notification.model.AnnouncementMessage;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.LineNotificationService;
+import com.trader.user.repository.UserDiscordWebhookRepository;
 import com.trader.user.repository.UserLineBindingRepository;
 import org.junit.jupiter.api.*;
 
@@ -16,12 +17,13 @@ import static org.mockito.Mockito.*;
 /**
  * AnnouncementConsumer 單元測試
  *
- * 覆蓋：channel 過濾邏輯、Discord 推送、LINE 逐用戶推送、錯誤處理
+ * 覆蓋：channel 過濾邏輯、Discord per-user 推送、LINE 逐用戶推送、錯誤處理
  */
 class AnnouncementConsumerTest {
 
     private DiscordWebhookService discordService;
     private LineNotificationService lineService;
+    private UserDiscordWebhookRepository discordWebhookRepository;
     private UserLineBindingRepository lineBindingRepository;
     private AnnouncementConsumer consumer;
 
@@ -29,9 +31,10 @@ class AnnouncementConsumerTest {
     void setUp() {
         discordService = mock(DiscordWebhookService.class);
         lineService = mock(LineNotificationService.class);
+        discordWebhookRepository = mock(UserDiscordWebhookRepository.class);
         lineBindingRepository = mock(UserLineBindingRepository.class);
 
-        consumer = new AnnouncementConsumer(discordService, lineService, lineBindingRepository);
+        consumer = new AnnouncementConsumer(discordService, lineService, discordWebhookRepository, lineBindingRepository);
     }
 
     private AnnouncementMessage buildMessage(String channels, String category, String priority) {
@@ -99,27 +102,36 @@ class AnnouncementConsumerTest {
     // ==================== consumeDiscord ====================
 
     @Nested
-    @DisplayName("consumeDiscord — Discord 推送")
+    @DisplayName("consumeDiscord — Discord per-user 推送")
     class ConsumeDiscordTests {
 
         @Test
-        @DisplayName("channels=ALL — 發送 Discord 通知")
-        void sendsWhenAllChannels() {
+        @DisplayName("channels=ALL + 2 個 webhook 用戶 — 各自收到通知")
+        void sendsToAllWebhookUsers() {
+            when(discordWebhookRepository.findUserIdsWithEnabledWebhook())
+                    .thenReturn(List.of("user-1", "user-2"));
+
             AnnouncementMessage msg = buildMessage("ALL", "GENERAL", "NORMAL");
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService).sendNotification(contains("測試公告"), eq("測試內容"), anyInt());
+            verify(discordService, times(2)).sendNotificationToUser(
+                    anyString(), contains("測試公告"), eq("測試內容"), anyInt());
+            verify(discordService).sendNotificationToUser(eq("user-1"), anyString(), anyString(), anyInt());
+            verify(discordService).sendNotificationToUser(eq("user-2"), anyString(), anyString(), anyInt());
         }
 
         @Test
-        @DisplayName("channels=DISCORD — 發送 Discord 通知")
+        @DisplayName("channels=DISCORD — 發送 Discord 通知（per-user）")
         void sendsWhenDiscordChannel() {
+            when(discordWebhookRepository.findUserIdsWithEnabledWebhook())
+                    .thenReturn(List.of("user-1"));
+
             AnnouncementMessage msg = buildMessage("DISCORD", "MAINTENANCE", "HIGH");
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService).sendNotification(contains("系統維護"), eq("測試內容"), anyInt());
+            verify(discordService).sendNotificationToUser(eq("user-1"), contains("系統維護"), eq("測試內容"), anyInt());
         }
 
         @Test
@@ -129,17 +141,49 @@ class AnnouncementConsumerTest {
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService, never()).sendNotification(anyString(), anyString(), anyInt());
+            verify(discordWebhookRepository, never()).findUserIdsWithEnabledWebhook();
+            verify(discordService, never()).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("無 webhook 用戶 — 不發送任何 Discord 通知")
+        void noWebhookUsersNoSend() {
+            when(discordWebhookRepository.findUserIdsWithEnabledWebhook()).thenReturn(List.of());
+
+            AnnouncementMessage msg = buildMessage("ALL", "GENERAL", "NORMAL");
+
+            consumer.consumeDiscord(msg);
+
+            verify(discordService, never()).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
         }
 
         @Test
         @DisplayName("URGENT 分類 — 標題含🚨")
         void urgentCategoryHasEmoji() {
+            when(discordWebhookRepository.findUserIdsWithEnabledWebhook())
+                    .thenReturn(List.of("user-1"));
+
             AnnouncementMessage msg = buildMessage("ALL", "URGENT", "CRITICAL");
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService).sendNotification(contains("🚨"), anyString(), anyInt());
+            verify(discordService).sendNotificationToUser(eq("user-1"), contains("🚨"), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("單個用戶推送失敗 — 不影響其他用戶")
+        void singleUserFailureDoesNotBlockOthers() {
+            when(discordWebhookRepository.findUserIdsWithEnabledWebhook())
+                    .thenReturn(List.of("user-1", "user-2", "user-3"));
+            doThrow(new RuntimeException("Discord API error"))
+                    .when(discordService).sendNotificationToUser(eq("user-2"), anyString(), anyString(), anyInt());
+
+            AnnouncementMessage msg = buildMessage("ALL", "GENERAL", "NORMAL");
+
+            assertThatCode(() -> consumer.consumeDiscord(msg)).doesNotThrowAnyException();
+
+            verify(discordService).sendNotificationToUser(eq("user-1"), anyString(), anyString(), anyInt());
+            verify(discordService).sendNotificationToUser(eq("user-3"), anyString(), anyString(), anyInt());
         }
     }
 
