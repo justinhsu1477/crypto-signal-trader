@@ -403,6 +403,7 @@ class AuthServiceTest {
             String oldRefreshToken = "old-refresh-token";
 
             when(jwtService.validateToken(oldRefreshToken)).thenReturn(true);
+            when(jwtService.extractType(oldRefreshToken)).thenReturn("refresh");
             when(jwtService.extractUserId(oldRefreshToken)).thenReturn("test-uuid");
 
             User user = User.builder()
@@ -443,6 +444,7 @@ class AuthServiceTest {
         @DisplayName("用戶不存在 → 拋出「用戶不存在」")
         void userNotFound_throwsException() {
             when(jwtService.validateToken("valid-token")).thenReturn(true);
+            when(jwtService.extractType("valid-token")).thenReturn("refresh");
             when(jwtService.extractUserId("valid-token")).thenReturn("deleted-user");
             when(userRepository.findById("deleted-user")).thenReturn(Optional.empty());
 
@@ -455,6 +457,7 @@ class AuthServiceTest {
         @DisplayName("帳號已停用 → 拋出「帳號已停用」，不發新 token")
         void disabledAccount_throwsException() {
             when(jwtService.validateToken("valid-token")).thenReturn(true);
+            when(jwtService.extractType("valid-token")).thenReturn("refresh");
             when(jwtService.extractUserId("valid-token")).thenReturn("disabled-uuid");
 
             User user = User.builder()

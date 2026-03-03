@@ -209,6 +209,13 @@ public class AuthService {
             throw new IllegalArgumentException("Refresh Token 無效或已過期");
         }
 
+        // 驗證 type claim — 防止 access token 冒充 refresh token
+        String tokenType = jwtService.extractType(refreshToken);
+        if (!"refresh".equals(tokenType)) {
+            log.warn("Token type 不符: expected=refresh, actual={}", tokenType);
+            throw new IllegalArgumentException("Refresh Token 無效或已過期");
+        }
+
         String userId = jwtService.extractUserId(refreshToken);
 
         User user = userRepository.findById(userId)

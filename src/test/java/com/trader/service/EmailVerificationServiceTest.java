@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -36,6 +37,7 @@ class EmailVerificationServiceTest {
         resendEmailService = mock(ResendEmailService.class);
         emailConfig = new EmailConfig(false, "", "noreply@hookfi.com", 10, 3, 5, 60, 3, "http://localhost:3000");
         service = new EmailVerificationService(codeRepository, userRepository, resendEmailService, emailConfig);
+        ReflectionTestUtils.setField(service, "otpHashSecret", "test-otp-hash-secret");
     }
 
     // ─── generateAndSend ───
