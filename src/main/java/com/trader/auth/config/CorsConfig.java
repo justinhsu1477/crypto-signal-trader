@@ -86,7 +86,7 @@ public class CorsConfig implements WebMvcConfigurer {
 
         // 2. 僅 dev profile 才加入 localhost（生產環境不允許）
         List<String> activeProfiles = Arrays.asList(environment.getActiveProfiles());
-        if (activeProfiles.contains("dev") || activeProfiles.isEmpty()) {
+        if (activeProfiles.contains("dev")) {
             List<String> devOrigins = List.of(
                     "http://localhost",
                     "http://localhost:3000",
