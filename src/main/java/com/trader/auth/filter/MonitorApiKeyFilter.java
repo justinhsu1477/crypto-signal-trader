@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 
 /**
@@ -49,7 +51,10 @@ public class MonitorApiKeyFilter extends OncePerRequestFilter {
 
         String apiKey = request.getHeader(API_KEY_HEADER);
 
-        if (apiKey != null && !monitorApiKey.isBlank() && apiKey.equals(monitorApiKey)) {
+        if (apiKey != null && !monitorApiKey.isBlank()
+                && MessageDigest.isEqual(
+                        apiKey.getBytes(StandardCharsets.UTF_8),
+                        monitorApiKey.getBytes(StandardCharsets.UTF_8))) {
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(
                             MONITOR_PRINCIPAL,

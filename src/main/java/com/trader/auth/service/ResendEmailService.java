@@ -36,7 +36,7 @@ public class ResendEmailService {
      */
     public void sendOtpEmail(String to, String code) {
         if (!emailConfig.isEnabled()) {
-            log.info("📧 [DEV] Email 未啟用，OTP 驗證碼: email={} code={}", to, code);
+            log.debug("📧 [DEV] Email 未啟用，OTP 驗證碼: email={} code={}", to, code);
             return;
         }
 
@@ -86,7 +86,7 @@ public class ResendEmailService {
      */
     public void sendPasswordResetEmail(String to, String resetUrl) {
         if (!emailConfig.isEnabled()) {
-            log.info("📧 [DEV] Email 未啟用，密碼重設連結: email={} url={}", to, resetUrl);
+            log.debug("📧 [DEV] Email 未啟用，密碼重設連結: email={} url={}", to, resetUrl);
             return;
         }
 
