@@ -14,27 +14,21 @@ export default function BlogPage() {
   const loc = locale as Locale;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-foreground relative overflow-hidden">
+    <div className="relative min-h-screen overflow-hidden text-black" style={{ background: "rgb(255,248,247)" }}>
       <CryptoBackground />
-
-      <div className="fixed inset-0 pointer-events-none z-[1]">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-emerald-500/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[120px]" />
-      </div>
-
       <PublicNavbar />
 
       <main className="relative z-10 pt-28 pb-20 px-6">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-4 py-1.5 text-sm text-emerald-400 mb-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/[0.03] px-4 py-1.5 text-sm text-gray-600 mb-4">
               {t("blog.badge")}
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-black">
               {t("blog.title")}
             </h1>
-            <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
+            <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
               {t("blog.subtitle")}
             </p>
           </div>
@@ -45,20 +39,20 @@ export default function BlogPage() {
               <Link
                 key={post.slug}
                 href={`/blog/${post.slug}`}
-                className="group block rounded-2xl border border-white/5 bg-white/[0.02] p-6 hover:bg-white/[0.04] hover:border-emerald-500/20 transition-all duration-300"
+                className="group block rounded-2xl border border-black/[0.06] bg-white/60 p-6 hover:bg-white/80 hover:border-black/10 transition-all duration-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
               >
                 <div className="flex gap-5">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-2xl">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-black/[0.04] text-2xl">
                     {post.coverEmoji}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h2 className="text-lg font-semibold group-hover:text-emerald-400 transition-colors line-clamp-2">
+                    <h2 className="text-lg font-semibold text-black group-hover:text-gray-600 transition-colors line-clamp-2">
                       {post.title[loc]}
                     </h2>
-                    <p className="mt-2 text-sm text-muted-foreground leading-relaxed line-clamp-2">
+                    <p className="mt-2 text-sm text-gray-500 leading-relaxed line-clamp-2">
                       {post.excerpt[loc]}
                     </p>
-                    <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="mt-3 flex items-center gap-4 text-xs text-gray-400">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         {post.date}
@@ -71,7 +65,7 @@ export default function BlogPage() {
                         {post.tags.map((tag) => (
                           <span
                             key={tag}
-                            className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5"
+                            className="rounded-full border border-black/[0.08] bg-black/[0.03] px-2 py-0.5 text-gray-500"
                           >
                             {tag}
                           </span>
@@ -79,7 +73,7 @@ export default function BlogPage() {
                       </div>
                     </div>
                   </div>
-                  <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-emerald-400 transition-colors mt-1" />
+                  <ArrowRight className="h-5 w-5 shrink-0 text-gray-400 group-hover:text-black transition-colors mt-1" />
                 </div>
               </Link>
             ))}
@@ -88,11 +82,11 @@ export default function BlogPage() {
       </main>
 
       {/* Footer */}
-      <div className="relative z-10 border-t border-white/5 py-6 text-center text-xs text-muted-foreground">
+      <div className="relative z-10 border-t border-black/[0.06] py-6 text-center text-xs text-gray-400">
         <div className="flex items-center justify-center gap-1.5">
           <Image src="/logo.jpg" alt="HookFi" width={16} height={16} className="rounded-sm" />
-          <span>HookFi</span>
-          <span className="mx-2 text-white/10">|</span>
+          <span className="text-gray-600">HookFi</span>
+          <span className="mx-2 text-gray-300">|</span>
           <span>{t("landing.footer")}</span>
         </div>
       </div>

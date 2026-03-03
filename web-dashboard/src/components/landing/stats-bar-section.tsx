@@ -7,9 +7,9 @@ import { useT } from "@/lib/i18n/i18n-context";
  * This component is now rendered inside AuthLayout's hero area.
  */
 const stats = [
-  { value: "24/7", labelKey: "landing.statsBarTrades" },
+  { value: "24/7", labelKey: "landing.statsBarUptime" },
   { value: "<1s", labelKey: "landing.statsBarSpeed" },
-  { value: "AES-256", labelKey: "landing.statsBarWinRate" },
+  { value: "AES-256", labelKey: "landing.statsBarEncryption" },
 ];
 
 export function StatsBarSection() {
