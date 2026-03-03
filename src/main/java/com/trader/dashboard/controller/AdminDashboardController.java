@@ -42,10 +42,18 @@ public class AdminDashboardController {
 
     /**
      * 系統全域概覽 — 所有用戶匯總 + per-user 摘要
+     *
+     * 修復 N+1 問題：
+     *   原本 for-each user → getLightweightUserStats() → 每人 ~10 次 DB 查詢
+     *   改為 getBatchLightweightUserStats() 用 2 次 GROUP BY 批次聚合取代。
+     *   100 用戶：1000+ 次查詢 → 3 次查詢（findAll + 2 次聚合）
      */
     @GetMapping("/system-overview")
     public ResponseEntity<AdminSystemOverview> getSystemOverview() {
         List<User> allUsers = userRepository.findAll();
+
+        // 批次取得所有用戶統計（2 queries for all users, 取代 N * 10 queries）
+        Map<String, Map<String, Object>> batchStats = dashboardService.getBatchLightweightUserStats();
 
         int activeUsers = 0;
         int usersWithOpenPositions = 0;
@@ -60,44 +68,32 @@ public class AdminDashboardController {
         for (User user : allUsers) {
             if (user.isEnabled()) activeUsers++;
 
-            try {
-                Map<String, Object> stats = dashboardService.getLightweightUserStats(user.getUserId());
+            Map<String, Object> stats = batchStats.getOrDefault(user.getUserId(), Map.of());
+            int openCount = stats.containsKey("openPositionCount") ? ((Number) stats.get("openPositionCount")).intValue() : 0;
+            long closedCount = stats.containsKey("closedTradeCount") ? ((Number) stats.get("closedTradeCount")).longValue() : 0;
+            double netProfit = stats.containsKey("totalNetProfit") ? ((Number) stats.get("totalNetProfit")).doubleValue() : 0;
+            double todayPnl = stats.containsKey("todayPnl") ? ((Number) stats.get("todayPnl")).doubleValue() : 0;
+            int todayTrades = stats.containsKey("todayTradeCount") ? ((Number) stats.get("todayTradeCount")).intValue() : 0;
 
-                int openCount = (int) stats.get("openPositionCount");
-                long closedCount = (long) stats.get("closedTradeCount");
-                double netProfit = (double) stats.get("totalNetProfit");
-                double todayPnl = (double) stats.get("todayPnl");
-                int todayTrades = ((Long) stats.get("todayTradeCount")).intValue();
+            if (openCount > 0) usersWithOpenPositions++;
+            totalOpenPositions += openCount;
+            totalClosedTrades += closedCount;
+            totalNetProfit += netProfit;
+            todayNetProfit += todayPnl;
+            todayTradeCount += todayTrades;
 
-                if (openCount > 0) usersWithOpenPositions++;
-                totalOpenPositions += openCount;
-                totalClosedTrades += closedCount;
-                totalNetProfit += netProfit;
-                todayNetProfit += todayPnl;
-                todayTradeCount += todayTrades;
-
-                summaries.add(UserTradingSummary.builder()
-                        .userId(user.getUserId())
-                        .email(user.getEmail())
-                        .name(user.getName())
-                        .enabled(user.isEnabled())
-                        .autoTradeEnabled(user.isAutoTradeEnabled())
-                        .openPositionCount(openCount)
-                        .closedTradeCount(closedCount)
-                        .totalNetProfit(netProfit)
-                        .todayPnl(todayPnl)
-                        .todayTradeCount(todayTrades)
-                        .build());
-            } catch (Exception e) {
-                log.warn("取得用戶 {} 統計失敗: {}", user.getUserId(), e.getMessage());
-                summaries.add(UserTradingSummary.builder()
-                        .userId(user.getUserId())
-                        .email(user.getEmail())
-                        .name(user.getName())
-                        .enabled(user.isEnabled())
-                        .autoTradeEnabled(user.isAutoTradeEnabled())
-                        .build());
-            }
+            summaries.add(UserTradingSummary.builder()
+                    .userId(user.getUserId())
+                    .email(user.getEmail())
+                    .name(user.getName())
+                    .enabled(user.isEnabled())
+                    .autoTradeEnabled(user.isAutoTradeEnabled())
+                    .openPositionCount(openCount)
+                    .closedTradeCount(closedCount)
+                    .totalNetProfit(netProfit)
+                    .todayPnl(todayPnl)
+                    .todayTradeCount(todayTrades)
+                    .build());
         }
 
         return ResponseEntity.ok(AdminSystemOverview.builder()

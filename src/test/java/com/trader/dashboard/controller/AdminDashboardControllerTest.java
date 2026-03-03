@@ -51,6 +51,7 @@ class AdminDashboardControllerTest {
         @DisplayName("空用戶列表 → 200 + 全部歸零")
         void emptyUsers() {
             when(userRepository.findAll()).thenReturn(List.of());
+            when(dashboardService.getBatchLightweightUserStats()).thenReturn(Map.of());
 
             ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview();
 
@@ -62,27 +63,28 @@ class AdminDashboardControllerTest {
         }
 
         @Test
-        @DisplayName("多用戶 → 正確匯總")
+        @DisplayName("多用戶 → 正確匯總（批次查詢，非 per-user）")
         void multipleUsers() {
             User user1 = User.builder().userId("u1").email("a@test.com").name("A").enabled(true).autoTradeEnabled(true).build();
             User user2 = User.builder().userId("u2").email("b@test.com").name("B").enabled(false).autoTradeEnabled(false).build();
             when(userRepository.findAll()).thenReturn(List.of(user1, user2));
 
-            Map<String, Object> stats1 = new LinkedHashMap<>();
-            stats1.put("openPositionCount", 2);
-            stats1.put("closedTradeCount", 10L);
-            stats1.put("totalNetProfit", 500.0);
-            stats1.put("todayPnl", 50.0);
-            stats1.put("todayTradeCount", 3L);
-            when(dashboardService.getLightweightUserStats("u1")).thenReturn(stats1);
-
-            Map<String, Object> stats2 = new LinkedHashMap<>();
-            stats2.put("openPositionCount", 0);
-            stats2.put("closedTradeCount", 5L);
-            stats2.put("totalNetProfit", -100.0);
-            stats2.put("todayPnl", -20.0);
-            stats2.put("todayTradeCount", 1L);
-            when(dashboardService.getLightweightUserStats("u2")).thenReturn(stats2);
+            Map<String, Map<String, Object>> batchStats = new LinkedHashMap<>();
+            batchStats.put("u1", new LinkedHashMap<>(Map.of(
+                    "openPositionCount", 2,
+                    "closedTradeCount", 10L,
+                    "totalNetProfit", 500.0,
+                    "todayPnl", 50.0,
+                    "todayTradeCount", 3L
+            )));
+            batchStats.put("u2", new LinkedHashMap<>(Map.of(
+                    "openPositionCount", 0,
+                    "closedTradeCount", 5L,
+                    "totalNetProfit", -100.0,
+                    "todayPnl", -20.0,
+                    "todayTradeCount", 1L
+            )));
+            when(dashboardService.getBatchLightweightUserStats()).thenReturn(batchStats);
 
             ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview();
 
@@ -97,20 +99,25 @@ class AdminDashboardControllerTest {
             assertThat(body.getTodayNetProfit()).isCloseTo(30.0, within(0.01));
             assertThat(body.getTodayTradeCount()).isEqualTo(4);
             assertThat(body.getUserSummaries()).hasSize(2);
+
+            // 驗證使用批次查詢，而非 per-user 查詢
+            verify(dashboardService).getBatchLightweightUserStats();
+            verify(dashboardService, never()).getLightweightUserStats(anyString());
         }
 
         @Test
-        @DisplayName("per-user 統計拋例外 → 該用戶 fallback 但不中斷其他用戶")
-        void perUserExceptionHandled() {
+        @DisplayName("用戶無交易數據 → fallback 歸零")
+        void userWithNoTradeData() {
             User user1 = User.builder().userId("u1").email("a@test.com").name("A").enabled(true).autoTradeEnabled(true).build();
             when(userRepository.findAll()).thenReturn(List.of(user1));
-            when(dashboardService.getLightweightUserStats("u1")).thenThrow(new RuntimeException("Binance timeout"));
+            when(dashboardService.getBatchLightweightUserStats()).thenReturn(Map.of());
 
             ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview();
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody().getUserSummaries()).hasSize(1);
-            // fallback summary 不含交易數據
+            assertThat(response.getBody().getUserSummaries().get(0).getOpenPositionCount()).isEqualTo(0);
+            assertThat(response.getBody().getUserSummaries().get(0).getClosedTradeCount()).isEqualTo(0);
             assertThat(response.getBody().getUserSummaries().get(0).getEmail()).isEqualTo("a@test.com");
         }
     }

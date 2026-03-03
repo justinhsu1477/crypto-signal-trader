@@ -652,7 +652,7 @@ public class DashboardService {
 
     /**
      * 輕量用戶交易統計（僅查 DB，不呼叫 Binance API）
-     * 供 AdminDashboardController.getSystemOverview 使用
+     * 供單一用戶查詢使用（保留向後相容）
      */
     public Map<String, Object> getLightweightUserStats(String userId) {
         Map<String, Object> todayStats = tradeRecordService.getTodayStats(userId);
@@ -666,6 +666,54 @@ public class DashboardService {
                 "todayPnl", todayStats.get("netProfit"),
                 "todayTradeCount", todayStats.get("trades")
         );
+    }
+
+    /**
+     * 批次取得所有用戶的輕量交易統計（解決 system-overview N+1 問題）
+     *
+     * 面試重點：
+     *   原本 for-each user → getLightweightUserStats() → 每人 ~10 次 DB 查詢（N+1）
+     *   改為 2 次 GROUP BY 批次聚合查詢，取代 N * 10 次查詢。
+     *   100 用戶：1000+ 次查詢 → 2 次查詢。
+     *
+     * @return Map<userId, stats>，stats 包含 openPositionCount, closedTradeCount, totalNetProfit, todayPnl, todayTradeCount
+     */
+    public Map<String, Map<String, Object>> getBatchLightweightUserStats() {
+        Map<String, Map<String, Object>> result = new HashMap<>();
+
+        // 1. 批次聚合：已平倉統計 + OPEN 持倉數（1 query for all users）
+        tradeRecordService.getTradeRepository().aggregateStatsPerUser().forEach(row -> {
+            String userId = (String) row[0];
+            result.put(userId, new HashMap<>(Map.of(
+                    "openPositionCount", ((Number) row[4]).intValue(),
+                    "closedTradeCount", ((Number) row[1]).longValue(),
+                    "totalNetProfit", ((Number) row[3]).doubleValue(),
+                    "todayPnl", 0.0,
+                    "todayTradeCount", 0L
+            )));
+        });
+
+        // 2. 批次聚合：今日統計（1 query for all users）
+        LocalDateTime startOfToday = LocalDate.now(AppConstants.ZONE_ID).atStartOfDay();
+        tradeRecordService.getTradeRepository().aggregateTodayStatsPerUser(startOfToday).forEach(row -> {
+            String userId = (String) row[0];
+            Map<String, Object> stats = result.get(userId);
+            if (stats != null) {
+                stats.put("todayTradeCount", ((Number) row[1]).longValue());
+                stats.put("todayPnl", ((Number) row[2]).doubleValue());
+            } else {
+                // 用戶只有今日交易、沒有歷史交易的情況（理論上不會，但防禦性處理）
+                result.put(userId, new HashMap<>(Map.of(
+                        "openPositionCount", 0,
+                        "closedTradeCount", 0L,
+                        "totalNetProfit", 0.0,
+                        "todayPnl", ((Number) row[2]).doubleValue(),
+                        "todayTradeCount", ((Number) row[1]).longValue()
+                )));
+            }
+        });
+
+        return result;
     }
 
     private double round2(double value) {

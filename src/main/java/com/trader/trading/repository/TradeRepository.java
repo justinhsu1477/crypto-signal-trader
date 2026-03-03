@@ -161,6 +161,16 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     List<Trade> findByUserIdAndStatus(String userId, String status);
 
     /**
+     * 統計用戶指定狀態的交易數量（避免 findByUserIdAndStatus().size() 的 N+1 問題）
+     */
+    long countByUserIdAndStatus(String userId, String status);
+
+    /**
+     * 統計全局指定狀態的交易數量
+     */
+    long countByStatus(String status);
+
+    /**
      * 依用戶 ID 和交易對查詢
      */
     List<Trade> findByUserIdAndSymbol(String userId, String symbol);
@@ -262,4 +272,42 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                       @Param("confidence") Integer confidence,
                       @Param("reasoning") String reasoning,
                       @Param("since") LocalDateTime since);
+
+    // ========== 批次聚合查詢（解決 Admin system-overview N+1 問題） ==========
+
+    /**
+     * 批次聚合所有用戶的交易統計（一次查詢取代 N 次 per-user 查詢）
+     *
+     * 面試重點：N+1 問題的經典解法 — 用 GROUP BY 批次聚合取代 loop 內逐一查詢
+     *
+     * 回傳 Object[]：
+     *   [0] userId(String), [1] closedCount(Long), [2] winCount(Long),
+     *   [3] totalNetProfit(Double), [4] openCount(Long)
+     */
+    @Query(value = """
+            SELECT user_id,
+                   COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed_count,
+                   COUNT(*) FILTER (WHERE status = 'CLOSED' AND net_profit > 0) AS win_count,
+                   COALESCE(SUM(net_profit) FILTER (WHERE status = 'CLOSED'), 0) AS total_net_profit,
+                   COUNT(*) FILTER (WHERE status = 'OPEN') AS open_count
+            FROM trades
+            GROUP BY user_id
+            """, nativeQuery = true)
+    List<Object[]> aggregateStatsPerUser();
+
+    /**
+     * 批次聚合所有用戶的今日交易統計
+     *
+     * 回傳 Object[]：
+     *   [0] userId(String), [1] todayTradeCount(Long), [2] todayNetProfit(Double)
+     */
+    @Query(value = """
+            SELECT user_id,
+                   COUNT(*) AS today_trade_count,
+                   COALESCE(SUM(net_profit), 0) AS today_net_profit
+            FROM trades
+            WHERE status = 'CLOSED' AND exit_time >= :since
+            GROUP BY user_id
+            """, nativeQuery = true)
+    List<Object[]> aggregateTodayStatsPerUser(@Param("since") LocalDateTime since);
 }

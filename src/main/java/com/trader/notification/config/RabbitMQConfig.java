@@ -1,6 +1,8 @@
 package com.trader.notification.config;
 
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.retry.MessageRecoverer;
 import org.springframework.amqp.rabbit.retry.RepublishMessageRecoverer;
@@ -52,7 +54,7 @@ public class RabbitMQConfig {
 
     // DLQ 相關
     private static final String DLX_EXCHANGE = "notification.dlx";
-    private static final String DLQ_QUEUE = "notification.dlq";
+    public static final String DLQ_QUEUE = "notification.dlq";
     private static final String DLQ_ROUTING_KEY = "dead-letter";
 
     // ===== Exchange =====
@@ -89,7 +91,10 @@ public class RabbitMQConfig {
     @Bean
     public Queue deadLetterQueue() {
         // DLQ 不需要再設 DLX（終點站）
-        return QueueBuilder.durable(DLQ_QUEUE).build();
+        // TTL 7 天：過期自動丟棄，避免無限堆積佔記憶體
+        return QueueBuilder.durable(DLQ_QUEUE)
+                .withArgument("x-message-ttl", 7 * 24 * 60 * 60 * 1000) // 7 days in ms
+                .build();
     }
 
     // ===== Bindings =====
@@ -174,5 +179,12 @@ public class RabbitMQConfig {
         //   - Reject：只是拒絕訊息，靠 queue 上的 x-dead-letter-exchange 轉到 DLQ（沒有 error 資訊）
         //   → Republish 更好排查，因為 DLQ 裡的訊息自帶失敗原因
         return new RepublishMessageRecoverer(rabbitTemplate, DLX_EXCHANGE, DLQ_ROUTING_KEY);
+    }
+
+    // ===== RabbitAdmin（供 DLQ 監控查詢 queue 狀態）=====
+
+    @Bean
+    public RabbitAdmin rabbitAdmin(ConnectionFactory connectionFactory) {
+        return new RabbitAdmin(connectionFactory);
     }
 }
