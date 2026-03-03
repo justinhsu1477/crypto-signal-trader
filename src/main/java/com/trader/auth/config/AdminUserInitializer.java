@@ -5,6 +5,7 @@ import com.trader.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -21,8 +22,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUserInitializer {
 
-    private static final String ADMIN_EMAIL = "admin@hookfi.com";
-    private static final String ADMIN_PASSWORD = "Admin1234!";
+    @Value("${admin.bootstrap.email:}")
+    private String adminEmail;
+
+    @Value("${admin.bootstrap.password:}")
+    private String adminPassword;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -34,15 +38,21 @@ public class AdminUserInitializer {
             return;
         }
 
-        if (userRepository.existsByEmail(ADMIN_EMAIL)) {
-            log.warn("Admin email {} 已被普通用戶佔用，無法自動建立管理員", ADMIN_EMAIL);
+        if (adminEmail == null || adminEmail.isBlank()
+                || adminPassword == null || adminPassword.isBlank()) {
+            log.info("未設定 admin.bootstrap.email/password，跳過管理員自動建立");
+            return;
+        }
+
+        if (userRepository.existsByEmail(adminEmail)) {
+            log.warn("Admin email {} 已被普通用戶佔用，無法自動建立管理員", adminEmail);
             return;
         }
 
         User admin = User.builder()
                 .userId(UUID.randomUUID().toString())
-                .email(ADMIN_EMAIL)
-                .passwordHash(passwordEncoder.encode(ADMIN_PASSWORD))
+                .email(adminEmail)
+                .passwordHash(passwordEncoder.encode(adminPassword))
                 .name("System Admin")
                 .role(User.Role.ADMIN)
                 .enabled(true)
@@ -51,6 +61,6 @@ public class AdminUserInitializer {
                 .build();
 
         userRepository.save(admin);
-        log.info("管理員帳號已自動建立: email={}", ADMIN_EMAIL);
+        log.info("管理員帳號已自動建立: email={}", adminEmail);
     }
 }
