@@ -11,6 +11,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
 
 /**
@@ -53,7 +55,7 @@ public class CompositeNotificationService implements NotificationService {
                 .title(title)
                 .message(message)
                 .color(color)
-                .timestamp(LocalDateTime.now())
+                .timestamp(LocalDateTime.now(AppConstants.ZONE_ID))
                 .build();
 
         publishOrFallback(RabbitMQConfig.ROUTING_KEY_ADMIN, msg, () -> {
@@ -70,7 +72,7 @@ public class CompositeNotificationService implements NotificationService {
                 .title(title)
                 .message(message)
                 .color(color)
-                .timestamp(LocalDateTime.now())
+                .timestamp(LocalDateTime.now(AppConstants.ZONE_ID))
                 .build();
 
         publishOrFallback(RabbitMQConfig.ROUTING_KEY_USER, msg, () -> {
@@ -89,7 +91,7 @@ public class CompositeNotificationService implements NotificationService {
                 .title(title)
                 .message(message)
                 .color(color)
-                .timestamp(LocalDateTime.now())
+                .timestamp(LocalDateTime.now(AppConstants.ZONE_ID))
                 .build();
 
         publishOrFallback(RabbitMQConfig.ROUTING_KEY_USER, msg, () -> {
@@ -105,7 +107,7 @@ public class CompositeNotificationService implements NotificationService {
                 .title(title)
                 .message(message)
                 .color(color)
-                .timestamp(LocalDateTime.now())
+                .timestamp(LocalDateTime.now(AppConstants.ZONE_ID))
                 .build();
 
         publishOrFallback(RabbitMQConfig.ROUTING_KEY_ADMIN, msg, () -> {
@@ -122,7 +124,7 @@ public class CompositeNotificationService implements NotificationService {
                 .title(title)
                 .message(message)
                 .color(color)
-                .timestamp(LocalDateTime.now())
+                .timestamp(LocalDateTime.now(AppConstants.ZONE_ID))
                 .build();
 
         publishOrFallback(RabbitMQConfig.ROUTING_KEY_ADMIN, msg, () -> {
