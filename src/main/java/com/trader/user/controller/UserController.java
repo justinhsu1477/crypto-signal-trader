@@ -88,4 +88,28 @@ public class UserController {
 
         return ResponseEntity.ok(result);
     }
+
+    /**
+     * GDPR 帳號刪除
+     * DELETE /api/user/account
+     *
+     * 軟刪除：停用帳號 + 匿名化 PII + 清除敏感資料（API Key、Webhook 等）
+     * 前端應在成功後登出。
+     */
+    @DeleteMapping("/account")
+    public ResponseEntity<?> deleteAccount() {
+        String userId = SecurityUtil.getCurrentUserId();
+        try {
+            userService.deleteAccount(userId);
+            log.info("帳號刪除成功: userId={}", userId);
+            return ResponseEntity.ok(java.util.Map.of("message", "帳號已刪除"));
+        } catch (IllegalArgumentException e) {
+            log.warn("帳號刪除失敗: userId={}, reason={}", userId, e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder()
+                            .error("DELETE_FAILED")
+                            .message(e.getMessage())
+                            .build());
+        }
+    }
 }

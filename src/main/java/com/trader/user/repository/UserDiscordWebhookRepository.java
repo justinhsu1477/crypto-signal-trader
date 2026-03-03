@@ -38,4 +38,9 @@ public interface UserDiscordWebhookRepository extends JpaRepository<UserDiscordW
      * 用 webhookId + userId 查詢（所有權驗證用）
      */
     Optional<UserDiscordWebhook> findByWebhookIdAndUserId(String webhookId, String userId);
+
+    /**
+     * 刪除用戶所有 Discord Webhook（帳號刪除時使用）
+     */
+    void deleteByUserId(String userId);
 }

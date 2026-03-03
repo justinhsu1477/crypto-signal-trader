@@ -17,4 +17,9 @@ public interface UserLineBindingRepository extends JpaRepository<UserLineBinding
 
     @Query("SELECT DISTINCT b.userId FROM UserLineBinding b WHERE b.enabled = true")
     List<String> findUserIdsWithEnabledBinding();
+
+    /**
+     * 刪除用戶所有 LINE 綁定（帳號刪除時使用）
+     */
+    void deleteByUserId(String userId);
 }

@@ -27,4 +27,9 @@ public interface UserApiKeyRepository extends JpaRepository<UserApiKey, Long> {
      * 用於 MultiUserDataStreamManager 避免 dual lookup（hasApiKey + getUserBinanceKeys）
      */
     List<UserApiKey> findByExchange(String exchange);
+
+    /**
+     * 刪除用戶所有 API Key（帳號刪除時使用）
+     */
+    void deleteByUserId(String userId);
 }
