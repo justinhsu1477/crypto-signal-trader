@@ -62,7 +62,7 @@ export function LegalDisclaimerDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="sm:max-w-2xl max-h-[90vh] flex flex-col bg-white border-black/[0.08] shadow-[0_8px_30px_rgba(0,0,0,0.08)] rounded-[24px]"
+        className="sm:max-w-2xl max-h-[90vh] flex flex-col bg-white border-black/[0.08] shadow-[0_8px_30px_rgba(0,0,0,0.08)] rounded-[16px] sm:rounded-[24px] mx-2 sm:mx-auto"
       >
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center gap-2 text-black">

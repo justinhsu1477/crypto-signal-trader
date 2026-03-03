@@ -18,7 +18,7 @@ export default function BlogPage() {
       <CryptoBackground />
       <PublicNavbar />
 
-      <main className="relative z-10 pt-28 pb-20 px-6">
+      <main className="relative z-10 pt-24 pb-16 px-4 md:px-6">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="text-center mb-16">
@@ -41,18 +41,18 @@ export default function BlogPage() {
                 href={`/blog/${post.slug}`}
                 className="group block rounded-2xl border border-black/[0.06] bg-white/60 p-6 hover:bg-white/80 hover:border-black/10 transition-all duration-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
               >
-                <div className="flex gap-5">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-black/[0.04] text-2xl">
+                <div className="flex gap-3 md:gap-5">
+                  <div className="flex h-11 w-11 md:h-14 md:w-14 shrink-0 items-center justify-center rounded-xl bg-black/[0.04] text-xl md:text-2xl">
                     {post.coverEmoji}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h2 className="text-lg font-semibold text-black group-hover:text-gray-600 transition-colors line-clamp-2">
+                    <h2 className="text-base md:text-lg font-semibold text-black group-hover:text-gray-600 transition-colors line-clamp-2">
                       {post.title[loc]}
                     </h2>
                     <p className="mt-2 text-sm text-gray-500 leading-relaxed line-clamp-2">
                       {post.excerpt[loc]}
                     </p>
-                    <div className="mt-3 flex items-center gap-4 text-xs text-gray-400">
+                    <div className="mt-3 flex items-center gap-3 md:gap-4 text-xs text-gray-400">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         {post.date}
@@ -61,7 +61,7 @@ export default function BlogPage() {
                         <Clock className="h-3 w-3" />
                         {post.readMinutes} min
                       </span>
-                      <div className="flex gap-1.5">
+                      <div className="hidden sm:flex gap-1.5">
                         {post.tags.map((tag) => (
                           <span
                             key={tag}

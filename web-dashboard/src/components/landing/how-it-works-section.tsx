@@ -81,7 +81,7 @@ export function HowItWorksSection() {
               {t("landing.featureSecurityTitle")}
             </h2>
             <div
-              className="mt-2 text-5xl font-extrabold uppercase tracking-tight text-black sm:text-7xl lg:text-9xl"
+              className="mt-2 text-3xl font-extrabold uppercase tracking-tight text-black sm:text-7xl lg:text-9xl"
               style={{ letterSpacing: "-0.01em", lineHeight: 0.95 }}
             >
               {t("landing.securityWord")}
@@ -98,7 +98,7 @@ export function HowItWorksSection() {
         </div>
 
         {/* Trust card */}
-        <div className="relative mt-12 rounded-[30px] bg-white p-10 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+        <div className="relative mt-12 rounded-[20px] md:rounded-[30px] bg-white p-6 md:p-10 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
           <h3 className="text-2xl font-bold text-black">{t("landing.securityProtectedTitle")}</h3>
           <p className="mt-2 text-sm text-gray-500 leading-relaxed max-w-[520px]">
             {t("landing.featureNonCustodialDesc")}
@@ -107,7 +107,7 @@ export function HowItWorksSection() {
             {badges.map((b) => (
               <div
                 key={b.labelKey}
-                className="flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-white px-5 py-2.5 text-sm font-semibold text-gray-600"
+                className="flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-white px-3 py-2 text-xs md:px-5 md:py-2.5 md:text-sm font-semibold text-gray-600"
                 style={{ letterSpacing: "0.02em" }}
               >
                 <span>{b.emoji}</span>
