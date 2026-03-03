@@ -9,6 +9,7 @@ import {
   getAutoTradeStatus,
   updateAutoTradeStatus,
   changePassword,
+  deleteAccount,
   apiLogout,
   getSubscriptionStatus,
 } from "@/lib/api";
@@ -49,6 +50,7 @@ import {
   ChevronUp,
   Copy,
   Check,
+  AlertTriangle,
 } from "lucide-react";
 
 // ─── Settings sections ───
@@ -86,6 +88,7 @@ export default function SettingsPage() {
 
   // ─── Subscription state ───
   const [subscriptionActive, setSubscriptionActive] = useState(false);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
 
   // ─── Webhook readiness ───
   const [hasActiveWebhook, setHasActiveWebhook] = useState(false);
@@ -105,11 +108,17 @@ export default function SettingsPage() {
   const [autoTradeConfirmOpen, setAutoTradeConfirmOpen] = useState(false);
   const [autoTradeConfirmValue, setAutoTradeConfirmValue] = useState(false);
 
+  // ─── Delete Account state ───
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   // ─── Prerequisite check ───
   const hasBinanceKey = apiKeys.some(
     (k) => k.exchange === "BINANCE" && k.hasApiKey
   );
   const canEnableAutoTrade = hasBinanceKey && subscriptionActive;
+  const prerequisitesLoading = keysLoading || subscriptionLoading;
 
   // ─── Auto-expand tutorial for new users ───
   useEffect(() => {
@@ -163,81 +172,72 @@ export default function SettingsPage() {
     },
   ];
 
-  // ─── Data fetching ───
+  // ─── Data fetching (parallelized) ───
   useEffect(() => {
     let cancelled = false;
-    async function fetchProfile() {
-      setProfileLoading(true);
-      setProfileError(null);
-      try {
-        const data = await getUserProfile();
-        if (!cancelled) setProfile(data);
-      } catch (err) {
-        if (!cancelled)
-          setProfileError(
-            err instanceof Error ? err.message : t("common.loadFailed")
-          );
-      } finally {
-        if (!cancelled) setProfileLoading(false);
+
+    setProfileLoading(true);
+    setProfileError(null);
+    setKeysLoading(true);
+    setKeysError(null);
+    setAutoTradeLoading(true);
+    setAutoTradeError(null);
+    setSubscriptionLoading(true);
+
+    Promise.allSettled([
+      getUserProfile(),
+      getApiKeys(),
+      getAutoTradeStatus(),
+      getSubscriptionStatus(),
+    ]).then(([profileResult, keysResult, autoTradeResult, subResult]) => {
+      if (cancelled) return;
+
+      // Profile
+      if (profileResult.status === "fulfilled") {
+        setProfile(profileResult.value);
+      } else {
+        const err = profileResult.reason;
+        setProfileError(
+          err instanceof Error ? err.message : t("common.loadFailed")
+        );
       }
-    }
-    fetchProfile();
+      setProfileLoading(false);
+
+      // API Keys
+      if (keysResult.status === "fulfilled") {
+        setApiKeys(keysResult.value);
+      } else {
+        const err = keysResult.reason;
+        setKeysError(
+          err instanceof Error ? err.message : t("common.loadFailed")
+        );
+      }
+      setKeysLoading(false);
+
+      // Auto Trade Status
+      if (autoTradeResult.status === "fulfilled") {
+        setAutoTradeStatus(autoTradeResult.value);
+      } else {
+        const err = autoTradeResult.reason;
+        setAutoTradeError(
+          err instanceof Error ? err.message : t("common.loadFailed")
+        );
+      }
+      setAutoTradeLoading(false);
+
+      // Subscription Status
+      if (subResult.status === "fulfilled") {
+        setSubscriptionActive(subResult.value.active);
+      } else {
+        setSubscriptionActive(false);
+      }
+      setSubscriptionLoading(false);
+    });
+
     return () => {
       cancelled = true;
     };
   }, [t]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchKeys() {
-      setKeysLoading(true);
-      setKeysError(null);
-      try {
-        const data = await getApiKeys();
-        if (!cancelled) setApiKeys(data);
-      } catch (err) {
-        if (!cancelled)
-          setKeysError(
-            err instanceof Error ? err.message : t("common.loadFailed")
-          );
-      } finally {
-        if (!cancelled) setKeysLoading(false);
-      }
-    }
-    fetchKeys();
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchAutoTradeStatus() {
-      setAutoTradeLoading(true);
-      setAutoTradeError(null);
-      try {
-        const data = await getAutoTradeStatus();
-        if (!cancelled) setAutoTradeStatus(data);
-      } catch (err) {
-        if (!cancelled)
-          setAutoTradeError(
-            err instanceof Error ? err.message : t("common.loadFailed")
-          );
-      } finally {
-        if (!cancelled) setAutoTradeLoading(false);
-      }
-    }
-    fetchAutoTradeStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  useEffect(() => {
-    getSubscriptionStatus()
-      .then((data) => setSubscriptionActive(data.active))
-      .catch(() => setSubscriptionActive(false));
-  }, []);
 
   // ─── Handlers ───
   async function handleSaveApiKey() {
@@ -660,12 +660,12 @@ export default function SettingsPage() {
               <Switch
                 checked={autoTradeStatus.autoTradeEnabled}
                 onCheckedChange={handleToggleAutoTrade}
-                disabled={autoTradeUpdating || !canEnableAutoTrade}
+                disabled={autoTradeUpdating || prerequisitesLoading || !canEnableAutoTrade}
               />
             </div>
 
-            {/* Prerequisite warning */}
-            {!canEnableAutoTrade && (
+            {/* Prerequisite warning (hidden while dependencies still loading) */}
+            {!canEnableAutoTrade && !prerequisitesLoading && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 dark:bg-red-950/30 dark:border-red-900 dark:text-red-300 space-y-1">
                 <p className="font-medium">
                   🔒 {t("settings.autoTradePrerequisite")}
@@ -855,6 +855,29 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleDeleteAccount() {
+    setDeleteLoading(true);
+    try {
+      await deleteAccount();
+      toast.success(t("settings.deleteAccountSuccess"));
+      setDeleteDialogOpen(false);
+
+      // 2 秒後登出跳轉
+      setTimeout(async () => {
+        await apiLogout();
+        localStorage.removeItem("userId");
+        localStorage.removeItem("email");
+        window.location.href = "/login";
+      }, 2000);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t("settings.deleteAccountError")
+      );
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
   function renderSecurity() {
     return (
       <div className="space-y-6">
@@ -931,6 +954,92 @@ export default function SettingsPage() {
             )}
           </Button>
         </div>
+
+        {/* ─── Danger Zone: Delete Account ─── */}
+        <Separator />
+        <div className="rounded-lg border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/20 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-red-500" />
+            <h3 className="text-base font-semibold text-red-700 dark:text-red-400">
+              {t("settings.dangerZone")}
+            </h3>
+          </div>
+          <div>
+            <h4 className="text-sm font-medium text-red-700 dark:text-red-300">
+              {t("settings.deleteAccountTitle")}
+            </h4>
+            <p className="text-sm text-red-600/80 dark:text-red-400/80 mt-1">
+              {t("settings.deleteAccountDesc")}
+            </p>
+          </div>
+          <Button
+            variant="destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            {t("settings.deleteAccountButton")}
+          </Button>
+        </div>
+
+        {/* Delete Account Confirmation Dialog */}
+        <Dialog
+          open={deleteDialogOpen}
+          onOpenChange={(open) => {
+            setDeleteDialogOpen(open);
+            if (!open) setDeleteConfirmText("");
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                <AlertTriangle className="h-5 w-5" />
+                {t("settings.deleteAccountConfirmTitle")}
+              </DialogTitle>
+              <DialogDescription>
+                {t("settings.deleteAccountConfirmDesc")}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2">
+              <Label htmlFor="deleteConfirm" className="text-sm">
+                {t("settings.deleteAccountConfirmPrompt")}
+              </Label>
+              <Input
+                id="deleteConfirm"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={t("settings.deleteAccountConfirmPlaceholder")}
+                className="font-mono"
+                autoComplete="off"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setDeleteConfirmText("");
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== "DELETE" || deleteLoading}
+              >
+                {deleteLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("settings.deleteAccountDeleting")}
+                  </>
+                ) : (
+                  t("settings.deleteAccountButton")
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

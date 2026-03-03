@@ -1,17 +1,19 @@
 package com.trader.user.service;
 
+import com.trader.shared.config.AppConstants;
 import com.trader.shared.util.AesEncryptionUtil;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserApiKey;
-import com.trader.user.repository.UserApiKeyRepository;
-import com.trader.user.repository.UserRepository;
+import com.trader.user.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -20,6 +22,11 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserApiKeyRepository userApiKeyRepository;
+    private final UserDiscordWebhookRepository userDiscordWebhookRepository;
+    private final UserLineBindingRepository userLineBindingRepository;
+    private final LineLinkingCodeRepository lineLinkingCodeRepository;
+    private final UserNotificationPreferencesRepository userNotificationPreferencesRepository;
+    private final UserTradeSettingsRepository userTradeSettingsRepository;
     private final AesEncryptionUtil aesEncryptionUtil;
 
     public Optional<User> findById(String userId) {
@@ -69,5 +76,50 @@ public class UserService {
      */
     public String decryptSecretKey(UserApiKey apiKey) {
         return aesEncryptionUtil.decrypt(apiKey.getEncryptedSecretKey());
+    }
+
+    /**
+     * GDPR 帳號刪除 — 軟刪除 + PII 匿名化
+     *
+     * 1. 停用帳號（enabled = false）
+     * 2. 匿名化 PII（email、name、passwordHash）
+     * 3. 關閉自動跟單
+     * 4. 清除所有敏感關聯資料（API Key、Webhook、LINE 綁定、通知偏好、交易設定）
+     *
+     * @param userId 要刪除的用戶 ID
+     * @throws IllegalArgumentException 若用戶不存在
+     */
+    @Transactional
+    public void deleteAccount(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("用戶不存在: " + userId));
+
+        log.info("開始帳號刪除流程: userId={}, email={}", userId, user.getEmail());
+
+        // 1. 匿名化 PII
+        String anonymizedEmail = "deleted_" + UUID.randomUUID().toString().substring(0, 8) + "@deleted.com";
+        user.setEmail(anonymizedEmail);
+        user.setName("Deleted User");
+        user.setPasswordHash("ACCOUNT_DELETED");
+
+        // 2. 停用帳號 + 關閉所有功能
+        user.setEnabled(false);
+        user.setAutoTradeEnabled(false);
+        user.setDiscordNotificationEnabled(false);
+        user.setLineNotificationEnabled(false);
+        user.setEmailVerified(false);
+        user.setUpdatedAt(LocalDateTime.now(AppConstants.ZONE_ID));
+
+        userRepository.save(user);
+
+        // 3. 清除所有敏感關聯資料
+        userApiKeyRepository.deleteByUserId(userId);
+        userDiscordWebhookRepository.deleteByUserId(userId);
+        userLineBindingRepository.deleteByUserId(userId);
+        lineLinkingCodeRepository.deleteByUserId(userId);
+        userNotificationPreferencesRepository.deleteById(userId);
+        userTradeSettingsRepository.deleteById(userId);
+
+        log.info("帳號刪除完成: userId={}, anonymizedEmail={}", userId, anonymizedEmail);
     }
 }

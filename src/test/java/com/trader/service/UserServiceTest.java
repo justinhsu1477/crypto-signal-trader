@@ -3,8 +3,7 @@ package com.trader.service;
 import com.trader.shared.util.AesEncryptionUtil;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserApiKey;
-import com.trader.user.repository.UserApiKeyRepository;
-import com.trader.user.repository.UserRepository;
+import com.trader.user.repository.*;
 import com.trader.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +22,11 @@ class UserServiceTest {
 
     private UserRepository userRepository;
     private UserApiKeyRepository userApiKeyRepository;
+    private UserDiscordWebhookRepository userDiscordWebhookRepository;
+    private UserLineBindingRepository userLineBindingRepository;
+    private LineLinkingCodeRepository lineLinkingCodeRepository;
+    private UserNotificationPreferencesRepository userNotificationPreferencesRepository;
+    private UserTradeSettingsRepository userTradeSettingsRepository;
     private AesEncryptionUtil aesEncryptionUtil;
     private UserService userService;
 
@@ -30,8 +34,17 @@ class UserServiceTest {
     void setUp() {
         userRepository = mock(UserRepository.class);
         userApiKeyRepository = mock(UserApiKeyRepository.class);
+        userDiscordWebhookRepository = mock(UserDiscordWebhookRepository.class);
+        userLineBindingRepository = mock(UserLineBindingRepository.class);
+        lineLinkingCodeRepository = mock(LineLinkingCodeRepository.class);
+        userNotificationPreferencesRepository = mock(UserNotificationPreferencesRepository.class);
+        userTradeSettingsRepository = mock(UserTradeSettingsRepository.class);
         aesEncryptionUtil = mock(AesEncryptionUtil.class);
-        userService = new UserService(userRepository, userApiKeyRepository, aesEncryptionUtil);
+        userService = new UserService(
+                userRepository, userApiKeyRepository,
+                userDiscordWebhookRepository, userLineBindingRepository,
+                lineLinkingCodeRepository, userNotificationPreferencesRepository,
+                userTradeSettingsRepository, aesEncryptionUtil);
     }
 
     @Nested
