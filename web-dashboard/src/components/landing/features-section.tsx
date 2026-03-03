@@ -31,12 +31,12 @@ export function FeaturesSection() {
         {blocks.map((block, i) => (
           <div
             key={i}
-            className="grid grid-cols-1 items-center gap-10 border-t border-black/[0.08] py-20 md:grid-cols-2 md:gap-10"
+            className="grid grid-cols-1 items-center gap-8 border-t border-black/[0.08] py-12 md:py-20 md:grid-cols-2 md:gap-10"
           >
             {/* Left — huge typography */}
             <div>
               <div
-                className="whitespace-pre-line text-6xl font-extrabold leading-[0.95] tracking-tight text-black sm:text-7xl lg:text-8xl"
+                className="whitespace-pre-line text-4xl font-extrabold leading-[0.95] tracking-tight text-black sm:text-7xl lg:text-8xl"
                 style={{ letterSpacing: "-0.01em" }}
               >
                 {t(block.bigLabelKey)}

@@ -82,7 +82,7 @@ export default function BlogPostPage() {
       <CryptoBackground />
       <PublicNavbar />
 
-      <main className="relative z-10 pt-28 pb-20 px-6">
+      <main className="relative z-10 pt-24 pb-16 px-4 md:px-6">
         <article className="max-w-3xl mx-auto">
           {/* Back link */}
           <Link
@@ -134,14 +134,16 @@ export default function BlogPostPage() {
           />
 
           {/* CTA */}
-          <div className="mt-16 rounded-2xl border border-black/[0.06] bg-white/60 p-8 text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="mt-12 md:mt-16 rounded-2xl border border-black/[0.06] bg-white/60 p-5 md:p-8 text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
             <h3 className="text-xl font-bold mb-2 text-black">{t("blog.ctaTitle")}</h3>
             <p className="text-sm text-gray-500 mb-5">
               {t("blog.ctaDescription")}
             </p>
             <Link
               href="/register"
+              scroll={true}
               className="inline-flex items-center gap-2 rounded-full bg-black hover:bg-gray-800 px-6 py-2.5 text-sm font-bold text-white transition-colors"
+              onClick={() => window.scrollTo({ top: 0 })}
             >
               {t("blog.ctaButton")}
               <ArrowLeft className="h-4 w-4 rotate-180" />

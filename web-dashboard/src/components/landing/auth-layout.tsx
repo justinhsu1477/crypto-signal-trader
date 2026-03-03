@@ -46,9 +46,9 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
       <PublicNavbar />
 
       {/* ── Hero (two-column like lido.fi) ── */}
-      <main className="relative z-10 mx-auto grid min-h-[100dvh] max-w-[1400px] grid-cols-1 items-center gap-16 px-6 pt-20 md:grid-cols-2 md:px-10">
+      <main className="relative z-10 mx-auto grid min-h-[80dvh] md:min-h-[100dvh] max-w-[1400px] grid-cols-1 items-center gap-6 md:gap-16 px-4 pt-20 pb-10 md:grid-cols-2 md:px-10 md:pb-0">
         {/* Left: Logo */}
-        <div className="flex items-center justify-center animate-fade-in-scale md:order-first order-first">
+        <div className="flex items-center justify-center animate-fade-in-scale md:order-first order-first max-h-[35vh] md:max-h-none">
           <HeroOrbitVisual />
         </div>
 
@@ -68,29 +68,29 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
           ) : (
             <div className="animate-fade-in-up animation-delay-200">
               <h1
-                className="text-4xl font-normal leading-none tracking-tight text-black sm:text-5xl lg:text-6xl"
+                className="text-3xl font-normal leading-none tracking-tight text-black sm:text-5xl lg:text-6xl"
                 style={{ letterSpacing: "-0.01em", lineHeight: 1.0 }}
               >
                 {t("landing.heroTitle1")}{" "}
-                <strong className="block text-5xl font-extrabold sm:text-6xl lg:text-7xl">
+                <strong className="block text-4xl font-extrabold sm:text-6xl lg:text-7xl">
                   {t("landing.heroTitle2")}
                 </strong>
               </h1>
 
-              <p className="mt-5 max-w-[440px] text-base leading-relaxed text-gray-500 sm:text-lg">
+              <p className="mt-3 max-w-[440px] text-sm leading-relaxed text-gray-500 sm:mt-5 sm:text-lg">
                 {t("landing.heroDescription")}
               </p>
 
               {/* Inline stats */}
-              <div className="mt-9 animate-fade-in-up animation-delay-300">
+              <div className="mt-6 md:mt-9 animate-fade-in-up animation-delay-300">
                 <StatsBarSection />
               </div>
 
               {/* CTA buttons */}
-              <div className="mt-9 flex items-center gap-4 animate-fade-in-up animation-delay-400">
+              <div className="mt-6 md:mt-9 flex items-center gap-3 md:gap-4 animate-fade-in-up animation-delay-400">
                 <button
                   onClick={() => setShowAuthCard(true)}
-                  className="inline-flex items-center gap-2 rounded-full bg-black px-8 py-3.5 text-base font-bold text-white transition-all hover:bg-gray-800 hover:-translate-y-0.5"
+                  className="inline-flex items-center gap-2 rounded-full bg-black px-6 py-3 text-sm md:px-8 md:py-3.5 md:text-base font-bold text-white transition-all hover:bg-gray-800 hover:-translate-y-0.5"
                 >
                   {t("landing.startButton")}
                 </button>
@@ -100,7 +100,7 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
                     e.preventDefault();
                     document.querySelector("#features")?.scrollIntoView({ behavior: "smooth" });
                   }}
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-300 px-8 py-3.5 text-base font-bold text-black transition-all hover:border-gray-400"
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-300 px-6 py-3 text-sm md:px-8 md:py-3.5 md:text-base font-bold text-black transition-all hover:border-gray-400"
                 >
                   {t("landing.heroLearnMore")}
                 </a>
@@ -120,7 +120,7 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
       <HowItWorksSection />
 
       {/* ── Footer (enlarged, lido-style with columns) ── */}
-      <footer className="relative z-10 border-t border-black/[0.08] px-6 py-16 md:px-10 md:py-20">
+      <footer className="relative z-10 border-t border-black/[0.08] px-4 py-12 md:px-10 md:py-20">
         <div className="mx-auto max-w-[1400px]">
           {/* Top row: Brand + nav columns */}
           <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-4">

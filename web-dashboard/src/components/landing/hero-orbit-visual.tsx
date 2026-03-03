@@ -22,7 +22,7 @@ export function HeroOrbitVisual() {
         width={640}
         height={592}
         priority
-        className="hero-float-light relative h-auto w-full max-w-[380px] object-contain"
+        className="hero-float-light relative h-auto w-full max-w-[220px] md:max-w-[380px] object-contain"
       />
     </div>
   );

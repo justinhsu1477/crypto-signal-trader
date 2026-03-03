@@ -30,7 +30,7 @@ export function PublicNavbar() {
         WebkitBackdropFilter: "blur(20px)",
       }}
     >
-      <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-10">
+      <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-4 md:px-10">
         {/* Logo */}
         <a
           href="/login"
@@ -90,7 +90,7 @@ export function PublicNavbar() {
         </div>
 
         {/* Right CTA */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 md:gap-3">
           <LanguageSwitcher />
           {isLandingPage ? (
             <button
@@ -98,21 +98,21 @@ export function PublicNavbar() {
                 window.scrollTo({ top: 0, behavior: "smooth" });
                 window.dispatchEvent(new CustomEvent("show-auth-card"));
               }}
-              className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-black transition-colors"
+              className="whitespace-nowrap px-2.5 py-2 text-xs md:text-sm md:px-4 font-medium text-gray-600 hover:text-black transition-colors"
             >
               {t("login.signIn")}
             </button>
           ) : (
             <Link
               href="/login?action=signin"
-              className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-black transition-colors"
+              className="whitespace-nowrap px-2.5 py-2 text-xs md:text-sm md:px-4 font-medium text-gray-600 hover:text-black transition-colors"
             >
               {t("login.signIn")}
             </Link>
           )}
           <Link
             href="/register"
-            className="rounded-full bg-black px-6 py-2.5 text-sm font-bold text-white transition-colors hover:bg-gray-800"
+            className="whitespace-nowrap rounded-full bg-black px-4 py-2 text-xs md:text-sm md:px-6 md:py-2.5 font-bold text-white transition-colors hover:bg-gray-800"
           >
             {t("login.freeRegister")}
           </Link>
