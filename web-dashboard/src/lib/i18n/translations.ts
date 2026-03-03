@@ -592,6 +592,12 @@ const translations = {
       "zh-CN": "密码至少 8 个字符",
       ja: "パスワードは最低8文字である必要があります",
     },
+    passwordFormatError: {
+      en: "Password must be at least 8 characters and contain both uppercase and lowercase letters",
+      "zh-TW": "密碼至少 8 個字元，且需包含大小寫字母",
+      "zh-CN": "密码至少 8 个字符，且需包含大小写字母",
+      ja: "パスワードは最低8文字で、大文字と小文字の両方を含める必要があります",
+    },
     profile: { en: "Profile", "zh-TW": "個人資料", "zh-CN": "个人资料", ja: "プロフィール" },
     name: { en: "Name", "zh-TW": "名稱", "zh-CN": "名称", ja: "名前" },
     role: { en: "Role", "zh-TW": "角色", "zh-CN": "角色", ja: "役割" },

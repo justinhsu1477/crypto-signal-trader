@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useMemo, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -23,13 +23,20 @@ function ResetPasswordForm() {
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Password strength checks（與 register 一致：8+ 字元 + 大小寫）
+  const passwordChecks = useMemo(() => [
+    { key: "min", passed: newPassword.length >= 8, label: t("register.passwordMinChars") },
+    { key: "mixed", passed: /[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword), label: t("register.passwordMixedCase") },
+  ], [newPassword, t]);
+  const isPasswordValid = passwordChecks.every((check) => check.passed);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
 
     // 前端驗證
-    if (newPassword.length < 8) {
-      setError(t("settings.passwordMinLength"));
+    if (!isPasswordValid) {
+      setError(t("settings.passwordFormatError"));
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -150,6 +157,22 @@ function ResetPasswordForm() {
               autoComplete="new-password"
               className="h-11 bg-white/5 border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/20 placeholder:text-white/20"
             />
+            {/* Password requirements indicator */}
+            {newPassword.length > 0 && (
+              <div className="space-y-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-2.5">
+                <p className="text-xs font-medium text-muted-foreground">{t("register.passwordRequirements")}</p>
+                {passwordChecks.map((check) => (
+                  <div key={check.key} className="flex items-center gap-2 text-xs">
+                    <span className={check.passed ? "text-emerald-400" : "text-white/30"}>
+                      {check.passed ? "✓" : "○"}
+                    </span>
+                    <span className={check.passed ? "text-emerald-400" : "text-white/30"}>
+                      {check.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -172,7 +195,7 @@ function ResetPasswordForm() {
           <Button
             type="submit"
             className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20"
-            disabled={isLoading}
+            disabled={isLoading || !isPasswordValid}
           >
             {isLoading ? (
               <>
