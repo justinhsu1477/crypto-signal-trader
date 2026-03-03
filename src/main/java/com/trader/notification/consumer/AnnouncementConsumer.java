@@ -5,6 +5,7 @@ import com.trader.notification.model.AnnouncementMessage;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.LineNotificationService;
 import com.trader.notification.service.NotificationService;
+import com.trader.user.repository.UserDiscordWebhookRepository;
 import com.trader.user.repository.UserLineBindingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +21,8 @@ import java.util.List;
  * 拓撲：
  *   Fanout Exchange (announcement.fanout)
  *       │
- *       ├── announcement.discord → consumeDiscord()  → DiscordWebhookService.sendNotification()
- *       └── announcement.line    → consumeLine()     → LineNotificationService.sendNotificationToUser()
+ *       ├── announcement.discord → consumeDiscord()  → DiscordWebhookService.sendNotificationToUser() (per-user)
+ *       └── announcement.line    → consumeLine()     → LineNotificationService.sendNotificationToUser() (per-user)
  *
  * 面試重點：
  *   - Fanout 讓每個 consumer 都收到相同訊息，各自獨立消費
@@ -37,13 +38,20 @@ public class AnnouncementConsumer {
 
     private final DiscordWebhookService discordService;
     private final LineNotificationService lineService;
+    private final UserDiscordWebhookRepository discordWebhookRepository;
     private final UserLineBindingRepository lineBindingRepository;
 
     /**
      * Discord 公告消費者
      *
-     * 發送到全域 Discord Webhook（公告頻道，所有人可見）。
+     * 逐用戶推送到已設定 Discord Webhook 的用戶（per-user webhook）。
      * 使用 Embed 格式，顏色依 priority 映射。
+     *
+     * 面試重點：為什麼不用全域 Webhook？
+     * → 全域 Webhook 只能送到一個頻道（管理員設定的公告頻道）。
+     *   我們希望每位用戶在自己的 Discord 伺服器收到通知，
+     *   所以用 per-user webhook，和交易通知一樣的模式。
+     *   sendNotificationToUser() 內部會檢查用戶開關 + 查找 webhook URL。
      */
     @RabbitListener(queues = RabbitMQConfig.QUEUE_ANNOUNCEMENT_DISCORD)
     public void consumeDiscord(AnnouncementMessage msg) {
@@ -55,8 +63,18 @@ public class AnnouncementConsumer {
         String title = formatTitle(msg);
         int color = priorityToColor(msg.getPriority());
 
-        discordService.sendNotification(title, msg.getContent(), color);
-        log.info("公告推送 Discord 完成: id={}, title={}", msg.getAnnouncementId(), msg.getTitle());
+        List<String> webhookUserIds = discordWebhookRepository.findUserIdsWithEnabledWebhook();
+        log.info("公告推送 Discord: id={}, webhook 用戶數={}", msg.getAnnouncementId(), webhookUserIds.size());
+
+        for (String userId : webhookUserIds) {
+            try {
+                discordService.sendNotificationToUser(userId, title, msg.getContent(), color);
+            } catch (Exception e) {
+                log.warn("Discord 推送失敗（跳過）: userId={}, error={}", userId, e.getMessage());
+            }
+        }
+
+        log.info("公告推送 Discord 完成: id={}", msg.getAnnouncementId());
     }
 
     /**
