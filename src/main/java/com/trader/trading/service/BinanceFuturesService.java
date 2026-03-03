@@ -61,7 +61,7 @@ public class BinanceFuturesService {
      */
     private static final ThreadLocal<BinanceKeys> CURRENT_USER_KEYS = new ThreadLocal<>();
 
-    // SL/TP 下單重試配置
+    // 下單重試配置（Market / Limit / SL / TP 共用）
     private static final int ORDER_MAX_RETRIES = 2;
     private static final long[] ORDER_RETRY_DELAYS_MS = {1000, 3000};
 
@@ -347,9 +347,10 @@ public class BinanceFuturesService {
         params.put("timeInForce", "GTC");
         params.put("price", formatPrice(price));
         params.put("quantity", formatQuantity(symbol, quantity));
+        params.put("newClientOrderId", generateClientOrderId("LMT"));
 
         log.info("下限價單: {} {} {} @ {}", symbol, side, quantity, price);
-        String response = sendSignedPost(endpoint, params);
+        String response = sendSignedPostWithRetry(endpoint, params, "newClientOrderId");
         return parseOrderResponse(response);
     }
 
@@ -361,9 +362,10 @@ public class BinanceFuturesService {
         params.put("type", "MARKET");
         params.put("newOrderRespType", "RESULT"); // 回傳成交結果含 avgPrice（預設 ACK 不回傳）
         params.put("quantity", formatQuantity(symbol, quantity));
+        params.put("newClientOrderId", generateClientOrderId("MKT"));
 
         log.info("下市價單: {} {} {}", symbol, side, quantity);
-        String response = sendSignedPost(endpoint, params);
+        String response = sendSignedPostWithRetry(endpoint, params, "newClientOrderId");
         return parseOrderResponse(response);
     }
 
@@ -1610,7 +1612,7 @@ public class BinanceFuturesService {
     }
 
     /**
-     * 帶 idempotent key 的下單重試（僅用於 SL/TP）
+     * 帶 idempotent key 的下單重試（Market / Limit / SL / TP 共用）
      * 用 newClientOrderId/clientAlgoId 確保 Binance 不會重複成交
      * 只有 IOException（網路斷線/timeout）才重試，收到 HTTP 回應（含 4xx/5xx）不重試
      */
