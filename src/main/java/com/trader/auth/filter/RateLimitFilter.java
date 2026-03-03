@@ -1,10 +1,11 @@
 package com.trader.auth.filter;
 
+import com.trader.auth.util.ClientIpResolver;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -38,9 +39,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * Rate key = IP + 路徑分組（同一組端點共享計數）。
  * 放在 Security Filter 之前，被拒的請求不會進入認證流程。
+ *
+ * IP 解析委託 ClientIpResolver，支援 Cloudflare CF-Connecting-IP + Docker CIDR。
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)  // 在 CORS 之後、Security 之前
 public class RateLimitFilter implements Filter {
 
@@ -73,8 +77,7 @@ public class RateLimitFilter implements Filter {
     /** key = "IP:group" → 計數器 */
     private final ConcurrentHashMap<String, RateEntry> counters = new ConcurrentHashMap<>();
 
-    @Value("${security.trusted-proxies:127.0.0.1,::1,0:0:0:0:0:0:0:1}")
-    private String trustedProxies;
+    private final ClientIpResolver clientIpResolver;
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -91,7 +94,7 @@ public class RateLimitFilter implements Filter {
             return;
         }
 
-        String clientIp = getClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
         String key = clientIp + ":" + matched.group;
 
         RateEntry entry = counters.compute(key, (k, existing) -> {
@@ -140,45 +143,6 @@ public class RateLimitFilter implements Filter {
 
     int getCounterSize() {
         return counters.size();
-    }
-
-    // ========== internal ==========
-
-    private String getClientIp(HttpServletRequest request) {
-        String remoteAddr = request.getRemoteAddr();
-        if (!isTrustedProxy(remoteAddr)) {
-            return remoteAddr;
-        }
-
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isEmpty()) {
-            return forwarded.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isEmpty()) {
-            return realIp;
-        }
-        return remoteAddr;
-    }
-
-    private boolean isTrustedProxy(String remoteAddr) {
-        if (remoteAddr == null || remoteAddr.isBlank()) {
-            return false;
-        }
-        if ("127.0.0.1".equals(remoteAddr)
-                || "::1".equals(remoteAddr)
-                || "0:0:0:0:0:0:0:1".equals(remoteAddr)) {
-            return true;
-        }
-        if (trustedProxies == null || trustedProxies.isBlank()) {
-            return false;
-        }
-        for (String configured : trustedProxies.split(",")) {
-            if (remoteAddr.equals(configured.trim())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     static class RateEntry {

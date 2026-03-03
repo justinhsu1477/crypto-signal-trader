@@ -11,4 +11,11 @@ binance:
 
 
 
+# ========== IP 解析 / 反向代理 ==========
+# Cloudflare 保證 CF-Connecting-IP 為真實用戶 IP
+# 172.16.0.0/12 涵蓋所有 Docker bridge 網段
+security:
+  ip-header: CF-Connecting-IP
+  trusted-proxies: 172.16.0.0/12,127.0.0.1,::1,0:0:0:0:0:0:0:1
+
 # logging 設定由 logback-spring.xml 統一管理
