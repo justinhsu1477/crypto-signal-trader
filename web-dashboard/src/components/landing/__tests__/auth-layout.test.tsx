@@ -32,12 +32,13 @@ vi.mock("@/lib/i18n/i18n-context", () => ({
   }),
 }));
 
-// Mock usePathname
+// Mock usePathname + useSearchParams
 vi.mock("next/navigation", async () => {
   const actual = await vi.importActual("next/navigation");
   return {
     ...actual,
     usePathname: vi.fn(() => "/login"),
+    useSearchParams: vi.fn(() => new URLSearchParams()),
   };
 });
 
