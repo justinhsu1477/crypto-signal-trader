@@ -8,6 +8,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.*;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.Optional;
@@ -141,10 +143,10 @@ class JwtAuthenticationFilterTest {
             Date iat = new Date(System.currentTimeMillis() - 3600_000);
             when(jwtService.extractIssuedAt("old-token")).thenReturn(iat);
 
-            // 密碼 10 分鐘前改過
+            // 密碼 10 分鐘前改過（用 AppConstants.ZONE_ID，與生產 code 一致）
             var user = com.trader.user.entity.User.builder()
                     .userId("user-1")
-                    .passwordChangedAt(LocalDateTime.now().minusMinutes(10))
+                    .passwordChangedAt(LocalDateTime.now(AppConstants.ZONE_ID).minusMinutes(10))
                     .build();
             when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
 
@@ -166,10 +168,10 @@ class JwtAuthenticationFilterTest {
             Date iat = new Date(System.currentTimeMillis() - 5000);
             when(jwtService.extractIssuedAt("new-token")).thenReturn(iat);
 
-            // 密碼 1 小時前改過
+            // 密碼 1 小時前改過（用 AppConstants.ZONE_ID，與生產 code 一致）
             var user = com.trader.user.entity.User.builder()
                     .userId("user-1")
-                    .passwordChangedAt(LocalDateTime.now().minusHours(1))
+                    .passwordChangedAt(LocalDateTime.now(AppConstants.ZONE_ID).minusHours(1))
                     .build();
             when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
 
