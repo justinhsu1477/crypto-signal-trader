@@ -15,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -72,7 +74,7 @@ public class BroadcastTradeService {
      */
     public Map<String, Object> broadcastTrade(TradeRequest request) {
         // 啟動 AI 信號評分（非同步，不阻塞任何交易流程）
-        LocalDateTime broadcastStartTime = LocalDateTime.now();
+        LocalDateTime broadcastStartTime = LocalDateTime.now(AppConstants.ZONE_ID);
         CompletableFuture<SignalScore> scoreFuture = signalScoringService.scoreAsync(request);
 
         // 一次查詢所有用戶，按角色分流：Admin 只收通知不下單
@@ -248,12 +250,12 @@ public class BroadcastTradeService {
             // 交易執行快（1-2秒）時多等一下，交易慢（5秒+）時 Gemini 幾乎必定已完成
             SignalScore finalScore = null;
             try {
-                long elapsedMs = Duration.between(broadcastStartTime, LocalDateTime.now()).toMillis();
+                long elapsedMs = Duration.between(broadcastStartTime, LocalDateTime.now(AppConstants.ZONE_ID)).toMillis();
                 long remainingMs = Math.max(500, 6_000 - elapsedMs); // 最少等 500ms
                 finalScore = scoreFuture.get(remainingMs, TimeUnit.MILLISECONDS);
                 log.debug("AI 評分取得成功，總耗時 {}ms（等待 {}ms）", elapsedMs + remainingMs, remainingMs);
             } catch (TimeoutException e) {
-                long totalMs = Duration.between(broadcastStartTime, LocalDateTime.now()).toMillis();
+                long totalMs = Duration.between(broadcastStartTime, LocalDateTime.now(AppConstants.ZONE_ID)).toMillis();
                 log.debug("AI 評分未及時完成（已等 {}ms），跳過", totalMs);
             } catch (ExecutionException e) {
                 log.warn("AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
