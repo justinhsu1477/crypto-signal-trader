@@ -275,6 +275,39 @@ public class AuthController {
     }
 
     /**
+     * 設定密碼（OAuth 用戶首次設定密碼）
+     * POST /api/auth/set-password
+     *
+     * 僅供無密碼的 OAuth 用戶使用。已有密碼的用戶應使用 change-password。
+     * 成功後清除 Cookie → 強制重新登入（因為 passwordChangedAt 更新）。
+     */
+    @PostMapping("/set-password")
+    public ResponseEntity<?> setPassword(@Valid @RequestBody SetPasswordRequest request,
+                                         Authentication authentication,
+                                         HttpServletRequest httpRequest,
+                                         HttpServletResponse httpResponse) {
+        String clientIp = clientIpResolver.resolve(httpRequest);
+        String userId = (String) authentication.getPrincipal();
+
+        try {
+            passwordResetService.setPassword(userId, request);
+
+            // 清除 Cookie → 強制重新登入
+            CookieUtil.clearAuthCookies(httpResponse, jwtService.isCookieSecure());
+
+            auditService.log(userId, "SET_PASSWORD", "/api/auth/set-password",
+                    "SUCCESS", clientIp, "");
+
+            return ResponseEntity.ok(Map.of("message", "密碼設定成功，請重新登入"));
+        } catch (IllegalArgumentException e) {
+            auditService.log(userId, "SET_PASSWORD", "/api/auth/set-password",
+                    "FAILED", clientIp, e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder().error(e.getMessage()).build());
+        }
+    }
+
+    /**
      * 忘記密碼（公開端點）
      * POST /api/auth/forgot-password
      *
@@ -331,8 +364,9 @@ public class AuthController {
 
         return ResponseEntity.ok(Map.of(
                 "userId", user.getUserId(),
-                "email", user.getEmail(),
-                "role", user.getRole().name()
+                "email", user.getEmail() != null ? user.getEmail() : "",
+                "role", user.getRole().name(),
+                "hasPassword", user.hasPassword()
         ));
     }
 

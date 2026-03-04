@@ -510,6 +510,70 @@ class AuthControllerTest {
         }
     }
 
+    // ==================== set-password ====================
+
+    @Nested
+    @DisplayName("POST /set-password")
+    class SetPassword {
+
+        private Authentication authentication;
+
+        @BeforeEach
+        void setUpAuth() {
+            authentication = mock(Authentication.class);
+            when(authentication.getPrincipal()).thenReturn("oauth-user-1");
+        }
+
+        @Test
+        @DisplayName("OAuth 用戶首次設定密碼成功 → 200 + 清除 Cookie + 審計")
+        void success() {
+            SetPasswordRequest req = new SetPasswordRequest("NewPass1", "NewPass1");
+
+            ResponseEntity<?> response = controller.setPassword(req, authentication,
+                    httpRequest, httpResponse);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            verify(passwordResetService).setPassword(eq("oauth-user-1"), any());
+            // 清除 Cookie
+            verify(httpResponse, atLeast(2)).addHeader(eq("Set-Cookie"), anyString());
+            // 審計
+            verify(auditService).log(eq("oauth-user-1"), eq("SET_PASSWORD"), anyString(),
+                    eq("SUCCESS"), anyString(), eq(""));
+        }
+
+        @Test
+        @DisplayName("確認密碼不一致 → 400 + 審計失敗")
+        void confirmPasswordMismatch_returns400() {
+            SetPasswordRequest req = new SetPasswordRequest("NewPass1", "DifferentPw");
+
+            doThrow(new IllegalArgumentException("新密碼與確認密碼不一致"))
+                    .when(passwordResetService).setPassword(anyString(), any());
+
+            ResponseEntity<?> response = controller.setPassword(req, authentication,
+                    httpRequest, httpResponse);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            verify(auditService).log(eq("oauth-user-1"), eq("SET_PASSWORD"), anyString(),
+                    eq("FAILED"), anyString(), eq("新密碼與確認密碼不一致"));
+        }
+
+        @Test
+        @DisplayName("已有密碼 → 400 + 審計失敗")
+        void alreadyHasPassword_returns400() {
+            SetPasswordRequest req = new SetPasswordRequest("NewPass1", "NewPass1");
+
+            doThrow(new IllegalArgumentException("此帳號已有密碼，請使用修改密碼功能"))
+                    .when(passwordResetService).setPassword(anyString(), any());
+
+            ResponseEntity<?> response = controller.setPassword(req, authentication,
+                    httpRequest, httpResponse);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            verify(auditService).log(eq("oauth-user-1"), eq("SET_PASSWORD"), anyString(),
+                    eq("FAILED"), anyString(), eq("此帳號已有密碼，請使用修改密碼功能"));
+        }
+    }
+
     // ==================== me ====================
 
     @Nested
@@ -576,6 +640,51 @@ class AuthControllerTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = (Map<String, Object>) response.getBody();
             assertThat(body).containsEntry("role", "ADMIN");
+        }
+
+        @Test
+        @DisplayName("OAuth 用戶（email=null）→ 200 + email 空字串 + hasPassword=false")
+        void oauthUserNullEmail_returnsEmptyEmailAndHasPasswordFalse() {
+            Authentication auth = mock(Authentication.class);
+            when(auth.getPrincipal()).thenReturn("oauth-1");
+
+            User oauthUser = User.builder()
+                    .userId("oauth-1")
+                    .email(null)          // OAuth 用戶可能沒有 email
+                    .passwordHash(null)   // OAuth 用戶沒有密碼
+                    .role(User.Role.USER)
+                    .build();
+            when(userRepository.findById("oauth-1")).thenReturn(Optional.of(oauthUser));
+
+            ResponseEntity<?> response = controller.me(auth);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("email", "");
+            assertThat(body).containsEntry("hasPassword", false);
+        }
+
+        @Test
+        @DisplayName("已有密碼的用戶 → hasPassword=true")
+        void passwordUser_hasPasswordTrue() {
+            Authentication auth = mock(Authentication.class);
+            when(auth.getPrincipal()).thenReturn("pw-user-1");
+
+            User passwordUser = User.builder()
+                    .userId("pw-user-1")
+                    .email("pw@email.com")
+                    .passwordHash("$2a$10$hashedpassword")
+                    .role(User.Role.USER)
+                    .build();
+            when(userRepository.findById("pw-user-1")).thenReturn(Optional.of(passwordUser));
+
+            ResponseEntity<?> response = controller.me(auth);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("hasPassword", true);
         }
     }
 }

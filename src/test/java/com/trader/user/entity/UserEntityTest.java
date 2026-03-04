@@ -68,15 +68,27 @@ class UserEntityTest {
         }
 
         @Test
-        @DisplayName("discordNotificationEnabled 預設 true")
-        void discordNotificationEnabledDefaultsTrue() {
+        @DisplayName("discordNotificationEnabled 預設 false — 新用戶需自行設定 Discord webhook")
+        void discordNotificationEnabledDefaultsFalse() {
             User user = User.builder()
                     .userId("u1")
                     .email("test@test.com")
                     .passwordHash("hash")
                     .build();
 
-            assertThat(user.isDiscordNotificationEnabled()).isTrue();
+            assertThat(user.isDiscordNotificationEnabled()).isFalse();
+        }
+
+        @Test
+        @DisplayName("lineNotificationEnabled 預設 true — LINE 通知預設開啟")
+        void lineNotificationEnabledDefaultsTrue() {
+            User user = User.builder()
+                    .userId("u1")
+                    .email("test@test.com")
+                    .passwordHash("hash")
+                    .build();
+
+            assertThat(user.isLineNotificationEnabled()).isTrue();
         }
 
         @Test

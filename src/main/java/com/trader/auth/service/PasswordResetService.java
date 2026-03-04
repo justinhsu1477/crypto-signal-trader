@@ -3,6 +3,7 @@ package com.trader.auth.service;
 import com.trader.auth.config.EmailConfig;
 import com.trader.auth.dto.ChangePasswordRequest;
 import com.trader.auth.dto.ResetPasswordRequest;
+import com.trader.auth.dto.SetPasswordRequest;
 import com.trader.auth.entity.PasswordResetToken;
 import com.trader.auth.repository.PasswordResetTokenRepository;
 import com.trader.auth.util.EmailNormalizer;
@@ -74,6 +75,41 @@ public class PasswordResetService {
         userRepository.save(user);
 
         log.info("🔑 密碼修改成功: userId={}", userId);
+    }
+
+    // ========== 設定密碼（OAuth 用戶首次設定密碼） ==========
+
+    /**
+     * OAuth 用戶首次設定密碼
+     *
+     * 限制：只有尚未設定密碼的用戶可以使用此功能。
+     * 已有密碼的用戶應使用 changePassword。
+     *
+     * @param userId  當前登入用戶 ID
+     * @param request 設定密碼請求
+     */
+    @Transactional
+    public void setPassword(String userId, SetPasswordRequest request) {
+        // 1. 驗證新密碼 == 確認密碼
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new IllegalArgumentException("新密碼與確認密碼不一致");
+        }
+
+        // 2. 查找用戶
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("用戶不存在"));
+
+        // 3. 只有無密碼的用戶才能「設定」密碼（有密碼的應用 change-password）
+        if (user.hasPassword()) {
+            throw new IllegalArgumentException("此帳號已有密碼，請使用修改密碼功能");
+        }
+
+        // 4. 設定密碼 + passwordChangedAt
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setPasswordChangedAt(LocalDateTime.now(AppConstants.ZONE_ID));
+        userRepository.save(user);
+
+        log.info("🔑 OAuth 用戶首次設定密碼成功: userId={}", userId);
     }
 
     // ========== 忘記密碼（發送重設連結） ==========
