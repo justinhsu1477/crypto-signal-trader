@@ -32,5 +32,7 @@ public class AdminUserListResponse {
         private boolean autoTradeEnabled;
         private String createdAt;
         private String updatedAt;
+        /** 登入方式：["EMAIL"], ["LINE"], ["EMAIL", "LINE"] */
+        private List<String> loginMethods;
     }
 }

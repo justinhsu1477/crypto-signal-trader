@@ -163,7 +163,25 @@ export default function AdminUsersPage() {
                     key={user.userId}
                     className="border-b border-border/50 hover:bg-accent/30 transition-colors"
                   >
-                    <td className="px-4 py-3 font-mono text-xs">{user.email}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-mono text-xs">{user.email || "-"}</div>
+                      {user.loginMethods && user.loginMethods.length > 0 && (
+                        <div className="flex gap-1 mt-0.5">
+                          {user.loginMethods.map((m) => (
+                            <span
+                              key={m}
+                              className={`inline-block px-1.5 py-px rounded text-[10px] font-medium leading-tight ${
+                                m === "LINE"
+                                  ? "bg-green-500/15 text-green-400"
+                                  : "bg-gray-500/15 text-gray-400"
+                              }`}
+                            >
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">{user.name || "-"}</td>
                     <td className="px-4 py-3 text-center">
                       <span
