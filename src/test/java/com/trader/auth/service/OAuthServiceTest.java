@@ -284,8 +284,6 @@ class OAuthServiceTest {
 
             assertThat(ticket).isNotNull().isNotBlank();
             verify(userRepository).save(any(User.class));
-            verify(notificationService).sendNotificationToAdmins(
-                    contains("新用戶"), anyString(), eq(NotificationService.COLOR_BLUE));
         }
     }
 
@@ -466,9 +464,7 @@ class OAuthServiceTest {
             assertThat(createdProvider.getProvider()).isEqualTo(OAuthProviderType.LINE);
             assertThat(createdProvider.getProviderUserId()).isEqualTo(LINE_USER_ID);
 
-            // 驗證發送了通知
-            verify(notificationService).sendNotificationToAdmins(
-                    contains("新用戶"), anyString(), eq(NotificationService.COLOR_BLUE));
+            // 驗證發送了歡迎通知
             verify(notificationService).sendNotificationToUser(
                     eq(result.getUserId()), contains("歡迎"), anyString(), eq(NotificationService.COLOR_GREEN));
         }
@@ -519,16 +515,8 @@ class OAuthServiceTest {
             User result = oAuthService.resolveAndBindUser(
                     LINE_USER_ID, DISPLAY_NAME, null, tokenResponse);
 
-            // Admin 通知：包含「新用戶」+ displayName + userId
-            ArgumentCaptor<String> adminTitleCaptor = ArgumentCaptor.forClass(String.class);
-            ArgumentCaptor<String> adminMsgCaptor = ArgumentCaptor.forClass(String.class);
-            verify(notificationService).sendNotificationToAdmins(
-                    adminTitleCaptor.capture(), adminMsgCaptor.capture(), eq(NotificationService.COLOR_BLUE));
-            assertThat(adminTitleCaptor.getValue()).contains("新用戶");
-            assertThat(adminMsgCaptor.getValue()).contains(DISPLAY_NAME);
-            assertThat(adminMsgCaptor.getValue()).contains(result.getUserId());
-
-            // 歡迎訊息：給新用戶，包含 displayName
+            // 歡迎訊息：給新用戶，包含 displayName（不發 Admin 通知）
+            verify(notificationService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
             ArgumentCaptor<String> welcomeMsgCaptor = ArgumentCaptor.forClass(String.class);
             verify(notificationService).sendNotificationToUser(
                     eq(result.getUserId()), contains("歡迎"), welcomeMsgCaptor.capture(),
