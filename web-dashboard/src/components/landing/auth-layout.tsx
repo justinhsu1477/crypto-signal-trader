@@ -31,15 +31,20 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const isLogin = pathname === "/login";
   // /register、/verify-email 直接顯示表單；/login 需要 ?action=signin 或用戶點擊
-  const shouldShowCard = pathname !== "/login" || searchParams.get("action") === "signin";
-  const [showAuthCard, setShowAuthCard] = useState(shouldShowCard);
+  // OAuth callback（?oauth=pending）也需要顯示 LoginForm 以處理 ticket
+  const needsCard = pathname !== "/login"
+    || searchParams.get("action") === "signin"
+    || searchParams.get("oauth") !== null;
+  const [showAuthCard, setShowAuthCard] = useState(needsCard);
   const [prevPathname, setPrevPathname] = useState(pathname);
 
   // pathname 切換時同步（React 推薦的 render-phase 調整模式，非 useEffect）
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
   if (prevPathname !== pathname) {
     setPrevPathname(pathname);
-    setShowAuthCard(pathname !== "/login" || searchParams.get("action") === "signin");
+    setShowAuthCard(pathname !== "/login"
+      || searchParams.get("action") === "signin"
+      || searchParams.get("oauth") !== null);
   }
 
   // 監聽 navbar「登入」按鈕的 custom event（callback 內 setState 合規）
