@@ -730,39 +730,39 @@ class TradeControllerTest {
         }
 
         @Test
-        @DisplayName("CLOSE 重複訊號 — signal-level 去重攔截")
-        void broadcastCloseDuplicate() {
+        @DisplayName("CLOSE 不走 signal-level 去重 — 分批平倉不應被攔截")
+        void broadcastCloseBypassesDedup() {
             TradeRequest request = new TradeRequest();
             request.setAction("CLOSE");
             request.setSymbol("BTCUSDT");
 
-            when(deduplicationService.isSignalProcessed(any())).thenReturn(true);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 3, "success", 3));
 
             ResponseEntity<?> response = controller.broadcastTrade(request);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> body = (Map<String, Object>) response.getBody();
-            assertThat(body).containsEntry("status", "SKIPPED");
-            verify(broadcastTradeService, never()).broadcastTrade(any());
+            // CLOSE 不應呼叫 isSignalProcessed，直接執行廣播
+            verify(deduplicationService, never()).isSignalProcessed(any());
+            verify(broadcastTradeService).broadcastTrade(any());
         }
 
         @Test
-        @DisplayName("MOVE_SL 重複訊號 — signal-level 去重攔截")
-        void broadcastMoveSLDuplicate() {
+        @DisplayName("MOVE_SL 不走 signal-level 去重 — 連續調整止損不應被攔截")
+        void broadcastMoveSLBypassesDedup() {
             TradeRequest request = new TradeRequest();
             request.setAction("MOVE_SL");
             request.setSymbol("BTCUSDT");
 
-            when(deduplicationService.isSignalProcessed(any())).thenReturn(true);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("total", 3, "success", 3));
 
             ResponseEntity<?> response = controller.broadcastTrade(request);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> body = (Map<String, Object>) response.getBody();
-            assertThat(body).containsEntry("status", "SKIPPED");
-            verify(broadcastTradeService, never()).broadcastTrade(any());
+            // MOVE_SL 不應呼叫 isSignalProcessed，直接執行廣播
+            verify(deduplicationService, never()).isSignalProcessed(any());
+            verify(broadcastTradeService).broadcastTrade(any());
         }
 
         @Test

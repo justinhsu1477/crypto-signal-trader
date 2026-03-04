@@ -766,11 +766,14 @@ public class TradeController {
             }
         }
 
-        // Signal-level 去重：ENTRY / CLOSE / MOVE_SL 訊號在廣播前檢查是否已被處理過
+        // Signal-level 去重：僅 ENTRY 訊號在廣播前檢查是否已被處理過
         // 防止 Discord 重連/重發導致同一訊號被多次廣播給所有用戶
+        // CLOSE / MOVE_SL 不做 signal-level 去重：
+        //   - CLOSE: 分批平倉是合理操作（先平 50% 再平 100%），hash 不含 closeRatio 會誤擋
+        //   - MOVE_SL: 連續調整止損是合理操作
         // CANCEL 有自己的去重邏輯（isCancelDuplicate），不在此處理
         String action = request.getAction().toUpperCase();
-        if ("ENTRY".equals(action) || "CLOSE".equals(action) || "MOVE_SL".equals(action)) {
+        if ("ENTRY".equals(action)) {
             TradeSignal dedupSignal = TradeSignal.builder()
                     .symbol(symbol)
                     .side(request.getSide() != null
