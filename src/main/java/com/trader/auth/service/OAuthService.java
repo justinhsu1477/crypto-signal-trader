@@ -8,7 +8,10 @@ import com.trader.auth.entity.OAuthState;
 import com.trader.auth.entity.UserOAuthProvider;
 import com.trader.auth.repository.OAuthStateRepository;
 import com.trader.auth.repository.UserOAuthProviderRepository;
+import com.trader.auth.util.EmailNormalizer;
+import com.trader.notification.service.NotificationService;
 import com.trader.shared.config.AppConstants;
+import com.trader.shared.util.AesEncryptionUtil;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserLineBinding;
 import com.trader.user.repository.UserLineBindingRepository;
@@ -46,6 +49,8 @@ public class OAuthService {
     private final LineOAuthClient lineOAuthClient;
     private final AuthService authService;
     private final JwtService jwtService;
+    private final AesEncryptionUtil aesEncryptionUtil;
+    private final NotificationService notificationService;
     private final UserRepository userRepository;
     private final UserLineBindingRepository lineBindingRepository;
     private final UserOAuthProviderRepository oauthProviderRepository;
@@ -83,11 +88,43 @@ public class OAuthService {
     /**
      * 處理 LINE OAuth callback
      *
+     * 設計：HTTP 呼叫（LINE API）在 @Transactional 外執行，
+     * 只有 DB 操作（state 驗證 + 帳號解析）在交易內。
+     * 避免外部 API 回應慢時佔住 DB connection。
+     *
      * @return one-time ticket（前端用此 ticket 交換 HttpOnly Cookie）
      */
-    @Transactional
     public String handleLineCallback(String code, String state) {
-        // 1. 驗證 state（CSRF 保護）
+        // 1. 驗證並消費 state（CSRF 保護）— 需要交易
+        validateAndConsumeState(state);
+
+        // 2. 用 code 換取 token（外部 HTTP 呼叫，不在 @Transactional 內）
+        LineTokenResponse tokenResponse = lineOAuthClient.exchangeCode(code);
+
+        // 3. 取得 LINE Profile（外部 HTTP 呼叫）
+        LineProfile profile = lineOAuthClient.getProfile(tokenResponse.getAccessToken());
+        String lineUserId = profile.getUserId();
+        String displayName = profile.getDisplayName();
+
+        // 3.5 從 ID Token 解析 email（用戶可能未授權 → null）
+        String lineEmail = lineOAuthClient.extractEmailFromIdToken(tokenResponse.getIdToken());
+
+        log.info("LINE Login callback: lineUserId={} displayName={} email={}",
+                lineUserId, displayName, lineEmail != null ? lineEmail : "(未提供)");
+
+        // 4. 解析帳號 + 確保 LINE Binding（DB 操作，在交易內）
+        User user = resolveAndBindUser(lineUserId, displayName, lineEmail, tokenResponse);
+
+        // 5. 生成 one-time ticket（記憶體操作，不需交易）
+        return generateTicket(user.getUserId());
+    }
+
+    /**
+     * 驗證並消費 OAuth state（CSRF 保護）
+     * 獨立交易：驗完立即刪除，即使後續步驟失敗也不會被重放
+     */
+    @Transactional
+    public void validateAndConsumeState(String state) {
         OAuthState oAuthState = stateRepository.findById(state)
                 .orElseThrow(() -> new IllegalArgumentException("無效的 OAuth state"));
 
@@ -102,29 +139,18 @@ public class OAuthService {
 
         // 一次性使用：立即刪除
         stateRepository.delete(oAuthState);
+    }
 
-        // 2. 用 code 換取 token
-        LineTokenResponse tokenResponse = lineOAuthClient.exchangeCode(code);
-
-        // 3. 取得 LINE Profile
-        LineProfile profile = lineOAuthClient.getProfile(tokenResponse.getAccessToken());
-        String lineUserId = profile.getUserId();
-        String displayName = profile.getDisplayName();
-
-        // 3.5 從 ID Token 解析 email（用戶可能未授權 → null）
-        String lineEmail = lineOAuthClient.extractEmailFromIdToken(tokenResponse.getIdToken());
-
-        log.info("LINE Login callback: lineUserId={} displayName={} email={}",
-                lineUserId, displayName, lineEmail != null ? lineEmail : "(未提供)");
-
-        // 4. 解析帳號（找到或建立用戶）
+    /**
+     * 解析帳號 + 確保 LINE Binding + 發送新用戶通知
+     * 所有 DB 操作統一在此交易內
+     */
+    @Transactional
+    public User resolveAndBindUser(String lineUserId, String displayName,
+                                    String lineEmail, LineTokenResponse tokenResponse) {
         User user = resolveUser(lineUserId, displayName, lineEmail, tokenResponse);
-
-        // 5. 確保 UserLineBinding 存在（自動綁定 LINE 通知）
         ensureLineBinding(user.getUserId(), lineUserId, displayName);
-
-        // 6. 生成 one-time ticket
-        return generateTicket(user.getUserId());
+        return user;
     }
 
     // ===== Step 3: Ticket 交換 =====
@@ -167,11 +193,11 @@ public class OAuthService {
         if (existingOAuth.isPresent()) {
             String userId = existingOAuth.get().getUserId();
             log.info("LINE Login 路徑 1: 已有 OAuth 綁定 → userId={}", userId);
-            // 更新 token
+            // 更新 token（加密存儲）
             UserOAuthProvider provider = existingOAuth.get();
-            provider.setAccessToken(tokenResponse.getAccessToken());
+            provider.setAccessToken(encryptToken(tokenResponse.getAccessToken()));
             if (tokenResponse.getRefreshToken() != null) {
-                provider.setRefreshToken(tokenResponse.getRefreshToken());
+                provider.setRefreshToken(encryptToken(tokenResponse.getRefreshToken()));
             }
             provider.setDisplayName(displayName);
             oauthProviderRepository.save(provider);
@@ -191,7 +217,8 @@ public class OAuthService {
 
         // 路徑 3: LINE 回傳 email → 比對已驗證的既有帳號
         if (lineEmail != null && !lineEmail.isBlank()) {
-            Optional<User> emailMatch = userRepository.findByEmailIgnoreCase(lineEmail);
+            String normalizedEmail = EmailNormalizer.normalize(lineEmail);
+            Optional<User> emailMatch = userRepository.findByEmailIgnoreCase(normalizedEmail);
             if (emailMatch.isPresent()) {
                 User existingUser = emailMatch.get();
                 // 安全檢查：只有 emailVerified 且帳號啟用才自動合併
@@ -215,13 +242,19 @@ public class OAuthService {
                 .email(null)  // 純 LINE 用戶無 email
                 .passwordHash(null)  // 無密碼
                 .name(displayName)
+                .role(User.Role.USER)
+                .enabled(true)
                 .emailVerified(false)
                 .autoTradeEnabled(false)
-                .lineNotificationEnabled(true)
+                .discordNotificationEnabled(false)  // 新用戶預設關閉，需自行設定 webhook
+                .lineNotificationEnabled(true)      // LINE Login 用戶預設開啟
                 .build();
         userRepository.save(newUser);
 
         createOAuthProvider(newUser.getUserId(), lineUserId, displayName, tokenResponse);
+
+        // 新用戶通知（在交易內標記，交易 commit 後由上層發送）
+        sendNewUserNotifications(newUser.getUserId(), displayName);
 
         return newUser;
     }
@@ -233,10 +266,50 @@ public class OAuthService {
                 .provider(OAuthProviderType.LINE)
                 .providerUserId(lineUserId)
                 .displayName(displayName)
-                .accessToken(tokenResponse.getAccessToken())
-                .refreshToken(tokenResponse.getRefreshToken())
+                .accessToken(encryptToken(tokenResponse.getAccessToken()))
+                .refreshToken(encryptToken(tokenResponse.getRefreshToken()))
                 .build();
         oauthProviderRepository.save(provider);
+    }
+
+    /**
+     * 加密 OAuth token（null-safe）
+     */
+    private String encryptToken(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return aesEncryptionUtil.encrypt(token);
+    }
+
+    /**
+     * 發送新用戶通知
+     * - Admin 收到系統通知（新用戶透過 LINE 註冊）
+     * - 新用戶收到 LINE 歡迎訊息
+     */
+    private void sendNewUserNotifications(String userId, String displayName) {
+        try {
+            // 1. 通知 Admin：新用戶註冊
+            notificationService.sendNotificationToAdmins(
+                    "👤 新用戶註冊",
+                    "用戶 " + displayName + " 透過 LINE Login 註冊\nuserId: " + userId,
+                    NotificationService.COLOR_BLUE
+            );
+
+            // 2. 歡迎訊息給新用戶（透過 LINE）
+            notificationService.sendNotificationToUser(
+                    userId,
+                    "🎉 歡迎加入 Hook-FI",
+                    "Hi " + displayName + "！\n\n"
+                            + "你的帳號已建立成功 ✅\n"
+                            + "你可以在設定頁面完善個人資料、設定密碼、綁定交易所 API。\n\n"
+                            + "有任何問題歡迎透過 LINE 聯繫我們！",
+                    NotificationService.COLOR_GREEN
+            );
+        } catch (Exception e) {
+            // 通知失敗不影響註冊流程
+            log.warn("新用戶通知發送失敗（不影響註冊）: userId={} error={}", userId, e.getMessage());
+        }
     }
 
     private void ensureLineBinding(String userId, String lineUserId, String displayName) {

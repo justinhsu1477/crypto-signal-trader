@@ -3,6 +3,7 @@ package com.trader.auth.service;
 import com.trader.auth.config.EmailConfig;
 import com.trader.auth.dto.ChangePasswordRequest;
 import com.trader.auth.dto.ResetPasswordRequest;
+import com.trader.auth.dto.SetPasswordRequest;
 import com.trader.auth.entity.PasswordResetToken;
 import com.trader.auth.repository.PasswordResetTokenRepository;
 import com.trader.shared.config.AppConstants;
@@ -238,6 +239,78 @@ class PasswordResetServiceTest {
             assertThatThrownBy(() -> service.resetPassword(req))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("不一致");
+        }
+    }
+
+    // ========== 設定密碼（OAuth 用戶） ==========
+
+    @Nested
+    @DisplayName("設定密碼（OAuth 用戶首次設定）")
+    class SetPasswordTests {
+
+        private SetPasswordRequest validRequest;
+        private User oauthUser;
+
+        @BeforeEach
+        void setUpOAuthUser() {
+            validRequest = new SetPasswordRequest("NewPass1", "NewPass1");
+            oauthUser = User.builder()
+                    .userId("oauth-user-1")
+                    .name("OAuth User")
+                    .passwordHash(null)  // OAuth user has no password
+                    .enabled(true)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("OAuth 用戶首次設定密碼成功 → 更新 passwordHash + passwordChangedAt")
+        void setPasswordSuccess() {
+            when(userRepository.findById("oauth-user-1")).thenReturn(Optional.of(oauthUser));
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.setPassword("oauth-user-1", validRequest);
+
+            verify(userRepository).save(argThat(u ->
+                    u.getPasswordHash() != null
+                            && !u.getPasswordHash().isBlank()
+                            && u.getPasswordChangedAt() != null
+            ));
+        }
+
+        @Test
+        @DisplayName("確認密碼不一致 → 拋出 IllegalArgumentException")
+        void confirmPasswordMismatch() {
+            SetPasswordRequest mismatchReq = new SetPasswordRequest("NewPass1", "DifferentPw");
+
+            assertThatThrownBy(() -> service.setPassword("oauth-user-1", mismatchReq))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("不一致");
+        }
+
+        @Test
+        @DisplayName("用戶不存在 → 拋出 IllegalArgumentException")
+        void userNotFound() {
+            when(userRepository.findById("nonexistent")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.setPassword("nonexistent", validRequest))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("用戶不存在");
+        }
+
+        @Test
+        @DisplayName("已有密碼的用戶嘗試設定 → 拋出 IllegalArgumentException")
+        void userAlreadyHasPassword() {
+            User passwordUser = User.builder()
+                    .userId("pw-user-1")
+                    .name("Password User")
+                    .passwordHash(new BCryptPasswordEncoder().encode("ExistingPass1"))
+                    .enabled(true)
+                    .build();
+            when(userRepository.findById("pw-user-1")).thenReturn(Optional.of(passwordUser));
+
+            assertThatThrownBy(() -> service.setPassword("pw-user-1", validRequest))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("此帳號已有密碼");
         }
     }
 

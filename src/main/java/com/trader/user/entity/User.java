@@ -43,7 +43,7 @@ public class User {
     private boolean autoTradeEnabled = false;
 
     @Builder.Default
-    private boolean discordNotificationEnabled = true;
+    private boolean discordNotificationEnabled = false;
 
     @Builder.Default
     private boolean lineNotificationEnabled = true;

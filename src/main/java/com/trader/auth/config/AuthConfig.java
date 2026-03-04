@@ -54,8 +54,9 @@ public class AuthConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
-                        // === Auth 端點：me、logout、change-password 需要認證 ===
-                        .requestMatchers("/api/auth/me", "/api/auth/logout", "/api/auth/change-password").authenticated()
+                        // === Auth 端點：me、logout、change-password、set-password 需要認證 ===
+                        .requestMatchers("/api/auth/me", "/api/auth/logout",
+                                "/api/auth/change-password", "/api/auth/set-password").authenticated()
                         // === 公開端點 ===
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/health", "/api/health/deep", "/api/status").permitAll()
