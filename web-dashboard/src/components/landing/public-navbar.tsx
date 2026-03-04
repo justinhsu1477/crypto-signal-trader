@@ -92,24 +92,20 @@ export function PublicNavbar() {
         {/* Right CTA */}
         <div className="flex items-center gap-1.5 md:gap-3">
           <LanguageSwitcher />
-          {isLandingPage ? (
-            <button
-              onClick={() => {
+          <Link
+            href="/login?action=signin"
+            onClick={(e) => {
+              // 已在 /login 頁面 → 不導航，直接顯示表單 + 滾動到頂
+              if (isLandingPage && pathname === "/login") {
+                e.preventDefault();
                 window.scrollTo({ top: 0, behavior: "smooth" });
                 window.dispatchEvent(new CustomEvent("show-auth-card"));
-              }}
-              className="whitespace-nowrap px-2.5 py-2 text-xs md:text-sm md:px-4 font-medium text-gray-600 hover:text-black transition-colors"
-            >
-              {t("login.signIn")}
-            </button>
-          ) : (
-            <Link
-              href="/login?action=signin"
-              className="whitespace-nowrap px-2.5 py-2 text-xs md:text-sm md:px-4 font-medium text-gray-600 hover:text-black transition-colors"
-            >
-              {t("login.signIn")}
-            </Link>
-          )}
+              }
+            }}
+            className="whitespace-nowrap px-2.5 py-2 text-xs md:text-sm md:px-4 font-medium text-gray-600 hover:text-black transition-colors"
+          >
+            {t("login.signIn")}
+          </Link>
           <Link
             href="/register"
             className="whitespace-nowrap rounded-full bg-black px-4 py-2 text-xs md:text-sm md:px-6 md:py-2.5 font-bold text-white transition-colors hover:bg-gray-800"
