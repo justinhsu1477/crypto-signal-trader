@@ -160,6 +160,8 @@ const translations = {
     passwordRequirements: { en: "Password must contain:", "zh-TW": "密碼需包含：", "zh-CN": "密码需包含：", ja: "パスワードには以下を含める必要があります：" },
     passwordMinChars: { en: "At least 8 characters", "zh-TW": "至少 8 個字元", "zh-CN": "至少 8 个字符", ja: "最低8文字" },
     passwordMixedCase: { en: "Both uppercase and lowercase letters", "zh-TW": "包含大小寫字母", "zh-CN": "包含大小写字母", ja: "大文字と小文字の両方を含める" },
+    lineRegister: { en: "Sign up with LINE", "zh-TW": "使用 LINE 註冊 / 登入", "zh-CN": "使用 LINE 注册 / 登录", ja: "LINEで登録 / ログイン" },
+    orDivider: { en: "or register with email", "zh-TW": "或使用 Email 註冊", "zh-CN": "或使用 Email 注册", ja: "またはメールで登録" },
   },
 
   // ─── verify email ───
