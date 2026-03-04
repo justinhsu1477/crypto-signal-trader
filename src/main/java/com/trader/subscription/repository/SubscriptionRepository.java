@@ -3,8 +3,10 @@ package com.trader.subscription.repository;
 import com.trader.subscription.entity.Subscription;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,4 +28,14 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     Optional<Subscription> findByStripeSubscriptionId(String stripeSubscriptionId);
 
     Optional<Subscription> findByStripeCustomerId(String stripeCustomerId);
+
+    /**
+     * 查詢到期日在指定時間範圍內的 ACTIVE 訂閱（排除 LIFETIME）
+     * 用於到期提醒排程
+     */
+    @Query("SELECT s FROM Subscription s WHERE s.status = 'ACTIVE' " +
+            "AND s.currentPeriodEnd IS NOT NULL " +
+            "AND s.currentPeriodEnd >= :from AND s.currentPeriodEnd < :to")
+    List<Subscription> findActiveExpiringBetween(@Param("from") LocalDateTime from,
+                                                  @Param("to") LocalDateTime to);
 }
