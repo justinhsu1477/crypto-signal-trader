@@ -289,14 +289,7 @@ public class OAuthService {
      */
     private void sendNewUserNotifications(String userId, String displayName) {
         try {
-            // 1. 通知 Admin：新用戶註冊
-            notificationService.sendNotificationToAdmins(
-                    "👤 新用戶註冊",
-                    "用戶 " + displayName + " 透過 LINE Login 註冊\nuserId: " + userId,
-                    NotificationService.COLOR_BLUE
-            );
-
-            // 2. 歡迎訊息給新用戶（透過 LINE）
+            // 歡迎訊息給新用戶（透過 LINE）
             notificationService.sendNotificationToUser(
                     userId,
                     "🎉 歡迎加入 Hook-FI",
