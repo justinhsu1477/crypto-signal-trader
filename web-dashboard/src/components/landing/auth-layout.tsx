@@ -30,8 +30,18 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isLogin = pathname === "/login";
-  const initialShowCard = searchParams.get("action") === "signin";
+  // /register、/verify-email 直接顯示表單；/login 需要 ?action=signin 或用戶點擊
+  const initialShowCard = pathname !== "/login" || searchParams.get("action") === "signin";
   const [showAuthCard, setShowAuthCard] = useState(initialShowCard);
+
+  // pathname 切換時同步 showAuthCard（如從 /login 導到 /register）
+  useEffect(() => {
+    if (pathname !== "/login") {
+      setShowAuthCard(true);
+    } else if (searchParams.get("action") !== "signin") {
+      setShowAuthCard(false);
+    }
+  }, [pathname, searchParams]);
 
   // 監聽 navbar「登入」按鈕的 custom event
   useEffect(() => {
