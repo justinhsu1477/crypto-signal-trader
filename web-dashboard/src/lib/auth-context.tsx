@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { login as apiLogin, register as apiRegister, fetchCurrentUser, apiLogout } from "./api";
+import { login as apiLogin, register as apiRegister, fetchCurrentUser, apiLogout, completeOAuthLogin } from "./api";
 import { clearReferralCache } from "./use-referral-guard";
 import { useIdleLogout } from "./use-idle-logout";
 import type { LoginRequest, RegisterRequest } from "@/types";
@@ -16,6 +16,7 @@ interface AuthState {
 
 interface AuthContextType extends AuthState {
   login: (data: LoginRequest) => Promise<void>;
+  oauthLogin: (ticket: string) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => void;
 }
@@ -69,6 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const oauthLogin = useCallback(async (ticket: string) => {
+    const res = await completeOAuthLogin(ticket);
+    setState({
+      isAuthenticated: true,
+      userId: res.userId,
+      email: res.email || null,
+      role: res.role ?? null,
+      isLoading: false,
+    });
+  }, []);
+
   const register = useCallback(async (data: RegisterRequest) => {
     await apiRegister(data);
   }, []);
@@ -90,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useIdleLogout(state.isAuthenticated, logout);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout }}>
+    <AuthContext.Provider value={{ ...state, login, oauthLogin, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

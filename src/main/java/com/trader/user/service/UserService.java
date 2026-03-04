@@ -4,9 +4,11 @@ import com.trader.shared.config.AppConstants;
 import com.trader.shared.util.AesEncryptionUtil;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserApiKey;
+import com.trader.user.event.UserDeletedEvent;
 import com.trader.user.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +30,7 @@ public class UserService {
     private final UserNotificationPreferencesRepository userNotificationPreferencesRepository;
     private final UserTradeSettingsRepository userTradeSettingsRepository;
     private final AesEncryptionUtil aesEncryptionUtil;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public Optional<User> findById(String userId) {
@@ -122,6 +125,9 @@ public class UserService {
         lineLinkingCodeRepository.deleteByUserId(userId);
         userNotificationPreferencesRepository.deleteById(userId);
         userTradeSettingsRepository.deleteById(userId);
+
+        // 4. 發布事件 → auth 模組監聽清理 OAuth 記錄
+        eventPublisher.publishEvent(new UserDeletedEvent(this, userId));
 
         log.info("帳號刪除完成: userId={}, anonymizedEmail={}", userId, anonymizedEmail);
     }

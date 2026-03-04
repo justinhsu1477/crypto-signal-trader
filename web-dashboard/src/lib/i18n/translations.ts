@@ -122,6 +122,21 @@ const translations = {
       "zh-CN": "密码重置成功！请使用新密码登录。",
       ja: "パスワードリセットが成功しました！新しいパスワードでサインインしてください。",
     },
+    orDivider: { en: "or", "zh-TW": "或", "zh-CN": "或", ja: "または" },
+    lineLogin: { en: "Sign in with LINE", "zh-TW": "使用 LINE 登入", "zh-CN": "使用 LINE 登录", ja: "LINEでサインイン" },
+    lineLoginProcessing: { en: "Completing LINE login...", "zh-TW": "LINE 登入處理中...", "zh-CN": "LINE 登录处理中...", ja: "LINEログイン処理中..." },
+    lineLoginError: {
+      en: "LINE login failed, please try again.",
+      "zh-TW": "LINE 登入失敗，請重試。",
+      "zh-CN": "LINE 登录失败，请重试。",
+      ja: "LINEログインに失敗しました。もう一度お試しください。",
+    },
+    oauthOnlyAccount: {
+      en: "This account uses LINE login. Please sign in with LINE.",
+      "zh-TW": "此帳號使用第三方登入，請用 LINE 登入。",
+      "zh-CN": "此账号使用第三方登录，请用 LINE 登录。",
+      ja: "このアカウントはLINEログインを使用しています。LINEでサインインしてください。",
+    },
   },
 
   // ─── register ───
@@ -1243,6 +1258,7 @@ const translations = {
     updateSuccess: { en: "Updated successfully", "zh-TW": "更新成功", "zh-CN": "更新成功" },
     updateFailed: { en: "Update failed", "zh-TW": "更新失敗", "zh-CN": "更新失败" },
     adminCount: { en: "Admins", "zh-TW": "管理員", "zh-CN": "管理员" },
+    loginMethod: { en: "Login Method", "zh-TW": "登入方式", "zh-CN": "登录方式", ja: "ログイン方法" },
     // Referral review
     referralReview: { en: "Referral Review", "zh-TW": "推薦碼審核", "zh-CN": "推荐码审核" },
     exchangeUid: { en: "Exchange UID", "zh-TW": "交易所 UID", "zh-CN": "交易所 UID" },
