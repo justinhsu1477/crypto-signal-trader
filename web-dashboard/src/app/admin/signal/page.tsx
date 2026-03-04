@@ -169,14 +169,33 @@ export default function AdminSignalPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Zap className="h-6 w-6 text-yellow-400" />
-          {t("adminSignal.title")}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t("adminSignal.description")}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Zap className="h-6 w-6 text-yellow-400" />
+            {t("adminSignal.title")}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {t("adminSignal.description")}
+          </p>
+        </div>
+        <Button
+          className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold shrink-0"
+          disabled={!isValid() || sending}
+          onClick={() => setConfirmOpen(true)}
+        >
+          {sending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {t("adminSignal.sending")}
+            </>
+          ) : (
+            <>
+              <Zap className="mr-2 h-4 w-4" />
+              {t("adminSignal.confirm")}
+            </>
+          )}
+        </Button>
       </div>
 
       {/* Main Card */}
@@ -221,21 +240,22 @@ export default function AdminSignalPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">
-                  {t("adminSignal.closeRatio")}: {closeRatio}%
+                  {t("adminSignal.closeRatio")}
                 </Label>
-                <input
-                  type="range"
-                  min={10}
-                  max={100}
-                  step={10}
-                  value={closeRatio}
-                  onChange={(e) => setCloseRatio(Number(e.target.value))}
-                  className="w-full accent-purple-500"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>10%</span>
-                  <span>50%</span>
-                  <span>100%</span>
+                <div className="flex items-center gap-3">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={closeRatio}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (v >= 1 && v <= 100) setCloseRatio(v);
+                    }}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
                 </div>
               </div>
             </div>
@@ -369,28 +389,6 @@ export default function AdminSignalPage() {
             </p>
           </TabsContent>
         </Tabs>
-
-        {/* Broadcast Button */}
-        <div className="mt-8">
-          <Button
-            size="lg"
-            className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-            disabled={!isValid() || sending}
-            onClick={() => setConfirmOpen(true)}
-          >
-            {sending ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                {t("adminSignal.sending")}
-              </>
-            ) : (
-              <>
-                <Zap className="mr-2 h-5 w-5" />
-                {t("adminSignal.confirm")}
-              </>
-            )}
-          </Button>
-        </div>
 
         {/* Result */}
         {result && (
