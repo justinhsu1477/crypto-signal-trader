@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import {
   getAdminAnnouncements,
@@ -22,6 +22,9 @@ import {
   FileText,
   Globe,
   AlertTriangle,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -32,6 +35,9 @@ const CATEGORIES = ["GENERAL", "MAINTENANCE", "UPDATE", "URGENT", "PROMOTION"] a
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "CRITICAL"] as const;
 const CHANNEL_OPTIONS = ["ALL", "WEBSOCKET", "DISCORD", "LINE"] as const;
 
+type AnnSortField = "title" | "category" | "priority" | "status" | "publishedAt" | "createdAt";
+type SortDir = "asc" | "desc";
+
 export default function AdminAnnouncementsPage() {
   const { t } = useT();
   const { data: announcements = [], isLoading: loading, mutate } = useSWR<AnnouncementResponse[]>(
@@ -41,6 +47,8 @@ export default function AdminAnnouncementsPage() {
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sortField, setSortField] = useState<AnnSortField>("createdAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   // Form state
   const [formTitle, setFormTitle] = useState("");
@@ -233,6 +241,34 @@ export default function AdminAnnouncementsPage() {
     );
   }
 
+  function toggleAnnSort(field: AnnSortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir(["createdAt", "publishedAt"].includes(field) ? "desc" : "asc");
+    }
+  }
+
+  const sortedAnnouncements = useMemo(() => {
+    return [...announcements].sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const av = a[sortField];
+      const bv = b[sortField];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [announcements, sortField, sortDir]);
+
+  function AnnSortIcon({ field }: { field: AnnSortField }) {
+    if (sortField !== field) return <ChevronsUpDown className="h-3 w-3 opacity-40" />;
+    return sortDir === "asc"
+      ? <ChevronUp className="h-3 w-3" />
+      : <ChevronDown className="h-3 w-3" />;
+  }
+
   if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -281,7 +317,7 @@ export default function AdminAnnouncementsPage() {
 
       {/* Table */}
       <div className="rounded-xl border border-border bg-card">
-        {announcements.length === 0 ? (
+        {sortedAnnouncements.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Megaphone className="h-10 w-10 mb-3 opacity-40" />
             <p>{t("announcement.noAnnouncements")}</p>
@@ -291,17 +327,38 @@ export default function AdminAnnouncementsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
-                  <th className="text-left px-4 py-3 font-medium">{t("announcement.title")}</th>
-                  <th className="text-center px-4 py-3 font-medium">{t("announcement.category")}</th>
-                  <th className="text-center px-4 py-3 font-medium">{t("announcement.priority")}</th>
-                  <th className="text-center px-4 py-3 font-medium">{t("announcement.status")}</th>
+                  {([
+                    { field: "title" as AnnSortField, label: t("announcement.title"), align: "text-left" },
+                    { field: "category" as AnnSortField, label: t("announcement.category"), align: "text-center" },
+                    { field: "priority" as AnnSortField, label: t("announcement.priority"), align: "text-center" },
+                    { field: "status" as AnnSortField, label: t("announcement.status"), align: "text-center" },
+                  ]).map((col) => (
+                    <th
+                      key={col.field}
+                      onClick={() => toggleAnnSort(col.field)}
+                      className={`${col.align} px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors`}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {col.label}
+                        <AnnSortIcon field={col.field} />
+                      </span>
+                    </th>
+                  ))}
                   <th className="text-center px-4 py-3 font-medium">{t("announcement.channels")}</th>
-                  <th className="text-left px-4 py-3 font-medium">{t("announcement.publishedAt")}</th>
+                  <th
+                    onClick={() => toggleAnnSort("publishedAt")}
+                    className="text-left px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors"
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {t("announcement.publishedAt")}
+                      <AnnSortIcon field="publishedAt" />
+                    </span>
+                  </th>
                   <th className="text-center px-4 py-3 font-medium">{t("announcement.actions")}</th>
                 </tr>
               </thead>
               <tbody>
-                {announcements.map((ann) => (
+                {sortedAnnouncements.map((ann) => (
                   <tr
                     key={ann.id}
                     className="border-b border-border/50 hover:bg-accent/30 transition-colors"

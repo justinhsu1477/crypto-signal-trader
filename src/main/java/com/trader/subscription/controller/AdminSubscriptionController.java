@@ -1,5 +1,6 @@
 package com.trader.subscription.controller;
 
+import com.trader.shared.util.SortHelper;
 import com.trader.subscription.dto.AdminActivateRequest;
 import com.trader.subscription.dto.AdminPaymentHistoryResponse;
 import com.trader.subscription.dto.AdminSubscriptionActionResponse;
@@ -23,6 +24,7 @@ import com.trader.shared.config.AppConstants;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,6 +49,17 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminSubscriptionController {
 
+    /** 訂閱列表排序欄位定義 */
+    private static final Map<String, Function<Boolean, Comparator<UserSubscriptionSummary>>> SUBSCRIPTION_SORT_FIELDS =
+            Map.ofEntries(
+                    SortHelper.stringField("email", UserSubscriptionSummary::getEmail),
+                    SortHelper.stringField("name", UserSubscriptionSummary::getName),
+                    SortHelper.stringField("status", UserSubscriptionSummary::getStatus),
+                    SortHelper.stringField("planName", UserSubscriptionSummary::getPlanName),
+                    SortHelper.comparableField("totalAmountPaid", UserSubscriptionSummary::getTotalAmountPaid),
+                    SortHelper.comparableField("currentPeriodEnd", UserSubscriptionSummary::getCurrentPeriodEnd)
+            );
+
     private final UserRepository userRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentHistoryRepository paymentHistoryRepository;
@@ -59,7 +72,9 @@ public class AdminSubscriptionController {
      * GET /api/admin/subscriptions
      */
     @GetMapping
-    public ResponseEntity<AdminSubscriptionListResponse> listSubscriptions() {
+    public ResponseEntity<AdminSubscriptionListResponse> listSubscriptions(
+            @RequestParam(defaultValue = "email") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir) {
         List<User> allUsers = userRepository.findAll();
 
         // Batch load: 避免 N+1（一次撈全部，記憶體 join）
@@ -96,13 +111,16 @@ public class AdminSubscriptionController {
                 })
                 .toList();
 
+        List<UserSubscriptionSummary> sorted = SortHelper.sort(
+                summaries, sortBy, sortDir, SUBSCRIPTION_SORT_FIELDS, "email");
+
         long activeSubs = summaries.stream()
                 .filter(s -> "ACTIVE".equals(s.getStatus())).count();
         long lifetimeSubs = summaries.stream()
                 .filter(s -> "LIFETIME".equals(s.getStatus())).count();
 
         return ResponseEntity.ok(AdminSubscriptionListResponse.builder()
-                .subscriptions(summaries)
+                .subscriptions(sorted)
                 .totalUsers(allUsers.size())
                 .activeSubscriptions(activeSubs)
                 .lifetimeSubscriptions(lifetimeSubs)

@@ -6,14 +6,17 @@ import com.trader.notification.entity.Announcement;
 import com.trader.notification.service.AnnouncementService;
 import com.trader.shared.service.AuditService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.shared.util.SortHelper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * 公告管理 API（Admin 專用）
@@ -29,13 +32,30 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminAnnouncementController {
 
+    /** 公告列表排序欄位定義 */
+    private static final Map<String, Function<Boolean, Comparator<AnnouncementResponse>>> ANNOUNCEMENT_SORT_FIELDS =
+            Map.ofEntries(
+                    SortHelper.stringField("title", AnnouncementResponse::getTitle),
+                    SortHelper.stringField("category", AnnouncementResponse::getCategory),
+                    SortHelper.stringField("priority", AnnouncementResponse::getPriority),
+                    SortHelper.stringField("status", AnnouncementResponse::getStatus),
+                    SortHelper.comparableField("publishedAt", AnnouncementResponse::getPublishedAt),
+                    SortHelper.comparableField("createdAt", AnnouncementResponse::getCreatedAt),
+                    SortHelper.longField("readCount", r -> r.getReadCount() != null ? r.getReadCount() : 0L)
+            );
+
     private final AnnouncementService announcementService;
     private final AuditService auditService;
 
     /** 列出所有公告（含草稿、已發佈、已封存） */
     @GetMapping
-    public ResponseEntity<List<AnnouncementResponse>> list() {
-        return ResponseEntity.ok(announcementService.getAllForAdmin());
+    public ResponseEntity<List<AnnouncementResponse>> list(
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        List<AnnouncementResponse> announcements = announcementService.getAllForAdmin();
+        List<AnnouncementResponse> sorted = SortHelper.sort(
+                announcements, sortBy, sortDir, ANNOUNCEMENT_SORT_FIELDS, "createdAt");
+        return ResponseEntity.ok(sorted);
     }
 
     /** 建立公告草稿 */
