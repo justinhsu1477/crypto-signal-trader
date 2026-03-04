@@ -1,19 +1,18 @@
 package com.trader.user.controller;
 
+import com.trader.shared.dto.OAuthProviderInfo;
 import com.trader.shared.service.AuditService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.shared.util.SortHelper;
-import com.trader.user.dto.AdminUpdateUserRequest;
-import com.trader.user.dto.AdminUserListResponse;
+import com.trader.user.dto.*;
 import com.trader.user.dto.AdminUserListResponse.AdminUserSummary;
-import com.trader.user.dto.TradeSettingsResponse;
-import com.trader.user.dto.UpdateTradeSettingsRequest;
-import com.trader.user.entity.User;
-import com.trader.user.repository.UserLineBindingRepository;
-import com.trader.user.repository.UserRepository;
+import com.trader.user.entity.*;
+import com.trader.user.event.AdminUserDetailRequestEvent;
+import com.trader.user.repository.*;
 import com.trader.user.service.UserTradeSettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -47,8 +46,12 @@ public class AdminUserController {
 
     private final UserRepository userRepository;
     private final UserLineBindingRepository lineBindingRepository;
+    private final UserApiKeyRepository apiKeyRepository;
+    private final UserDiscordWebhookRepository discordWebhookRepository;
+    private final UserNotificationPreferencesRepository notificationPreferencesRepository;
     private final UserTradeSettingsService tradeSettingsService;
     private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 列出所有用戶
@@ -80,21 +83,12 @@ public class AdminUserController {
     }
 
     /**
-     * 取得單一用戶詳情（含交易設定）
+     * 取得單一用戶詳情（完整 Master-Detail 回應）
      */
     @GetMapping("/{userId}")
     public ResponseEntity<?> getUserDetail(@PathVariable String userId) {
         return userRepository.findById(userId)
-                .map(user -> {
-                    boolean hasLine = lineBindingRepository
-                            .findByUserIdAndEnabledTrue(userId).isPresent();
-                    TradeSettingsResponse settings = tradeSettingsService
-                            .toResponse(tradeSettingsService.getOrCreateSettings(userId));
-                    return ResponseEntity.ok(Map.of(
-                            "user", toSummary(user, hasLine),
-                            "tradeSettings", settings
-                    ));
-                })
+                .map(user -> ResponseEntity.ok(buildDetailResponse(user)))
                 .orElse(ResponseEntity.notFound().build());
     }
 
@@ -202,6 +196,97 @@ public class AdminUserController {
 
     // ==================== private helpers ====================
 
+    private AdminUserDetailResponse buildDetailResponse(User user) {
+        String uid = user.getUserId();
+
+        // -- 登入方式 --
+        Optional<UserLineBinding> lineBinding = lineBindingRepository.findByUserIdAndEnabledTrue(uid);
+        List<String> loginMethods = new ArrayList<>();
+        if (user.hasPassword()) loginMethods.add("EMAIL");
+        if (lineBinding.isPresent()) loginMethods.add("LINE");
+
+        // -- OAuth providers（透過 Spring Event 跨模組查詢）--
+        AdminUserDetailRequestEvent event = new AdminUserDetailRequestEvent(this, uid);
+        eventPublisher.publishEvent(event);
+        List<OAuthProviderInfo> oauthProviders = event.getOAuthProviders();
+
+        // 從 OAuth providers 補充 loginMethods
+        for (OAuthProviderInfo p : oauthProviders) {
+            if (!loginMethods.contains(p.getProvider())) {
+                loginMethods.add(p.getProvider());
+            }
+        }
+
+        // -- LINE 綁定 --
+        AdminUserDetailResponse.LineBindingInfo lineBindingInfo = lineBinding
+                .map(lb -> AdminUserDetailResponse.LineBindingInfo.builder()
+                        .displayName(lb.getDisplayName())
+                        .enabled(lb.isEnabled())
+                        .linkedAt(lb.getLinkedAt() != null ? lb.getLinkedAt().toString() : null)
+                        .build())
+                .orElse(null);
+
+        // -- API Keys（只有 metadata，不含加密欄位）--
+        List<AdminUserDetailResponse.ApiKeyInfo> apiKeys = apiKeyRepository.findByUserId(uid)
+                .stream()
+                .map(k -> AdminUserDetailResponse.ApiKeyInfo.builder()
+                        .exchange(k.getExchange())
+                        .createdAt(k.getCreatedAt() != null ? k.getCreatedAt().toString() : null)
+                        .updatedAt(k.getUpdatedAt() != null ? k.getUpdatedAt().toString() : null)
+                        .build())
+                .toList();
+
+        // -- Discord Webhooks（URL 截斷）--
+        List<AdminUserDetailResponse.DiscordWebhookInfo> webhooks = discordWebhookRepository.findByUserId(uid)
+                .stream()
+                .map(w -> AdminUserDetailResponse.DiscordWebhookInfo.builder()
+                        .webhookId(w.getWebhookId())
+                        .name(w.getName())
+                        .enabled(w.isEnabled())
+                        .webhookUrlPreview(truncateWebhookUrl(w.getWebhookUrl()))
+                        .createdAt(w.getCreatedAt() != null ? w.getCreatedAt().toString() : null)
+                        .build())
+                .toList();
+
+        // -- 通知偏好 --
+        AdminUserDetailResponse.NotificationPreferencesInfo notifPrefs =
+                notificationPreferencesRepository.findById(uid)
+                        .map(np -> AdminUserDetailResponse.NotificationPreferencesInfo.builder()
+                                .tradeExecution(np.isTradeExecution())
+                                .slTpTriggered(np.isSlTpTriggered())
+                                .protectionLost(np.isProtectionLost())
+                                .dailyReport(np.isDailyReport())
+                                .streamStatus(np.isStreamStatus())
+                                .systemAlert(np.isSystemAlert())
+                                .build())
+                        .orElse(null);
+
+        // -- 交易設定 --
+        TradeSettingsResponse tradeSettings = tradeSettingsService
+                .toResponse(tradeSettingsService.getOrCreateSettings(uid));
+
+        return AdminUserDetailResponse.builder()
+                .userId(uid)
+                .email(user.getEmail())
+                .name(user.getName())
+                .role(user.getRole().name())
+                .enabled(user.isEnabled())
+                .emailVerified(user.isEmailVerified())
+                .autoTradeEnabled(user.isAutoTradeEnabled())
+                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
+                .updatedAt(user.getUpdatedAt() != null ? user.getUpdatedAt().toString() : null)
+                .passwordChangedAt(user.getPasswordChangedAt() != null ? user.getPasswordChangedAt().toString() : null)
+                .hasPassword(user.hasPassword())
+                .loginMethods(loginMethods)
+                .oauthProviders(oauthProviders)
+                .lineBinding(lineBindingInfo)
+                .apiKeys(apiKeys)
+                .discordWebhooks(webhooks)
+                .notificationPreferences(notifPrefs)
+                .tradeSettings(tradeSettings)
+                .build();
+    }
+
     private AdminUserSummary toSummary(User user, boolean hasLineBinding) {
         List<String> methods = new ArrayList<>();
         if (user.hasPassword()) methods.add("EMAIL");
@@ -219,5 +304,15 @@ public class AdminUserController {
                 .updatedAt(user.getUpdatedAt() != null ? user.getUpdatedAt().toString() : null)
                 .loginMethods(methods)
                 .build();
+    }
+
+    /**
+     * Webhook URL 截斷：前 35 字元 + ... + 後 6 字元
+     * 永不送完整 URL 到前端
+     */
+    static String truncateWebhookUrl(String url) {
+        if (url == null) return null;
+        if (url.length() <= 44) return url;
+        return url.substring(0, 35) + "..." + url.substring(url.length() - 6);
     }
 }

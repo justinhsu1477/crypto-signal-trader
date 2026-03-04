@@ -602,6 +602,12 @@ export async function getAdminUsers(): Promise<AdminUserListResponse> {
   return request<AdminUserListResponse>("/api/admin/users");
 }
 
+import type { AdminUserDetailResponse } from "@/types";
+
+export async function getAdminUserDetail(userId: string): Promise<AdminUserDetailResponse> {
+  return request<AdminUserDetailResponse>(`/api/admin/users/${userId}`);
+}
+
 export async function updateAdminUser(
   userId: string,
   data: AdminUpdateUserRequest
