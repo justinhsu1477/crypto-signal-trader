@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n/i18n-context";
 import { getAdminUsers, updateAdminUser } from "@/lib/api";
 import type { AdminUserListResponse, AdminUserSummary } from "@/types";
@@ -12,6 +13,7 @@ type SortDir = "asc" | "desc";
 
 export default function AdminUsersPage() {
   const { t } = useT();
+  const router = useRouter();
   const [data, setData] = useState<AdminUserListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
@@ -161,7 +163,8 @@ export default function AdminUsersPage() {
                 return (
                   <tr
                     key={user.userId}
-                    className="border-b border-border/50 hover:bg-accent/30 transition-colors"
+                    onClick={() => router.push(`/admin/users/${user.userId}`)}
+                    className="border-b border-border/50 hover:bg-accent/30 transition-colors cursor-pointer"
                   >
                     <td className="px-4 py-3">
                       <div className="font-mono text-xs">{user.email || "-"}</div>
@@ -216,7 +219,7 @@ export default function AdminUsersPage() {
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <button
-                          onClick={() => handleToggle(user, "enabled")}
+                          onClick={(e) => { e.stopPropagation(); handleToggle(user, "enabled"); }}
                           disabled={isUpdating}
                           title={user.enabled ? t("admin.confirmDisable") : t("admin.confirmEnable")}
                           className={`p-1.5 rounded-lg transition-colors ${
@@ -228,7 +231,7 @@ export default function AdminUsersPage() {
                           <Power className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => handleToggle(user, "autoTradeEnabled")}
+                          onClick={(e) => { e.stopPropagation(); handleToggle(user, "autoTradeEnabled"); }}
                           disabled={isUpdating}
                           title={t("admin.autoTrade")}
                           className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"

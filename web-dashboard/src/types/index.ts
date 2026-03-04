@@ -471,6 +471,65 @@ export interface AdminUpdateUserRequest {
   role?: string;
 }
 
+// ─── Admin User Detail ───
+
+export interface AdminUserDetailResponse {
+  userId: string;
+  email: string;
+  name: string;
+  role: string;
+  enabled: boolean;
+  emailVerified: boolean;
+  autoTradeEnabled: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  passwordChangedAt: string | null;
+  hasPassword: boolean;
+  loginMethods: string[];
+  oauthProviders: OAuthProviderInfo[];
+  lineBinding: LineBindingDetailInfo | null;
+  apiKeys: ApiKeyDetailInfo[];
+  discordWebhooks: DiscordWebhookDetailInfo[];
+  notificationPreferences: NotificationPreferencesDetailInfo | null;
+  tradeSettings: UserTradeSettings;
+}
+
+export interface OAuthProviderInfo {
+  provider: string;
+  displayName: string;
+  email: string | null;
+  createdAt: string | null;
+}
+
+export interface LineBindingDetailInfo {
+  displayName: string;
+  enabled: boolean;
+  linkedAt: string | null;
+}
+
+export interface ApiKeyDetailInfo {
+  exchange: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface DiscordWebhookDetailInfo {
+  webhookId: string;
+  name: string;
+  enabled: boolean;
+  webhookUrlPreview: string;
+  createdAt: string | null;
+}
+
+export interface NotificationPreferencesDetailInfo {
+  tradeExecution: boolean;
+  slTpTriggered: boolean;
+  protectionLost: boolean;
+  dailyReport: boolean;
+  streamStatus: boolean;
+  systemAlert: boolean;
+}
+
 export interface AdminPendingReferral {
   userId: string;
   email: string;

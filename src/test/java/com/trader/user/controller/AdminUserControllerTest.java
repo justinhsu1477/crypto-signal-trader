@@ -1,16 +1,17 @@
 package com.trader.user.controller;
 
+import com.trader.shared.dto.OAuthProviderInfo;
 import com.trader.shared.service.AuditService;
 import com.trader.shared.util.SecurityUtil;
-import com.trader.user.dto.AdminUpdateUserRequest;
-import com.trader.user.dto.AdminUserListResponse;
+import com.trader.user.dto.*;
 import com.trader.user.dto.AdminUserListResponse.AdminUserSummary;
-import com.trader.user.entity.User;
-import com.trader.user.repository.UserLineBindingRepository;
-import com.trader.user.repository.UserRepository;
+import com.trader.user.entity.*;
+import com.trader.user.event.AdminUserDetailRequestEvent;
+import com.trader.user.repository.*;
 import com.trader.user.service.UserTradeSettingsService;
 import org.junit.jupiter.api.*;
 import org.mockito.MockedStatic;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDateTime;
@@ -30,21 +31,36 @@ class AdminUserControllerTest {
 
     private UserRepository userRepository;
     private UserLineBindingRepository lineBindingRepository;
+    private UserApiKeyRepository apiKeyRepository;
+    private UserDiscordWebhookRepository discordWebhookRepository;
+    private UserNotificationPreferencesRepository notificationPreferencesRepository;
     private UserTradeSettingsService tradeSettingsService;
     private AuditService auditService;
+    private ApplicationEventPublisher eventPublisher;
     private AdminUserController controller;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
         lineBindingRepository = mock(UserLineBindingRepository.class);
+        apiKeyRepository = mock(UserApiKeyRepository.class);
+        discordWebhookRepository = mock(UserDiscordWebhookRepository.class);
+        notificationPreferencesRepository = mock(UserNotificationPreferencesRepository.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
         auditService = mock(AuditService.class);
-        controller = new AdminUserController(userRepository, lineBindingRepository, tradeSettingsService, auditService);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        controller = new AdminUserController(
+                userRepository, lineBindingRepository, apiKeyRepository,
+                discordWebhookRepository, notificationPreferencesRepository,
+                tradeSettingsService, auditService, eventPublisher);
 
         // 預設無 LINE 綁定
         when(lineBindingRepository.findUserIdsWithEnabledBinding()).thenReturn(List.of());
         when(lineBindingRepository.findByUserIdAndEnabledTrue(anyString())).thenReturn(Optional.empty());
+        // 預設空資料
+        when(apiKeyRepository.findByUserId(anyString())).thenReturn(List.of());
+        when(discordWebhookRepository.findByUserId(anyString())).thenReturn(List.of());
+        when(notificationPreferencesRepository.findById(anyString())).thenReturn(Optional.empty());
     }
 
     // ==================== listUsers ====================
@@ -297,6 +313,231 @@ class AdminUserControllerTest {
                 assertThat(response.getStatusCode().value()).isEqualTo(404);
                 verify(userRepository, never()).save(any());
             }
+        }
+    }
+
+    // ==================== getUserDetail ====================
+
+    @Nested
+    @DisplayName("GET /api/admin/users/{userId} — getUserDetail")
+    class GetUserDetailTests {
+
+        private User fullUser;
+        private UserTradeSettings dummySettings;
+        private TradeSettingsResponse dummySettingsResponse;
+
+        @BeforeEach
+        void setUpDetail() {
+            fullUser = User.builder()
+                    .userId("u1").email("user@test.com").name("Test User")
+                    .role(User.Role.USER).enabled(true).emailVerified(true)
+                    .autoTradeEnabled(true).passwordHash("hashed")
+                    .createdAt(LocalDateTime.of(2026, 1, 1, 0, 0))
+                    .updatedAt(LocalDateTime.of(2026, 2, 1, 0, 0))
+                    .passwordChangedAt(LocalDateTime.of(2026, 1, 15, 0, 0))
+                    .build();
+
+            dummySettings = UserTradeSettings.builder().userId("u1").build();
+            dummySettingsResponse = TradeSettingsResponse.builder()
+                    .userId("u1").riskPercent(1.0).maxLeverage(10).build();
+
+            when(tradeSettingsService.getOrCreateSettings("u1")).thenReturn(dummySettings);
+            when(tradeSettingsService.toResponse(dummySettings)).thenReturn(dummySettingsResponse);
+        }
+
+        @Test
+        @DisplayName("完整用戶詳情 — 有 LINE、API Key、Webhook、通知偏好、OAuth")
+        void fullUserDetail() {
+            when(userRepository.findById("u1")).thenReturn(Optional.of(fullUser));
+            when(lineBindingRepository.findByUserIdAndEnabledTrue("u1"))
+                    .thenReturn(Optional.of(UserLineBinding.builder()
+                            .userId("u1").lineUserId("L123").displayName("LINE User")
+                            .enabled(true).linkedAt(LocalDateTime.of(2026, 1, 10, 0, 0)).build()));
+            when(apiKeyRepository.findByUserId("u1"))
+                    .thenReturn(List.of(UserApiKey.builder()
+                            .id(1L).userId("u1").exchange("BINANCE")
+                            .encryptedApiKey("enc_key").encryptedSecretKey("enc_secret")
+                            .createdAt(LocalDateTime.of(2026, 1, 5, 0, 0))
+                            .updatedAt(LocalDateTime.of(2026, 1, 6, 0, 0)).build()));
+            when(discordWebhookRepository.findByUserId("u1"))
+                    .thenReturn(List.of(UserDiscordWebhook.builder()
+                            .webhookId("wh1").userId("u1").name("My Webhook")
+                            .enabled(true).webhookUrl("https://discord.com/api/webhooks/123456789/abcdefghijklmnop")
+                            .createdAt(LocalDateTime.of(2026, 1, 8, 0, 0)).build()));
+            when(notificationPreferencesRepository.findById("u1"))
+                    .thenReturn(Optional.of(UserNotificationPreferences.builder()
+                            .userId("u1").tradeExecution(true).slTpTriggered(true)
+                            .protectionLost(true).dailyReport(false)
+                            .streamStatus(true).systemAlert(true).build()));
+
+            doAnswer(inv -> {
+                AdminUserDetailRequestEvent e = inv.getArgument(0);
+                e.setOAuthProviders(List.of(OAuthProviderInfo.builder()
+                        .provider("LINE").displayName("OAuth LINE User")
+                        .email(null).createdAt("2026-01-10T00:00").build()));
+                return null;
+            }).when(eventPublisher).publishEvent(any(AdminUserDetailRequestEvent.class));
+
+            ResponseEntity<?> response = controller.getUserDetail("u1");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            AdminUserDetailResponse body = (AdminUserDetailResponse) response.getBody();
+            assertThat(body).isNotNull();
+            assertThat(body.getUserId()).isEqualTo("u1");
+            assertThat(body.getEmail()).isEqualTo("user@test.com");
+            assertThat(body.isHasPassword()).isTrue();
+            assertThat(body.getLoginMethods()).containsExactly("EMAIL", "LINE");
+            assertThat(body.getLineBinding()).isNotNull();
+            assertThat(body.getLineBinding().getDisplayName()).isEqualTo("LINE User");
+            assertThat(body.getApiKeys()).hasSize(1);
+            assertThat(body.getApiKeys().get(0).getExchange()).isEqualTo("BINANCE");
+            assertThat(body.getDiscordWebhooks()).hasSize(1);
+            assertThat(body.getDiscordWebhooks().get(0).getName()).isEqualTo("My Webhook");
+            assertThat(body.getNotificationPreferences()).isNotNull();
+            assertThat(body.getNotificationPreferences().isDailyReport()).isFalse();
+            assertThat(body.getTradeSettings()).isNotNull();
+            assertThat(body.getOauthProviders()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("最小用戶 — 全部為空/null")
+        void minimalUserDetail() {
+            User minUser = User.builder()
+                    .userId("u2").email(null).name(null)
+                    .role(User.Role.USER).enabled(false).emailVerified(false)
+                    .autoTradeEnabled(false)
+                    .build();
+
+            UserTradeSettings minSettings = UserTradeSettings.builder().userId("u2").build();
+            TradeSettingsResponse minSettingsResp = TradeSettingsResponse.builder().userId("u2").build();
+            when(userRepository.findById("u2")).thenReturn(Optional.of(minUser));
+            when(tradeSettingsService.getOrCreateSettings("u2")).thenReturn(minSettings);
+            when(tradeSettingsService.toResponse(minSettings)).thenReturn(minSettingsResp);
+
+            ResponseEntity<?> response = controller.getUserDetail("u2");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            AdminUserDetailResponse body = (AdminUserDetailResponse) response.getBody();
+            assertThat(body.getLoginMethods()).isEmpty();
+            assertThat(body.getLineBinding()).isNull();
+            assertThat(body.getApiKeys()).isEmpty();
+            assertThat(body.getDiscordWebhooks()).isEmpty();
+            assertThat(body.getNotificationPreferences()).isNull();
+            assertThat(body.isHasPassword()).isFalse();
+        }
+
+        @Test
+        @DisplayName("userId 不存在 → 404")
+        void detailUserNotFound() {
+            when(userRepository.findById("nonexist")).thenReturn(Optional.empty());
+
+            ResponseEntity<?> response = controller.getUserDetail("nonexist");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+        }
+
+        @Test
+        @DisplayName("Discord webhook URL 已截斷")
+        void webhookUrlTruncated() {
+            when(userRepository.findById("u1")).thenReturn(Optional.of(fullUser));
+            when(discordWebhookRepository.findByUserId("u1"))
+                    .thenReturn(List.of(UserDiscordWebhook.builder()
+                            .webhookId("wh1").userId("u1").name("WH")
+                            .enabled(true).webhookUrl("https://discord.com/api/webhooks/1234567890123456789/ABCDEFghijklmnopqrstuvwxyz0123456789")
+                            .createdAt(LocalDateTime.of(2026, 1, 1, 0, 0)).build()));
+
+            ResponseEntity<?> response = controller.getUserDetail("u1");
+
+            AdminUserDetailResponse body = (AdminUserDetailResponse) response.getBody();
+            String preview = body.getDiscordWebhooks().get(0).getWebhookUrlPreview();
+            assertThat(preview).contains("...");
+            assertThat(preview).startsWith("https://discord.com/api/webhooks/");
+            assertThat(preview.length()).isLessThan(
+                    "https://discord.com/api/webhooks/1234567890123456789/ABCDEFghijklmnopqrstuvwxyz0123456789".length());
+        }
+
+        @Test
+        @DisplayName("API key 不含加密欄位")
+        void apiKeyNoEncryptedFields() {
+            when(userRepository.findById("u1")).thenReturn(Optional.of(fullUser));
+            when(apiKeyRepository.findByUserId("u1"))
+                    .thenReturn(List.of(UserApiKey.builder()
+                            .id(1L).userId("u1").exchange("BINANCE")
+                            .encryptedApiKey("super_secret_key").encryptedSecretKey("super_secret")
+                            .createdAt(LocalDateTime.of(2026, 1, 1, 0, 0))
+                            .updatedAt(LocalDateTime.of(2026, 1, 2, 0, 0)).build()));
+
+            ResponseEntity<?> response = controller.getUserDetail("u1");
+
+            AdminUserDetailResponse body = (AdminUserDetailResponse) response.getBody();
+            AdminUserDetailResponse.ApiKeyInfo keyInfo = body.getApiKeys().get(0);
+            assertThat(keyInfo.getExchange()).isEqualTo("BINANCE");
+            assertThat(keyInfo.getCreatedAt()).isNotNull();
+            assertThat(AdminUserDetailResponse.ApiKeyInfo.class.getDeclaredFields())
+                    .noneMatch(f -> f.getName().toLowerCase().contains("encrypt")
+                            || f.getName().toLowerCase().contains("secret"));
+        }
+
+        @Test
+        @DisplayName("通知偏好為 null 時回傳 null")
+        void notificationPreferencesNull() {
+            when(userRepository.findById("u1")).thenReturn(Optional.of(fullUser));
+            when(notificationPreferencesRepository.findById("u1")).thenReturn(Optional.empty());
+
+            ResponseEntity<?> response = controller.getUserDetail("u1");
+
+            AdminUserDetailResponse body = (AdminUserDetailResponse) response.getBody();
+            assertThat(body.getNotificationPreferences()).isNull();
+        }
+
+        @Test
+        @DisplayName("OAuth providers 從 event 正確回傳")
+        void oauthProvidersFromEvent() {
+            when(userRepository.findById("u1")).thenReturn(Optional.of(fullUser));
+            doAnswer(inv -> {
+                AdminUserDetailRequestEvent e = inv.getArgument(0);
+                e.setOAuthProviders(List.of(
+                        OAuthProviderInfo.builder().provider("LINE").displayName("Line User").build(),
+                        OAuthProviderInfo.builder().provider("GOOGLE").displayName("Google User").email("g@test.com").build()
+                ));
+                return null;
+            }).when(eventPublisher).publishEvent(any(AdminUserDetailRequestEvent.class));
+
+            ResponseEntity<?> response = controller.getUserDetail("u1");
+
+            AdminUserDetailResponse body = (AdminUserDetailResponse) response.getBody();
+            assertThat(body.getOauthProviders()).hasSize(2);
+            assertThat(body.getOauthProviders().get(0).getProvider()).isEqualTo("LINE");
+            assertThat(body.getOauthProviders().get(1).getProvider()).isEqualTo("GOOGLE");
+            assertThat(body.getLoginMethods()).contains("GOOGLE");
+        }
+    }
+
+    // ==================== truncateWebhookUrl ====================
+
+    @Nested
+    @DisplayName("truncateWebhookUrl")
+    class TruncateWebhookUrlTests {
+
+        @Test
+        void nullUrl() {
+            assertThat(AdminUserController.truncateWebhookUrl(null)).isNull();
+        }
+
+        @Test
+        void shortUrl() {
+            String shortUrl = "https://discord.com/api/webhooks/12";
+            assertThat(AdminUserController.truncateWebhookUrl(shortUrl)).isEqualTo(shortUrl);
+        }
+
+        @Test
+        void longUrlTruncated() {
+            String longUrl = "https://discord.com/api/webhooks/1234567890123456789/ABCDEFghijklmnopqrstuvwxyz0123456789";
+            String result = AdminUserController.truncateWebhookUrl(longUrl);
+            assertThat(result).startsWith("https://discord.com/api/webhooks/");
+            assertThat(result).contains("...");
+            assertThat(result).endsWith("56789");
+            assertThat(result.length()).isEqualTo(44); // 35 + 3 + 6
         }
     }
 }
