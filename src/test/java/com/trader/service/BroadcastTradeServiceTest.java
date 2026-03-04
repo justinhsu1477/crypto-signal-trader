@@ -461,11 +461,12 @@ class BroadcastTradeServiceTest {
             ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
             verify(mockWebhook, timeout(5000)).sendNotificationToUser(
                     eq("u1"),
-                    eq("✅ 廣播平倉已執行"),
+                    eq("✅ 全部平倉已執行"),
                     bodyCaptor.capture(),
                     eq(DiscordWebhookService.COLOR_GREEN));
 
             String body = bodyCaptor.getValue();
+            assertThat(body).contains("類型: 全部平倉");
             assertThat(body).contains("成交: 96500.0");
             assertThat(body).contains("+150.32");
             assertThat(body).contains("手續費:");
@@ -671,7 +672,7 @@ class BroadcastTradeServiceTest {
             ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
             verify(mockWebhook, timeout(5000)).sendNotificationToUser(
                     eq("u1"),
-                    eq("✅ 廣播平倉已執行"),
+                    eq("✅ 全部平倉已執行"),
                     bodyCaptor.capture(),
                     eq(DiscordWebhookService.COLOR_GREEN));
             assertThat(bodyCaptor.getValue()).doesNotContain("AI:");
