@@ -6,6 +6,7 @@ import com.trader.user.dto.AdminUpdateUserRequest;
 import com.trader.user.dto.AdminUserListResponse;
 import com.trader.user.dto.AdminUserListResponse.AdminUserSummary;
 import com.trader.user.entity.User;
+import com.trader.user.repository.UserLineBindingRepository;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserTradeSettingsService;
 import org.junit.jupiter.api.*;
@@ -13,6 +14,7 @@ import org.mockito.MockedStatic;
 import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +29,7 @@ import static org.mockito.Mockito.*;
 class AdminUserControllerTest {
 
     private UserRepository userRepository;
+    private UserLineBindingRepository lineBindingRepository;
     private UserTradeSettingsService tradeSettingsService;
     private AuditService auditService;
     private AdminUserController controller;
@@ -34,9 +37,14 @@ class AdminUserControllerTest {
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
+        lineBindingRepository = mock(UserLineBindingRepository.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
         auditService = mock(AuditService.class);
-        controller = new AdminUserController(userRepository, tradeSettingsService, auditService);
+        controller = new AdminUserController(userRepository, lineBindingRepository, tradeSettingsService, auditService);
+
+        // 預設無 LINE 綁定
+        when(lineBindingRepository.findUserIdsWithEnabledBinding()).thenReturn(List.of());
+        when(lineBindingRepository.findByUserIdAndEnabledTrue(anyString())).thenReturn(Optional.empty());
     }
 
     // ==================== listUsers ====================

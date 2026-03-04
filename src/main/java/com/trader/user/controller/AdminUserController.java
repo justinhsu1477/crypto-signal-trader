@@ -9,6 +9,7 @@ import com.trader.user.dto.AdminUserListResponse.AdminUserSummary;
 import com.trader.user.dto.TradeSettingsResponse;
 import com.trader.user.dto.UpdateTradeSettingsRequest;
 import com.trader.user.entity.User;
+import com.trader.user.repository.UserLineBindingRepository;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserTradeSettingsService;
 import lombok.RequiredArgsConstructor;
@@ -16,9 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 /**
@@ -42,10 +41,12 @@ public class AdminUserController {
                     SortHelper.booleanField("emailVerified", AdminUserSummary::isEmailVerified),
                     SortHelper.booleanField("autoTradeEnabled", AdminUserSummary::isAutoTradeEnabled),
                     SortHelper.stringField("createdAt", AdminUserSummary::getCreatedAt),
-                    SortHelper.stringField("updatedAt", AdminUserSummary::getUpdatedAt)
+                    SortHelper.stringField("updatedAt", AdminUserSummary::getUpdatedAt),
+                    SortHelper.stringField("loginMethods", s -> String.join(",", s.getLoginMethods()))
             );
 
     private final UserRepository userRepository;
+    private final UserLineBindingRepository lineBindingRepository;
     private final UserTradeSettingsService tradeSettingsService;
     private final AuditService auditService;
 
@@ -57,9 +58,10 @@ public class AdminUserController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir) {
         List<User> allUsers = userRepository.findAll();
+        Set<String> lineUserIds = new HashSet<>(lineBindingRepository.findUserIdsWithEnabledBinding());
 
         List<AdminUserSummary> summaries = allUsers.stream()
-                .map(this::toSummary)
+                .map(user -> toSummary(user, lineUserIds.contains(user.getUserId())))
                 .toList();
 
         List<AdminUserSummary> sorted = SortHelper.sort(
@@ -84,10 +86,12 @@ public class AdminUserController {
     public ResponseEntity<?> getUserDetail(@PathVariable String userId) {
         return userRepository.findById(userId)
                 .map(user -> {
+                    boolean hasLine = lineBindingRepository
+                            .findByUserIdAndEnabledTrue(userId).isPresent();
                     TradeSettingsResponse settings = tradeSettingsService
                             .toResponse(tradeSettingsService.getOrCreateSettings(userId));
                     return ResponseEntity.ok(Map.of(
-                            "user", toSummary(user),
+                            "user", toSummary(user, hasLine),
                             "tradeSettings", settings
                     ));
                 })
@@ -144,9 +148,11 @@ public class AdminUserController {
                     auditService.log(adminId, "ADMIN_UPDATE_USER",
                             "/api/admin/users/" + userId, "SUCCESS", "", request.toString());
 
+                    boolean hasLine = lineBindingRepository
+                            .findByUserIdAndEnabledTrue(userId).isPresent();
                     return ResponseEntity.ok(Map.of(
                             "message", "用戶已更新",
-                            "user", toSummary(user)
+                            "user", toSummary(user, hasLine)
                     ));
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -196,7 +202,11 @@ public class AdminUserController {
 
     // ==================== private helpers ====================
 
-    private AdminUserSummary toSummary(User user) {
+    private AdminUserSummary toSummary(User user, boolean hasLineBinding) {
+        List<String> methods = new ArrayList<>();
+        if (user.hasPassword()) methods.add("EMAIL");
+        if (hasLineBinding) methods.add("LINE");
+
         return AdminUserSummary.builder()
                 .userId(user.getUserId())
                 .email(user.getEmail())
@@ -207,6 +217,7 @@ public class AdminUserController {
                 .autoTradeEnabled(user.isAutoTradeEnabled())
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
                 .updatedAt(user.getUpdatedAt() != null ? user.getUpdatedAt().toString() : null)
+                .loginMethods(methods)
                 .build();
     }
 }
