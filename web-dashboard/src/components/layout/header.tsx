@@ -12,6 +12,10 @@ import {
   Monitor,
   Users,
   ClipboardCheck,
+  CreditCard,
+  Megaphone,
+  Bell,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -35,13 +39,18 @@ export function Header() {
     { href: "/performance", label: t("nav.performance"), icon: BarChart3 },
     { href: "/trades", label: t("nav.trades"), icon: History },
     { href: "/referral", label: t("nav.referral"), icon: Link2 },
+    { href: "/announcements", label: t("nav.announcements"), icon: Bell },
     { href: "/settings", label: t("nav.settings"), icon: Settings },
   ];
 
   const adminItems = [
     { href: "/admin", label: t("nav.adminOverview"), icon: Monitor },
+    { href: "/admin/signal", label: t("nav.adminSignal"), icon: Zap },
     { href: "/admin/users", label: t("nav.adminUsers"), icon: Users },
     { href: "/admin/referrals", label: t("nav.adminReferrals"), icon: ClipboardCheck },
+    { href: "/admin/subscriptions", label: t("nav.adminSubscriptions"), icon: CreditCard },
+    { href: "/admin/announcements", label: t("nav.adminAnnouncements"), icon: Megaphone },
+    { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },
   ];
 
   const isAdmin = role === "ADMIN";
