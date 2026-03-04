@@ -1113,6 +1113,14 @@ public class BinanceFuturesService {
                 if (isPartialClose) {
                     // 部分平倉：LIMIT 掛單，DB 維持 OPEN
                     tradeRecordService.recordPartialClose(symbol, closeOrder, closeRatio, "SIGNAL_CLOSE");
+                    // 計算部分平倉損益供通知顯示（以掛單價估算，實際成交價由 WebSocket 更新）
+                    Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+                    if (entryPrice != null && closeOrder.getPrice() > 0) {
+                        double pnl = isLong
+                                ? (closeOrder.getPrice() - entryPrice) * closeOrder.getQuantity()
+                                : (entryPrice - closeOrder.getPrice()) * closeOrder.getQuantity();
+                        closeOrder.setNetProfit(pnl);
+                    }
                 } else {
                     // 全平 MARKET 單已成交，直接記錄 CLOSED
                     Trade closedTrade = tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");

@@ -188,7 +188,15 @@ public class BroadcastTradeService {
                     SignalScore score = scoreFuture.getNow(null);
 
                     // 發送 enriched 成功通知給用戶（含實際成交價/PnL/AI 評分）
-                    String successTitle = isCloseAction ? "✅ 廣播平倉已執行" : "✅ 廣播跟單已執行";
+                    String successTitle;
+                    if (isCloseAction) {
+                        boolean isPartial = request.getCloseRatio() != null && request.getCloseRatio() < 1.0;
+                        successTitle = isPartial
+                                ? String.format("✅ 部分平倉已執行 (%.0f%%)", request.getCloseRatio() * 100)
+                                : "✅ 全部平倉已執行";
+                    } else {
+                        successTitle = "✅ 廣播跟單已執行";
+                    }
                     discordWebhookService.sendNotificationToUser(
                             user.getUserId(),
                             successTitle,
@@ -392,6 +400,11 @@ public class BroadcastTradeService {
             }
             case "CLOSE" -> {
                 sb.append("\n");
+                // 顯示平倉比例，讓用戶區分部分平倉 vs 全部平倉
+                boolean isPartial = request.getCloseRatio() != null && request.getCloseRatio() < 1.0;
+                sb.append("類型: ").append(isPartial
+                        ? String.format("部分平倉 (%.0f%%)", request.getCloseRatio() * 100)
+                        : "全部平倉").append("\n");
                 if (result != null) {
                     if (result.getPrice() > 0) {
                         sb.append("成交: ").append(result.getPrice()).append("\n");
