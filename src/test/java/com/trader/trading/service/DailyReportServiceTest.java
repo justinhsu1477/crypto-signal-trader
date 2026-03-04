@@ -81,6 +81,7 @@ class DailyReportServiceTest {
                 .role(User.Role.USER)
                 .enabled(enabled)
                 .autoTradeEnabled(true)
+                .discordNotificationEnabled(true)
                 .build();
     }
 
