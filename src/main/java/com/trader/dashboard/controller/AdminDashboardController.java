@@ -9,6 +9,7 @@ import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.service.MetricsService;
+import com.trader.shared.util.SortHelper;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +22,10 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * 管理員 Dashboard API
@@ -36,6 +39,20 @@ import java.util.Map;
 public class AdminDashboardController {
 
     private static final long NEON_FREE_TIER_BYTES = 512L * 1024 * 1024; // 512 MB
+
+    /** 用戶摘要排序欄位定義 */
+    private static final Map<String, Function<Boolean, Comparator<UserTradingSummary>>> OVERVIEW_SORT_FIELDS =
+            Map.ofEntries(
+                    SortHelper.stringField("email", UserTradingSummary::getEmail),
+                    SortHelper.stringField("name", UserTradingSummary::getName),
+                    SortHelper.booleanField("enabled", UserTradingSummary::isEnabled),
+                    SortHelper.booleanField("autoTradeEnabled", UserTradingSummary::isAutoTradeEnabled),
+                    SortHelper.intField("openPositionCount", UserTradingSummary::getOpenPositionCount),
+                    SortHelper.longField("closedTradeCount", UserTradingSummary::getClosedTradeCount),
+                    SortHelper.doubleField("totalNetProfit", UserTradingSummary::getTotalNetProfit),
+                    SortHelper.doubleField("todayPnl", UserTradingSummary::getTodayPnl),
+                    SortHelper.intField("todayTradeCount", UserTradingSummary::getTodayTradeCount)
+            );
 
     private final DashboardService dashboardService;
     private final UserRepository userRepository;
@@ -51,7 +68,9 @@ public class AdminDashboardController {
      *   100 用戶：1000+ 次查詢 → 3 次查詢（findAll + 2 次聚合）
      */
     @GetMapping("/system-overview")
-    public ResponseEntity<AdminSystemOverview> getSystemOverview() {
+    public ResponseEntity<AdminSystemOverview> getSystemOverview(
+            @RequestParam(defaultValue = "email") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir) {
         List<User> allUsers = userRepository.findAll();
 
         // 批次取得所有用戶統計（2 queries for all users, 取代 N * 10 queries）
@@ -98,6 +117,9 @@ public class AdminDashboardController {
                     .build());
         }
 
+        List<UserTradingSummary> sorted = SortHelper.sort(
+                summaries, sortBy, sortDir, OVERVIEW_SORT_FIELDS, "email");
+
         return ResponseEntity.ok(AdminSystemOverview.builder()
                 .totalUsers(allUsers.size())
                 .activeUsers(activeUsers)
@@ -107,7 +129,7 @@ public class AdminDashboardController {
                 .totalNetProfit(totalNetProfit)
                 .todayNetProfit(todayNetProfit)
                 .todayTradeCount(todayTradeCount)
-                .userSummaries(summaries)
+                .userSummaries(sorted)
                 .build());
     }
 

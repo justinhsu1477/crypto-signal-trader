@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats, getAdminMetrics } from "@/lib/api";
 import type { AdminSystemOverview, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse, AdminMetricsResponse } from "@/types";
@@ -19,6 +19,8 @@ import {
   RefreshCw,
   HardDrive,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
 } from "lucide-react";
 
 function StatusDot({ status }: { status: string }) {
@@ -31,6 +33,9 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />;
 }
 
+type OverviewSortField = "email" | "name" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl";
+type SortDir = "asc" | "desc";
+
 export default function AdminOverviewPage() {
   const { t } = useT();
   const [data, setData] = useState<AdminSystemOverview | null>(null);
@@ -41,6 +46,8 @@ export default function AdminOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [dbTablesOpen, setDbTablesOpen] = useState(false);
+  const [sortField, setSortField] = useState<OverviewSortField>("email");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   useEffect(() => {
     Promise.all([
@@ -58,6 +65,36 @@ export default function AdminOverviewPage() {
       setLoading(false);
     });
   }, []);
+
+  function toggleOverviewSort(field: OverviewSortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir(["totalNetProfit", "todayPnl", "openPositionCount", "closedTradeCount"].includes(field) ? "desc" : "asc");
+    }
+  }
+
+  const sortedSummaries = useMemo(() => {
+    if (!data) return [];
+    return [...data.userSummaries].sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const av = a[sortField];
+      const bv = b[sortField];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number") return (av - (bv as number)) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [data, sortField, sortDir]);
+
+  function OverviewSortIcon({ field }: { field: OverviewSortField }) {
+    if (sortField !== field) return <ChevronsUpDown className="h-3 w-3 opacity-40" />;
+    return sortDir === "asc"
+      ? <ChevronUp className="h-3 w-3" />
+      : <ChevronDown className="h-3 w-3" />;
+  }
 
   function refreshHealth() {
     setHealthLoading(true);
@@ -389,16 +426,29 @@ export default function AdminOverviewPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-muted-foreground">
-                <th className="text-left px-4 py-3 font-medium">{t("admin.email")}</th>
-                <th className="text-left px-4 py-3 font-medium">{t("admin.name")}</th>
-                <th className="text-right px-4 py-3 font-medium">{t("admin.openPositions")}</th>
-                <th className="text-right px-4 py-3 font-medium">{t("admin.closedTrades")}</th>
-                <th className="text-right px-4 py-3 font-medium">{t("admin.netProfit")}</th>
-                <th className="text-right px-4 py-3 font-medium">{t("admin.todayPnl")}</th>
+                {([
+                  { field: "email" as OverviewSortField, label: t("admin.email"), align: "text-left" },
+                  { field: "name" as OverviewSortField, label: t("admin.name"), align: "text-left" },
+                  { field: "openPositionCount" as OverviewSortField, label: t("admin.openPositions"), align: "text-right" },
+                  { field: "closedTradeCount" as OverviewSortField, label: t("admin.closedTrades"), align: "text-right" },
+                  { field: "totalNetProfit" as OverviewSortField, label: t("admin.netProfit"), align: "text-right" },
+                  { field: "todayPnl" as OverviewSortField, label: t("admin.todayPnl"), align: "text-right" },
+                ]).map((col) => (
+                  <th
+                    key={col.field}
+                    onClick={() => toggleOverviewSort(col.field)}
+                    className={`${col.align} px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors`}
+                  >
+                    <span className={`inline-flex items-center gap-1 ${col.align === "text-right" ? "justify-end" : ""}`}>
+                      {col.label}
+                      <OverviewSortIcon field={col.field} />
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {data.userSummaries.map((user) => (
+              {sortedSummaries.map((user) => (
                 <tr
                   key={user.userId}
                   className="border-b border-border/50 hover:bg-accent/30 transition-colors"
@@ -425,7 +475,7 @@ export default function AdminOverviewPage() {
                   </td>
                 </tr>
               ))}
-              {data.userSummaries.length === 0 && (
+              {sortedSummaries.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                     No users found

@@ -53,7 +53,7 @@ class AdminDashboardControllerTest {
             when(userRepository.findAll()).thenReturn(List.of());
             when(dashboardService.getBatchLightweightUserStats()).thenReturn(Map.of());
 
-            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview();
+            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview("email", "asc");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             AdminSystemOverview body = response.getBody();
@@ -86,7 +86,7 @@ class AdminDashboardControllerTest {
             )));
             when(dashboardService.getBatchLightweightUserStats()).thenReturn(batchStats);
 
-            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview();
+            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview("email", "asc");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             AdminSystemOverview body = response.getBody();
@@ -112,13 +112,99 @@ class AdminDashboardControllerTest {
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(dashboardService.getBatchLightweightUserStats()).thenReturn(Map.of());
 
-            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview();
+            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview("email", "asc");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody().getUserSummaries()).hasSize(1);
             assertThat(response.getBody().getUserSummaries().get(0).getOpenPositionCount()).isEqualTo(0);
             assertThat(response.getBody().getUserSummaries().get(0).getClosedTradeCount()).isEqualTo(0);
             assertThat(response.getBody().getUserSummaries().get(0).getEmail()).isEqualTo("a@test.com");
+        }
+
+        @Test
+        @DisplayName("sortBy=totalNetProfit desc → 獲利最高排前面")
+        void sortByTotalNetProfitDesc() {
+            User user1 = User.builder().userId("u1").email("a@test.com").name("A").enabled(true).autoTradeEnabled(true).build();
+            User user2 = User.builder().userId("u2").email("b@test.com").name("B").enabled(true).autoTradeEnabled(true).build();
+            User user3 = User.builder().userId("u3").email("c@test.com").name("C").enabled(true).autoTradeEnabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2, user3));
+
+            Map<String, Map<String, Object>> batchStats = new LinkedHashMap<>();
+            batchStats.put("u1", new LinkedHashMap<>(Map.of(
+                    "openPositionCount", 0, "closedTradeCount", 5L,
+                    "totalNetProfit", 100.0, "todayPnl", 0.0, "todayTradeCount", 0L)));
+            batchStats.put("u2", new LinkedHashMap<>(Map.of(
+                    "openPositionCount", 0, "closedTradeCount", 3L,
+                    "totalNetProfit", 500.0, "todayPnl", 0.0, "todayTradeCount", 0L)));
+            batchStats.put("u3", new LinkedHashMap<>(Map.of(
+                    "openPositionCount", 0, "closedTradeCount", 1L,
+                    "totalNetProfit", -200.0, "todayPnl", 0.0, "todayTradeCount", 0L)));
+            when(dashboardService.getBatchLightweightUserStats()).thenReturn(batchStats);
+
+            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview("totalNetProfit", "desc");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            List<AdminSystemOverview.UserTradingSummary> summaries = response.getBody().getUserSummaries();
+            assertThat(summaries).hasSize(3);
+            assertThat(summaries.get(0).getEmail()).isEqualTo("b@test.com"); // 500
+            assertThat(summaries.get(1).getEmail()).isEqualTo("a@test.com"); // 100
+            assertThat(summaries.get(2).getEmail()).isEqualTo("c@test.com"); // -200
+        }
+
+        @Test
+        @DisplayName("sortBy=email asc（預設）→ 字母順序")
+        void sortByEmailAsc() {
+            User user1 = User.builder().userId("u1").email("charlie@test.com").name("C").enabled(true).autoTradeEnabled(true).build();
+            User user2 = User.builder().userId("u2").email("alice@test.com").name("A").enabled(true).autoTradeEnabled(true).build();
+            User user3 = User.builder().userId("u3").email("bob@test.com").name("B").enabled(true).autoTradeEnabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2, user3));
+            when(dashboardService.getBatchLightweightUserStats()).thenReturn(Map.of());
+
+            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview("email", "asc");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            List<AdminSystemOverview.UserTradingSummary> summaries = response.getBody().getUserSummaries();
+            assertThat(summaries).hasSize(3);
+            assertThat(summaries.get(0).getEmail()).isEqualTo("alice@test.com");
+            assertThat(summaries.get(1).getEmail()).isEqualTo("bob@test.com");
+            assertThat(summaries.get(2).getEmail()).isEqualTo("charlie@test.com");
+        }
+
+        @Test
+        @DisplayName("未知 sortBy → fallback 到 email 排序，不報錯")
+        void unknownSortByFallsBackToEmail() {
+            User user1 = User.builder().userId("u1").email("z@test.com").name("Z").enabled(true).autoTradeEnabled(true).build();
+            User user2 = User.builder().userId("u2").email("a@test.com").name("A").enabled(true).autoTradeEnabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2));
+            when(dashboardService.getBatchLightweightUserStats()).thenReturn(Map.of());
+
+            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview("nonExistentField", "asc");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            List<AdminSystemOverview.UserTradingSummary> summaries = response.getBody().getUserSummaries();
+            assertThat(summaries).hasSize(2);
+            // fallback 到 email asc
+            assertThat(summaries.get(0).getEmail()).isEqualTo("a@test.com");
+            assertThat(summaries.get(1).getEmail()).isEqualTo("z@test.com");
+        }
+
+        @Test
+        @DisplayName("name 欄位有 null → null 排最後")
+        void nullableNameSortingNullsLast() {
+            User user1 = User.builder().userId("u1").email("a@test.com").name(null).enabled(true).autoTradeEnabled(true).build();
+            User user2 = User.builder().userId("u2").email("b@test.com").name("Bob").enabled(true).autoTradeEnabled(true).build();
+            User user3 = User.builder().userId("u3").email("c@test.com").name("Alice").enabled(true).autoTradeEnabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2, user3));
+            when(dashboardService.getBatchLightweightUserStats()).thenReturn(Map.of());
+
+            ResponseEntity<AdminSystemOverview> response = controller.getSystemOverview("name", "asc");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            List<AdminSystemOverview.UserTradingSummary> summaries = response.getBody().getUserSummaries();
+            assertThat(summaries).hasSize(3);
+            assertThat(summaries.get(0).getName()).isEqualTo("Alice");
+            assertThat(summaries.get(1).getName()).isEqualTo("Bob");
+            assertThat(summaries.get(2).getName()).isNull(); // null 排最後
         }
     }
 

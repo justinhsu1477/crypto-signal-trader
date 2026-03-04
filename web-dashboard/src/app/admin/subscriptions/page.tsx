@@ -24,6 +24,9 @@ import {
   Receipt,
   Search,
   RefreshCw,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -218,6 +221,9 @@ function PaymentDialog({
 
 // ─── Main Page ───
 
+type SubSortField = "email" | "name" | "planName" | "status" | "currentPeriodEnd" | "totalAmountPaid";
+type SortDir = "asc" | "desc";
+
 export default function AdminSubscriptionsPage() {
   const { t } = useT();
   const [data, setData] = useState<AdminSubscriptionListResponse | null>(null);
@@ -225,6 +231,8 @@ export default function AdminSubscriptionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [processing, setProcessing] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [sortField, setSortField] = useState<SubSortField>("email");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // Activate dialog
   const [activateTarget, setActivateTarget] = useState<AdminSubscriptionSummary | null>(null);
@@ -257,6 +265,35 @@ export default function AdminSubscriptionsPage() {
         s.name?.toLowerCase().includes(q)
     );
   }, [data, searchQuery]);
+
+  function toggleSubSort(field: SubSortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir(field === "totalAmountPaid" ? "desc" : "asc");
+    }
+  }
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const av = a[sortField];
+      const bv = b[sortField];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number") return (av - (bv as number)) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [filtered, sortField, sortDir]);
+
+  function SubSortIcon({ field }: { field: SubSortField }) {
+    if (sortField !== field) return <ChevronsUpDown className="h-3 w-3 opacity-40" />;
+    return sortDir === "asc"
+      ? <ChevronUp className="h-3 w-3" />
+      : <ChevronDown className="h-3 w-3" />;
+  }
 
   // ─── Actions ───
 
@@ -395,17 +432,30 @@ export default function AdminSubscriptionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-muted-foreground">
-                <th className="text-left px-4 py-3 font-medium">{t("admin.email")}</th>
-                <th className="text-left px-4 py-3 font-medium">{t("admin.name")}</th>
-                <th className="text-center px-4 py-3 font-medium">{t("admin.plan")}</th>
-                <th className="text-center px-4 py-3 font-medium">{t("admin.status")}</th>
-                <th className="text-center px-4 py-3 font-medium">{t("admin.expiresAt")}</th>
-                <th className="text-center px-4 py-3 font-medium">{t("admin.payments")}</th>
+                {([
+                  { field: "email" as SubSortField, label: t("admin.email"), align: "text-left" },
+                  { field: "name" as SubSortField, label: t("admin.name"), align: "text-left" },
+                  { field: "planName" as SubSortField, label: t("admin.plan"), align: "text-center" },
+                  { field: "status" as SubSortField, label: t("admin.status"), align: "text-center" },
+                  { field: "currentPeriodEnd" as SubSortField, label: t("admin.expiresAt"), align: "text-center" },
+                  { field: "totalAmountPaid" as SubSortField, label: t("admin.payments"), align: "text-center" },
+                ]).map((col) => (
+                  <th
+                    key={col.field}
+                    onClick={() => toggleSubSort(col.field)}
+                    className={`${col.align} px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors`}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {col.label}
+                      <SubSortIcon field={col.field} />
+                    </span>
+                  </th>
+                ))}
                 <th className="text-center px-4 py-3 font-medium">{t("admin.actions")}</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((sub) => {
+              {sorted.map((sub) => {
                 const isProcessing = processing === sub.userId;
                 const isActive = ["ACTIVE", "LIFETIME"].includes(sub.status);
                 return (

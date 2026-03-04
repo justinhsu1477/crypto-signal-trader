@@ -88,7 +88,7 @@ class AdminSubscriptionControllerTest {
                     .id(1L).userId("u1").amount(BigDecimal.valueOf(99)).status("succeeded").build();
             when(paymentHistoryRepository.findAll()).thenReturn(List.of(payment));
 
-            ResponseEntity<AdminSubscriptionListResponse> response = controller.listSubscriptions();
+            ResponseEntity<AdminSubscriptionListResponse> response = controller.listSubscriptions("email", "asc");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             AdminSubscriptionListResponse body = response.getBody();
@@ -118,7 +118,7 @@ class AdminSubscriptionControllerTest {
             when(subscriptionRepository.findAll()).thenReturn(List.of());
             when(paymentHistoryRepository.findAll()).thenReturn(List.of());
 
-            ResponseEntity<AdminSubscriptionListResponse> response = controller.listSubscriptions();
+            ResponseEntity<AdminSubscriptionListResponse> response = controller.listSubscriptions("email", "asc");
 
             assertThat(response.getBody().getTotalUsers()).isEqualTo(0);
             assertThat(response.getBody().getSubscriptions()).isEmpty();
@@ -133,12 +133,132 @@ class AdminSubscriptionControllerTest {
             when(subscriptionRepository.findAll()).thenReturn(List.of());
             when(paymentHistoryRepository.findAll()).thenReturn(List.of());
 
-            controller.listSubscriptions();
+            controller.listSubscriptions("email", "asc");
 
             verify(userRepository, times(1)).findAll();
             verify(subscriptionRepository, times(1)).findAll();
             verify(paymentHistoryRepository, times(1)).findAll();
             verify(planRepository, times(1)).findAll();
+        }
+
+        @Test
+        @DisplayName("sortBy=status asc → ACTIVE < LIFETIME < NONE（字串排序）")
+        void sortByStatusAsc() {
+            User u1 = User.builder().userId("u1").email("a@e.com").name("Alice").enabled(true).build();
+            User u2 = User.builder().userId("u2").email("b@e.com").name("Bob").enabled(true).build();
+            User u3 = User.builder().userId("u3").email("c@e.com").name("Charlie").enabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(u1, u2, u3));
+
+            Subscription activeSub = Subscription.builder()
+                    .id(1L).userId("u1").planId("basic").status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(LocalDateTime.of(2026, 3, 28, 0, 0))
+                    .createdAt(LocalDateTime.of(2026, 2, 28, 0, 0))
+                    .build();
+            Subscription lifetimeSub = Subscription.builder()
+                    .id(2L).userId("u2").planId("pro").status(Subscription.Status.LIFETIME)
+                    .createdAt(LocalDateTime.of(2026, 1, 1, 0, 0))
+                    .build();
+            when(subscriptionRepository.findAll()).thenReturn(List.of(activeSub, lifetimeSub));
+            when(paymentHistoryRepository.findAll()).thenReturn(List.of());
+
+            ResponseEntity<AdminSubscriptionListResponse> response =
+                    controller.listSubscriptions("status", "asc");
+
+            List<AdminSubscriptionListResponse.UserSubscriptionSummary> list =
+                    response.getBody().getSubscriptions();
+            assertThat(list).hasSize(3);
+            // 字串排序：ACTIVE < LIFETIME < NONE
+            assertThat(list.get(0).getStatus()).isEqualTo("ACTIVE");
+            assertThat(list.get(1).getStatus()).isEqualTo("LIFETIME");
+            assertThat(list.get(2).getStatus()).isEqualTo("NONE");
+        }
+
+        @Test
+        @DisplayName("sortBy=totalAmountPaid desc → 付款最高排前面")
+        void sortByTotalAmountPaidDesc() {
+            User u1 = User.builder().userId("u1").email("a@e.com").name("Alice").enabled(true).build();
+            User u2 = User.builder().userId("u2").email("b@e.com").name("Bob").enabled(true).build();
+            User u3 = User.builder().userId("u3").email("c@e.com").name("Charlie").enabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(u1, u2, u3));
+            when(subscriptionRepository.findAll()).thenReturn(List.of());
+
+            PaymentHistory p1 = PaymentHistory.builder()
+                    .id(1L).userId("u1").amount(BigDecimal.valueOf(50)).status("succeeded").build();
+            PaymentHistory p2 = PaymentHistory.builder()
+                    .id(2L).userId("u2").amount(BigDecimal.valueOf(200)).status("succeeded").build();
+            PaymentHistory p3 = PaymentHistory.builder()
+                    .id(3L).userId("u3").amount(BigDecimal.valueOf(99)).status("succeeded").build();
+            when(paymentHistoryRepository.findAll()).thenReturn(List.of(p1, p2, p3));
+
+            ResponseEntity<AdminSubscriptionListResponse> response =
+                    controller.listSubscriptions("totalAmountPaid", "desc");
+
+            List<AdminSubscriptionListResponse.UserSubscriptionSummary> list =
+                    response.getBody().getSubscriptions();
+            assertThat(list).hasSize(3);
+            assertThat(list.get(0).getTotalAmountPaid()).isEqualByComparingTo(BigDecimal.valueOf(200));
+            assertThat(list.get(1).getTotalAmountPaid()).isEqualByComparingTo(BigDecimal.valueOf(99));
+            assertThat(list.get(2).getTotalAmountPaid()).isEqualByComparingTo(BigDecimal.valueOf(50));
+        }
+
+        @Test
+        @DisplayName("sortBy=currentPeriodEnd → null 排最後")
+        void sortByCurrentPeriodEndNullLast() {
+            User u1 = User.builder().userId("u1").email("a@e.com").name("Alice").enabled(true).build();
+            User u2 = User.builder().userId("u2").email("b@e.com").name("Bob").enabled(true).build();
+            User u3 = User.builder().userId("u3").email("c@e.com").name("Charlie").enabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(u1, u2, u3));
+
+            Subscription sub1 = Subscription.builder()
+                    .id(1L).userId("u1").planId("basic").status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(LocalDateTime.of(2026, 4, 1, 0, 0))
+                    .createdAt(LocalDateTime.of(2026, 3, 1, 0, 0))
+                    .build();
+            Subscription sub2 = Subscription.builder()
+                    .id(2L).userId("u2").planId("pro").status(Subscription.Status.LIFETIME)
+                    .currentPeriodEnd(null)
+                    .createdAt(LocalDateTime.of(2026, 1, 1, 0, 0))
+                    .build();
+            Subscription sub3 = Subscription.builder()
+                    .id(3L).userId("u3").planId("basic").status(Subscription.Status.ACTIVE)
+                    .currentPeriodEnd(LocalDateTime.of(2026, 3, 15, 0, 0))
+                    .createdAt(LocalDateTime.of(2026, 2, 15, 0, 0))
+                    .build();
+            when(subscriptionRepository.findAll()).thenReturn(List.of(sub1, sub2, sub3));
+            when(paymentHistoryRepository.findAll()).thenReturn(List.of());
+
+            ResponseEntity<AdminSubscriptionListResponse> response =
+                    controller.listSubscriptions("currentPeriodEnd", "asc");
+
+            List<AdminSubscriptionListResponse.UserSubscriptionSummary> list =
+                    response.getBody().getSubscriptions();
+            assertThat(list).hasSize(3);
+            // asc：最早的日期先，null 排最後
+            assertThat(list.get(0).getCurrentPeriodEnd()).isEqualTo(LocalDateTime.of(2026, 3, 15, 0, 0));
+            assertThat(list.get(1).getCurrentPeriodEnd()).isEqualTo(LocalDateTime.of(2026, 4, 1, 0, 0));
+            assertThat(list.get(2).getCurrentPeriodEnd()).isNull();
+        }
+
+        @Test
+        @DisplayName("未知 sortBy → fallback 為 email 排序")
+        void unknownSortByFallbackToEmail() {
+            User u1 = User.builder().userId("u1").email("charlie@e.com").name("Charlie").enabled(true).build();
+            User u2 = User.builder().userId("u2").email("alice@e.com").name("Alice").enabled(true).build();
+            User u3 = User.builder().userId("u3").email("bob@e.com").name("Bob").enabled(true).build();
+            when(userRepository.findAll()).thenReturn(List.of(u1, u2, u3));
+            when(subscriptionRepository.findAll()).thenReturn(List.of());
+            when(paymentHistoryRepository.findAll()).thenReturn(List.of());
+
+            ResponseEntity<AdminSubscriptionListResponse> response =
+                    controller.listSubscriptions("nonExistentField", "asc");
+
+            List<AdminSubscriptionListResponse.UserSubscriptionSummary> list =
+                    response.getBody().getSubscriptions();
+            assertThat(list).hasSize(3);
+            // fallback to email asc
+            assertThat(list.get(0).getEmail()).isEqualTo("alice@e.com");
+            assertThat(list.get(1).getEmail()).isEqualTo("bob@e.com");
+            assertThat(list.get(2).getEmail()).isEqualTo("charlie@e.com");
         }
     }
 

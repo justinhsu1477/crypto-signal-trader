@@ -2,6 +2,7 @@ package com.trader.user.controller;
 
 import com.trader.shared.service.AuditService;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.shared.util.SortHelper;
 import com.trader.user.dto.AdminUpdateUserRequest;
 import com.trader.user.dto.AdminUserListResponse;
 import com.trader.user.dto.AdminUserListResponse.AdminUserSummary;
@@ -15,8 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * 管理員用戶管理 API
@@ -29,6 +32,19 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminUserController {
 
+    /** 用戶列表排序欄位定義 */
+    private static final Map<String, Function<Boolean, Comparator<AdminUserSummary>>> USER_SORT_FIELDS =
+            Map.ofEntries(
+                    SortHelper.stringField("email", AdminUserSummary::getEmail),
+                    SortHelper.stringField("name", AdminUserSummary::getName),
+                    SortHelper.stringField("role", AdminUserSummary::getRole),
+                    SortHelper.booleanField("enabled", AdminUserSummary::isEnabled),
+                    SortHelper.booleanField("emailVerified", AdminUserSummary::isEmailVerified),
+                    SortHelper.booleanField("autoTradeEnabled", AdminUserSummary::isAutoTradeEnabled),
+                    SortHelper.stringField("createdAt", AdminUserSummary::getCreatedAt),
+                    SortHelper.stringField("updatedAt", AdminUserSummary::getUpdatedAt)
+            );
+
     private final UserRepository userRepository;
     private final UserTradeSettingsService tradeSettingsService;
     private final AuditService auditService;
@@ -37,19 +53,24 @@ public class AdminUserController {
      * 列出所有用戶
      */
     @GetMapping
-    public ResponseEntity<AdminUserListResponse> listUsers() {
+    public ResponseEntity<AdminUserListResponse> listUsers(
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
         List<User> allUsers = userRepository.findAll();
 
         List<AdminUserSummary> summaries = allUsers.stream()
                 .map(this::toSummary)
                 .toList();
 
+        List<AdminUserSummary> sorted = SortHelper.sort(
+                summaries, sortBy, sortDir, USER_SORT_FIELDS, "createdAt");
+
         long activeCount = allUsers.stream().filter(User::isEnabled).count();
         long adminCount = allUsers.stream()
                 .filter(u -> u.getRole() == User.Role.ADMIN).count();
 
         return ResponseEntity.ok(AdminUserListResponse.builder()
-                .users(summaries)
+                .users(sorted)
                 .totalUsers(allUsers.size())
                 .activeUsers(activeCount)
                 .adminUsers(adminCount)
