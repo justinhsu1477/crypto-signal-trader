@@ -770,3 +770,40 @@ export async function markAnnouncementRead(id: number): Promise<void> {
 export async function getUnreadAnnouncementCount(): Promise<{ count: number }> {
   return request<{ count: number }>("/api/announcements/unread-count");
 }
+
+// ─── Admin Broadcast Trade (Emergency Signal) ───
+
+export interface BroadcastTradeRequest {
+  action: string;           // ENTRY | CLOSE | MOVE_SL | CANCEL
+  symbol: string;           // BTCUSDT
+  side?: string;            // LONG | SHORT (ENTRY 用)
+  entry_price?: number;
+  stop_loss?: number;
+  take_profit?: number;
+  close_ratio?: number;     // CLOSE 用 (0.5=50%, 1.0=全平, null=全平)
+  new_stop_loss?: number;   // MOVE_SL / CLOSE 部分平倉後新 SL
+  new_take_profit?: number;
+  is_dca?: boolean;
+  source?: { platform: string; author_name: string };
+}
+
+export interface BroadcastTradeResponse {
+  status: string;
+  totalUsers?: number;
+  successCount?: number;
+  failCount?: number;
+  skippedNoSubscription?: number;
+  skippedNoApiKey?: number;
+  message?: string;
+  error?: string;
+  reason?: string;
+}
+
+export async function adminBroadcastTrade(
+  data: BroadcastTradeRequest
+): Promise<BroadcastTradeResponse> {
+  return request<BroadcastTradeResponse>("/api/broadcast-trade", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
