@@ -996,6 +996,121 @@ class TradeControllerTest {
             // 新鮮訊號不應發送 Admin 通知
             verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
+
+        // ====== Admin Dashboard 補發訊號場景 ======
+
+        @Test
+        @DisplayName("Admin Dashboard CLOSE 訊號 — 無 signalTimestamp 不觸發時效驗證")
+        void adminDashboardClose_noTimestamp() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("CLOSE");
+            request.setSymbol("BTCUSDT");
+            request.setCloseRatio(1.0);
+            // Admin Dashboard 不帶 signalTimestamp
+
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of(
+                            "status", "COMPLETED",
+                            "totalUsers", 8,
+                            "successCount", 7,
+                            "failCount", 1,
+                            "skippedNoSubscription", 2,
+                            "skippedNoApiKey", 1));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(broadcastTradeService).broadcastTrade(any());
+            // 無 Admin 通知（signalTimestamp=null 跳過時效檢查）
+            verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("Admin Dashboard ENTRY 訊號含 Source — 記錄到 signals 表")
+        void adminDashboardEntry_recordsSignal() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(93000.0);
+            request.setSource(SignalSource.builder()
+                    .platform("ADMIN_DASHBOARD")
+                    .authorName("admin@hookfi.com")
+                    .build());
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED", "totalUsers", 5, "successCount", 5));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            // 驗證 signalRecord 記錄含 source
+            verify(signalRecordService).recordFromRequest(
+                    eq("ENTRY"), eq("BTCUSDT"), eq("LONG"),
+                    eq(95000.0), eq(93000.0),
+                    eq("EXECUTED"), isNull(), isNull(), any(SignalSource.class));
+        }
+
+        @Test
+        @DisplayName("廣播回傳完整多用戶統計 — 包含 skipped 計數")
+        void broadcastReturnsFullMultiUserStats() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("CLOSE");
+            request.setSymbol("BTCUSDT");
+
+            Map<String, Object> broadcastResult = Map.of(
+                    "status", "COMPLETED",
+                    "totalUsers", 6,
+                    "successCount", 5,
+                    "failCount", 1,
+                    "skippedNoSubscription", 3,
+                    "skippedNoApiKey", 2);
+            when(broadcastTradeService.broadcastTrade(any())).thenReturn(broadcastResult);
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).isNotNull();
+            assertThat(body.get("status")).isEqualTo("COMPLETED");
+            assertThat(body.get("totalUsers")).isEqualTo(6);
+            assertThat(body.get("successCount")).isEqualTo(5);
+            assertThat(body.get("failCount")).isEqualTo(1);
+            assertThat(body.get("skippedNoSubscription")).isEqualTo(3);
+            assertThat(body.get("skippedNoApiKey")).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("MOVE_SL 廣播 — 跳過去重 + 執行廣播")
+        void broadcastMoveSL_skipsDedup() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("MOVE_SL");
+            request.setSymbol("BTCUSDT");
+            request.setNewStopLoss(94500.0);
+
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED", "totalUsers", 5, "successCount", 5));
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(deduplicationService, never()).isSignalProcessed(any());
+            verify(broadcastTradeService).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("symbol 為 null — 回 400")
+        void broadcastNullSymbol_returns400() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("CLOSE");
+            // symbol = null
+
+            ResponseEntity<?> response = controller.broadcastTrade(request);
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+        }
     }
 
     // ==================== 其他端點 ====================

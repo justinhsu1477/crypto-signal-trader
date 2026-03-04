@@ -189,11 +189,16 @@ public class BroadcastTradeService {
 
                     // 發送 enriched 成功通知給用戶（含實際成交價/PnL/AI 評分）
                     String successTitle;
+                    String actionUpper = request.getAction() != null ? request.getAction().toUpperCase() : "";
                     if (isCloseAction) {
                         boolean isPartial = request.getCloseRatio() != null && request.getCloseRatio() < 1.0;
                         successTitle = isPartial
                                 ? String.format("✅ 部分平倉已執行 (%.0f%%)", request.getCloseRatio() * 100)
                                 : "✅ 全部平倉已執行";
+                    } else if ("MOVE_SL".equals(actionUpper)) {
+                        successTitle = "✅ 移動止損已執行";
+                    } else if ("CANCEL".equals(actionUpper)) {
+                        successTitle = "✅ 取消掛單已執行";
                     } else {
                         successTitle = "✅ 廣播跟單已執行";
                     }
@@ -418,7 +423,7 @@ public class BroadcastTradeService {
                 }
             }
             case "MOVE_SL" -> {
-                sb.append("\n");
+                sb.append("\n動作: 移動止損\n");
                 if (request.getNewStopLoss() != null) sb.append("新止損: ").append(request.getNewStopLoss()).append("\n");
                 if (request.getNewTakeProfit() != null) sb.append("新止盈: ").append(request.getNewTakeProfit()).append("\n");
             }

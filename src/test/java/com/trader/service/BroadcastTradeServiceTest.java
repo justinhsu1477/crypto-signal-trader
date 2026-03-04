@@ -724,4 +724,511 @@ class BroadcastTradeServiceTest {
                     any());
         }
     }
+
+    // ==================== Multi-User Mode: Admin Role Handling ====================
+
+    @Nested
+    @DisplayName("多用戶模式 — Admin 角色處理")
+    class MultiUserAdminHandling {
+
+        private User createAdmin(String id) {
+            return User.builder()
+                    .userId(id)
+                    .email(id + "@test.com")
+                    .passwordHash("hash")
+                    .autoTradeEnabled(true)
+                    .enabled(true)
+                    .role(User.Role.ADMIN)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Admin 不下單 — 只收通知")
+        void adminDoesNotTrade() {
+            User admin = createAdmin("admin1");
+            User user = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user));
+
+            service.broadcastTrade(createEntryRequest());
+
+            // Admin 不應被呼叫 executeSignalForBroadcast
+            verify(mockBinance, never()).executeSignalForBroadcast(any(), eq("admin1"));
+            // 普通用戶正常下單
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(any(), eq("u1"));
+        }
+
+        @Test
+        @DisplayName("多位 Admin 都收到廣播前通知")
+        void multipleAdminsReceivePreBroadcastNotification() {
+            User admin1 = createAdmin("admin1");
+            User admin2 = createAdmin("admin2");
+            User user = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin1, admin2, user));
+
+            service.broadcastTrade(createEntryRequest());
+
+            // 兩位 Admin 都收到廣播前通知
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"), eq("📡 廣播訊號已發送"), anyString(), eq(DiscordWebhookService.COLOR_BLUE));
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin2"), eq("📡 廣播訊號已發送"), anyString(), eq(DiscordWebhookService.COLOR_BLUE));
+        }
+
+        @Test
+        @DisplayName("多位 Admin 都收到廣播完成彙總報告")
+        void multipleAdminsReceiveSummaryReport() {
+            User admin1 = createAdmin("admin1");
+            User admin2 = createAdmin("admin2");
+            User user = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin1, admin2, user));
+
+            service.broadcastTrade(createEntryRequest());
+
+            // 兩位 Admin 都收到彙總報告
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"), eq("📊 廣播跟單報告"), anyString(), anyInt());
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin2"), eq("📊 廣播跟單報告"), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("Admin 被排除在 activeUsers 之外 — 不計入 totalUsers")
+        void adminExcludedFromTotalUsers() {
+            User admin = createAdmin("admin1");
+            User user1 = createUser("u1", true, true);
+            User user2 = createUser("u2", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            assertThat(result.get("totalUsers")).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("停用的 Admin 不收到通知")
+        void disabledAdminNoNotification() {
+            User disabledAdmin = User.builder()
+                    .userId("admin-disabled").email("disabled@test.com").passwordHash("h")
+                    .autoTradeEnabled(true).enabled(false).role(User.Role.ADMIN).build();
+            User user = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(disabledAdmin, user));
+
+            service.broadcastTrade(createEntryRequest());
+
+            // 停用的 Admin 不收通知
+            verify(mockWebhook, never()).sendNotificationToUser(
+                    eq("admin-disabled"), anyString(), anyString(), anyInt());
+        }
+    }
+
+    // ==================== Multi-User Mode: Various Action Types ====================
+
+    @Nested
+    @DisplayName("多用戶模式 — 各種操作類型")
+    class MultiUserActionTypes {
+
+        @BeforeEach
+        void setUpUsers() {
+            List<User> users = List.of(
+                    createUser("u1", true, true),
+                    createUser("u2", true, true));
+            when(mockUserRepo.findAll()).thenReturn(users);
+        }
+
+        @Test
+        @DisplayName("CLOSE 全部平倉 — 所有用戶執行")
+        void closeFullPosition() {
+            TradeRequest req = new TradeRequest();
+            req.setAction("CLOSE");
+            req.setSymbol("BTCUSDT");
+
+            Map<String, Object> result = service.broadcastTrade(req);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(2);
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(eq(req), eq("u1"));
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(eq(req), eq("u2"));
+        }
+
+        @Test
+        @DisplayName("CLOSE 部分平倉 — 通知含比例")
+        void closePartialPosition() {
+            TradeRequest req = new TradeRequest();
+            req.setAction("CLOSE");
+            req.setSymbol("BTCUSDT");
+            req.setCloseRatio(0.5);
+
+            when(mockBinance.executeSignalForBroadcast(any(), eq("u1")))
+                    .thenReturn(List.of(OrderResult.builder()
+                            .success(true).orderId("1").symbol("BTCUSDT")
+                            .price(96000.0).netProfit(50.0).build()));
+
+            service.broadcastTrade(req);
+
+            // 驗證用戶通知標題為部分平倉
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("u1"),
+                    contains("部分平倉"),
+                    contains("50%"),
+                    eq(DiscordWebhookService.COLOR_GREEN));
+        }
+
+        @Test
+        @DisplayName("MOVE_SL — 所有用戶執行")
+        void moveStopLoss() {
+            TradeRequest req = new TradeRequest();
+            req.setAction("MOVE_SL");
+            req.setSymbol("BTCUSDT");
+            req.setNewStopLoss(94500.0);
+            req.setNewTakeProfit(98000.0);
+
+            Map<String, Object> result = service.broadcastTrade(req);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(2);
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(eq(req), eq("u1"));
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(eq(req), eq("u2"));
+        }
+
+        @Test
+        @DisplayName("MOVE_SL — 用戶通知標題為「移動止損已執行」且含新止損和止盈")
+        void moveSLNotificationContent() {
+            // 只用一個用戶簡化驗證
+            when(mockUserRepo.findAll()).thenReturn(List.of(createUser("u1", true, true)));
+
+            TradeRequest req = new TradeRequest();
+            req.setAction("MOVE_SL");
+            req.setSymbol("BTCUSDT");
+            req.setNewStopLoss(94500.0);
+            req.setNewTakeProfit(98000.0);
+
+            service.broadcastTrade(req);
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("u1"),
+                    eq("✅ 移動止損已執行"),
+                    bodyCaptor.capture(),
+                    eq(DiscordWebhookService.COLOR_GREEN));
+
+            String body = bodyCaptor.getValue();
+            assertThat(body).contains("動作: 移動止損");
+            assertThat(body).contains("新止損: 94500.0");
+            assertThat(body).contains("新止盈: 98000.0");
+        }
+
+        @Test
+        @DisplayName("CANCEL — 所有用戶執行")
+        void cancelOrders() {
+            TradeRequest req = new TradeRequest();
+            req.setAction("CANCEL");
+            req.setSymbol("BTCUSDT");
+
+            Map<String, Object> result = service.broadcastTrade(req);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(2);
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(eq(req), eq("u1"));
+            verify(mockBinance, timeout(5000)).executeSignalForBroadcast(eq(req), eq("u2"));
+        }
+
+        @Test
+        @DisplayName("CANCEL — 用戶通知標題為「取消掛單已執行」")
+        void cancelNotificationTitle() {
+            when(mockUserRepo.findAll()).thenReturn(List.of(createUser("u1", true, true)));
+
+            TradeRequest req = new TradeRequest();
+            req.setAction("CANCEL");
+            req.setSymbol("BTCUSDT");
+
+            service.broadcastTrade(req);
+
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("u1"),
+                    eq("✅ 取消掛單已執行"),
+                    anyString(),
+                    eq(DiscordWebhookService.COLOR_GREEN));
+        }
+
+        @Test
+        @DisplayName("ENTRY DCA 補倉 — Admin 通知含 DCA 標記")
+        void entryDcaSignal() {
+            User admin = User.builder()
+                    .userId("admin1").email("admin@test.com").passwordHash("h")
+                    .enabled(true).role(User.Role.ADMIN).build();
+            when(mockUserRepo.findAll()).thenReturn(List.of(
+                    admin, createUser("u1", true, true)));
+
+            TradeRequest req = createEntryRequest();
+            req.setIsDca(true);
+
+            service.broadcastTrade(req);
+
+            // Admin 收到的廣播前通知含 DCA
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"), eq("📡 廣播訊號已發送"),
+                    bodyCaptor.capture(), anyInt());
+
+            assertThat(bodyCaptor.getValue()).contains("DCA");
+        }
+    }
+
+    // ==================== Multi-User Mode: Summary Report Color ====================
+
+    @Nested
+    @DisplayName("多用戶模式 — 彙總報告顏色邏輯")
+    class SummaryReportColor {
+
+        private User admin;
+
+        @BeforeEach
+        void setUp() {
+            admin = User.builder().userId("admin1").email("admin@test.com").passwordHash("h")
+                    .enabled(true).role(User.Role.ADMIN).build();
+        }
+
+        @Test
+        @DisplayName("全部成功 → 綠色報告")
+        void allSuccess_greenReport() {
+            User user1 = createUser("u1", true, true);
+            User user2 = createUser("u2", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
+
+            service.broadcastTrade(createEntryRequest());
+
+            // 報告應為綠色（全部成功）
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"),
+                    eq("📊 廣播跟單報告"),
+                    anyString(),
+                    eq(DiscordWebhookService.COLOR_GREEN));
+        }
+
+        @Test
+        @DisplayName("有失敗 → 黃色報告")
+        void hasFailure_yellowReport() {
+            User user1 = createUser("u1", true, true);
+            User user2 = createUser("u2", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
+
+            doReturn(List.of()).when(mockBinance).executeSignalForBroadcast(any(), eq("u1"));
+            doThrow(new RuntimeException("error")).when(mockBinance)
+                    .executeSignalForBroadcast(any(), eq("u2"));
+
+            service.broadcastTrade(createEntryRequest());
+
+            // 報告應為黃色（有失敗）
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"),
+                    eq("📊 廣播跟單報告"),
+                    anyString(),
+                    eq(DiscordWebhookService.COLOR_YELLOW));
+        }
+    }
+
+    // ==================== Multi-User Mode: Admin Pre-Broadcast Notification ====================
+
+    @Nested
+    @DisplayName("多用戶模式 — Admin 廣播前通知詳情")
+    class AdminPreBroadcastNotification {
+
+        private User admin;
+
+        @BeforeEach
+        void setUp() {
+            admin = User.builder().userId("admin1").email("admin@test.com").passwordHash("h")
+                    .enabled(true).role(User.Role.ADMIN).build();
+        }
+
+        @Test
+        @DisplayName("ENTRY 訊號 → Admin 通知含入場價、止損、目標人數")
+        void entryNotificationContainsDetails() {
+            User user = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user));
+
+            TradeRequest req = createEntryRequest();
+            req.setTakeProfit(97000.0);
+
+            service.broadcastTrade(req);
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"), eq("📡 廣播訊號已發送"),
+                    bodyCaptor.capture(), eq(DiscordWebhookService.COLOR_BLUE));
+
+            String body = bodyCaptor.getValue();
+            assertThat(body).contains("BTCUSDT");
+            assertThat(body).contains("95000.0");
+            assertThat(body).contains("93000.0");
+            assertThat(body).contains("97000.0");
+            assertThat(body).contains("目標用戶: 1 人");
+        }
+
+        @Test
+        @DisplayName("有跳過的用戶 → Admin 通知含跳過統計")
+        void notificationContainsSkippedCounts() {
+            User user1 = createUser("u1", true, true);
+            User user2 = createUser("u2", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
+
+            // u2 沒有訂閱
+            when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of("u1"));
+
+            service.broadcastTrade(createEntryRequest());
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"), eq("📡 廣播訊號已發送"),
+                    bodyCaptor.capture(), anyInt());
+
+            assertThat(bodyCaptor.getValue()).contains("跳過 (無訂閱): 1 人");
+        }
+
+        @Test
+        @DisplayName("CLOSE 訊號 → Admin 通知含平倉比例")
+        void closeNotificationContainsRatio() {
+            User user = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user));
+
+            TradeRequest req = new TradeRequest();
+            req.setAction("CLOSE");
+            req.setSymbol("BTCUSDT");
+            req.setCloseRatio(0.5);
+
+            service.broadcastTrade(req);
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"), eq("📡 廣播訊號已發送"),
+                    bodyCaptor.capture(), anyInt());
+
+            assertThat(bodyCaptor.getValue()).contains("50%");
+        }
+
+        @Test
+        @DisplayName("訊號含 Source → Admin 通知含來源資訊")
+        void notificationContainsSourceInfo() {
+            User user = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin, user));
+
+            TradeRequest req = createEntryRequest();
+            com.trader.shared.model.SignalSource source = new com.trader.shared.model.SignalSource();
+            source.setPlatform("ADMIN_DASHBOARD");
+            source.setAuthorName("admin@test.com");
+            req.setSource(source);
+
+            service.broadcastTrade(req);
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("admin1"), eq("📡 廣播訊號已發送"),
+                    bodyCaptor.capture(), anyInt());
+
+            assertThat(bodyCaptor.getValue()).contains("ADMIN_DASHBOARD");
+        }
+    }
+
+    // ==================== Multi-User Mode: Edge Cases ====================
+
+    @Nested
+    @DisplayName("多用戶模式 — 邊界情況")
+    class MultiUserEdgeCases {
+
+        @Test
+        @DisplayName("只有 Admin 無用戶 → 返回空但 Admin 仍收通知")
+        void onlyAdminsNoUsers() {
+            User admin = User.builder()
+                    .userId("admin1").email("admin@test.com").passwordHash("h")
+                    .enabled(true).role(User.Role.ADMIN).build();
+            when(mockUserRepo.findAll()).thenReturn(List.of(admin));
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(0);
+
+            // Admin 仍收到廣播前通知
+            verify(mockWebhook).sendNotificationToUser(
+                    eq("admin1"), eq("📡 廣播訊號已發送"), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("用戶同時缺訂閱和 API Key — 只計入 skippedNoSubscription")
+        void userMissingBothSubscriptionAndApiKey() {
+            User user1 = createUser("u1", true, true);
+            when(mockUserRepo.findAll()).thenReturn(List.of(user1));
+
+            // u1 無訂閱
+            when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of());
+            // u1 也無 API Key（但因訂閱先過濾，不會計入 skippedNoApiKey）
+            when(mockApiKey.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(Set.of());
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            assertThat(result.get("skippedNoSubscription")).isEqualTo(1);
+            assertThat(result.get("skippedNoApiKey")).isEqualTo(0);
+        }
+
+        @Test
+        @DisplayName("大量用戶 — 並行執行不阻塞")
+        void manyUsersConcurrentExecution() {
+            List<User> manyUsers = new ArrayList<>();
+            Set<String> manyUserIds = new HashSet<>();
+            for (int i = 0; i < 20; i++) {
+                String id = "u" + i;
+                manyUsers.add(createUser(id, true, true));
+                manyUserIds.add(id);
+            }
+            when(mockUserRepo.findAll()).thenReturn(manyUsers);
+            when(mockApiKey.getUserIdsWithApiKey("BINANCE")).thenReturn(manyUserIds);
+            when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
+                    .thenReturn(new ArrayList<>(manyUserIds));
+
+            Map<String, Object> result = service.broadcastTrade(createEntryRequest());
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(20);
+            assertThat((int) result.get("successCount")).isEqualTo(20);
+        }
+
+        @Test
+        @DisplayName("用戶 name 為空 → 顯示名用 email fallback")
+        void userWithoutName_usesEmailFallback() {
+            User user = User.builder()
+                    .userId("u1").email("test@test.com").passwordHash("hash")
+                    .autoTradeEnabled(true).enabled(true).build();
+            // name 未設定 = null
+            when(mockUserRepo.findAll()).thenReturn(List.of(user));
+
+            service.broadcastTrade(createEntryRequest());
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("u1"), anyString(), bodyCaptor.capture(), anyInt());
+
+            // fallback 使用 email
+            assertThat(bodyCaptor.getValue()).contains("test@test.com");
+        }
+
+        @Test
+        @DisplayName("用戶有 name → 顯示 name (email)")
+        void userWithName_displaysNameAndEmail() {
+            User user = User.builder()
+                    .userId("u1").email("test@test.com").name("Alice").passwordHash("hash")
+                    .autoTradeEnabled(true).enabled(true).build();
+            when(mockUserRepo.findAll()).thenReturn(List.of(user));
+
+            service.broadcastTrade(createEntryRequest());
+
+            ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockWebhook, timeout(5000)).sendNotificationToUser(
+                    eq("u1"), anyString(), bodyCaptor.capture(), anyInt());
+
+            assertThat(bodyCaptor.getValue()).contains("Alice (test@test.com)");
+        }
+    }
 }
