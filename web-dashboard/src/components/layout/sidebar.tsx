@@ -18,6 +18,7 @@ import {
   CreditCard,
   Megaphone,
   Bell,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -41,6 +42,7 @@ export function Sidebar() {
 
   const adminItems = [
     { href: "/admin", label: t("nav.adminOverview"), icon: Monitor },
+    { href: "/admin/signal", label: t("nav.adminSignal"), icon: Zap },
     { href: "/admin/users", label: t("nav.adminUsers"), icon: Users },
     { href: "/admin/referrals", label: t("nav.adminReferrals"), icon: ClipboardCheck },
     { href: "/admin/subscriptions", label: t("nav.adminSubscriptions"), icon: CreditCard },

@@ -54,6 +54,7 @@ const translations = {
     adminReferrals: { en: "Referral Review", "zh-TW": "推薦碼審核", "zh-CN": "推荐码审核", ja: "リファーラル審査" },
     adminSubscriptions: { en: "Subscriptions", "zh-TW": "訂閱管理", "zh-CN": "订阅管理", ja: "サブスクリプション" },
     adminSettings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置", ja: "設定" },
+    adminSignal: { en: "Emergency Signal", "zh-TW": "緊急訊號", "zh-CN": "紧急信号", ja: "緊急シグナル" },
     adminAnnouncements: { en: "Announcements", "zh-TW": "公告管理", "zh-CN": "公告管理", ja: "お知らせ管理" },
     adminMetrics: { en: "System Metrics", "zh-TW": "系統指標", "zh-CN": "系统指标", ja: "システムメトリクス" },
     metricsOrders: { en: "Order Success Rate", "zh-TW": "下單成功率", "zh-CN": "下单成功率", ja: "注文成功率" },
@@ -1504,6 +1505,57 @@ const translations = {
     // Notification toast
     newAnnouncement: { en: "New Announcement", "zh-TW": "新公告", "zh-CN": "新公告", ja: "新しいお知らせ" },
     viewAll: { en: "View All", "zh-TW": "查看全部", "zh-CN": "查看全部", ja: "すべて見る" },
+  },
+
+  // ─── admin signal (emergency broadcast) ───
+  adminSignal: {
+    title: { en: "Emergency Signal Broadcast", "zh-TW": "緊急訊號補發", "zh-CN": "紧急信号补发", ja: "緊急シグナル配信" },
+    description: {
+      en: "Manually broadcast trading signals to all active users",
+      "zh-TW": "手動廣播交易訊號給所有啟用跟單的用戶",
+      "zh-CN": "手动广播交易信号给所有启用跟单的用户",
+      ja: "全アクティブユーザーに取引シグナルを手動配信",
+    },
+    symbol: { en: "Symbol", "zh-TW": "交易對", "zh-CN": "交易对", ja: "取引ペア" },
+    side: { en: "Side", "zh-TW": "方向", "zh-CN": "方向", ja: "方向" },
+    entryPrice: { en: "Entry Price", "zh-TW": "入場價", "zh-CN": "入场价", ja: "エントリー価格" },
+    stopLoss: { en: "Stop Loss", "zh-TW": "止損", "zh-CN": "止损", ja: "ストップロス" },
+    takeProfit: { en: "Take Profit (optional)", "zh-TW": "止盈（選填）", "zh-CN": "止盈（选填）", ja: "テイクプロフィット（任意）" },
+    closeRatio: { en: "Close Ratio", "zh-TW": "平倉比例", "zh-CN": "平仓比例", ja: "決済比率" },
+    newStopLoss: { en: "New Stop Loss", "zh-TW": "新止損", "zh-CN": "新止损", ja: "新ストップロス" },
+    newTakeProfit: { en: "New Take Profit (optional)", "zh-TW": "新止盈（選填）", "zh-CN": "新止盈（选填）", ja: "新テイクプロフィット（任意）" },
+    isDca: { en: "DCA (Dollar Cost Average)", "zh-TW": "DCA 補倉", "zh-CN": "DCA 补仓", ja: "DCA（ナンピン）" },
+    confirm: { en: "Broadcast Signal", "zh-TW": "確認廣播", "zh-CN": "确认广播", ja: "シグナル配信" },
+    confirmTitle: { en: "Confirm Broadcast", "zh-TW": "確認廣播訊號", "zh-CN": "确认广播信号", ja: "配信確認" },
+    confirmMessage: {
+      en: "This signal will be broadcast to all active users:",
+      "zh-TW": "即將廣播以下訊號給所有用戶：",
+      "zh-CN": "即将广播以下信号给所有用户：",
+      ja: "以下のシグナルを全ユーザーに配信します：",
+    },
+    confirmBroadcast: { en: "Confirm Broadcast", "zh-TW": "確認廣播", "zh-CN": "确认广播", ja: "配信確認" },
+    sending: { en: "Broadcasting...", "zh-TW": "廣播中...", "zh-CN": "广播中...", ja: "配信中..." },
+    success: { en: "Broadcast completed", "zh-TW": "廣播完成", "zh-CN": "广播完成", ja: "配信完了" },
+    failed: { en: "Broadcast failed", "zh-TW": "廣播失敗", "zh-CN": "广播失败", ja: "配信失敗" },
+    skippedSignal: { en: "Signal skipped", "zh-TW": "訊號被跳過", "zh-CN": "信号被跳过", ja: "シグナルスキップ" },
+    resultUsers: {
+      en: "Success: {success} / Failed: {fail}",
+      "zh-TW": "成功: {success} 人 / 失敗: {fail} 人",
+      "zh-CN": "成功: {success} 人 / 失败: {fail} 人",
+      ja: "成功: {success} 人 / 失敗: {fail} 人",
+    },
+    skipped: {
+      en: "Skipped (no subscription): {noSub} / Skipped (no API Key): {noKey}",
+      "zh-TW": "跳過(無訂閱): {noSub} 人 / 跳過(無 API Key): {noKey} 人",
+      "zh-CN": "跳过(无订阅): {noSub} 人 / 跳过(无 API Key): {noKey} 人",
+      ja: "スキップ(サブスクなし): {noSub} 人 / スキップ(APIキーなし): {noKey} 人",
+    },
+    cancelDesc: {
+      en: "Cancel all pending orders for the selected symbol.",
+      "zh-TW": "取消所選交易對的所有掛單。",
+      "zh-CN": "取消所选交易对的所有挂单。",
+      ja: "選択した取引ペアの全注文をキャンセルします。",
+    },
   },
 } as const;
 
