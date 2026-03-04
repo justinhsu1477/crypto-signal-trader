@@ -146,7 +146,7 @@ advisor:
   enabled: ${ADVISOR_ENABLED:false}
   gemini-api-key: ${GEMINI_API_KEY:}
   gemini-model: gemini-2.0-flash
-  cron-expression: "0 0 2,6,10,14,18,22 * * *"
+  cron-expression: "0 0 9,21 * * *"              # 每日 09:00 + 21:00（亞洲盤前 + 美盤開始）
   max-response-tokens: 1024
   recent-trades-count: 10
   temperature-value: 0.7
