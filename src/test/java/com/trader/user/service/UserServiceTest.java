@@ -4,6 +4,7 @@ import com.trader.shared.util.AesEncryptionUtil;
 import com.trader.user.entity.User;
 import com.trader.user.repository.*;
 import org.junit.jupiter.api.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -48,6 +49,9 @@ class UserServiceTest {
 
     @Mock
     private AesEncryptionUtil aesEncryptionUtil;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private UserService service;

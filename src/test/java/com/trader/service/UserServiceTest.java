@@ -6,6 +6,7 @@ import com.trader.user.entity.UserApiKey;
 import com.trader.user.repository.*;
 import com.trader.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ class UserServiceTest {
     private UserNotificationPreferencesRepository userNotificationPreferencesRepository;
     private UserTradeSettingsRepository userTradeSettingsRepository;
     private AesEncryptionUtil aesEncryptionUtil;
+    private ApplicationEventPublisher eventPublisher;
     private UserService userService;
 
     @BeforeEach
@@ -40,11 +42,12 @@ class UserServiceTest {
         userNotificationPreferencesRepository = mock(UserNotificationPreferencesRepository.class);
         userTradeSettingsRepository = mock(UserTradeSettingsRepository.class);
         aesEncryptionUtil = mock(AesEncryptionUtil.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         userService = new UserService(
                 userRepository, userApiKeyRepository,
                 userDiscordWebhookRepository, userLineBindingRepository,
                 lineLinkingCodeRepository, userNotificationPreferencesRepository,
-                userTradeSettingsRepository, aesEncryptionUtil);
+                userTradeSettingsRepository, aesEncryptionUtil, eventPublisher);
     }
 
     @Nested

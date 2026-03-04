@@ -113,6 +113,12 @@ line:
     enabled: ${LINE_RICH_MENU_ENABLED:true}
     force-rebuild: ${LINE_RICH_MENU_FORCE_REBUILD:false}
     web-base-url: ${LINE_WEB_BASE_URL:https://hook-fi.com}
+  # LINE Login Channel（與 Messaging API 不同 Channel，同一 Provider）
+  login:
+    channel-id: ${LINE_LOGIN_CHANNEL_ID:}
+    channel-secret: ${LINE_LOGIN_CHANNEL_SECRET:}
+    callback-url: ${LINE_LOGIN_CALLBACK_URL:https://hook-fi.com/api/auth/oauth/line/callback}
+    enabled: ${LINE_LOGIN_ENABLED:false}
 
 stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}

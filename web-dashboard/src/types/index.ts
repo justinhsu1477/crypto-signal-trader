@@ -462,6 +462,7 @@ export interface AdminUserSummary {
   autoTradeEnabled: boolean;
   createdAt: string | null;
   updatedAt: string | null;
+  loginMethods: string[];
 }
 
 export interface AdminUpdateUserRequest {

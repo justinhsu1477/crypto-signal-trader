@@ -111,6 +111,11 @@ public class AuthService {
             throw new IllegalArgumentException("帳號已停用");
         }
 
+        // OAuth-only 帳號無密碼 → 引導用 LINE 登入
+        if (!user.hasPassword()) {
+            throw new IllegalArgumentException("此帳號使用第三方登入，請用 LINE 登入");
+        }
+
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             recordLoginFailure(normalizedEmail);
             throw new IllegalArgumentException("帳號或密碼錯誤");
@@ -128,6 +133,33 @@ public class AuthService {
         String refreshToken = jwtService.generateRefreshToken(user.getUserId(), role);
 
         log.info("用戶登入成功: email={} role={}", user.getEmail(), role);
+
+        return LoginResponse.builder()
+                .token(token)
+                .refreshToken(refreshToken)
+                .expiresIn(jwtService.getExpirationMs() / 1000)
+                .userId(user.getUserId())
+                .email(user.getEmail())
+                .role(role)
+                .build();
+    }
+
+    /**
+     * OAuth 登入（無密碼驗證，由 OAuthService 呼叫）
+     *
+     * @param user 已驗證的 OAuth 用戶
+     * @return LoginResponse (含 JWT + refresh token)
+     */
+    public LoginResponse loginByOAuth(User user) {
+        if (!user.isEnabled()) {
+            throw new IllegalArgumentException("帳號已停用");
+        }
+
+        String role = user.getRole().name();
+        String token = jwtService.generateToken(user.getUserId(), role);
+        String refreshToken = jwtService.generateRefreshToken(user.getUserId(), role);
+
+        log.info("OAuth 登入成功: userId={} role={}", user.getUserId(), role);
 
         return LoginResponse.builder()
                 .token(token)

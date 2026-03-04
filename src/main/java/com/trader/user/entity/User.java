@@ -21,11 +21,10 @@ public class User {
     @Id
     private String userId;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String email;
 
     @JsonIgnore
-    @Column(nullable = false)
     private String passwordHash;
 
     private String name;
@@ -56,6 +55,13 @@ public class User {
 
     public enum Role {
         USER, ADMIN
+    }
+
+    /**
+     * 是否有設定密碼（OAuth-only 用戶無密碼）
+     */
+    public boolean hasPassword() {
+        return passwordHash != null && !passwordHash.isBlank();
     }
 
     @PrePersist

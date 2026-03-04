@@ -253,6 +253,22 @@ export async function fetchCurrentUser(): Promise<{ userId: string; email: strin
   return publicRequest<{ userId: string; email: string; role: string }>("/api/auth/me");
 }
 
+// ==================== OAuth ====================
+
+export interface OAuthCompleteResponse {
+  userId: string;
+  email: string;
+  role: string;
+  expiresIn: number;
+}
+
+export async function completeOAuthLogin(ticket: string): Promise<OAuthCompleteResponse> {
+  return publicRequest<OAuthCompleteResponse>("/api/auth/oauth/complete", {
+    method: "POST",
+    body: JSON.stringify({ ticket }),
+  });
+}
+
 // ==================== Password Management ====================
 
 export async function changePassword(data: {
