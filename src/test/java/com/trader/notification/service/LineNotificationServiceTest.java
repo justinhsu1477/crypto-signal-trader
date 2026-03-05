@@ -146,6 +146,104 @@ class LineNotificationServiceTest {
         }
     }
 
+    // ==================== sendAnnouncementToUser ====================
+
+    @Nested
+    @DisplayName("sendAnnouncementToUser — 公告推播（含圖片）")
+    class SendAnnouncementTests {
+
+        @Test
+        @DisplayName("有 imageUrl — JSON 包含 text + image 兩則訊息")
+        void sendsWithImageMessage() {
+            when(lineBindingRepository.findByUserIdAndEnabledTrue(USER_ID))
+                    .thenReturn(Optional.of(UserLineBinding.builder()
+                            .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build()));
+
+            service.sendAnnouncementToUser(USER_ID, "公告標題", "公告內容",
+                    NotificationService.COLOR_BLUE, "https://example.com/banner.png");
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+
+            String body = bodyToString(captor.getValue());
+            assertThat(body).contains("\"type\": \"text\"");
+            assertThat(body).contains("\"type\": \"image\"");
+            assertThat(body).contains("https://example.com/banner.png");
+            assertThat(body).contains("originalContentUrl");
+            assertThat(body).contains("previewImageUrl");
+        }
+
+        @Test
+        @DisplayName("無 imageUrl — 只有 text 訊息（無 image）")
+        void sendsWithoutImageMessage() {
+            when(lineBindingRepository.findByUserIdAndEnabledTrue(USER_ID))
+                    .thenReturn(Optional.of(UserLineBinding.builder()
+                            .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build()));
+
+            service.sendAnnouncementToUser(USER_ID, "公告標題", "公告內容",
+                    NotificationService.COLOR_BLUE, null);
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+
+            String body = bodyToString(captor.getValue());
+            assertThat(body).contains("\"type\": \"text\"");
+            assertThat(body).doesNotContain("\"type\": \"image\"");
+        }
+
+        @Test
+        @DisplayName("空白 imageUrl — 視為無圖片")
+        void blankImageUrlTreatedAsNull() {
+            when(lineBindingRepository.findByUserIdAndEnabledTrue(USER_ID))
+                    .thenReturn(Optional.of(UserLineBinding.builder()
+                            .userId(USER_ID).lineUserId(LINE_USER_ID).enabled(true).build()));
+
+            service.sendAnnouncementToUser(USER_ID, "公告標題", "公告內容",
+                    NotificationService.COLOR_BLUE, "   ");
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+
+            String body = bodyToString(captor.getValue());
+            assertThat(body).doesNotContain("\"type\": \"image\"");
+        }
+
+        @Test
+        @DisplayName("通知關閉 — 不發送")
+        void disabledUserSkipsAnnouncement() {
+            when(userRepository.findById(USER_ID)).thenReturn(
+                    Optional.of(User.builder().lineNotificationEnabled(false).build()));
+            service = new LineNotificationService(httpClient, lineConfig, lineBindingRepository, userRepository);
+
+            service.sendAnnouncementToUser(USER_ID, "Title", "Content",
+                    NotificationService.COLOR_BLUE, "https://example.com/img.png");
+
+            verify(httpClient, never()).newCall(any());
+        }
+
+        @Test
+        @DisplayName("LINE 功能關閉 — 不發送")
+        void lineDisabledSkipsAnnouncement() {
+            when(lineConfig.isEnabled()).thenReturn(false);
+
+            service.sendAnnouncementToUser(USER_ID, "Title", "Content",
+                    NotificationService.COLOR_BLUE, "https://example.com/img.png");
+
+            verify(httpClient, never()).newCall(any());
+        }
+
+        /** 從 OkHttp Request 擷取 body 字串 */
+        private String bodyToString(Request request) {
+            try {
+                okio.Buffer buffer = new okio.Buffer();
+                request.body().writeTo(buffer);
+                return buffer.readUtf8();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+    }
+
     // ==================== 訊息截斷 ====================
 
     @Nested

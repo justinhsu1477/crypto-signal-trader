@@ -677,6 +677,7 @@ export interface AnnouncementResponse {
   category: "GENERAL" | "MAINTENANCE" | "UPDATE" | "URGENT" | "PROMOTION";
   priority: "LOW" | "NORMAL" | "HIGH" | "CRITICAL";
   channels: string;
+  imageUrl?: string;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   publishedAt: string | null;
   createdBy: string;
@@ -692,6 +693,7 @@ export interface CreateAnnouncementRequest {
   category: string;
   priority: string;
   channels: string;
+  imageUrl?: string;
 }
 
 export interface AnnouncementListResponse {

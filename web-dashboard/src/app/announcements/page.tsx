@@ -164,6 +164,19 @@ export default function AnnouncementsPage() {
               <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                 {ann.content}
               </p>
+
+              {/* Image */}
+              {ann.imageUrl && (
+                <div className="mt-3 rounded-lg overflow-hidden border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={ann.imageUrl}
+                    alt={ann.title}
+                    className="max-h-80 w-full object-contain bg-black/10"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>

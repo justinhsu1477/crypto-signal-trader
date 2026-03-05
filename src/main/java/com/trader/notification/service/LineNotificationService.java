@@ -105,6 +105,21 @@ public class LineNotificationService implements NotificationService {
     }
 
     /**
+     * 發送公告通知到用戶（支援附圖）
+     * 用於 AnnouncementConsumer，有圖時送 text + image 兩則訊息。
+     */
+    public void sendAnnouncementToUser(String userId, String title, String message, int color, String imageUrl) {
+        if (!lineConfig.isEnabled()) return;
+        if (!isNotificationEnabledForUser(userId)) {
+            log.debug("用戶 {} LINE 通知已關閉，跳過公告: {}", userId, title);
+            return;
+        }
+
+        Optional<String> lineUserId = getLineUserIdForUser(userId);
+        lineUserId.ifPresent(lid -> pushAnnouncementMessage(lid, title, message, imageUrl));
+    }
+
+    /**
      * 發送通知到所有 ADMIN 的 LINE 帳號
      */
     @Override
@@ -202,6 +217,86 @@ public class LineNotificationService implements NotificationService {
                 }
             }
         });
+    }
+
+    /**
+     * 推送公告訊息到 LINE（支援附圖）
+     * 有 imageUrl 時送 text + image 兩則訊息（LINE 單次 push 最多 5 則）。
+     */
+    private void pushAnnouncementMessage(String lineUserId, String title, String message, String imageUrl) {
+        String timestamp = ZonedDateTime.now(AppConstants.ZONE_ID).format(TIME_FMT);
+        String footer = "Crypto Signal Trader | " + timestamp;
+        String fullText = title + "\n\n" + message + "\n\n" + footer;
+
+        // 截斷處理
+        if (fullText.length() > LINE_TEXT_MAX_LENGTH) {
+            String suffix = "\n\n...（訊息過長已截斷）";
+            int overhead = title.length() + "\n\n".length() + suffix.length()
+                    + "\n\n".length() + footer.length();
+            int allowedLen = LINE_TEXT_MAX_LENGTH - overhead;
+            if (allowedLen > 0) {
+                message = message.substring(0, Math.min(message.length(), allowedLen)) + suffix;
+            }
+        }
+
+        String body;
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            body = buildPushJsonWithImage(lineUserId, title, message, timestamp, imageUrl);
+        } else {
+            body = buildPushJson(lineUserId, title, message, timestamp);
+        }
+
+        Request request = new Request.Builder()
+                .url(PUSH_API_URL)
+                .addHeader("Authorization", "Bearer " + lineConfig.getChannelAccessToken())
+                .addHeader("Content-Type", "application/json")
+                .post(RequestBody.create(body, JSON_TYPE))
+                .build();
+
+        httpClient.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                log.warn("LINE 公告推送失敗: {}", e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    if (!response.isSuccessful()) {
+                        log.warn("LINE 公告推送回應異常: HTTP {} - {}",
+                                response.code(),
+                                response.body() != null ? response.body().string() : "no body");
+                    } else {
+                        log.debug("LINE 公告推送成功（含圖片={}）", imageUrl != null);
+                    }
+                } catch (IOException e) {
+                    log.warn("讀取 LINE 回應失敗: {}", e.getMessage());
+                }
+            }
+        });
+    }
+
+    /**
+     * 建構 LINE Push API JSON（含圖片）
+     * text + image 兩則訊息：LINE 單次 push 最多 5 則
+     */
+    private String buildPushJsonWithImage(String to, String title, String message, String timestamp, String imageUrl) {
+        String fullText = escapeJson(title) + "\\n\\n"
+                + escapeJson(message) + "\\n\\n"
+                + escapeJson("Crypto Signal Trader | " + timestamp);
+        String safeImageUrl = escapeJson(imageUrl);
+        return String.format("""
+                {
+                  "to": "%s",
+                  "messages": [{
+                    "type": "text",
+                    "text": "%s"
+                  }, {
+                    "type": "image",
+                    "originalContentUrl": "%s",
+                    "previewImageUrl": "%s"
+                  }]
+                }""", to, fullText, safeImageUrl, safeImageUrl);
     }
 
     /**

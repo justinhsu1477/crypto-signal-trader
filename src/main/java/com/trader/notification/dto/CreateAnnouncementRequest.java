@@ -34,4 +34,8 @@ public class CreateAnnouncementRequest {
     /** ALL 或逗號分隔：DISCORD,LINE,WEBSOCKET（預設 ALL） */
     @Builder.Default
     private String channels = "ALL";
+
+    /** 附圖 URL（可選，必須為 HTTPS） */
+    @Size(max = 500, message = "圖片 URL 最多 500 字")
+    private String imageUrl;
 }

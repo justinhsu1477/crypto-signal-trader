@@ -91,6 +91,60 @@ class AnnouncementServiceTest {
         }
 
         @Test
+        @DisplayName("含 imageUrl — 正確存入")
+        void createsDraftWithImageUrl() {
+            CreateAnnouncementRequest req = CreateAnnouncementRequest.builder()
+                    .title("活動公告")
+                    .content("限時優惠")
+                    .category("PROMOTION")
+                    .priority("NORMAL")
+                    .channels("ALL")
+                    .imageUrl("https://example.com/promo.png")
+                    .build();
+
+            when(announcementRepository.save(any(Announcement.class)))
+                    .thenAnswer(inv -> {
+                        Announcement a = inv.getArgument(0);
+                        a.setId(2L);
+                        return a;
+                    });
+
+            Announcement result = service.createDraft("admin-1", req);
+
+            assertThat(result.getImageUrl()).isEqualTo("https://example.com/promo.png");
+        }
+
+        @Test
+        @DisplayName("imageUrl 為空字串 — 存為 null")
+        void emptyImageUrlSavedAsNull() {
+            CreateAnnouncementRequest req = CreateAnnouncementRequest.builder()
+                    .title("Test").content("Content")
+                    .category("GENERAL").priority("NORMAL").channels("ALL")
+                    .imageUrl("   ")
+                    .build();
+
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            Announcement result = service.createDraft("admin-1", req);
+
+            assertThat(result.getImageUrl()).isNull();
+        }
+
+        @Test
+        @DisplayName("imageUrl 非 HTTPS — 拋出 IllegalArgumentException")
+        void httpImageUrlThrows() {
+            CreateAnnouncementRequest req = CreateAnnouncementRequest.builder()
+                    .title("Test").content("Content")
+                    .category("GENERAL").priority("NORMAL").channels("ALL")
+                    .imageUrl("http://example.com/image.png")
+                    .build();
+
+            assertThatThrownBy(() -> service.createDraft("admin-1", req))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("HTTPS");
+        }
+
+        @Test
         @DisplayName("無效 category — 預設 GENERAL")
         void invalidCategoryDefaultsToGeneral() {
             CreateAnnouncementRequest req = CreateAnnouncementRequest.builder()
@@ -134,6 +188,28 @@ class AnnouncementServiceTest {
 
             assertThat(result.getTitle()).isEqualTo("New Title");
             assertThat(result.getChannels()).isEqualTo("DISCORD");
+        }
+
+        @Test
+        @DisplayName("更新 imageUrl — 正確覆蓋")
+        void updatesImageUrl() {
+            Announcement existing = Announcement.builder()
+                    .id(1L).title("Old").content("Old content")
+                    .status(Announcement.Status.DRAFT).createdBy("admin-1")
+                    .imageUrl("https://old.com/img.png")
+                    .build();
+            when(announcementRepository.findById(1L)).thenReturn(Optional.of(existing));
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            CreateAnnouncementRequest req = CreateAnnouncementRequest.builder()
+                    .title("New").content("New Content")
+                    .category("UPDATE").priority("HIGH").channels("DISCORD")
+                    .imageUrl("https://new.com/banner.jpg")
+                    .build();
+
+            Announcement result = service.updateDraft(1L, "admin-1", req);
+
+            assertThat(result.getImageUrl()).isEqualTo("https://new.com/banner.jpg");
         }
 
         @Test
@@ -248,6 +324,51 @@ class AnnouncementServiceTest {
             assertThat(msg.getTitle()).isEqualTo("維護公告");
             assertThat(msg.getChannels()).isEqualTo("DISCORD,LINE");
             assertThat(msg.getCategory()).isEqualTo("MAINTENANCE");
+        }
+
+        @Test
+        @DisplayName("RabbitMQ 訊息包含 imageUrl")
+        void rabbitMqMessageContainsImageUrl() {
+            Announcement draft = Announcement.builder()
+                    .id(10L).title("有圖公告").content("含圖片")
+                    .category(Announcement.Category.PROMOTION)
+                    .priority(Announcement.Priority.NORMAL)
+                    .channels("ALL").status(Announcement.Status.DRAFT)
+                    .createdBy("admin-1")
+                    .imageUrl("https://example.com/banner.png")
+                    .build();
+
+            when(announcementRepository.findById(10L)).thenReturn(Optional.of(draft));
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            publishWithAfterCommit(() -> service.publish(10L, "admin-1"));
+
+            ArgumentCaptor<AnnouncementMessage> msgCaptor = ArgumentCaptor.forClass(AnnouncementMessage.class);
+            verify(rabbitTemplate).convertAndSend(anyString(), anyString(), msgCaptor.capture());
+
+            assertThat(msgCaptor.getValue().getImageUrl()).isEqualTo("https://example.com/banner.png");
+        }
+
+        @Test
+        @DisplayName("無 imageUrl — RabbitMQ 訊息 imageUrl 為 null")
+        void rabbitMqMessageNullImageUrl() {
+            Announcement draft = Announcement.builder()
+                    .id(11L).title("無圖公告").content("純文字")
+                    .category(Announcement.Category.GENERAL)
+                    .priority(Announcement.Priority.NORMAL)
+                    .channels("ALL").status(Announcement.Status.DRAFT)
+                    .createdBy("admin-1")
+                    .build();
+
+            when(announcementRepository.findById(11L)).thenReturn(Optional.of(draft));
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            publishWithAfterCommit(() -> service.publish(11L, "admin-1"));
+
+            ArgumentCaptor<AnnouncementMessage> msgCaptor = ArgumentCaptor.forClass(AnnouncementMessage.class);
+            verify(rabbitTemplate).convertAndSend(anyString(), anyString(), msgCaptor.capture());
+
+            assertThat(msgCaptor.getValue().getImageUrl()).isNull();
         }
 
         @Test

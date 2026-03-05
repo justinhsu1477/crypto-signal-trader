@@ -63,6 +63,7 @@ public class AnnouncementService {
                 .category(parseCategory(req.getCategory()))
                 .priority(parsePriority(req.getPriority()))
                 .channels(req.getChannels())
+                .imageUrl(validateImageUrl(req.getImageUrl()))
                 .status(Announcement.Status.DRAFT)
                 .createdBy(adminId)
                 .build();
@@ -87,6 +88,7 @@ public class AnnouncementService {
         announcement.setCategory(parseCategory(req.getCategory()));
         announcement.setPriority(parsePriority(req.getPriority()));
         announcement.setChannels(req.getChannels());
+        announcement.setImageUrl(validateImageUrl(req.getImageUrl()));
 
         announcement = announcementRepository.save(announcement);
         log.info("公告草稿更新: id={}, admin={}", id, adminId);
@@ -255,6 +257,7 @@ public class AnnouncementService {
                 .category(announcement.getCategory().name())
                 .priority(announcement.getPriority().name())
                 .channels(announcement.getChannels())
+                .imageUrl(announcement.getImageUrl())
                 .publishedAt(announcement.getPublishedAt())
                 .createdBy(announcement.getCreatedBy())
                 .build();
@@ -292,5 +295,16 @@ public class AnnouncementService {
         } catch (Exception e) {
             return Announcement.Priority.NORMAL;
         }
+    }
+
+    /** 驗證圖片 URL：非空時必須為 HTTPS，空白則返回 null */
+    private String validateImageUrl(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
+        }
+        if (!imageUrl.startsWith("https://")) {
+            throw new IllegalArgumentException("圖片 URL 必須為 HTTPS");
+        }
+        return imageUrl.trim();
     }
 }

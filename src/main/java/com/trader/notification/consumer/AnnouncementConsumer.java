@@ -68,7 +68,7 @@ public class AnnouncementConsumer {
 
         for (String userId : webhookUserIds) {
             try {
-                discordService.sendNotificationToUser(userId, title, msg.getContent(), color);
+                discordService.sendAnnouncementToUser(userId, title, msg.getContent(), color, msg.getImageUrl());
             } catch (Exception e) {
                 log.warn("Discord 推送失敗（跳過）: userId={}, error={}", userId, e.getMessage());
             }
@@ -102,7 +102,7 @@ public class AnnouncementConsumer {
 
         for (String userId : boundUserIds) {
             try {
-                lineService.sendNotificationToUser(userId, title, msg.getContent(), color);
+                lineService.sendAnnouncementToUser(userId, title, msg.getContent(), color, msg.getImageUrl());
             } catch (Exception e) {
                 log.warn("LINE 推送失敗（跳過）: userId={}, error={}", userId, e.getMessage());
             }

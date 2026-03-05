@@ -221,6 +221,76 @@ class DiscordWebhookServiceTest {
         }
     }
 
+    // ==================== sendAnnouncementToUser ====================
+
+    @Nested
+    @DisplayName("sendAnnouncementToUser — 公告含圖片")
+    class SendAnnouncementToUserTests {
+
+        @Test
+        @DisplayName("有 imageUrl — Embed JSON 包含 image block")
+        void sendsWithImageBlock() {
+            when(perUserSettings.isEnabled()).thenReturn(true);
+            UserDiscordWebhook webhook = new UserDiscordWebhook();
+            webhook.setWebhookUrl("https://discord.com/api/webhooks/user/hook");
+            when(userWebhookRepository.findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc("u1"))
+                    .thenReturn(Optional.of(webhook));
+
+            service.sendAnnouncementToUser("u1", "公告標題", "公告內容",
+                    DiscordWebhookService.COLOR_BLUE, "https://example.com/img.png");
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+
+            String body = bodyToString(captor.getValue());
+            assertThat(body).contains("\"image\"");
+            assertThat(body).contains("https://example.com/img.png");
+        }
+
+        @Test
+        @DisplayName("無 imageUrl — Embed JSON 不含 image block")
+        void sendsWithoutImageBlock() {
+            when(perUserSettings.isEnabled()).thenReturn(true);
+            UserDiscordWebhook webhook = new UserDiscordWebhook();
+            webhook.setWebhookUrl("https://discord.com/api/webhooks/user/hook");
+            when(userWebhookRepository.findFirstByUserIdAndEnabledTrueOrderByUpdatedAtDesc("u1"))
+                    .thenReturn(Optional.of(webhook));
+
+            service.sendAnnouncementToUser("u1", "公告標題", "公告內容",
+                    DiscordWebhookService.COLOR_BLUE, null);
+
+            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
+            verify(httpClient).newCall(captor.capture());
+
+            String body = bodyToString(captor.getValue());
+            assertThat(body).doesNotContain("\"image\"");
+        }
+
+        @Test
+        @DisplayName("通知關閉 — 不發送")
+        void disabledUserSkipsAnnouncement() {
+            User user = User.builder().userId("u1").discordNotificationEnabled(false).build();
+            when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+            service = new DiscordWebhookService(httpClient, webhookConfig, userWebhookRepository, userRepository);
+
+            service.sendAnnouncementToUser("u1", "Title", "Content",
+                    DiscordWebhookService.COLOR_BLUE, "https://example.com/img.png");
+
+            verify(httpClient, never()).newCall(any());
+        }
+
+        /** 從 OkHttp Request 擷取 body 字串 */
+        private String bodyToString(Request request) {
+            try {
+                okio.Buffer buffer = new okio.Buffer();
+                request.body().writeTo(buffer);
+                return buffer.readUtf8();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+    }
+
     // ==================== discordNotificationEnabled 主開關 ====================
 
     @Nested
