@@ -28,6 +28,7 @@ public class AnnouncementMessage implements Serializable {
     private String category;    // GENERAL, MAINTENANCE, UPDATE, URGENT, PROMOTION
     private String priority;    // LOW, NORMAL, HIGH, CRITICAL
     private String channels;    // ALL 或逗號分隔: DISCORD,LINE,WEBSOCKET
+    private String imageUrl;    // 附圖 URL（可選）
     private LocalDateTime publishedAt;
     private String createdBy;
 }

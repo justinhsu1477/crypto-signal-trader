@@ -23,6 +23,7 @@ public class AnnouncementResponse {
     private String category;
     private String priority;
     private String channels;
+    private String imageUrl;
     private String status;
     private LocalDateTime publishedAt;
     private String createdBy;
@@ -43,6 +44,7 @@ public class AnnouncementResponse {
                 .category(a.getCategory().name())
                 .priority(a.getPriority().name())
                 .channels(a.getChannels())
+                .imageUrl(a.getImageUrl())
                 .status(a.getStatus().name())
                 .publishedAt(a.getPublishedAt())
                 .createdBy(a.getCreatedBy())

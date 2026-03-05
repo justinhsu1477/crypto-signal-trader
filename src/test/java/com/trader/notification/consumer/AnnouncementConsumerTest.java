@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 /**
@@ -45,6 +46,20 @@ class AnnouncementConsumerTest {
                 .category(category)
                 .priority(priority)
                 .channels(channels)
+                .publishedAt(LocalDateTime.now())
+                .createdBy("admin-1")
+                .build();
+    }
+
+    private AnnouncementMessage buildMessageWithImage(String channels, String category, String priority, String imageUrl) {
+        return AnnouncementMessage.builder()
+                .announcementId(1L)
+                .title("測試公告")
+                .content("測試內容")
+                .category(category)
+                .priority(priority)
+                .channels(channels)
+                .imageUrl(imageUrl)
                 .publishedAt(LocalDateTime.now())
                 .createdBy("admin-1")
                 .build();
@@ -115,10 +130,10 @@ class AnnouncementConsumerTest {
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService, times(2)).sendNotificationToUser(
-                    anyString(), contains("測試公告"), eq("測試內容"), anyInt());
-            verify(discordService).sendNotificationToUser(eq("user-1"), anyString(), anyString(), anyInt());
-            verify(discordService).sendNotificationToUser(eq("user-2"), anyString(), anyString(), anyInt());
+            verify(discordService, times(2)).sendAnnouncementToUser(
+                    anyString(), contains("測試公告"), eq("測試內容"), anyInt(), isNull());
+            verify(discordService).sendAnnouncementToUser(eq("user-1"), anyString(), anyString(), anyInt(), isNull());
+            verify(discordService).sendAnnouncementToUser(eq("user-2"), anyString(), anyString(), anyInt(), isNull());
         }
 
         @Test
@@ -131,7 +146,7 @@ class AnnouncementConsumerTest {
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService).sendNotificationToUser(eq("user-1"), contains("系統維護"), eq("測試內容"), anyInt());
+            verify(discordService).sendAnnouncementToUser(eq("user-1"), contains("系統維護"), eq("測試內容"), anyInt(), isNull());
         }
 
         @Test
@@ -142,7 +157,7 @@ class AnnouncementConsumerTest {
             consumer.consumeDiscord(msg);
 
             verify(discordWebhookRepository, never()).findUserIdsWithEnabledWebhook();
-            verify(discordService, never()).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+            verify(discordService, never()).sendAnnouncementToUser(anyString(), anyString(), anyString(), anyInt(), any());
         }
 
         @Test
@@ -154,7 +169,7 @@ class AnnouncementConsumerTest {
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService, never()).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+            verify(discordService, never()).sendAnnouncementToUser(anyString(), anyString(), anyString(), anyInt(), any());
         }
 
         @Test
@@ -167,7 +182,21 @@ class AnnouncementConsumerTest {
 
             consumer.consumeDiscord(msg);
 
-            verify(discordService).sendNotificationToUser(eq("user-1"), contains("🚨"), anyString(), anyInt());
+            verify(discordService).sendAnnouncementToUser(eq("user-1"), contains("🚨"), anyString(), anyInt(), isNull());
+        }
+
+        @Test
+        @DisplayName("含 imageUrl — 傳遞到 sendAnnouncementToUser")
+        void passesImageUrlToService() {
+            when(discordWebhookRepository.findUserIdsWithEnabledWebhook())
+                    .thenReturn(List.of("user-1"));
+
+            AnnouncementMessage msg = buildMessageWithImage("ALL", "GENERAL", "NORMAL", "https://example.com/img.png");
+
+            consumer.consumeDiscord(msg);
+
+            verify(discordService).sendAnnouncementToUser(
+                    eq("user-1"), anyString(), anyString(), anyInt(), eq("https://example.com/img.png"));
         }
 
         @Test
@@ -176,14 +205,14 @@ class AnnouncementConsumerTest {
             when(discordWebhookRepository.findUserIdsWithEnabledWebhook())
                     .thenReturn(List.of("user-1", "user-2", "user-3"));
             doThrow(new RuntimeException("Discord API error"))
-                    .when(discordService).sendNotificationToUser(eq("user-2"), anyString(), anyString(), anyInt());
+                    .when(discordService).sendAnnouncementToUser(eq("user-2"), anyString(), anyString(), anyInt(), any());
 
             AnnouncementMessage msg = buildMessage("ALL", "GENERAL", "NORMAL");
 
             assertThatCode(() -> consumer.consumeDiscord(msg)).doesNotThrowAnyException();
 
-            verify(discordService).sendNotificationToUser(eq("user-1"), anyString(), anyString(), anyInt());
-            verify(discordService).sendNotificationToUser(eq("user-3"), anyString(), anyString(), anyInt());
+            verify(discordService).sendAnnouncementToUser(eq("user-1"), anyString(), anyString(), anyInt(), isNull());
+            verify(discordService).sendAnnouncementToUser(eq("user-3"), anyString(), anyString(), anyInt(), isNull());
         }
     }
 
@@ -203,10 +232,10 @@ class AnnouncementConsumerTest {
 
             consumer.consumeLine(msg);
 
-            verify(lineService, times(2)).sendNotificationToUser(
-                    anyString(), contains("測試公告"), eq("測試內容"), anyInt());
-            verify(lineService).sendNotificationToUser(eq("user-1"), anyString(), anyString(), anyInt());
-            verify(lineService).sendNotificationToUser(eq("user-2"), anyString(), anyString(), anyInt());
+            verify(lineService, times(2)).sendAnnouncementToUser(
+                    anyString(), contains("測試公告"), eq("測試內容"), anyInt(), isNull());
+            verify(lineService).sendAnnouncementToUser(eq("user-1"), anyString(), anyString(), anyInt(), isNull());
+            verify(lineService).sendAnnouncementToUser(eq("user-2"), anyString(), anyString(), anyInt(), isNull());
         }
 
         @Test
@@ -217,7 +246,7 @@ class AnnouncementConsumerTest {
             consumer.consumeLine(msg);
 
             verify(lineBindingRepository, never()).findUserIdsWithEnabledBinding();
-            verify(lineService, never()).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+            verify(lineService, never()).sendAnnouncementToUser(anyString(), anyString(), anyString(), anyInt(), any());
         }
 
         @Test
@@ -229,7 +258,21 @@ class AnnouncementConsumerTest {
 
             consumer.consumeLine(msg);
 
-            verify(lineService, never()).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+            verify(lineService, never()).sendAnnouncementToUser(anyString(), anyString(), anyString(), anyInt(), any());
+        }
+
+        @Test
+        @DisplayName("含 imageUrl — 傳遞到 sendAnnouncementToUser")
+        void passesImageUrlToLineService() {
+            when(lineBindingRepository.findUserIdsWithEnabledBinding())
+                    .thenReturn(List.of("user-1"));
+
+            AnnouncementMessage msg = buildMessageWithImage("ALL", "GENERAL", "NORMAL", "https://example.com/banner.jpg");
+
+            consumer.consumeLine(msg);
+
+            verify(lineService).sendAnnouncementToUser(
+                    eq("user-1"), anyString(), anyString(), anyInt(), eq("https://example.com/banner.jpg"));
         }
 
         @Test
@@ -238,7 +281,7 @@ class AnnouncementConsumerTest {
             when(lineBindingRepository.findUserIdsWithEnabledBinding())
                     .thenReturn(List.of("user-1", "user-2", "user-3"));
             doThrow(new RuntimeException("LINE API error"))
-                    .when(lineService).sendNotificationToUser(eq("user-2"), anyString(), anyString(), anyInt());
+                    .when(lineService).sendAnnouncementToUser(eq("user-2"), anyString(), anyString(), anyInt(), any());
 
             AnnouncementMessage msg = buildMessage("ALL", "GENERAL", "NORMAL");
 
@@ -246,8 +289,8 @@ class AnnouncementConsumerTest {
             assertThatCode(() -> consumer.consumeLine(msg)).doesNotThrowAnyException();
 
             // user-1 和 user-3 仍收到通知
-            verify(lineService).sendNotificationToUser(eq("user-1"), anyString(), anyString(), anyInt());
-            verify(lineService).sendNotificationToUser(eq("user-3"), anyString(), anyString(), anyInt());
+            verify(lineService).sendAnnouncementToUser(eq("user-1"), anyString(), anyString(), anyInt(), isNull());
+            verify(lineService).sendAnnouncementToUser(eq("user-3"), anyString(), anyString(), anyInt(), isNull());
         }
     }
 }

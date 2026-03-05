@@ -1506,6 +1506,10 @@ const translations = {
     channelWebSocket: { en: "WebSocket", "zh-TW": "WebSocket", "zh-CN": "WebSocket", ja: "WebSocket" },
     channelDiscord: { en: "Discord", "zh-TW": "Discord", "zh-CN": "Discord", ja: "Discord" },
     channelLine: { en: "LINE", "zh-TW": "LINE", "zh-CN": "LINE", ja: "LINE" },
+    // Image URL
+    imageUrl: { en: "Image URL", "zh-TW": "圖片網址", "zh-CN": "图片网址", ja: "画像URL" },
+    imageUrlPlaceholder: { en: "https://example.com/image.png", "zh-TW": "https://example.com/image.png", "zh-CN": "https://example.com/image.png", ja: "https://example.com/image.png" },
+    imageUrlHint: { en: "Optional. Public HTTPS URL. Supports JPEG, PNG, GIF, WebP.", "zh-TW": "選填。須為公開 HTTPS 網址，支援 JPEG/PNG/GIF/WebP。", "zh-CN": "选填。须为公开 HTTPS 网址，支持 JPEG/PNG/GIF/WebP。", ja: "任意。公開HTTPS URL。JPEG/PNG/GIF/WebP対応。" },
     // Notification toast
     newAnnouncement: { en: "New Announcement", "zh-TW": "新公告", "zh-CN": "新公告", ja: "新しいお知らせ" },
     viewAll: { en: "View All", "zh-TW": "查看全部", "zh-CN": "查看全部", ja: "すべて見る" },

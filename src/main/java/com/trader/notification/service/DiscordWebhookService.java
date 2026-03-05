@@ -102,12 +102,19 @@ public class DiscordWebhookService implements NotificationService {
      * @param color      顏色
      */
     public void sendNotificationToUrl(String webhookUrl, String title, String message, int color) {
+        sendNotificationToUrl(webhookUrl, title, message, color, null);
+    }
+
+    /**
+     * 發送通知到指定的 Webhook URL（支援附圖）
+     */
+    public void sendNotificationToUrl(String webhookUrl, String title, String message, int color, String imageUrl) {
         if (webhookUrl == null || webhookUrl.isBlank()) {
             return;
         }
 
         String timestamp = ZonedDateTime.now(AppConstants.ZONE_ID).format(TIME_FMT);
-        String json = buildEmbedJson(title, message, color, timestamp);
+        String json = buildEmbedJson(title, message, color, timestamp, imageUrl);
 
         Request request = new Request.Builder()
                 .url(webhookUrl)
@@ -151,23 +158,32 @@ public class DiscordWebhookService implements NotificationService {
      *   }]
      * }
      */
-    private String buildEmbedJson(String title, String description, int color, String timestamp) {
+    private String buildEmbedJson(String title, String description, int color, String timestamp, String imageUrl) {
         // 手動建 JSON，避免額外引入 JSON library（OkHttp 不需要）
         // 轉義特殊字元
         String safeTitle = escapeJson(title);
         String safeDesc = escapeJson(description);
+
+        String imageBlock = "";
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            imageBlock = String.format("""
+                    ,
+                        "image": {
+                          "url": "%s"
+                        }""", escapeJson(imageUrl));
+        }
 
         return String.format("""
                 {
                   "embeds": [{
                     "title": "%s",
                     "description": "%s",
-                    "color": %d,
+                    "color": %d%s,
                     "footer": {
                       "text": "Crypto Signal Trader | %s"
                     }
                   }]
-                }""", safeTitle, safeDesc, color, timestamp);
+                }""", safeTitle, safeDesc, color, imageBlock, timestamp);
     }
 
     /**
@@ -273,6 +289,20 @@ public class DiscordWebhookService implements NotificationService {
     public void sendNotificationToUser(String userId, NotificationCategory category,
                                         String title, String message, int color) {
         sendNotificationToUser(userId, title, message, color);
+    }
+
+    /**
+     * 發送公告通知到用戶（支援附圖）
+     * 用於 AnnouncementConsumer，附圖會顯示在 Discord Embed 內。
+     */
+    public void sendAnnouncementToUser(String userId, String title, String message, int color, String imageUrl) {
+        if (!isNotificationEnabledForUser(userId)) {
+            log.debug("用戶 {} Discord 通知已關閉，跳過公告: {}", userId, title);
+            return;
+        }
+
+        Optional<String> webhookUrl = getUserWebhookUrl(userId);
+        webhookUrl.ifPresent(s -> sendNotificationToUrl(s, title, message, color, imageUrl));
     }
 
     /**

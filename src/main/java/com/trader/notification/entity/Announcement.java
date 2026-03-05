@@ -48,6 +48,10 @@ public class Announcement {
     @Builder.Default
     private String channels = "ALL";
 
+    /** 公告附圖 URL（可選，HTTPS、公開可訪問、JPEG/PNG/GIF/WebP） */
+    @Column(length = 500)
+    private String imageUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 15)
     @Builder.Default

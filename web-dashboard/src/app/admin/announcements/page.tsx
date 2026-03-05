@@ -22,6 +22,7 @@ import {
   FileText,
   Globe,
   AlertTriangle,
+  ImageIcon,
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
@@ -56,6 +57,7 @@ export default function AdminAnnouncementsPage() {
   const [formCategory, setFormCategory] = useState<string>("GENERAL");
   const [formPriority, setFormPriority] = useState<string>("NORMAL");
   const [formChannels, setFormChannels] = useState<string>("ALL");
+  const [formImageUrl, setFormImageUrl] = useState("");
 
   function resetForm() {
     setFormTitle("");
@@ -63,6 +65,7 @@ export default function AdminAnnouncementsPage() {
     setFormCategory("GENERAL");
     setFormPriority("NORMAL");
     setFormChannels("ALL");
+    setFormImageUrl("");
     setEditingId(null);
   }
 
@@ -77,6 +80,7 @@ export default function AdminAnnouncementsPage() {
     setFormCategory(ann.category);
     setFormPriority(ann.priority);
     setFormChannels(ann.channels);
+    setFormImageUrl(ann.imageUrl || "");
     setEditingId(ann.id);
     setDialogMode("edit");
   }
@@ -93,6 +97,7 @@ export default function AdminAnnouncementsPage() {
       category: formCategory,
       priority: formPriority,
       channels: formChannels,
+      imageUrl: formImageUrl.trim() || undefined,
     };
   }
 
@@ -365,7 +370,14 @@ export default function AdminAnnouncementsPage() {
                   >
                     <td className="px-4 py-3">
                       <div className="max-w-[240px]">
-                        <div className="font-medium truncate">{ann.title}</div>
+                        <div className="font-medium truncate flex items-center gap-1.5">
+                          {ann.title}
+                          {ann.imageUrl && (
+                            <span title={t("announcement.imageUrl")}>
+                              <ImageIcon className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground truncate mt-0.5">{ann.content}</div>
                       </div>
                     </td>
@@ -545,6 +557,32 @@ export default function AdminAnnouncementsPage() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Image URL (optional) */}
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("announcement.imageUrl")}</label>
+              <input
+                type="url"
+                value={formImageUrl}
+                onChange={(e) => setFormImageUrl(e.target.value)}
+                placeholder={t("announcement.imageUrlPlaceholder")}
+                maxLength={500}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              />
+              <p className="text-xs text-muted-foreground mt-1">{t("announcement.imageUrlHint")}</p>
+              {formImageUrl && formImageUrl.startsWith("https://") && (
+                <div className="mt-2 rounded-lg border border-border overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={formImageUrl}
+                    alt="Preview"
+                    className="max-h-48 w-full object-contain bg-black/20"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    onLoad={(e) => { (e.target as HTMLImageElement).style.display = "block"; }}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Warning for URGENT/CRITICAL */}
