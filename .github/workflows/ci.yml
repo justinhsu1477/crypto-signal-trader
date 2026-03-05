@@ -64,6 +64,7 @@ jobs:
           name: JUnit 測試結果
           path: build/test-results/test/*.xml
           reporter: java-junit
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 覆蓋率報告
         if: success()
