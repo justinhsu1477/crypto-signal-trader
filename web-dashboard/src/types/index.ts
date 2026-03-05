@@ -428,6 +428,8 @@ export interface AdminSystemOverview {
   totalClosedTrades: number;
   totalNetProfit: number;
   todayNetProfit: number;
+  weekNetProfit: number;
+  monthNetProfit: number;
   todayTradeCount: number;
   userSummaries: UserTradingSummary[];
 }
@@ -442,6 +444,8 @@ export interface UserTradingSummary {
   closedTradeCount: number;
   totalNetProfit: number;
   todayPnl: number;
+  weekPnl: number;
+  monthPnl: number;
   todayTradeCount: number;
 }
 

@@ -310,4 +310,20 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
             GROUP BY user_id
             """, nativeQuery = true)
     List<Object[]> aggregateTodayStatsPerUser(@Param("since") LocalDateTime since);
+
+    /**
+     * 通用時間區間批次聚合 — 回傳指定時間之後的交易統計
+     *
+     * 回傳 Object[]：
+     *   [0] userId(String), [1] tradeCount(Long), [2] netProfit(Double)
+     */
+    @Query(value = """
+            SELECT user_id,
+                   COUNT(*) AS trade_count,
+                   COALESCE(SUM(net_profit), 0) AS net_profit
+            FROM trades
+            WHERE status = 'CLOSED' AND exit_time >= :since
+            GROUP BY user_id
+            """, nativeQuery = true)
+    List<Object[]> aggregateStatsPerUserSince(@Param("since") LocalDateTime since);
 }

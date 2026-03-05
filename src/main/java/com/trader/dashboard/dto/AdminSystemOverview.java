@@ -21,6 +21,8 @@ public class AdminSystemOverview {
     private long totalClosedTrades;
     private double totalNetProfit;
     private double todayNetProfit;
+    private double weekNetProfit;
+    private double monthNetProfit;
     private int todayTradeCount;
 
     private List<UserTradingSummary> userSummaries;
@@ -39,6 +41,8 @@ public class AdminSystemOverview {
         private long closedTradeCount;
         private double totalNetProfit;
         private double todayPnl;
+        private double weekPnl;
+        private double monthPnl;
         private int todayTradeCount;
     }
 }
