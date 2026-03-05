@@ -51,6 +51,8 @@ public class AdminDashboardController {
                     SortHelper.longField("closedTradeCount", UserTradingSummary::getClosedTradeCount),
                     SortHelper.doubleField("totalNetProfit", UserTradingSummary::getTotalNetProfit),
                     SortHelper.doubleField("todayPnl", UserTradingSummary::getTodayPnl),
+                    SortHelper.doubleField("weekPnl", UserTradingSummary::getWeekPnl),
+                    SortHelper.doubleField("monthPnl", UserTradingSummary::getMonthPnl),
                     SortHelper.intField("todayTradeCount", UserTradingSummary::getTodayTradeCount)
             );
 
@@ -64,8 +66,8 @@ public class AdminDashboardController {
      *
      * 修復 N+1 問題：
      *   原本 for-each user → getLightweightUserStats() → 每人 ~10 次 DB 查詢
-     *   改為 getBatchLightweightUserStats() 用 2 次 GROUP BY 批次聚合取代。
-     *   100 用戶：1000+ 次查詢 → 3 次查詢（findAll + 2 次聚合）
+     *   改為 getBatchLightweightUserStats() 用 4 次 GROUP BY 批次聚合取代。
+     *   100 用戶：1000+ 次查詢 → 5 次查詢（findAll + 4 次聚合：全期/今日/本周/本月）
      */
     @GetMapping("/system-overview")
     public ResponseEntity<AdminSystemOverview> getSystemOverview(
@@ -73,7 +75,7 @@ public class AdminDashboardController {
             @RequestParam(defaultValue = "asc") String sortDir) {
         List<User> allUsers = userRepository.findAll();
 
-        // 批次取得所有用戶統計（2 queries for all users, 取代 N * 10 queries）
+        // 批次取得所有用戶統計（4 queries for all users, 取代 N * 10 queries）
         Map<String, Map<String, Object>> batchStats = dashboardService.getBatchLightweightUserStats();
 
         int activeUsers = 0;
@@ -82,6 +84,8 @@ public class AdminDashboardController {
         long totalClosedTrades = 0;
         double totalNetProfit = 0;
         double todayNetProfit = 0;
+        double weekNetProfit = 0;
+        double monthNetProfit = 0;
         int todayTradeCount = 0;
 
         List<UserTradingSummary> summaries = new ArrayList<>();
@@ -94,6 +98,8 @@ public class AdminDashboardController {
             long closedCount = stats.containsKey("closedTradeCount") ? ((Number) stats.get("closedTradeCount")).longValue() : 0;
             double netProfit = stats.containsKey("totalNetProfit") ? ((Number) stats.get("totalNetProfit")).doubleValue() : 0;
             double todayPnl = stats.containsKey("todayPnl") ? ((Number) stats.get("todayPnl")).doubleValue() : 0;
+            double weekPnl = stats.containsKey("weekPnl") ? ((Number) stats.get("weekPnl")).doubleValue() : 0;
+            double monthPnl = stats.containsKey("monthPnl") ? ((Number) stats.get("monthPnl")).doubleValue() : 0;
             int todayTrades = stats.containsKey("todayTradeCount") ? ((Number) stats.get("todayTradeCount")).intValue() : 0;
 
             if (openCount > 0) usersWithOpenPositions++;
@@ -101,6 +107,8 @@ public class AdminDashboardController {
             totalClosedTrades += closedCount;
             totalNetProfit += netProfit;
             todayNetProfit += todayPnl;
+            weekNetProfit += weekPnl;
+            monthNetProfit += monthPnl;
             todayTradeCount += todayTrades;
 
             summaries.add(UserTradingSummary.builder()
@@ -113,6 +121,8 @@ public class AdminDashboardController {
                     .closedTradeCount(closedCount)
                     .totalNetProfit(netProfit)
                     .todayPnl(todayPnl)
+                    .weekPnl(weekPnl)
+                    .monthPnl(monthPnl)
                     .todayTradeCount(todayTrades)
                     .build());
         }
@@ -128,6 +138,8 @@ public class AdminDashboardController {
                 .totalClosedTrades(totalClosedTrades)
                 .totalNetProfit(totalNetProfit)
                 .todayNetProfit(todayNetProfit)
+                .weekNetProfit(weekNetProfit)
+                .monthNetProfit(monthNetProfit)
                 .todayTradeCount(todayTradeCount)
                 .userSummaries(sorted)
                 .build());

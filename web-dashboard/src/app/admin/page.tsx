@@ -33,7 +33,7 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />;
 }
 
-type OverviewSortField = "email" | "name" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl";
+type OverviewSortField = "email" | "name" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl" | "weekPnl" | "monthPnl";
 type SortDir = "asc" | "desc";
 
 export default function AdminOverviewPage() {
@@ -71,7 +71,7 @@ export default function AdminOverviewPage() {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortField(field);
-      setSortDir(["totalNetProfit", "todayPnl", "openPositionCount", "closedTradeCount"].includes(field) ? "desc" : "asc");
+      setSortDir(["totalNetProfit", "todayPnl", "weekPnl", "monthPnl", "openPositionCount", "closedTradeCount"].includes(field) ? "desc" : "asc");
     }
   }
 
@@ -141,6 +141,18 @@ export default function AdminOverviewPage() {
       value: `${data.todayNetProfit >= 0 ? "+" : ""}${data.todayNetProfit.toFixed(2)}`,
       icon: LineChart,
       color: data.todayNetProfit >= 0 ? "text-green-500" : "text-red-500",
+    },
+    {
+      label: t("admin.weekPnl"),
+      value: `${data.weekNetProfit >= 0 ? "+" : ""}${data.weekNetProfit.toFixed(2)}`,
+      icon: LineChart,
+      color: data.weekNetProfit >= 0 ? "text-green-500" : "text-red-500",
+    },
+    {
+      label: t("admin.monthPnl"),
+      value: `${data.monthNetProfit >= 0 ? "+" : ""}${data.monthNetProfit.toFixed(2)}`,
+      icon: LineChart,
+      color: data.monthNetProfit >= 0 ? "text-green-500" : "text-red-500",
     },
     { label: t("admin.todayTrades"), value: data.todayTradeCount, icon: TrendingUp, color: "text-yellow-500" },
   ];
@@ -433,6 +445,8 @@ export default function AdminOverviewPage() {
                   { field: "closedTradeCount" as OverviewSortField, label: t("admin.closedTrades"), align: "text-right" },
                   { field: "totalNetProfit" as OverviewSortField, label: t("admin.netProfit"), align: "text-right" },
                   { field: "todayPnl" as OverviewSortField, label: t("admin.todayPnl"), align: "text-right" },
+                  { field: "weekPnl" as OverviewSortField, label: t("admin.weekPnl"), align: "text-right" },
+                  { field: "monthPnl" as OverviewSortField, label: t("admin.monthPnl"), align: "text-right" },
                 ]).map((col) => (
                   <th
                     key={col.field}
@@ -473,11 +487,27 @@ export default function AdminOverviewPage() {
                     {user.todayPnl >= 0 ? "+" : ""}
                     {user.todayPnl.toFixed(2)}
                   </td>
+                  <td
+                    className={`px-4 py-3 text-right font-medium ${
+                      user.weekPnl >= 0 ? "text-green-500" : "text-red-500"
+                    }`}
+                  >
+                    {user.weekPnl >= 0 ? "+" : ""}
+                    {user.weekPnl.toFixed(2)}
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-right font-medium ${
+                      user.monthPnl >= 0 ? "text-green-500" : "text-red-500"
+                    }`}
+                  >
+                    {user.monthPnl >= 0 ? "+" : ""}
+                    {user.monthPnl.toFixed(2)}
+                  </td>
                 </tr>
               ))}
               {sortedSummaries.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
                     No users found
                   </td>
                 </tr>

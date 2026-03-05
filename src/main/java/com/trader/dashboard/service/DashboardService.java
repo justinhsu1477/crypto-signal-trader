@@ -690,13 +690,15 @@ public class DashboardService {
         // 1. 批次聚合：已平倉統計 + OPEN 持倉數（1 query for all users）
         tradeRecordService.getTradeRepository().aggregateStatsPerUser().forEach(row -> {
             String userId = (String) row[0];
-            result.put(userId, new HashMap<>(Map.of(
-                    "openPositionCount", ((Number) row[4]).intValue(),
-                    "closedTradeCount", ((Number) row[1]).longValue(),
-                    "totalNetProfit", ((Number) row[3]).doubleValue(),
-                    "todayPnl", 0.0,
-                    "todayTradeCount", 0L
-            )));
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("openPositionCount", ((Number) row[4]).intValue());
+            stats.put("closedTradeCount", ((Number) row[1]).longValue());
+            stats.put("totalNetProfit", ((Number) row[3]).doubleValue());
+            stats.put("todayPnl", 0.0);
+            stats.put("todayTradeCount", 0L);
+            stats.put("weekPnl", 0.0);
+            stats.put("monthPnl", 0.0);
+            result.put(userId, stats);
         });
 
         // 2. 批次聚合：今日統計（1 query for all users）
@@ -709,13 +711,37 @@ public class DashboardService {
                 stats.put("todayPnl", ((Number) row[2]).doubleValue());
             } else {
                 // 用戶只有今日交易、沒有歷史交易的情況（理論上不會，但防禦性處理）
-                result.put(userId, new HashMap<>(Map.of(
-                        "openPositionCount", 0,
-                        "closedTradeCount", 0L,
-                        "totalNetProfit", 0.0,
-                        "todayPnl", ((Number) row[2]).doubleValue(),
-                        "todayTradeCount", ((Number) row[1]).longValue()
-                )));
+                Map<String, Object> newStats = new HashMap<>();
+                newStats.put("openPositionCount", 0);
+                newStats.put("closedTradeCount", 0L);
+                newStats.put("totalNetProfit", 0.0);
+                newStats.put("todayPnl", ((Number) row[2]).doubleValue());
+                newStats.put("todayTradeCount", ((Number) row[1]).longValue());
+                newStats.put("weekPnl", 0.0);
+                newStats.put("monthPnl", 0.0);
+                result.put(userId, newStats);
+            }
+        });
+
+        // 3. 批次聚合：本周統計（1 query for all users）
+        LocalDateTime startOfWeek = LocalDate.now(AppConstants.ZONE_ID)
+                .with(DayOfWeek.MONDAY).atStartOfDay();
+        tradeRecordService.getTradeRepository().aggregateStatsPerUserSince(startOfWeek).forEach(row -> {
+            String userId = (String) row[0];
+            Map<String, Object> stats = result.get(userId);
+            if (stats != null) {
+                stats.put("weekPnl", ((Number) row[2]).doubleValue());
+            }
+        });
+
+        // 4. 批次聚合：本月統計（1 query for all users）
+        LocalDateTime startOfMonth = LocalDate.now(AppConstants.ZONE_ID)
+                .withDayOfMonth(1).atStartOfDay();
+        tradeRecordService.getTradeRepository().aggregateStatsPerUserSince(startOfMonth).forEach(row -> {
+            String userId = (String) row[0];
+            Map<String, Object> stats = result.get(userId);
+            if (stats != null) {
+                stats.put("monthPnl", ((Number) row[2]).doubleValue());
             }
         });
 
