@@ -476,6 +476,13 @@ public class TradeRecordService {
         double entryQty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
         trade.setRemainingQuantity(entryQty - (prevClosed + closedQty));
 
+        // 計算本次部分平倉毛利並累加到 partialProfit
+        double entry = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
+        int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
+        double partialGross = (closeOrder.getPrice() - entry) * closedQty * direction;
+        double prevPartialProfit = trade.getPartialProfit() != null ? trade.getPartialProfit() : 0;
+        trade.setPartialProfit(round2(prevPartialProfit + partialGross));
+
         // 記錄最近一次部分平倉的價格（不設 status=CLOSED）
         trade.setExitPrice(closeOrder.getPrice());
         trade.setExitQuantity(closedQty);
@@ -1110,9 +1117,15 @@ public class TradeRecordService {
             trade.setTotalClosedQuantity(prevClosed + exitQuantity);
             trade.setRemainingQuantity(effectiveQty - exitQuantity);
 
-            // 部分平倉暫不計算最終盈虧（等全平或後續平倉再算）
-            // 但記錄出場手續費的累加
+            // 記錄出場手續費的累加
             trade.setCommission(round2(entryCommission + commission));
+
+            // 計算本次部分平倉毛利並累加到 partialProfit
+            double entry = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
+            int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
+            double partialGross = (exitPrice - entry) * exitQuantity * direction;
+            double prevPartialProfit = trade.getPartialProfit() != null ? trade.getPartialProfit() : 0;
+            trade.setPartialProfit(round2(prevPartialProfit + partialGross));
 
             tradeRepository.save(trade);
 
@@ -1131,11 +1144,15 @@ public class TradeRecordService {
             // 毛利用實際出場數量（不是 entryQuantity）
             double entry = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
             int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
-            double grossProfit = (exitPrice - entry) * exitQuantity * direction;
-            trade.setGrossProfit(round2(grossProfit));
+            double finalGross = (exitPrice - entry) * exitQuantity * direction;
 
-            // 淨利 = 毛利 - 總手續費
-            trade.setNetProfit(round2(grossProfit - trade.getCommission()));
+            // 加上之前所有部分平倉累計的毛利
+            double partialProfit = trade.getPartialProfit() != null ? trade.getPartialProfit() : 0;
+            double totalGross = finalGross + partialProfit;
+            trade.setGrossProfit(round2(totalGross));
+
+            // 淨利 = 總毛利 - 總手續費
+            trade.setNetProfit(round2(totalGross - trade.getCommission()));
 
             tradeRepository.save(trade);
 
@@ -1251,7 +1268,11 @@ public class TradeRecordService {
 
         // 方向因子：LONG → (exit - entry), SHORT → (entry - exit)
         int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
-        double grossProfit = (exit - entry) * qty * direction;
+        double finalGross = (exit - entry) * qty * direction;
+
+        // 加上之前所有部分平倉累計的毛利
+        double partialProfit = trade.getPartialProfit() != null ? trade.getPartialProfit() : 0;
+        double totalGross = finalGross + partialProfit;
 
         // 手續費：入場 (已記錄) + 出場
         // 出場優先用真實值，fallback 到估算值（保守 taker 0.04%）
@@ -1259,10 +1280,10 @@ public class TradeRecordService {
         double exitCom = realExitCommission > 0 ? round2(realExitCommission) : round2(exit * qty * 0.0004);
         double commission = entryCom + exitCom;
 
-        double netProfit = grossProfit - commission;
+        double netProfit = totalGross - commission;
 
         trade.setCommission(round2(commission));
-        trade.setGrossProfit(round2(grossProfit));
+        trade.setGrossProfit(round2(totalGross));
         trade.setNetProfit(round2(netProfit));
     }
 

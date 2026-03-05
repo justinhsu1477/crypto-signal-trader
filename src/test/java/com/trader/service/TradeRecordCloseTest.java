@@ -182,7 +182,7 @@ class TradeRecordCloseTest {
     class RecordPartialClose {
 
         @Test
-        @DisplayName("首次部分平倉 50% — 追蹤剩餘量 + 維持 OPEN")
+        @DisplayName("首次部分平倉 50% — 追蹤剩餘量 + 累加 partialProfit + 維持 OPEN")
         void firstPartialClose() {
             Trade trade = Trade.builder()
                     .tradeId("t1").symbol("BTCUSDT").side("LONG")
@@ -205,10 +205,12 @@ class TradeRecordCloseTest {
             assertThat(trade.getExitReason()).isEqualTo("SIGNAL_CLOSE_PARTIAL");
             assertThat(trade.getExitPrice()).isEqualTo(97000.0);
             assertThat(trade.getExitQuantity()).isEqualTo(0.5);
+            // partialProfit = (97000 - 95000) * 0.5 * 1 = 1000
+            assertThat(trade.getPartialProfit()).isEqualTo(1000.0);
         }
 
         @Test
-        @DisplayName("連續兩次部分平倉 — totalClosedQuantity 累加正確")
+        @DisplayName("連續兩次部分平倉 — totalClosedQuantity + partialProfit 累加正確")
         void twoPartialCloses() {
             Trade trade = Trade.builder()
                     .tradeId("t1").symbol("BTCUSDT").side("LONG")
@@ -218,7 +220,7 @@ class TradeRecordCloseTest {
 
             when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(trade));
 
-            // 第一次部分平倉 30%
+            // 第一次部分平倉 30% @ 96000
             OrderResult close1 = OrderResult.builder()
                     .success(true).orderId("C1").symbol("BTCUSDT")
                     .side("SELL").type("LIMIT").price(96000).quantity(0.3)
@@ -227,8 +229,10 @@ class TradeRecordCloseTest {
 
             assertThat(trade.getTotalClosedQuantity()).isEqualTo(0.3);
             assertThat(trade.getRemainingQuantity()).isEqualTo(0.7);
+            // partialProfit = (96000 - 95000) * 0.3 * 1 = 300
+            assertThat(trade.getPartialProfit()).isEqualTo(300.0);
 
-            // 第二次部分平倉 20%
+            // 第二次部分平倉 20% @ 97000
             OrderResult close2 = OrderResult.builder()
                     .success(true).orderId("C2").symbol("BTCUSDT")
                     .side("SELL").type("LIMIT").price(97000).quantity(0.2)
@@ -238,6 +242,8 @@ class TradeRecordCloseTest {
             assertThat(trade.getTotalClosedQuantity()).isEqualTo(0.5);
             assertThat(trade.getRemainingQuantity()).isEqualTo(0.5);
             assertThat(trade.getStatus()).isEqualTo("OPEN");
+            // partialProfit = 300 + (97000 - 95000) * 0.2 * 1 = 300 + 400 = 700
+            assertThat(trade.getPartialProfit()).isEqualTo(700.0);
         }
     }
 
@@ -287,8 +293,10 @@ class TradeRecordCloseTest {
             assertThat(trade.getExitReason()).isEqualTo("TP_TRIGGERED_PARTIAL");
             assertThat(trade.getTotalClosedQuantity()).isEqualTo(0.5);
             assertThat(trade.getRemainingQuantity()).isEqualTo(0.5);
-            // 部分平倉不算淨利
+            // 部分平倉不算最終淨利，但累加 partialProfit
             assertThat(trade.getNetProfit()).isNull();
+            // partialProfit = (96000 - 95000) * 0.5 * 1 = 500
+            assertThat(trade.getPartialProfit()).isEqualTo(500.0);
         }
 
         @Test
@@ -311,26 +319,28 @@ class TradeRecordCloseTest {
         }
 
         @Test
-        @DisplayName("有 remainingQuantity 的全平判斷 — 部分平倉過的 trade")
+        @DisplayName("有 remainingQuantity 的全平判斷 — 部分平倉過的 trade，grossProfit 含 partialProfit")
         void fullCloseAfterPartialClose() {
             Trade trade = Trade.builder()
                     .tradeId("t1").symbol("BTCUSDT").side("LONG")
                     .entryPrice(95000.0).entryQuantity(1.0)
                     .remainingQuantity(0.5)  // 已部分平倉
                     .totalClosedQuantity(0.5)
+                    .partialProfit(500.0)    // 之前部分平倉累計毛利 (96000-95000)*0.5 = 500
                     .entryCommission(19.0)
                     .status("OPEN")
                     .build();
 
             when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
 
-            // 出場 0.5 BTC = remainingQuantity → 全平
+            // 出場 0.5 BTC = remainingQuantity → 全平 @ 93000
             service.recordCloseFromStream("BTCUSDT", 93000.0, 0.5,
                     9.3, -1000.0, "101", "SL_TRIGGERED", 1700000000000L);
 
             assertThat(trade.getStatus()).isEqualTo("CLOSED");
-            // 毛利 = (93000 - 95000) * 0.5 * 1 = -1000
-            assertThat(trade.getGrossProfit()).isEqualTo(-1000.0);
+            // 最終部分毛利 = (93000 - 95000) * 0.5 * 1 = -1000
+            // 總毛利 = -1000 + 500 (partialProfit) = -500
+            assertThat(trade.getGrossProfit()).isEqualTo(-500.0);
         }
     }
 
