@@ -216,13 +216,13 @@ const translations = {
   // ─── landing ───
   landing: {
     statusBadge: { en: "System Running — 24/7 Auto-Trading", "zh-TW": "系統運行中 — 24/7 全自動交易", "zh-CN": "系统运行中 — 24/7 全自动交易", ja: "Binance非保管自動トレーディング" },
-    heroTitle1: { en: "Sleep Easy,", "zh-TW": "安心睡，", "zh-CN": "安心睡，", ja: "安心して眠れ、" },
-    heroTitle2: { en: "Auto-Follow", "zh-TW": "自動跟單", "zh-CN": "自动跟单", ja: "自動フォロー" },
+    heroTitle1: { en: "Focus Is Your Scarcest Asset", "zh-TW": "專注力，才是最稀缺的資產", "zh-CN": "专注力，才是最稀缺的资产", ja: "集中力こそ、最も希少な資産" },
+    heroTitle2: { en: "", "zh-TW": "", "zh-CN": "", ja: "" },
     heroDescription: {
-      en: "One API. Execution + risk control, all wired up.",
-      "zh-TW": "接上 API，策略執行跟風控一次搞定。",
-      "zh-CN": "接上 API，策略执行跟风控一次搞定。",
-      ja: "API接続だけ。実行もリスク管理も一括で。",
+      en: "Don't miss short-term trades — let HookFi execute for you.",
+      "zh-TW": "不想放棄短線機會，就把執行交給 HookFi。",
+      "zh-CN": "不想放弃短线机会，就把执行交给 HookFi。",
+      ja: "短期トレードを逃したくないなら、実行はHookFiに任せよう。",
     },
     featureSignalTitle: { en: "Real-time Signals", "zh-TW": "即時訊號", "zh-CN": "实时信号", ja: "リアルタイムシグナル" },
     featureSignalDesc: {

@@ -82,13 +82,10 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
           ) : (
             <div className="animate-fade-in-up animation-delay-200">
               <h1
-                className="text-3xl font-normal leading-none tracking-tight text-black sm:text-5xl lg:text-6xl"
+                className="text-3xl font-extrabold leading-none tracking-tight text-black sm:text-5xl lg:text-6xl"
                 style={{ letterSpacing: "-0.01em", lineHeight: 1.0 }}
               >
-                {t("landing.heroTitle1")}{" "}
-                <strong className="block text-4xl font-extrabold sm:text-6xl lg:text-7xl">
-                  {t("landing.heroTitle2")}
-                </strong>
+                {t("landing.heroTitle1")}
               </h1>
 
               <p className="mt-3 max-w-[440px] text-sm leading-relaxed text-gray-500 sm:mt-5 sm:text-lg">
