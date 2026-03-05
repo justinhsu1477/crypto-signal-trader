@@ -27,8 +27,14 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showLegalDialog, setShowLegalDialog] = useState(false);
+  const [pendingLineRedirect, setPendingLineRedirect] = useState(false);
 
   function handleLineRegister() {
+    if (!agreedToTerms) {
+      setPendingLineRedirect(true);
+      setShowLegalDialog(true);
+      return;
+    }
     window.location.href = "/api/auth/oauth/line";
   }
 
@@ -226,7 +232,13 @@ export default function RegisterPage() {
         <LegalDisclaimerDialog
           open={showLegalDialog}
           onOpenChange={setShowLegalDialog}
-          onAgree={() => setAgreedToTerms(true)}
+          onAgree={() => {
+            setAgreedToTerms(true);
+            if (pendingLineRedirect) {
+              setPendingLineRedirect(false);
+              window.location.href = "/api/auth/oauth/line";
+            }
+          }}
         />
 
         <p className="text-center text-sm text-gray-500 pt-2">
