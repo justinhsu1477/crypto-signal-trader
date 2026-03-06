@@ -69,6 +69,12 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     long countClosedTrades();
 
     /**
+     * 至少有一筆已平倉交易的不同用戶數（Funnel Stats 用）
+     */
+    @Query("SELECT COUNT(DISTINCT t.userId) FROM Trade t WHERE t.status = 'CLOSED'")
+    long countDistinctUserIdsWithClosedTrades();
+
+    /**
      * 已平倉交易的淨利總和
      */
     @Query("SELECT COALESCE(SUM(t.netProfit), 0) FROM Trade t WHERE t.status = 'CLOSED'")

@@ -71,7 +71,10 @@ class DashboardServiceOverviewTest {
                 tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class),
                 tradeConfigResolver, multiUserConfig, userApiKeyService,
                 Mockito.mock(com.trader.user.service.UserDiscordWebhookService.class),
-                Mockito.mock(StartOfDayBalanceCache.class));
+                Mockito.mock(StartOfDayBalanceCache.class),
+                Mockito.mock(com.trader.trading.repository.TradeRepository.class),
+                Mockito.mock(com.trader.referral.repository.UserExchangeReferralLinkRepository.class),
+                Mockito.mock(com.trader.subscription.repository.SubscriptionRepository.class));
     }
 
     // ==================== userId 隔離驗證 ====================

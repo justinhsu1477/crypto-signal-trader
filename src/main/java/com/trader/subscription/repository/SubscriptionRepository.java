@@ -25,6 +25,12 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     @Query("SELECT s.userId FROM Subscription s WHERE s.status IN ('ACTIVE', 'LIFETIME')")
     List<String> findUserIdsWithActiveSubscription();
 
+    /**
+     * 有效訂閱 (ACTIVE/LIFETIME) 的用戶數（Funnel Stats 用）
+     */
+    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.status IN ('ACTIVE', 'LIFETIME')")
+    long countActiveSubscriptions();
+
     Optional<Subscription> findByStripeSubscriptionId(String stripeSubscriptionId);
 
     Optional<Subscription> findByStripeCustomerId(String stripeCustomerId);

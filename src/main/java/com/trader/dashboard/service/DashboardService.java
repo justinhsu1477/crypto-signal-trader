@@ -1,6 +1,7 @@
 package com.trader.dashboard.service;
 
 import com.trader.dashboard.dto.DashboardOverview;
+import com.trader.dashboard.dto.FunnelStatsResponse;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.shared.config.AppConstants;
@@ -13,7 +14,12 @@ import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.TradeConfigResolver;
+import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.referral.entity.ReferralStatus;
+import com.trader.referral.repository.UserExchangeReferralLinkRepository;
+import com.trader.subscription.repository.SubscriptionRepository;
+import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
@@ -59,6 +65,9 @@ public class DashboardService {
     private final UserApiKeyService userApiKeyService;
     private final UserDiscordWebhookService userDiscordWebhookService;
     private final StartOfDayBalanceCache startOfDayBalanceCache;
+    private final TradeRepository tradeRepository;
+    private final UserExchangeReferralLinkRepository referralLinkRepository;
+    private final SubscriptionRepository subscriptionRepository;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
@@ -810,6 +819,87 @@ public class DashboardService {
         });
 
         return result;
+    }
+
+    // ── Funnel Stats ──
+
+    /**
+     * 用戶漏斗統計 — 6 階段 + 註冊趨勢 + 最近註冊列表
+     *
+     * 階段判斷（由高到低）：
+     * subscribed → traded → api_key_set → referral_verified → email_verified → registered
+     */
+    @Transactional(readOnly = true)
+    public FunnelStatsResponse getFunnelStats() {
+        long totalUsers = userRepository.count();
+        long emailVerified = userRepository.countByEmailVerifiedTrue();
+        long referralVerified = referralLinkRepository.countByStatus(ReferralStatus.VERIFIED);
+        Set<String> userIdsWithApiKey = userApiKeyService.getUserIdsWithApiKey("BINANCE");
+        long hasApiKey = userIdsWithApiKey.size();
+        long hasTraded = tradeRepository.countDistinctUserIdsWithClosedTrades();
+        long activeSubscription = subscriptionRepository.countActiveSubscriptions();
+
+        // 註冊趨勢（最近 90 天）
+        LocalDateTime since = LocalDateTime.now(ZoneId.of("Asia/Taipei")).minusDays(90);
+        List<Object[]> regRows = userRepository.countRegistrationsByDate(since);
+        List<FunnelStatsResponse.DateCount> registrationsByDate = regRows.stream()
+                .map(row -> FunnelStatsResponse.DateCount.builder()
+                        .date(row[0].toString())
+                        .count(((Number) row[1]).longValue())
+                        .build())
+                .toList();
+
+        // 最近 10 筆註冊 + stage 判斷
+        Set<String> activeSubUserIds = new HashSet<>(subscriptionRepository.findUserIdsWithActiveSubscription());
+        List<User> recentUsers = userRepository.findTop10ByOrderByCreatedAtDesc();
+        List<FunnelStatsResponse.RecentUser> recentUserList = recentUsers.stream()
+                .map(user -> {
+                    String stage = determineUserStage(user, userIdsWithApiKey, activeSubUserIds);
+                    return FunnelStatsResponse.RecentUser.builder()
+                            .userId(user.getUserId())
+                            .name(user.getName())
+                            .email(user.getEmail())
+                            .createdAt(user.getCreatedAt() != null
+                                    ? user.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                                    : null)
+                            .stage(stage)
+                            .build();
+                })
+                .toList();
+
+        return FunnelStatsResponse.builder()
+                .totalUsers((int) totalUsers)
+                .emailVerified((int) emailVerified)
+                .referralVerified((int) referralVerified)
+                .hasApiKey((int) hasApiKey)
+                .hasTraded((int) hasTraded)
+                .activeSubscription((int) activeSubscription)
+                .registrationsByDate(registrationsByDate)
+                .recentUsers(recentUserList)
+                .build();
+    }
+
+    /**
+     * 判斷用戶目前的漏斗階段（由高到低）
+     */
+    private String determineUserStage(User user, Set<String> userIdsWithApiKey,
+                                       Set<String> activeSubUserIds) {
+        String userId = user.getUserId();
+
+        if (activeSubUserIds.contains(userId)) return "subscribed";
+
+        long closedCount = tradeRepository.countByUserIdAndStatus(userId, "CLOSED");
+        if (closedCount > 0) return "traded";
+
+        if (userIdsWithApiKey.contains(userId)) return "api_key_set";
+
+        boolean referralOk = referralLinkRepository
+                .existsByUserIdAndExchangeAndStatus(userId, "BINANCE", ReferralStatus.VERIFIED);
+        if (referralOk) return "referral_verified";
+
+        if (user.isEmailVerified()) return "email_verified";
+
+        return "registered";
     }
 
     private double round2(double value) {

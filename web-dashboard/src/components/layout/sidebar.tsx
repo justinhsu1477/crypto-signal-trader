@@ -20,6 +20,8 @@ import {
   Bell,
   Zap,
   Radio,
+  TrendingUp,
+  Users2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -47,6 +49,8 @@ export function Sidebar() {
     { href: "/admin/users", label: t("nav.adminUsers"), icon: Users },
     { href: "/admin/referrals", label: t("nav.adminReferrals"), icon: ClipboardCheck },
     { href: "/admin/subscriptions", label: t("nav.adminSubscriptions"), icon: CreditCard },
+    { href: "/admin/analytics", label: t("nav.adminAnalytics"), icon: TrendingUp },
+    { href: "/admin/insights", label: t("nav.adminInsights"), icon: Users2 },
     { href: "/admin/broadcast-logs", label: t("nav.adminBroadcastLogs"), icon: Radio },
     { href: "/admin/announcements", label: t("nav.adminAnnouncements"), icon: Megaphone },
     { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },

@@ -69,7 +69,10 @@ class DashboardServiceBatchStatsTest {
                 mock(MultiUserConfig.class),
                 userApiKeyService,
                 mock(UserDiscordWebhookService.class),
-                mock(StartOfDayBalanceCache.class)
+                mock(StartOfDayBalanceCache.class),
+                tradeRepository,
+                mock(com.trader.referral.repository.UserExchangeReferralLinkRepository.class),
+                mock(com.trader.subscription.repository.SubscriptionRepository.class)
         );
     }
 

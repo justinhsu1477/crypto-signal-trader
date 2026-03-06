@@ -25,4 +25,9 @@ public interface UserExchangeReferralLinkRepository extends JpaRepository<UserEx
      */
     @Query("SELECT l.userId FROM UserExchangeReferralLink l WHERE l.exchange = ?1 AND l.status = 'VERIFIED'")
     List<String> findVerifiedUserIds(String exchange);
+
+    /**
+     * 按狀態統計推薦碼數量（Funnel Stats 用）
+     */
+    long countByStatus(ReferralStatus status);
 }

@@ -56,6 +56,8 @@ const translations = {
     adminSettings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置", ja: "設定" },
     adminSignal: { en: "Emergency Signal", "zh-TW": "緊急訊號", "zh-CN": "紧急信号", ja: "緊急シグナル" },
     adminBroadcastLogs: { en: "Broadcast Logs", "zh-TW": "廣播紀錄", "zh-CN": "广播记录", ja: "ブロードキャストログ" },
+    adminAnalytics: { en: "Member Analytics", "zh-TW": "會員績效分析", "zh-CN": "会员绩效分析", ja: "メンバー分析" },
+    adminInsights: { en: "User Insights", "zh-TW": "用戶洞察", "zh-CN": "用户洞察", ja: "ユーザーインサイト" },
     adminAnnouncements: { en: "Announcements", "zh-TW": "公告管理", "zh-CN": "公告管理", ja: "お知らせ管理" },
     adminMetrics: { en: "System Metrics", "zh-TW": "系統指標", "zh-CN": "系统指标", ja: "システムメトリクス" },
     metricsOrders: { en: "Order Success Rate", "zh-TW": "下單成功率", "zh-CN": "下单成功率", ja: "注文成功率" },
@@ -1057,6 +1059,15 @@ const translations = {
       "zh-CN": "完成推荐码绑定以解锁所有功能",
     },
     bannerAction: { en: "Complete Now", "zh-TW": "立即完成", "zh-CN": "立即完成" },
+    // Onboarding dialog
+    onboardingTitle: { en: "Welcome! Complete Referral Binding", "zh-TW": "歡迎！請完成推薦碼綁定", "zh-CN": "欢迎！请完成推荐码绑定" },
+    onboardingDesc: {
+      en: "Register a Binance account using the referral link below, then enter your exchange UID.",
+      "zh-TW": "請先用以下推薦碼註冊幣安帳戶，再填入您的交易所 UID",
+      "zh-CN": "请先用以下推荐码注册币安账户，再填入您的交易所 UID",
+    },
+    skipForNow: { en: "Maybe later", "zh-TW": "稍後再說", "zh-CN": "稍后再说" },
+    submitError: { en: "Submit failed, please try again", "zh-TW": "提交失敗，請重試", "zh-CN": "提交失败，请重试" },
   },
   // ─── legal disclaimer ───
   legal: {
@@ -1247,8 +1258,7 @@ const translations = {
     monthNetProfit: { en: "Month Net Profit", "zh-TW": "本月淨利潤", "zh-CN": "本月净利润" },
     todayTrades: { en: "Today Trades", "zh-TW": "今日交易數", "zh-CN": "今日交易数", ja: "今日の取引" },
     userSummaries: { en: "User Summaries", "zh-TW": "用戶摘要", "zh-CN": "用户摘要" },
-    email: { en: "Email", "zh-TW": "信箱", "zh-CN": "邮箱", ja: "メール" },
-    name: { en: "Name", "zh-TW": "名稱", "zh-CN": "名称", ja: "名前" },
+    userLabel: { en: "User", "zh-TW": "用戶", "zh-CN": "用户", ja: "ユーザー" },
     openPositions: { en: "Open", "zh-TW": "持倉", "zh-CN": "持仓", ja: "オープンポジション" },
     closedTrades: { en: "Closed", "zh-TW": "已平倉", "zh-CN": "已平仓" },
     netProfit: { en: "Net Profit", "zh-TW": "淨利潤", "zh-CN": "净利润", ja: "純利益" },
@@ -1384,6 +1394,7 @@ const translations = {
     healthCircuitBreaker: { en: "Circuit Breaker Active", "zh-TW": "熔斷已觸發", "zh-CN": "熔断已触发", ja: "サーキットブレーカー発動" },
     healthInactive: { en: "Inactive 7+ days", "zh-TW": "7天以上未交易", "zh-CN": "7天以上未交易", ja: "7日以上未取引" },
     healthConsecutiveLosses: { en: "5+ consecutive losses", "zh-TW": "連續虧損5次以上", "zh-CN": "连续亏损5次以上", ja: "5回以上の連続損失" },
+    healthNotTrading: { en: "Not trading", "zh-TW": "未開啟交易", "zh-CN": "未开启交易", ja: "取引未開始" },
     // Database Stats
     databaseStorage: { en: "Database Storage", "zh-TW": "資料庫儲存", "zh-CN": "数据库存储" },
     storageUsage: { en: "Storage Usage", "zh-TW": "儲存用量", "zh-CN": "存储用量" },
@@ -1392,6 +1403,31 @@ const translations = {
     size: { en: "Size", "zh-TW": "大小", "zh-CN": "大小" },
     neonFreeTier: { en: "Neon Free Tier", "zh-TW": "Neon 免費版", "zh-CN": "Neon 免费版" },
     dbStatsError: { en: "Failed to load database stats", "zh-TW": "載入資料庫統計失敗", "zh-CN": "加载数据库统计失败" },
+  },
+
+  // ─── analytics (admin) ───
+  analytics: {
+    title: { en: "Member Analytics", "zh-TW": "會員績效分析", "zh-CN": "会员绩效分析", ja: "メンバー分析" },
+    selectUser: { en: "Select a user to view...", "zh-TW": "選擇用戶查看...", "zh-CN": "选择用户查看...", ja: "ユーザーを選択..." },
+    selectUserHint: { en: "Select a user to view performance analytics", "zh-TW": "請選擇用戶以查看績效分析", "zh-CN": "请选择用户以查看绩效分析", ja: "パフォーマンス分析を表示するユーザーを選択" },
+    trades: { en: "trades", "zh-TW": "筆交易", "zh-CN": "笔交易", ja: "取引" },
+  },
+
+  // ─── insights (admin) ───
+  insights: {
+    title: { en: "User Insights", "zh-TW": "用戶洞察", "zh-CN": "用户洞察", ja: "ユーザーインサイト" },
+    funnelTitle: { en: "User Funnel", "zh-TW": "用戶漏斗", "zh-CN": "用户漏斗", ja: "ユーザーファネル" },
+    registrationTrend: { en: "Registration Trend (90 days)", "zh-TW": "註冊趨勢（90 天）", "zh-CN": "注册趋势（90 天）", ja: "登録トレンド（90日）" },
+    recentRegistrations: { en: "Recent Registrations", "zh-TW": "最近註冊", "zh-CN": "最近注册", ja: "最近の登録" },
+    stageRegistered: { en: "Registered", "zh-TW": "已註冊", "zh-CN": "已注册", ja: "登録済み" },
+    stageEmailVerified: { en: "Email Verified", "zh-TW": "Email 已驗證", "zh-CN": "Email 已验证", ja: "Email認証済み" },
+    stageReferralVerified: { en: "Referral Verified", "zh-TW": "推薦碼已驗證", "zh-CN": "推荐码已验证", ja: "リファーラル認証済み" },
+    stageApiKey: { en: "API Key Set", "zh-TW": "已設定 API Key", "zh-CN": "已设置 API Key", ja: "APIキー設定済み" },
+    stageTraded: { en: "Has Traded", "zh-TW": "已交易", "zh-CN": "已交易", ja: "取引済み" },
+    stageSubscribed: { en: "Subscribed", "zh-TW": "已訂閱", "zh-CN": "已订阅", ja: "サブスクリプション" },
+    conversionRate: { en: "conversion", "zh-TW": "轉換率", "zh-CN": "转化率", ja: "変換率" },
+    registrations: { en: "Registrations", "zh-TW": "註冊數", "zh-CN": "注册数", ja: "登録数" },
+    stage: { en: "Stage", "zh-TW": "階段", "zh-CN": "阶段", ja: "ステージ" },
   },
 
   // ─── blog ───
