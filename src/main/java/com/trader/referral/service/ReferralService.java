@@ -153,12 +153,11 @@ public class ReferralService {
 
         return pendingLinks.stream()
                 .map(link -> {
-                    String email = userRepository.findById(link.getUserId())
-                            .map(User::getEmail)
-                            .orElse("unknown");
+                    User user = userRepository.findById(link.getUserId()).orElse(null);
                     return AdminPendingResponse.builder()
                             .userId(link.getUserId())
-                            .email(email)
+                            .name(user != null ? user.getName() : "unknown")
+                            .email(user != null ? user.getEmail() : null)
                             .exchangeUid(link.getExchangeUid())
                             .submittedAt(link.getCreatedAt())
                             .build();

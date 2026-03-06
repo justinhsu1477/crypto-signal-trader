@@ -8,7 +8,7 @@ import type { AdminUserListResponse, AdminUserSummary } from "@/types";
 import { Users, UserCheck, ShieldCheck, Check, X, Power, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 
-type SortField = "email" | "name" | "role" | "enabled" | "autoTradeEnabled" | "createdAt";
+type SortField = "name" | "role" | "enabled" | "autoTradeEnabled" | "createdAt";
 type SortDir = "asc" | "desc";
 
 export default function AdminUsersPage() {
@@ -136,8 +136,7 @@ export default function AdminUsersPage() {
             <thead>
               <tr className="border-b border-border text-muted-foreground">
                 {([
-                  { field: "email" as SortField, label: t("admin.email"), align: "text-left" },
-                  { field: "name" as SortField, label: t("admin.name"), align: "text-left" },
+                  { field: "name" as SortField, label: t("admin.userLabel"), align: "text-left" },
                   { field: "role" as SortField, label: t("admin.role"), align: "text-center" },
                   { field: "enabled" as SortField, label: t("admin.status"), align: "text-center" },
                   { field: "autoTradeEnabled" as SortField, label: t("admin.autoTrade"), align: "text-center" },
@@ -167,25 +166,29 @@ export default function AdminUsersPage() {
                     className="border-b border-border/50 hover:bg-accent/30 transition-colors cursor-pointer"
                   >
                     <td className="px-4 py-3">
-                      <div className="font-mono text-xs">{user.email || "-"}</div>
-                      {user.loginMethods && user.loginMethods.length > 0 && (
-                        <div className="flex gap-1 mt-0.5">
-                          {user.loginMethods.map((m) => (
-                            <span
-                              key={m}
-                              className={`inline-block px-1.5 py-px rounded text-[10px] font-medium leading-tight ${
-                                m === "LINE"
-                                  ? "bg-green-500/15 text-green-400"
-                                  : "bg-gray-500/15 text-gray-400"
-                              }`}
-                            >
-                              {m}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <div className="text-sm font-medium">{user.name || "-"}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {user.email ? (
+                          <span className="font-mono text-xs text-muted-foreground">{user.email}</span>
+                        ) : null}
+                        {user.loginMethods && user.loginMethods.length > 0 && (
+                          <div className="flex gap-1">
+                            {user.loginMethods.map((m) => (
+                              <span
+                                key={m}
+                                className={`inline-block px-1.5 py-px rounded text-[10px] font-medium leading-tight ${
+                                  m === "LINE"
+                                    ? "bg-green-500/15 text-green-400"
+                                    : "bg-gray-500/15 text-gray-400"
+                                }`}
+                              >
+                                {m}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3">{user.name || "-"}</td>
                     <td className="px-4 py-3 text-center">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${

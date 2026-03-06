@@ -66,7 +66,7 @@ export default function AdminReferralsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
-                  <th className="text-left px-4 py-3 font-medium">{t("admin.email")}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t("admin.userLabel")}</th>
                   <th className="text-left px-4 py-3 font-medium">{t("admin.exchangeUid")}</th>
                   <th className="text-left px-4 py-3 font-medium">{t("admin.submittedAt")}</th>
                   <th className="text-center px-4 py-3 font-medium">{t("admin.actions")}</th>
@@ -80,8 +80,17 @@ export default function AdminReferralsPage() {
                       key={item.userId}
                       className="border-b border-border/50 hover:bg-accent/30 transition-colors"
                     >
-                      <td className="px-4 py-3 font-mono text-xs">
-                        {item.email}
+                      <td className="px-4 py-3">
+                        <div className="text-sm font-medium">{item.name || "unknown"}</div>
+                        <div className="mt-0.5">
+                          {item.email ? (
+                            <span className="font-mono text-xs text-muted-foreground">{item.email}</span>
+                          ) : (
+                            <span className="inline-block px-1.5 py-px rounded bg-green-500/15 text-green-400 text-[10px] font-medium">
+                              LINE
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs">
                         {item.exchangeUid}
