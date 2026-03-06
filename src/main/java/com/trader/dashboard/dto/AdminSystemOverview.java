@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -44,5 +45,11 @@ public class AdminSystemOverview {
         private double weekPnl;
         private double monthPnl;
         private int todayTradeCount;
+
+        // 健康度指標
+        private boolean hasBinanceApiKey;
+        private boolean circuitBreakerActive;
+        private LocalDateTime lastTradeAt;
+        private int consecutiveLosses;
     }
 }

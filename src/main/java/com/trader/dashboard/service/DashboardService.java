@@ -745,6 +745,70 @@ public class DashboardService {
             }
         });
 
+        // 5. API Key 查詢：複用已有方法（1 query for all users）
+        Set<String> userIdsWithApiKey = userApiKeyService.getUserIdsWithApiKey("BINANCE");
+        result.forEach((userId, stats) -> stats.put("hasBinanceApiKey", userIdsWithApiKey.contains(userId)));
+
+        // 6. lastTradeAt + consecutiveLosses（1 JPQL query → Java 計算）
+        Map<String, LocalDateTime> lastTradeMap = new HashMap<>();
+        Map<String, Integer> consecutiveLossMap = new HashMap<>();
+        String currentUserId = null;
+        int currentStreak = 0;
+        boolean streakBroken = false;
+
+        for (Object[] row : tradeRecordService.getTradeRepository().findRecentClosedTradesAllUsers()) {
+            String uid = (String) row[0];
+            LocalDateTime exitTime = (LocalDateTime) row[1];
+            double netProfit = row[2] != null ? ((Number) row[2]).doubleValue() : 0.0;
+
+            // 換用戶 → 儲存前一個用戶的結果
+            if (!uid.equals(currentUserId)) {
+                if (currentUserId != null) {
+                    consecutiveLossMap.put(currentUserId, currentStreak);
+                }
+                currentUserId = uid;
+                currentStreak = 0;
+                streakBroken = false;
+                lastTradeMap.put(uid, exitTime); // 已按 exitTime DESC 排序，第一筆就是最新
+            }
+
+            // 連續虧損：從最近一筆往回數，遇到盈利就停
+            if (!streakBroken) {
+                if (netProfit < 0) {
+                    currentStreak++;
+                } else {
+                    streakBroken = true;
+                }
+            }
+        }
+        // 最後一個用戶
+        if (currentUserId != null) {
+            consecutiveLossMap.put(currentUserId, currentStreak);
+        }
+
+        result.forEach((userId, stats) -> {
+            stats.put("lastTradeAt", lastTradeMap.get(userId));
+            stats.put("consecutiveLosses", consecutiveLossMap.getOrDefault(userId, 0));
+        });
+
+        // 7. circuitBreakerActive — 簡化版（用 maxDailyLossUsdt 絕對上限比較，不需 Binance API）
+        result.forEach((userId, stats) -> {
+            double todayPnl = (double) stats.get("todayPnl");
+            boolean cbActive = false;
+            if (todayPnl < 0) {
+                try {
+                    EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
+                    double limit = config.maxDailyLossUsdt();
+                    if (limit > 0 && Math.abs(todayPnl) >= limit) {
+                        cbActive = true;
+                    }
+                } catch (Exception e) {
+                    // 無法解析 config → 忽略，不影響 overview
+                }
+            }
+            stats.put("circuitBreakerActive", cbActive);
+        });
+
         return result;
     }
 

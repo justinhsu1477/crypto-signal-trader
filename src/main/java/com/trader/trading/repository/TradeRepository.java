@@ -326,4 +326,18 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
             GROUP BY user_id
             """, nativeQuery = true)
     List<Object[]> aggregateStatsPerUserSince(@Param("since") LocalDateTime since);
+
+    // ========== 用戶健康度查詢 ==========
+
+    /**
+     * 批次取得所有用戶已平倉交易（依 exitTime DESC 排序）
+     * 用於 Java 層計算 lastTradeAt 和 consecutiveLosses
+     *
+     * 回傳 Object[]：
+     *   [0] userId(String), [1] exitTime(LocalDateTime), [2] netProfit(Double)
+     */
+    @Query("SELECT t.userId, t.exitTime, t.netProfit FROM Trade t " +
+           "WHERE t.status = 'CLOSED' AND t.exitTime IS NOT NULL " +
+           "ORDER BY t.userId, t.exitTime DESC")
+    List<Object[]> findRecentClosedTradesAllUsers();
 }
