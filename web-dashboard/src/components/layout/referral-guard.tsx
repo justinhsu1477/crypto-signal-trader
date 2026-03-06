@@ -9,12 +9,14 @@ import { useT } from "@/lib/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
 
 const DISMISS_KEY = "referral-banner-dismissed";
+const ONBOARDING_SEEN_KEY = "referral-onboarding-seen";
 
 /**
  * 推薦碼軟提醒 Banner
  * - 未驗證用戶：顯示黃色可關閉 banner
  * - 可按 X 關閉（sessionStorage 記住，新 session 重新顯示）
  * - 已驗證 / Admin → 不顯示
+ * - 首次引導 Dialog 尚未看過 → 由 Dialog 處理，Banner 隱藏
  */
 export function ReferralBanner() {
   const { role } = useAuth();
@@ -25,8 +27,12 @@ export function ReferralBanner() {
     return sessionStorage.getItem(DISMISS_KEY) === "true";
   });
 
-  // 檢查中 or 不需要 or 已關閉 → 不顯示
-  if (isChecking || !needsReferral || dismissed) return null;
+  // 首次引導 Dialog 尚未看過 → 由 Dialog 處理，Banner 隱藏
+  const onboardingNotSeen = typeof window !== "undefined"
+    && localStorage.getItem(ONBOARDING_SEEN_KEY) !== "true";
+
+  // 檢查中 or 不需要 or 已關閉 or Dialog 在處理 → 不顯示
+  if (isChecking || !needsReferral || dismissed || onboardingNotSeen) return null;
 
   function handleDismiss() {
     setDismissed(true);

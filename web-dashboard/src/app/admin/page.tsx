@@ -34,16 +34,24 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />;
 }
 
-type OverviewSortField = "email" | "name" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl" | "weekPnl" | "monthPnl";
+type OverviewSortField = "name" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl" | "weekPnl" | "monthPnl";
 type SortDir = "asc" | "desc";
 
 interface HealthWarning {
-  color: "red" | "yellow";
+  color: "red" | "yellow" | "gray";
   labelKey: string;
 }
 
 function getHealthWarnings(user: UserTradingSummary): HealthWarning[] {
   const warnings: HealthWarning[] = [];
+
+  // 未開啟交易 → 灰色標籤，跳過交易相關警告
+  if (!user.autoTradeEnabled) {
+    warnings.push({ color: "gray", labelKey: "admin.healthNotTrading" });
+    return warnings;
+  }
+
+  // 以下只對「已開啟交易」的用戶檢查
   if (!user.hasBinanceApiKey) warnings.push({ color: "red", labelKey: "admin.healthNoApiKey" });
   if (user.circuitBreakerActive) warnings.push({ color: "red", labelKey: "admin.healthCircuitBreaker" });
   if (!user.lastTradeAt || Date.now() - new Date(user.lastTradeAt).getTime() > 7 * 24 * 60 * 60 * 1000) {
@@ -63,7 +71,7 @@ export default function AdminOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [dbTablesOpen, setDbTablesOpen] = useState(false);
-  const [sortField, setSortField] = useState<OverviewSortField>("email");
+  const [sortField, setSortField] = useState<OverviewSortField>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   useEffect(() => {
@@ -456,8 +464,7 @@ export default function AdminOverviewPage() {
             <thead>
               <tr className="border-b border-border text-muted-foreground">
                 {([
-                  { field: "email" as OverviewSortField, label: t("admin.email"), align: "text-left" },
-                  { field: "name" as OverviewSortField, label: t("admin.name"), align: "text-left" },
+                  { field: "name" as OverviewSortField, label: t("admin.userLabel"), align: "text-left" },
                   { field: null, label: t("admin.healthStatus"), align: "text-center" },
                   { field: "openPositionCount" as OverviewSortField, label: t("admin.openPositions"), align: "text-right" },
                   { field: "closedTradeCount" as OverviewSortField, label: t("admin.closedTrades"), align: "text-right" },
@@ -491,8 +498,16 @@ export default function AdminOverviewPage() {
                   key={user.userId}
                   className="border-b border-border/50 hover:bg-accent/30 transition-colors"
                 >
-                  <td className="px-4 py-3 font-mono text-xs">{user.email}</td>
-                  <td className="px-4 py-3">{user.name || "-"}</td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-medium">{user.name || "-"}</div>
+                    {user.email ? (
+                      <div className="font-mono text-xs text-muted-foreground mt-0.5">{user.email}</div>
+                    ) : (
+                      <span className="inline-block mt-0.5 px-1.5 py-px rounded bg-green-500/15 text-green-400 text-[10px] font-medium">
+                        LINE
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     {(() => {
                       const warnings = getHealthWarnings(user);
@@ -501,17 +516,20 @@ export default function AdminOverviewPage() {
                           <span title={t("admin.healthGood")} className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
                         );
                       }
+                      const dotColor = warnings.some((w) => w.color === "red")
+                        ? "bg-red-500"
+                        : warnings.some((w) => w.color === "yellow")
+                          ? "bg-yellow-500"
+                          : "bg-gray-500";
                       return (
                         <span
                           title={warnings.map((w) => t(w.labelKey)).join("\n")}
                           className="inline-flex items-center gap-1"
                         >
-                          {warnings.some((w) => w.color === "red") ? (
-                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
-                          ) : (
-                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-yellow-500" />
+                          <span className={`inline-block h-2.5 w-2.5 rounded-full ${dotColor}`} />
+                          {warnings.some((w) => w.color !== "gray") && (
+                            <span className="text-xs text-muted-foreground">{warnings.length}</span>
                           )}
-                          <span className="text-xs text-muted-foreground">{warnings.length}</span>
                         </span>
                       );
                     })()}

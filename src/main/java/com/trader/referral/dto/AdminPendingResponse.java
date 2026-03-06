@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class AdminPendingResponse {
     private String userId;
+    private String name;
     private String email;
     private String exchangeUid;
     private LocalDateTime submittedAt;
