@@ -541,7 +541,8 @@ export interface NotificationPreferencesDetailInfo {
 
 export interface AdminPendingReferral {
   userId: string;
-  email: string;
+  name: string;
+  email: string | null;
   exchangeUid: string;
   submittedAt: string;
 }
@@ -768,6 +769,32 @@ export interface BroadcastUserResult {
   email: string;
   success: boolean;
   errorMessage: string | null;
+}
+
+// ==================== Funnel Stats (Admin Insights) ====================
+
+export interface FunnelStatsResponse {
+  totalUsers: number;
+  emailVerified: number;
+  referralVerified: number;
+  hasApiKey: number;
+  hasTraded: number;
+  activeSubscription: number;
+  registrationsByDate: DateCount[];
+  recentUsers: RecentUser[];
+}
+
+export interface DateCount {
+  date: string;
+  count: number;
+}
+
+export interface RecentUser {
+  userId: string;
+  name: string;
+  email: string | null;
+  createdAt: string;
+  stage: string;
 }
 
 export interface BroadcastLogDetail extends BroadcastLogSummary {

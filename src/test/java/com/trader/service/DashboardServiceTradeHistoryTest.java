@@ -54,7 +54,10 @@ class DashboardServiceTradeHistoryTest {
                 tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, userRepository,
                 Mockito.mock(TradeConfigResolver.class), multiUserConfig, userApiKeyService,
                 Mockito.mock(com.trader.user.service.UserDiscordWebhookService.class),
-                Mockito.mock(StartOfDayBalanceCache.class));
+                Mockito.mock(StartOfDayBalanceCache.class),
+                Mockito.mock(com.trader.trading.repository.TradeRepository.class),
+                Mockito.mock(com.trader.referral.repository.UserExchangeReferralLinkRepository.class),
+                Mockito.mock(com.trader.subscription.repository.SubscriptionRepository.class));
     }
 
     /**

@@ -7,6 +7,7 @@ import com.trader.dashboard.dto.AdminSystemOverview.UserTradingSummary;
 import com.trader.dashboard.dto.DatabaseStatsResponse;
 import com.trader.dashboard.dto.DatabaseStatsResponse.TableStats;
 import com.trader.dashboard.dto.DashboardOverview;
+import com.trader.dashboard.dto.FunnelStatsResponse;
 import com.trader.dashboard.dto.PerformanceStats;
 import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
@@ -266,6 +267,16 @@ public class AdminDashboardController {
     @GetMapping("/metrics")
     public ResponseEntity<Map<String, Object>> getMetrics() {
         return ResponseEntity.ok(metricsService.getMetricsSummary());
+    }
+
+    // ── 用戶漏斗統計 ──
+
+    /**
+     * 用戶漏斗統計 — 6 階段 + 註冊趨勢 + 最近註冊
+     */
+    @GetMapping("/funnel")
+    public ResponseEntity<FunnelStatsResponse> getFunnelStats() {
+        return ResponseEntity.ok(dashboardService.getFunnelStats());
     }
 
     // ── 廣播紀錄 ──

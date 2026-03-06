@@ -819,3 +819,17 @@ export async function getAdminBroadcastLogs(page = 0, size = 20): Promise<Broadc
 export async function getAdminBroadcastLogDetail(id: number): Promise<BroadcastLogDetail> {
   return request<BroadcastLogDetail>(`/api/admin/dashboard/broadcast-logs/${id}`);
 }
+
+// ─── Admin User Performance (Analytics) ───
+
+export async function getAdminUserPerformance(userId: string, days: number): Promise<PerformanceStats> {
+  return request<PerformanceStats>(`/api/admin/dashboard/users/${userId}/performance?days=${days}`);
+}
+
+// ─── Admin Funnel Stats (Insights) ───
+
+import type { FunnelStatsResponse } from "@/types";
+
+export async function getAdminFunnelStats(): Promise<FunnelStatsResponse> {
+  return request<FunnelStatsResponse>("/api/admin/dashboard/funnel");
+}

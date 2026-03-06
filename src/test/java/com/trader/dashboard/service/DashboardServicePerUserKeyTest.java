@@ -71,7 +71,10 @@ class DashboardServicePerUserKeyTest {
                 riskConfig, userRepository, tradeConfigResolver,
                 multiUserConfig, userApiKeyService,
                 mock(com.trader.user.service.UserDiscordWebhookService.class),
-                mock(StartOfDayBalanceCache.class));
+                mock(StartOfDayBalanceCache.class),
+                mock(com.trader.trading.repository.TradeRepository.class),
+                mock(com.trader.referral.repository.UserExchangeReferralLinkRepository.class),
+                mock(com.trader.subscription.repository.SubscriptionRepository.class));
     }
 
     @Nested
