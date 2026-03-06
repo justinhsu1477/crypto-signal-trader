@@ -1,5 +1,7 @@
 package com.trader.dashboard.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.dashboard.dto.AdminSystemOverview;
 import com.trader.dashboard.dto.AdminSystemOverview.UserTradingSummary;
 import com.trader.dashboard.dto.DatabaseStatsResponse;
@@ -10,10 +12,17 @@ import com.trader.dashboard.dto.TradeHistoryResponse;
 import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.service.MetricsService;
 import com.trader.shared.util.SortHelper;
+import com.trader.trading.dto.BroadcastLogResponse;
+import com.trader.trading.dto.BroadcastLogResponse.BroadcastLogDetail;
+import com.trader.trading.dto.BroadcastLogResponse.BroadcastLogSummary;
+import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +30,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -53,13 +63,18 @@ public class AdminDashboardController {
                     SortHelper.doubleField("todayPnl", UserTradingSummary::getTodayPnl),
                     SortHelper.doubleField("weekPnl", UserTradingSummary::getWeekPnl),
                     SortHelper.doubleField("monthPnl", UserTradingSummary::getMonthPnl),
-                    SortHelper.intField("todayTradeCount", UserTradingSummary::getTodayTradeCount)
+                    SortHelper.intField("todayTradeCount", UserTradingSummary::getTodayTradeCount),
+                    SortHelper.booleanField("hasBinanceApiKey", UserTradingSummary::isHasBinanceApiKey),
+                    SortHelper.booleanField("circuitBreakerActive", UserTradingSummary::isCircuitBreakerActive),
+                    SortHelper.intField("consecutiveLosses", UserTradingSummary::getConsecutiveLosses)
             );
 
     private final DashboardService dashboardService;
     private final UserRepository userRepository;
     private final DataSource dataSource;
     private final MetricsService metricsService;
+    private final BroadcastLogRepository broadcastLogRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * 系統全域概覽 — 所有用戶匯總 + per-user 摘要
@@ -102,6 +117,12 @@ public class AdminDashboardController {
             double monthPnl = stats.containsKey("monthPnl") ? ((Number) stats.get("monthPnl")).doubleValue() : 0;
             int todayTrades = stats.containsKey("todayTradeCount") ? ((Number) stats.get("todayTradeCount")).intValue() : 0;
 
+            // 健康度指標
+            boolean hasBinanceApiKey = Boolean.TRUE.equals(stats.get("hasBinanceApiKey"));
+            boolean circuitBreakerActive = Boolean.TRUE.equals(stats.get("circuitBreakerActive"));
+            LocalDateTime lastTradeAt = stats.get("lastTradeAt") instanceof LocalDateTime lt ? lt : null;
+            int consecutiveLosses = stats.containsKey("consecutiveLosses") ? ((Number) stats.get("consecutiveLosses")).intValue() : 0;
+
             if (openCount > 0) usersWithOpenPositions++;
             totalOpenPositions += openCount;
             totalClosedTrades += closedCount;
@@ -124,6 +145,10 @@ public class AdminDashboardController {
                     .weekPnl(weekPnl)
                     .monthPnl(monthPnl)
                     .todayTradeCount(todayTrades)
+                    .hasBinanceApiKey(hasBinanceApiKey)
+                    .circuitBreakerActive(circuitBreakerActive)
+                    .lastTradeAt(lastTradeAt)
+                    .consecutiveLosses(consecutiveLosses)
                     .build());
         }
 
@@ -241,5 +266,89 @@ public class AdminDashboardController {
     @GetMapping("/metrics")
     public ResponseEntity<Map<String, Object>> getMetrics() {
         return ResponseEntity.ok(metricsService.getMetricsSummary());
+    }
+
+    // ── 廣播紀錄 ──
+
+    /**
+     * 廣播紀錄列表（分頁，不含 userResults 明細）
+     */
+    @GetMapping("/broadcast-logs")
+    public ResponseEntity<BroadcastLogResponse> getBroadcastLogs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Page<BroadcastLog> logs = broadcastLogRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));
+
+        List<BroadcastLogSummary> summaries = logs.getContent().stream()
+                .map(l -> BroadcastLogSummary.builder()
+                        .id(l.getId())
+                        .signalAction(l.getSignalAction())
+                        .symbol(l.getSymbol())
+                        .side(l.getSide())
+                        .totalUsers(l.getTotalUsers())
+                        .successCount(l.getSuccessCount())
+                        .failCount(l.getFailCount())
+                        .skippedNoSub(l.getSkippedNoSub())
+                        .skippedNoKey(l.getSkippedNoKey())
+                        .status(l.getStatus())
+                        .aiConfidence(l.getAiConfidence())
+                        .durationMs(l.getDurationMs())
+                        .createdAt(l.getCreatedAt())
+                        .build())
+                .toList();
+
+        return ResponseEntity.ok(BroadcastLogResponse.builder()
+                .content(summaries)
+                .page(page)
+                .size(size)
+                .totalPages(logs.getTotalPages())
+                .totalElements(logs.getTotalElements())
+                .build());
+    }
+
+    /**
+     * 廣播紀錄明細（含 userResults JSON 解析）
+     */
+    @GetMapping("/broadcast-logs/{id}")
+    public ResponseEntity<BroadcastLogDetail> getBroadcastLogDetail(@PathVariable Long id) {
+        return broadcastLogRepository.findById(id)
+                .map(l -> {
+                    List<BroadcastLogResponse.UserResult> userResults = List.of();
+                    if (l.getUserResults() != null) {
+                        try {
+                            userResults = objectMapper.readValue(l.getUserResults(),
+                                    new TypeReference<List<BroadcastLogResponse.UserResult>>() {});
+                        } catch (Exception e) {
+                            log.warn("解析 userResults JSON 失敗: logId={}", id);
+                        }
+                    }
+
+                    return ResponseEntity.ok(BroadcastLogDetail.builder()
+                            .id(l.getId())
+                            .signalAction(l.getSignalAction())
+                            .symbol(l.getSymbol())
+                            .side(l.getSide())
+                            .entryPrice(l.getEntryPrice())
+                            .stopLoss(l.getStopLoss())
+                            .takeProfit(l.getTakeProfit())
+                            .closeRatio(l.getCloseRatio())
+                            .newStopLoss(l.getNewStopLoss())
+                            .newTakeProfit(l.getNewTakeProfit())
+                            .isDca(l.getIsDca())
+                            .sourceAuthor(l.getSourceAuthor())
+                            .totalUsers(l.getTotalUsers())
+                            .successCount(l.getSuccessCount())
+                            .failCount(l.getFailCount())
+                            .skippedNoSub(l.getSkippedNoSub())
+                            .skippedNoKey(l.getSkippedNoKey())
+                            .status(l.getStatus())
+                            .aiConfidence(l.getAiConfidence())
+                            .aiReasoning(l.getAiReasoning())
+                            .durationMs(l.getDurationMs())
+                            .createdAt(l.getCreatedAt())
+                            .userResults(userResults)
+                            .build());
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 }

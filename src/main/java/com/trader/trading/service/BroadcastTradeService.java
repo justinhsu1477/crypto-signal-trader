@@ -1,11 +1,14 @@
 package com.trader.trading.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
+import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -41,9 +44,14 @@ public class BroadcastTradeService {
     private final SubscriptionRepository subscriptionRepository;
     private final SignalScoringService signalScoringService;
     private final TradeRepository tradeRepository;
+    private final BroadcastLogRepository broadcastLogRepository;
+    private final ObjectMapper objectMapper;
     private final ExecutorService broadcastExecutor;
 
     private static final long TASK_TIMEOUT_SECONDS = 30;
+
+    /** 結構化用戶結果（供持久化用） */
+    record UserResultData(String userId, String email, boolean success, String errorMessage) {}
 
     public BroadcastTradeService(
             UserRepository userRepository,
@@ -53,6 +61,8 @@ public class BroadcastTradeService {
             SubscriptionRepository subscriptionRepository,
             SignalScoringService signalScoringService,
             TradeRepository tradeRepository,
+            BroadcastLogRepository broadcastLogRepository,
+            ObjectMapper objectMapper,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor) {
         this.userRepository = userRepository;
         this.binanceFuturesService = binanceFuturesService;
@@ -61,6 +71,8 @@ public class BroadcastTradeService {
         this.subscriptionRepository = subscriptionRepository;
         this.signalScoringService = signalScoringService;
         this.tradeRepository = tradeRepository;
+        this.broadcastLogRepository = broadcastLogRepository;
+        this.objectMapper = objectMapper;
         this.broadcastExecutor = broadcastExecutor;
     }
 
@@ -141,6 +153,9 @@ public class BroadcastTradeService {
             } else {
                 message = "所有用戶均未符合條件 (訂閱/API Key)";
             }
+            saveBroadcastLog(request, 0, 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, "COMPLETED", null,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
             return Map.of(
                     "status", "COMPLETED",
                     "totalUsers", 0,
@@ -157,6 +172,8 @@ public class BroadcastTradeService {
         // Thread-safe 收集明細（成交限 10 筆、失敗限 5 筆，避免訊息過長）
         ConcurrentLinkedQueue<String> successDetails = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<String> failDetails = new ConcurrentLinkedQueue<>();
+        // 結構化結果收集（供廣播紀錄持久化）
+        ConcurrentLinkedQueue<UserResultData> userResultsLog = new ConcurrentLinkedQueue<>();
         int maxSuccessDetails = 10;
         int maxFailDetails = 5;
         // CLOSE 專用：收集 PnL 做彙總
@@ -174,6 +191,7 @@ public class BroadcastTradeService {
                 try {
                     List<OrderResult> results = binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
                     successCount.incrementAndGet();
+                    userResultsLog.add(new UserResultData(user.getUserId(), user.getEmail(), true, null));
                     log.debug("跟單成功: userId={}", user.getUserId());
 
                     // 找到主要成交結果
@@ -220,6 +238,7 @@ public class BroadcastTradeService {
                     }
                 } catch (Exception e) {
                     failCount.incrementAndGet();
+                    userResultsLog.add(new UserResultData(user.getUserId(), user.getEmail(), false, e.getMessage()));
                     log.error("跟單失敗: userId={} error={}", user.getUserId(), e.getMessage());
 
                     // 收集失敗明細（限 maxFailDetails 筆，CAS-free — size 可能略超，可接受）
@@ -349,6 +368,11 @@ public class BroadcastTradeService {
                         summaryColor);
             }
 
+            // 持久化廣播紀錄（save 失敗不影響交易主流程）
+            saveBroadcastLog(request, activeUsers.size(), successCount.get(), failCount.get(),
+                    skippedNoSubscription, skippedNoApiKey, "COMPLETED", finalScore,
+                    userResultsLog, broadcastStartTime);
+
             return Map.of(
                     "status", "COMPLETED",
                     "totalUsers", activeUsers.size(),
@@ -465,6 +489,51 @@ public class BroadcastTradeService {
             }
             default -> userDisplay + ": 成功";
         };
+    }
+
+    /**
+     * 持久化廣播紀錄 — save 失敗只 log warning，不影響交易主流程
+     */
+    private void saveBroadcastLog(TradeRequest request, int totalUsers, int successCount, int failCount,
+                                   int skippedNoSub, int skippedNoKey, String status, SignalScore score,
+                                   ConcurrentLinkedQueue<UserResultData> userResults, LocalDateTime startTime) {
+        try {
+            String userResultsJson = null;
+            if (!userResults.isEmpty()) {
+                userResultsJson = objectMapper.writeValueAsString(new ArrayList<>(userResults));
+            }
+
+            long durationMs = Duration.between(startTime, LocalDateTime.now(AppConstants.ZONE_ID)).toMillis();
+
+            BroadcastLog logEntry = BroadcastLog.builder()
+                    .signalAction(request.getAction())
+                    .symbol(request.getSymbol())
+                    .side(request.getSide())
+                    .entryPrice(request.getEntryPrice())
+                    .stopLoss(request.getStopLoss())
+                    .takeProfit(request.getTakeProfit())
+                    .closeRatio(request.getCloseRatio())
+                    .newStopLoss(request.getNewStopLoss())
+                    .newTakeProfit(request.getNewTakeProfit())
+                    .isDca(request.getIsDca())
+                    .sourceAuthor(request.getSource() != null ? request.getSource().getAuthorName() : null)
+                    .totalUsers(totalUsers)
+                    .successCount(successCount)
+                    .failCount(failCount)
+                    .skippedNoSub(skippedNoSub)
+                    .skippedNoKey(skippedNoKey)
+                    .status(status)
+                    .userResults(userResultsJson)
+                    .aiConfidence(score != null ? score.getConfidence() : null)
+                    .aiReasoning(score != null ? score.getReasoning() : null)
+                    .durationMs(durationMs)
+                    .build();
+
+            broadcastLogRepository.save(logEntry);
+            log.debug("廣播紀錄已儲存: id={} action={} symbol={}", logEntry.getId(), request.getAction(), request.getSymbol());
+        } catch (Exception e) {
+            log.warn("廣播紀錄儲存失敗（不影響交易主流程）: {}", e.getMessage());
+        }
     }
 
     /**

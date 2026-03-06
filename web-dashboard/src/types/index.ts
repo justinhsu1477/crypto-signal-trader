@@ -447,6 +447,11 @@ export interface UserTradingSummary {
   weekPnl: number;
   monthPnl: number;
   todayTradeCount: number;
+  // 健康度指標
+  hasBinanceApiKey: boolean;
+  circuitBreakerActive: boolean;
+  lastTradeAt: string | null;
+  consecutiveLosses: number;
 }
 
 export interface AdminUserListResponse {
@@ -730,4 +735,50 @@ export interface AdminMetricsResponse {
   system: {
     uptimeSeconds: number;
   };
+}
+
+// ─── Broadcast Logs ───
+
+export interface BroadcastLogSummary {
+  id: number;
+  signalAction: string;
+  symbol: string;
+  side: string | null;
+  totalUsers: number;
+  successCount: number;
+  failCount: number;
+  skippedNoSub: number;
+  skippedNoKey: number;
+  status: string;
+  aiConfidence: number | null;
+  durationMs: number | null;
+  createdAt: string;
+}
+
+export interface BroadcastLogListResponse {
+  content: BroadcastLogSummary[];
+  page: number;
+  size: number;
+  totalPages: number;
+  totalElements: number;
+}
+
+export interface BroadcastUserResult {
+  userId: string;
+  email: string;
+  success: boolean;
+  errorMessage: string | null;
+}
+
+export interface BroadcastLogDetail extends BroadcastLogSummary {
+  entryPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  closeRatio: number | null;
+  newStopLoss: number | null;
+  newTakeProfit: number | null;
+  isDca: boolean | null;
+  sourceAuthor: string | null;
+  aiReasoning: string | null;
+  userResults: BroadcastUserResult[];
 }

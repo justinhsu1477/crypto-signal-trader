@@ -1,11 +1,13 @@
 package com.trader.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.subscription.repository.SubscriptionRepository;
+import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BroadcastTradeService;
@@ -37,6 +39,7 @@ class BroadcastTradeServiceTest {
     private SubscriptionRepository mockSubscriptionRepo;
     private SignalScoringService mockScoring;
     private TradeRepository mockTradeRepo;
+    private BroadcastLogRepository mockBroadcastLogRepo;
     private ExecutorService executor;
     private BroadcastTradeService service;
 
@@ -49,6 +52,7 @@ class BroadcastTradeServiceTest {
         mockSubscriptionRepo = mock(SubscriptionRepository.class);
         mockScoring = mock(SignalScoringService.class);
         mockTradeRepo = mock(TradeRepository.class);
+        mockBroadcastLogRepo = mock(BroadcastLogRepository.class);
 
         // 預設：executeSignalForBroadcast 回傳空結果（既有測試不受影響）
         when(mockBinance.executeSignalForBroadcast(any(), anyString())).thenReturn(List.of());
@@ -69,7 +73,7 @@ class BroadcastTradeServiceTest {
 
         service = new BroadcastTradeService(
                 mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockSubscriptionRepo,
-                mockScoring, mockTradeRepo, executor);
+                mockScoring, mockTradeRepo, mockBroadcastLogRepo, new ObjectMapper(), executor);
     }
 
     @AfterEach

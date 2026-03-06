@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats, getAdminMetrics } from "@/lib/api";
-import type { AdminSystemOverview, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse, AdminMetricsResponse } from "@/types";
+import type { AdminSystemOverview, UserTradingSummary, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse, AdminMetricsResponse } from "@/types";
 import {
   Users,
   UserCheck,
@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
+  ShieldAlert,
 } from "lucide-react";
 
 function StatusDot({ status }: { status: string }) {
@@ -35,6 +36,22 @@ function StatusDot({ status }: { status: string }) {
 
 type OverviewSortField = "email" | "name" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl" | "weekPnl" | "monthPnl";
 type SortDir = "asc" | "desc";
+
+interface HealthWarning {
+  color: "red" | "yellow";
+  labelKey: string;
+}
+
+function getHealthWarnings(user: UserTradingSummary): HealthWarning[] {
+  const warnings: HealthWarning[] = [];
+  if (!user.hasBinanceApiKey) warnings.push({ color: "red", labelKey: "admin.healthNoApiKey" });
+  if (user.circuitBreakerActive) warnings.push({ color: "red", labelKey: "admin.healthCircuitBreaker" });
+  if (!user.lastTradeAt || Date.now() - new Date(user.lastTradeAt).getTime() > 7 * 24 * 60 * 60 * 1000) {
+    warnings.push({ color: "yellow", labelKey: "admin.healthInactive" });
+  }
+  if (user.consecutiveLosses >= 5) warnings.push({ color: "yellow", labelKey: "admin.healthConsecutiveLosses" });
+  return warnings;
+}
 
 export default function AdminOverviewPage() {
   const { t } = useT();
@@ -441,23 +458,30 @@ export default function AdminOverviewPage() {
                 {([
                   { field: "email" as OverviewSortField, label: t("admin.email"), align: "text-left" },
                   { field: "name" as OverviewSortField, label: t("admin.name"), align: "text-left" },
+                  { field: null, label: t("admin.healthStatus"), align: "text-center" },
                   { field: "openPositionCount" as OverviewSortField, label: t("admin.openPositions"), align: "text-right" },
                   { field: "closedTradeCount" as OverviewSortField, label: t("admin.closedTrades"), align: "text-right" },
                   { field: "totalNetProfit" as OverviewSortField, label: t("admin.netProfit"), align: "text-right" },
                   { field: "todayPnl" as OverviewSortField, label: t("admin.todayPnl"), align: "text-right" },
                   { field: "weekPnl" as OverviewSortField, label: t("admin.weekPnl"), align: "text-right" },
                   { field: "monthPnl" as OverviewSortField, label: t("admin.monthPnl"), align: "text-right" },
-                ]).map((col) => (
-                  <th
-                    key={col.field}
-                    onClick={() => toggleOverviewSort(col.field)}
-                    className={`${col.align} px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors`}
-                  >
-                    <span className={`inline-flex items-center gap-1 ${col.align === "text-right" ? "justify-end" : ""}`}>
+                ]).map((col, idx) => (
+                  col.field ? (
+                    <th
+                      key={col.field}
+                      onClick={() => toggleOverviewSort(col.field)}
+                      className={`${col.align} px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors`}
+                    >
+                      <span className={`inline-flex items-center gap-1 ${col.align === "text-right" ? "justify-end" : ""}`}>
+                        {col.label}
+                        <OverviewSortIcon field={col.field} />
+                      </span>
+                    </th>
+                  ) : (
+                    <th key={`col-${idx}`} className={`${col.align} px-4 py-3 font-medium`}>
                       {col.label}
-                      <OverviewSortIcon field={col.field} />
-                    </span>
-                  </th>
+                    </th>
+                  )
                 ))}
               </tr>
             </thead>
@@ -469,6 +493,29 @@ export default function AdminOverviewPage() {
                 >
                   <td className="px-4 py-3 font-mono text-xs">{user.email}</td>
                   <td className="px-4 py-3">{user.name || "-"}</td>
+                  <td className="px-4 py-3 text-center">
+                    {(() => {
+                      const warnings = getHealthWarnings(user);
+                      if (warnings.length === 0) {
+                        return (
+                          <span title={t("admin.healthGood")} className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+                        );
+                      }
+                      return (
+                        <span
+                          title={warnings.map((w) => t(w.labelKey)).join("\n")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          {warnings.some((w) => w.color === "red") ? (
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+                          ) : (
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-yellow-500" />
+                          )}
+                          <span className="text-xs text-muted-foreground">{warnings.length}</span>
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 py-3 text-right">{user.openPositionCount}</td>
                   <td className="px-4 py-3 text-right">{user.closedTradeCount}</td>
                   <td
@@ -507,7 +554,7 @@ export default function AdminOverviewPage() {
               ))}
               {sortedSummaries.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                     No users found
                   </td>
                 </tr>

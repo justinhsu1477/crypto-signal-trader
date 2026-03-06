@@ -807,3 +807,15 @@ export async function adminBroadcastTrade(
     body: JSON.stringify(data),
   });
 }
+
+// ─── Admin Broadcast Logs ───
+
+import type { BroadcastLogListResponse, BroadcastLogDetail } from "@/types";
+
+export async function getAdminBroadcastLogs(page = 0, size = 20): Promise<BroadcastLogListResponse> {
+  return request<BroadcastLogListResponse>(`/api/admin/dashboard/broadcast-logs?page=${page}&size=${size}`);
+}
+
+export async function getAdminBroadcastLogDetail(id: number): Promise<BroadcastLogDetail> {
+  return request<BroadcastLogDetail>(`/api/admin/dashboard/broadcast-logs/${id}`);
+}
