@@ -279,6 +279,35 @@ class BroadcastTradeServiceTest {
         }
 
         @Test
+        @DisplayName("指定用戶模式 → skippedNotTargeted 記錄在 log 中")
+        void targetedBroadcastSkippedNotTargetedInLog() throws Exception {
+            User user1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User user2 = User.builder().userId("u2").email("b@test.com").name("B")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2"));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setTargetUserIds(List.of("u1"));
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(1);
+            assertThat(result.get("successCount")).isEqualTo(1);
+            assertThat(result.get("skippedNotTargeted")).isEqualTo(1); // u2
+
+            // 只對 u1 執行，u2 不執行
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), eq("u2"));
+        }
+
+        @Test
         @DisplayName("skipped counts 正確記錄 — 無訂閱 + 無 API Key")
         void skippedCountsRecorded() {
             User user1 = User.builder().userId("u1").email("a@test.com")
@@ -308,6 +337,107 @@ class BroadcastTradeServiceTest {
             assertThat(saved.getSkippedNoSub()).isEqualTo(1);  // u3
             assertThat(saved.getSkippedNoKey()).isEqualTo(1);  // u2
             assertThat(saved.getTotalUsers()).isEqualTo(1);     // u1
+        }
+    }
+
+    // ── 指定用戶模式 ──
+
+    @Nested
+    @DisplayName("指定用戶廣播 (targetUserIds)")
+    class TargetedBroadcast {
+
+        @Test
+        @DisplayName("targetUserIds = null → 原有行為，全員廣播")
+        void nullTargetUserIdsBroadcastsToAll() throws Exception {
+            User user1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User user2 = User.builder().userId("u2").email("b@test.com").name("B")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2"));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), anyString()))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("CLOSE", "BTCUSDT", null);
+            request.setTargetUserIds(null); // 明確設 null
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("totalUsers")).isEqualTo(2);
+            assertThat(result.get("successCount")).isEqualTo(2);
+            assertThat(result.get("skippedNotTargeted")).isEqualTo(0);
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u2"));
+        }
+
+        @Test
+        @DisplayName("targetUserIds = [u1] → 只對 u1 執行，u2 被排除")
+        void targetSingleUser() throws Exception {
+            User user1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User user2 = User.builder().userId("u2").email("b@test.com").name("B")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2"));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("ENTRY", "ETHUSDT", "LONG");
+            request.setTargetUserIds(List.of("u1"));
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("totalUsers")).isEqualTo(1);
+            assertThat(result.get("successCount")).isEqualTo(1);
+            assertThat(result.get("skippedNotTargeted")).isEqualTo(1);
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), eq("u2"));
+        }
+
+        @Test
+        @DisplayName("targetUserIds = [不存在的ID] → 所有用戶被排除，走 empty users 邏輯")
+        void targetNonExistentUser() {
+            User user1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(user1));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1"));
+
+            TradeRequest request = createRequest("CLOSE", "BTCUSDT", null);
+            request.setTargetUserIds(List.of("non-existent-id"));
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("totalUsers")).isEqualTo(0);
+            assertThat(result.get("skippedNotTargeted")).isEqualTo(1); // u1 被排除
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("targetUserIds 中的用戶無 API Key → 仍被 skip，不繞過安全檢查")
+        void targetUserWithoutApiKeyStillSkipped() {
+            User user1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(user1));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of()); // u1 無 API Key
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setTargetUserIds(List.of("u1")); // 指定 u1，但 u1 無 API Key
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            // u1 在 API Key 篩選階段就被排除了，targetUserIds 過濾不會碰到他
+            assertThat(result.get("totalUsers")).isEqualTo(0);
+            assertThat(result.get("skippedNoApiKey")).isEqualTo(1);
+            assertThat(result.get("skippedNotTargeted")).isEqualTo(0); // targetUserIds 過濾時 activeUsers 已為空
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
         }
     }
 }

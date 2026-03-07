@@ -785,6 +785,7 @@ export interface BroadcastTradeRequest {
   new_take_profit?: number;
   is_dca?: boolean;
   source?: { platform: string; author_name: string };
+  target_user_ids?: string[];  // 可選，空 = 全部用戶
 }
 
 export interface BroadcastTradeResponse {
@@ -794,6 +795,7 @@ export interface BroadcastTradeResponse {
   failCount?: number;
   skippedNoSubscription?: number;
   skippedNoApiKey?: number;
+  skippedNotTargeted?: number;
   message?: string;
   error?: string;
   reason?: string;

@@ -1623,6 +1623,40 @@ const translations = {
       "zh-CN": "取消所选交易对的所有挂单。",
       ja: "選択した取引ペアの全注文をキャンセルします。",
     },
+    targetUsers: { en: "Target Users", "zh-TW": "指定用戶", "zh-CN": "指定用户", ja: "対象ユーザー" },
+    targetUsersDesc: {
+      en: "Leave unselected to broadcast to all eligible users",
+      "zh-TW": "不選擇 = 廣播給所有符合條件的用戶",
+      "zh-CN": "不选择 = 广播给所有符合条件的用户",
+      ja: "未選択 = 全対象ユーザーに配信",
+    },
+    targetUsersEnabled: {
+      en: "Targeting {count} user(s)",
+      "zh-TW": "已指定 {count} 位用戶",
+      "zh-CN": "已指定 {count} 位用户",
+      ja: "{count} 人を指定中",
+    },
+    allUsers: { en: "All Users", "zh-TW": "全部用戶", "zh-CN": "全部用户", ja: "全ユーザー" },
+    skippedNotTargeted: {
+      en: "Non-targeted users: {count}",
+      "zh-TW": "非指定用戶: {count} 人",
+      "zh-CN": "非指定用户: {count} 人",
+      ja: "非対象ユーザー: {count} 人",
+    },
+    selectTargetUsers: { en: "Select Users", "zh-TW": "選擇用戶", "zh-CN": "选择用户", ja: "ユーザーを選択" },
+    searchUsers: { en: "Search users...", "zh-TW": "搜尋用戶...", "zh-CN": "搜索用户...", ja: "ユーザーを検索..." },
+    selectedCount: {
+      en: "{count} selected",
+      "zh-TW": "已選 {count} 人",
+      "zh-CN": "已选 {count} 人",
+      ja: "{count} 人選択中",
+    },
+    confirmTargeted: {
+      en: "⚠️ Targeting {count} specific user(s)",
+      "zh-TW": "⚠️ 指定 {count} 位用戶",
+      "zh-CN": "⚠️ 指定 {count} 位用户",
+      ja: "⚠️ {count} 人を指定中",
+    },
   },
 
   // ─── admin notification (send to specific users) ───

@@ -129,8 +129,21 @@ public class BroadcastTradeService {
             log.warn("廣播跟單: 跳過 {} 個用戶 (無 API Key)", skippedNoApiKey);
         }
 
-        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過無訂閱={}, 跳過無API Key={}), action={} symbol={}",
-                activeUsers.size(), skippedNoSubscription, skippedNoApiKey, request.getAction(), request.getSymbol());
+        // 指定用戶模式：從已通過篩選的 activeUsers 中，再過濾出目標用戶
+        int skippedNotTargeted = 0;
+        if (request.getTargetUserIds() != null && !request.getTargetUserIds().isEmpty()) {
+            Set<String> targets = new HashSet<>(request.getTargetUserIds());
+            int beforeSize = activeUsers.size();
+            activeUsers = activeUsers.stream()
+                    .filter(u -> targets.contains(u.getUserId()))
+                    .toList();
+            skippedNotTargeted = beforeSize - activeUsers.size();
+            log.info("指定用戶模式: 目標 {} 人, 符合條件 {} 人, 排除 {} 人",
+                    targets.size(), activeUsers.size(), skippedNotTargeted);
+        }
+
+        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過無訂閱={}, 跳過無API Key={}, 非指定用戶={}), action={} symbol={}",
+                activeUsers.size(), skippedNoSubscription, skippedNoApiKey, skippedNotTargeted, request.getAction(), request.getSymbol());
 
         // 廣播前 — 發訊號詳情通知給每位 Admin（per-user webhook）
         String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size(), skippedNoSubscription, skippedNoApiKey);
@@ -156,14 +169,16 @@ public class BroadcastTradeService {
             saveBroadcastLog(request, 0, 0, 0,
                     skippedNoSubscription, skippedNoApiKey, "COMPLETED", null,
                     new ConcurrentLinkedQueue<>(), broadcastStartTime);
-            return Map.of(
-                    "status", "COMPLETED",
-                    "totalUsers", 0,
-                    "successCount", 0,
-                    "failCount", 0,
-                    "skippedNoSubscription", skippedNoSubscription,
-                    "skippedNoApiKey", skippedNoApiKey,
-                    "message", message);
+            Map<String, Object> emptyResult = new HashMap<>();
+            emptyResult.put("status", "COMPLETED");
+            emptyResult.put("totalUsers", 0);
+            emptyResult.put("successCount", 0);
+            emptyResult.put("failCount", 0);
+            emptyResult.put("skippedNoSubscription", skippedNoSubscription);
+            emptyResult.put("skippedNoApiKey", skippedNoApiKey);
+            emptyResult.put("skippedNotTargeted", skippedNotTargeted);
+            emptyResult.put("message", message);
+            return emptyResult;
         }
 
         // 用共享線程池並行執行（不排隊，全員同時下單）
@@ -313,6 +328,9 @@ public class BroadcastTradeService {
                     request.getSymbol(), request.getAction(),
                     successCount.get(), failCount.get(), cancelledCount,
                     skippedNoSubscription, skippedNoApiKey, activeUsers.size()));
+            if (skippedNotTargeted > 0) {
+                summaryBuilder.append(String.format("\n非指定用戶: %d 人", skippedNotTargeted));
+            }
 
             // CLOSE: 附上 PnL 彙總（總損益 + 平均）
             if (isCloseAction && pnlCount.get() > 0) {
@@ -373,13 +391,15 @@ public class BroadcastTradeService {
                     skippedNoSubscription, skippedNoApiKey, "COMPLETED", finalScore,
                     userResultsLog, broadcastStartTime);
 
-            return Map.of(
-                    "status", "COMPLETED",
-                    "totalUsers", activeUsers.size(),
-                    "successCount", successCount.get(),
-                    "failCount", failCount.get(),
-                    "skippedNoSubscription", skippedNoSubscription,
-                    "skippedNoApiKey", skippedNoApiKey);
+            Map<String, Object> resultMap = new HashMap<>();
+            resultMap.put("status", "COMPLETED");
+            resultMap.put("totalUsers", activeUsers.size());
+            resultMap.put("successCount", successCount.get());
+            resultMap.put("failCount", failCount.get());
+            resultMap.put("skippedNoSubscription", skippedNoSubscription);
+            resultMap.put("skippedNoApiKey", skippedNoApiKey);
+            resultMap.put("skippedNotTargeted", skippedNotTargeted);
+            return resultMap;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("廣播跟單中斷: {}", e.getMessage());
