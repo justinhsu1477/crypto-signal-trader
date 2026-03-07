@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import { getAdminSystemOverview, getAdminUserPerformance } from "@/lib/api";
 import { SummaryCards } from "@/components/performance/summary-cards";
@@ -43,16 +43,26 @@ export default function AdminAnalyticsPage() {
       .finally(() => setUsersLoading(false));
   }, []);
 
-  // Load performance data when user or period changes
-  useEffect(() => {
-    if (!selectedUserId) {
-      setData(null);
-      return;
-    }
-
-    let cancelled = false;
+  // Wrapped setters that also trigger loading state
+  const selectUser = useCallback((userId: string) => {
+    setSelectedUserId(userId);
     setLoading(true);
     setError(null);
+  }, []);
+
+  const changeDays = useCallback((d: number) => {
+    setDays(d);
+    if (selectedUserId) {
+      setLoading(true);
+      setError(null);
+    }
+  }, [selectedUserId]);
+
+  // Load performance data when user or period changes
+  useEffect(() => {
+    if (!selectedUserId) return;
+
+    let cancelled = false;
 
     getAdminUserPerformance(selectedUserId, days)
       .then((stats) => {
@@ -96,7 +106,7 @@ export default function AdminAnalyticsPage() {
             {PERIOD_OPTIONS.map((option) => (
               <button
                 key={option.days}
-                onClick={() => setDays(option.days)}
+                onClick={() => changeDays(option.days)}
                 className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
                   days === option.days
                     ? "bg-background text-foreground shadow-sm"
@@ -164,7 +174,7 @@ export default function AdminAnalyticsPage() {
                     <button
                       key={user.userId}
                       onClick={() => {
-                        setSelectedUserId(user.userId);
+                        selectUser(user.userId);
                         setDropdownOpen(false);
                         setSearchQuery("");
                       }}

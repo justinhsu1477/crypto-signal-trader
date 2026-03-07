@@ -18,17 +18,22 @@ export default function BroadcastLogsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
+    let cancelled = false;
     getAdminBroadcastLogs(page, 20)
       .then((res) => {
-        setLogs(res.content);
-        setTotalPages(res.totalPages);
-        setTotalElements(res.totalElements);
+        if (!cancelled) {
+          setLogs(res.content);
+          setTotalPages(res.totalPages);
+          setTotalElements(res.totalElements);
+        }
       })
       .catch(() => {
-        setLogs([]);
+        if (!cancelled) setLogs([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [page]);
 
   function toggleExpand(id: number) {
@@ -238,14 +243,14 @@ export default function BroadcastLogsPage() {
             </span>
             <div className="flex gap-2">
               <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                onClick={() => { setLoading(true); setPage((p) => Math.max(0, p - 1)); }}
                 disabled={page === 0}
                 className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                onClick={() => { setLoading(true); setPage((p) => Math.min(totalPages - 1, p + 1)); }}
                 disabled={page >= totalPages - 1}
                 className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
               >
