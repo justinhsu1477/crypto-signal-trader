@@ -165,11 +165,6 @@ public class OrderEventHandler {
                     String entryBody = String.format("%s %s\n成交價: %.2f\n數量: %.4f\n手續費: %.4f USDT",
                             symbol, updatedTrade.getSide(), avgPrice, filledQty, commission);
                     notificationSender.send(entryTitle, entryBody, DiscordWebhookService.COLOR_GREEN);
-                    if (adminNotifier != null) {
-                        adminNotifier.send(entryTitle,
-                                String.format("%s %s 成交 @ %.2f", symbol, updatedTrade.getSide(), avgPrice),
-                                DiscordWebhookService.COLOR_GREEN);
-                    }
                 } else {
                     // === 非入場單 = 平倉 LIMIT → 走平倉流程 ===
                     processStreamClose(symbol, avgPrice, filledQty, commission,

@@ -376,8 +376,8 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("LIMIT FILLED 入場成交 + adminNotifier 存在 → admin 也收到通知")
-        void limitFilledEntryWithAdminNotifier() {
+        @DisplayName("LIMIT FILLED 入場成交 + adminNotifier 存在 → admin 不收到通知（已移除）")
+        void limitFilledEntryWithAdminNotifier_noAdminNotification() {
             Trade mockTrade = Trade.builder()
                     .tradeId("test-trade-2")
                     .symbol("ETHUSDT")
@@ -390,10 +390,8 @@ class OrderEventHandlerTest {
 
             // Admin notifier 捕獲
             AtomicReference<String> adminTitle = new AtomicReference<>();
-            AtomicReference<String> adminMsg = new AtomicReference<>();
             OrderEventHandler.NotificationSender adminSender = (title, msg, color) -> {
                 adminTitle.set(title);
-                adminMsg.set(msg);
             };
 
             OrderEventHandler handler = new OrderEventHandler(
@@ -405,13 +403,11 @@ class OrderEventHandlerTest {
 
             handler.handleOrderTradeUpdate(event);
 
-            // 用戶通知
+            // 用戶通知仍然發送
             assertThat(lastTitle).isEqualTo("✅ 限價入場成交");
 
-            // Admin 通知
-            assertThat(adminTitle.get()).isEqualTo("✅ 限價入場成交");
-            assertThat(adminMsg.get()).contains("ETHUSDT");
-            assertThat(adminMsg.get()).contains("SHORT");
+            // Admin 不收到 LIMIT 入場成交通知
+            assertThat(adminTitle.get()).isNull();
         }
     }
 
