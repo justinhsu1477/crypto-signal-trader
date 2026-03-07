@@ -31,6 +31,10 @@ public class TradeEvent {
 
     private String tradeId;              // 關聯的交易 ID（對應 trades.tradeId）
 
+    // === 交易所 ===
+    @Builder.Default
+    private String exchange = "BINANCE"; // 交易所名稱：BINANCE, BYBIT
+
     private String eventType;            // 事件類型：
                                          //   ENTRY_PLACED   — 入場掛單已下
                                          //   SL_PLACED      — 止損單已下

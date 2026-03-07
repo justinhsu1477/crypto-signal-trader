@@ -21,7 +21,9 @@ import java.time.LocalDateTime;
 @Table(name = "trades", indexes = {
     @Index(name = "idx_trades_user_id", columnList = "user_id"),
     @Index(name = "idx_trades_user_symbol", columnList = "user_id, symbol"),
-    @Index(name = "idx_trades_user_status", columnList = "user_id, status")
+    @Index(name = "idx_trades_user_status", columnList = "user_id, status"),
+    @Index(name = "idx_trades_exchange", columnList = "exchange"),
+    @Index(name = "idx_trades_user_exchange", columnList = "user_id, exchange")
 })
 public class Trade {
 
@@ -30,6 +32,10 @@ public class Trade {
 
     // === 用戶關聯 ===
     private String userId;               // 用戶 ID（UUID），表示此交易屬於哪個用戶
+
+    // === 交易所 ===
+    @Builder.Default
+    private String exchange = "BINANCE"; // 交易所名稱：BINANCE, BYBIT
 
     private String symbol;               // 交易對，例如 BTCUSDT
     private String side;                 // 方向：LONG 或 SHORT
