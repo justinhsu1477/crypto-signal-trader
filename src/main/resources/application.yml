@@ -78,6 +78,16 @@ binance:
     api-key: ${BINANCE_API_KEY:YOUR_API_KEY}
     secret-key: ${BINANCE_SECRET_KEY:YOUR_SECRET_KEY}
 
+# ========== Bybit V5 Linear Perpetual ==========
+# 設定 BYBIT_API_KEY 環境變數後自動啟用 BybitAdapter（@ConditionalOnProperty）
+bybit:
+  linear:
+    api-key: ${BYBIT_API_KEY:}
+    secret-key: ${BYBIT_SECRET_KEY:}
+    base-url: ${BYBIT_BASE_URL:https://api-testnet.bybit.com}
+    ws-base-url: ${BYBIT_WS_URL:wss://stream-testnet.bybit.com}
+    recv-window: 5000
+
   # 風控設定
   risk:
     max-position-usdt: 50000      # 單筆最大名目價值 (USDT) — 防止窄止損產生超大倉位
