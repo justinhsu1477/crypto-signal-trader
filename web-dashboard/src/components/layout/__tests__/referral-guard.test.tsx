@@ -26,6 +26,9 @@ vi.mock("@/lib/i18n/i18n-context", () => ({
 describe("ReferralBanner", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
+    // Mark onboarding as seen so the banner can render
+    localStorage.setItem("referral-onboarding-seen", "true");
     vi.clearAllMocks();
   });
 
