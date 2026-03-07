@@ -10,7 +10,7 @@ import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.exchange.binance.BinanceAdapter;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -53,7 +53,7 @@ public class BinanceFuturesService {
      * BinanceAdapter 的 getActiveApiKey() 會檢查此 ThreadLocal 作為 fallback。
      * Phase 5 完成所有呼叫者遷移後刪除。
      */
-    private static final ThreadLocal<BinanceKeys> CURRENT_USER_KEYS = new ThreadLocal<>();
+    private static final ThreadLocal<ExchangeKeys> CURRENT_USER_KEYS = new ThreadLocal<>();
 
     public BinanceFuturesService(BinanceAdapter binanceAdapter,
                                   TradingOrchestrator orchestrator,
@@ -82,7 +82,7 @@ public class BinanceFuturesService {
      * 供排程任務（DailyReportService）查詢個別用戶的幣安帳戶餘額時使用。
      * 使用完畢後務必呼叫 clearCurrentUserKeys() 清除，避免線程池復用時洩漏。
      */
-    public static void setCurrentUserKeys(BinanceKeys keys) {
+    public static void setCurrentUserKeys(ExchangeKeys keys) {
         CURRENT_USER_KEYS.set(keys);
     }
 
@@ -96,7 +96,7 @@ public class BinanceFuturesService {
     /**
      * 取得當前線程的 per-user API Key（供 BinanceAdapter 向後相容讀取）
      */
-    public static BinanceKeys getCurrentUserKeys() {
+    public static ExchangeKeys getCurrentUserKeys() {
         return CURRENT_USER_KEYS.get();
     }
 
@@ -258,7 +258,11 @@ public class BinanceFuturesService {
 
     /**
      * 廣播跟單用：執行單個用戶的跟單邏輯
+     *
+     * @deprecated Phase 4 後廣播跟單已搬至 {@link BroadcastTradeService#executeSignalForUser}，
+     *             保留此方法供排程任務向後相容（Phase 5 完成後移除）
      */
+    @Deprecated
     public List<OrderResult> executeSignalForBroadcast(TradeRequest request, String userId) {
         log.info("廣播跟單執行: userId={} action={} symbol={}", userId, request.getAction(), request.getSymbol());
 
@@ -274,7 +278,7 @@ public class BinanceFuturesService {
         }
 
         // 取得 per-user API Key — 未設定則拒絕執行
-        var userKeysOpt = userApiKeyService.getUserBinanceKeys(userId);
+        var userKeysOpt = userApiKeyService.getUserExchangeKeys(userId, "BINANCE");
         if (userKeysOpt.isEmpty()) {
             throw new IllegalStateException(
                     "用戶 " + userId + " 未設定 Binance API Key，無法執行廣播跟單");

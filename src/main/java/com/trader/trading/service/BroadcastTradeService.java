@@ -7,13 +7,19 @@ import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
+import com.trader.shared.model.TradeSignal;
+import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -38,7 +44,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class BroadcastTradeService {
 
     private final UserRepository userRepository;
-    private final BinanceFuturesService binanceFuturesService;
+    private final ExchangeAdapterFactory exchangeAdapterFactory;
+    private final TradingOrchestrator orchestrator;
+    private final TradeConfigResolver tradeConfigResolver;
+    private final TradeRecordService tradeRecordService;
+    private final SignalDeduplicationService deduplicationService;
+    private final SymbolLockRegistry symbolLockRegistry;
     private final NotificationService discordWebhookService;
     private final UserApiKeyService userApiKeyService;
     private final SubscriptionRepository subscriptionRepository;
@@ -55,7 +66,12 @@ public class BroadcastTradeService {
 
     public BroadcastTradeService(
             UserRepository userRepository,
-            BinanceFuturesService binanceFuturesService,
+            ExchangeAdapterFactory exchangeAdapterFactory,
+            TradingOrchestrator orchestrator,
+            TradeConfigResolver tradeConfigResolver,
+            TradeRecordService tradeRecordService,
+            SignalDeduplicationService deduplicationService,
+            SymbolLockRegistry symbolLockRegistry,
             NotificationService discordWebhookService,
             UserApiKeyService userApiKeyService,
             SubscriptionRepository subscriptionRepository,
@@ -65,7 +81,12 @@ public class BroadcastTradeService {
             ObjectMapper objectMapper,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor) {
         this.userRepository = userRepository;
-        this.binanceFuturesService = binanceFuturesService;
+        this.exchangeAdapterFactory = exchangeAdapterFactory;
+        this.orchestrator = orchestrator;
+        this.tradeConfigResolver = tradeConfigResolver;
+        this.tradeRecordService = tradeRecordService;
+        this.deduplicationService = deduplicationService;
+        this.symbolLockRegistry = symbolLockRegistry;
         this.discordWebhookService = discordWebhookService;
         this.userApiKeyService = userApiKeyService;
         this.subscriptionRepository = subscriptionRepository;
@@ -116,8 +137,9 @@ public class BroadcastTradeService {
             log.warn("廣播跟單: 跳過 {} 個用戶 (無有效訂閱)", skippedNoSubscription);
         }
 
-        // Batch 查詢：一次取得所有已設定 API Key 的 userId（避免 N+1）
-        Set<String> userIdsWithApiKey = userApiKeyService.getUserIdsWithApiKey("BINANCE");
+        // Batch 查詢：取得所有用戶的交易所配對（避免 N+1，支援多交易所路由）
+        Map<String, Set<String>> userExchangeMap = userApiKeyService.getUserExchangeMap();
+        Set<String> userIdsWithApiKey = userExchangeMap.keySet();
 
         // 過濾：已設定 API Key
         List<User> activeUsers = subscribedUsers.stream()
@@ -204,7 +226,9 @@ public class BroadcastTradeService {
                 // 設入 ThreadLocal，讓 BinanceFuturesService.notifyGlobal() 也能讀到
                 TradeRecordService.setCurrentUserDisplayName(userDisplay);
                 try {
-                    List<OrderResult> results = binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
+                    String exchange = resolveUserExchange(user.getUserId(), userExchangeMap);
+                    ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+                    List<OrderResult> results = executeSignalForUser(request, user.getUserId(), adapter, exchange);
                     successCount.incrementAndGet();
                     userResultsLog.add(new UserResultData(user.getUserId(), user.getEmail(), true, null));
                     log.debug("跟單成功: userId={}", user.getUserId());
@@ -408,6 +432,184 @@ public class BroadcastTradeService {
                     "error", e.getMessage());
         }
     }
+
+    // ==================== 多交易所路由 ====================
+
+    /**
+     * 決定用戶使用哪個交易所
+     * 只有一個 → 用那個；多個 → 預設 BINANCE（Phase 5 加前端選擇器）
+     */
+    private String resolveUserExchange(String userId, Map<String, Set<String>> userExchangeMap) {
+        Set<String> exchanges = userExchangeMap.getOrDefault(userId, Set.of());
+        if (exchanges.isEmpty()) return "BINANCE";
+        if (exchanges.size() == 1) return exchanges.iterator().next();
+        return exchanges.contains("BINANCE") ? "BINANCE" : exchanges.iterator().next();
+    }
+
+    /**
+     * 執行單個用戶的廣播跟單
+     *
+     * 從 BinanceFuturesService.executeSignalForBroadcast 搬移過來，
+     * 通用化為支援任意交易所。
+     *
+     * 4 個 ThreadLocal：adapter.setCredentials / setCurrentUserId / setBroadcastContext / setCurrentUserDisplayName
+     * 全部在 finally 中清除，防止線程池復用時洩漏。
+     */
+    private List<OrderResult> executeSignalForUser(TradeRequest request, String userId,
+                                                    ExchangeAdapter adapter, String exchange) {
+        log.info("廣播跟單執行: userId={} exchange={} action={} symbol={}",
+                userId, exchange, request.getAction(), request.getSymbol());
+
+        String action = request.getAction();
+        if (action == null) {
+            throw new IllegalArgumentException("action 不可為空");
+        }
+
+        String symbol = request.getSymbol();
+        EffectiveTradeConfig broadcastConfig = tradeConfigResolver.resolve(userId);
+        if (symbol == null || !broadcastConfig.isSymbolAllowed(symbol)) {
+            throw new IllegalArgumentException("交易對不在白名單: " + symbol);
+        }
+
+        // 取得 per-user API Key — 未設定則拒絕執行
+        var userKeysOpt = userApiKeyService.getUserExchangeKeys(userId, exchange);
+        if (userKeysOpt.isEmpty()) {
+            throw new IllegalStateException(
+                    "用戶 " + userId + " 未設定 " + exchange + " API Key，無法執行廣播跟單");
+        }
+
+        // 設入 adapter credentials + ThreadLocal context
+        ExchangeKeys keys = userKeysOpt.get();
+        adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
+        TradeRecordService.setCurrentUserId(userId);
+        TradingOrchestrator.setBroadcastContext(true);
+        log.info("廣播跟單: userId={} 使用 per-user {} API Key", userId, exchange);
+
+        List<OrderResult> broadcastResults = List.of();
+        try {
+            switch (action.toUpperCase()) {
+                case "ENTRY" -> {
+                    boolean isDca = request.getIsDca() != null && request.getIsDca();
+
+                    if (!isDca && request.getSide() == null) {
+                        throw new IllegalArgumentException("ENTRY 需要 side");
+                    }
+                    if (request.getEntryPrice() == null) {
+                        throw new IllegalArgumentException("ENTRY 需要 entry_price");
+                    }
+                    if (request.getStopLoss() == null && !isDca) {
+                        throw new IllegalArgumentException("ENTRY 必須包含 stop_loss");
+                    }
+
+                    if (isDca && request.getNewStopLoss() == null && request.getStopLoss() != null) {
+                        request.setNewStopLoss(request.getStopLoss());
+                    }
+
+                    TradeSignal.TradeSignalBuilder builder = TradeSignal.builder()
+                            .symbol(symbol)
+                            .entryPriceLow(request.getEntryPrice())
+                            .entryPriceHigh(request.getEntryPrice())
+                            .signalType(TradeSignal.SignalType.ENTRY)
+                            .isDca(isDca)
+                            .newStopLoss(request.getNewStopLoss())
+                            .newTakeProfit(request.getNewTakeProfit())
+                            .source(request.getSource())
+                            .exchange(exchange);
+
+                    if (request.getSide() != null) {
+                        builder.side(TradeSignal.Side.valueOf(request.getSide().toUpperCase()));
+                    }
+                    if (isDca) {
+                        builder.stopLoss(request.getNewStopLoss() != null ? request.getNewStopLoss() : 0);
+                    } else {
+                        builder.stopLoss(request.getStopLoss());
+                    }
+
+                    TradeSignal signal = builder.build();
+                    if (request.getTakeProfit() != null) {
+                        signal.setTakeProfits(List.of(request.getTakeProfit()));
+                    }
+
+                    List<OrderResult> results = orchestrator.executeSignal(signal, adapter);
+                    boolean ok = results.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+                    if (!ok) {
+                        String errors = results.stream()
+                                .filter(r -> !r.isSuccess())
+                                .map(OrderResult::getErrorMessage)
+                                .collect(java.util.stream.Collectors.joining("; "));
+                        throw new RuntimeException("ENTRY 失敗: " + errors);
+                    }
+                    broadcastResults = results;
+                }
+                case "CLOSE" -> {
+                    TradeSignal signal = TradeSignal.builder()
+                            .symbol(symbol)
+                            .signalType(TradeSignal.SignalType.CLOSE)
+                            .closeRatio(request.getCloseRatio())
+                            .newStopLoss(request.getNewStopLoss())
+                            .newTakeProfit(request.getNewTakeProfit())
+                            .exchange(exchange)
+                            .build();
+
+                    List<OrderResult> results = orchestrator.executeClose(signal, adapter);
+                    boolean ok = !results.isEmpty() && results.get(0).isSuccess();
+                    if (!ok) {
+                        String msg = results.isEmpty() ? "CLOSE 失敗"
+                                : results.get(0).getErrorMessage();
+                        throw new RuntimeException(msg + ": " + symbol);
+                    }
+                    broadcastResults = results;
+                }
+                case "MOVE_SL" -> {
+                    TradeSignal signal = TradeSignal.builder()
+                            .symbol(symbol)
+                            .signalType(TradeSignal.SignalType.MOVE_SL)
+                            .newStopLoss(request.getNewStopLoss())
+                            .newTakeProfit(request.getNewTakeProfit())
+                            .exchange(exchange)
+                            .build();
+
+                    List<OrderResult> results = orchestrator.executeMoveSL(signal, adapter);
+                    boolean ok = results.stream().allMatch(OrderResult::isSuccess);
+                    if (!ok) {
+                        throw new RuntimeException("MOVE_SL 失敗: " + symbol);
+                    }
+                    broadcastResults = results;
+                }
+                case "CANCEL" -> {
+                    if (deduplicationService.isCancelDuplicate(symbol, userId)) {
+                        log.warn("廣播跟單: 重複取消跳過 userId={} symbol={}", userId, symbol);
+                        return List.of();
+                    }
+                    java.util.concurrent.locks.ReentrantLock cancelLock = symbolLockRegistry.getLock(symbol);
+                    cancelLock.lock();
+                    try {
+                        adapter.cancelAllOrders(symbol);
+                        try {
+                            tradeRecordService.recordCancel(symbol, userId);
+                        } catch (Exception e) {
+                            log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                        }
+                    } finally {
+                        cancelLock.unlock();
+                    }
+                }
+                default -> throw new IllegalArgumentException("不支援的 action: " + action);
+            }
+
+            log.info("廣播跟單完成: userId={} exchange={} action={} symbol={}",
+                    userId, exchange, action, symbol);
+            return broadcastResults;
+        } finally {
+            // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
+            adapter.clearCredentials();
+            TradeRecordService.clearCurrentUserId();
+            TradeRecordService.clearCurrentUserDisplayName();
+            TradingOrchestrator.clearBroadcastContext();
+        }
+    }
+
+    // ==================== 格式化工具 ====================
 
     /**
      * 格式化用戶顯示名稱：name (email)

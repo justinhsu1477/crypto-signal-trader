@@ -24,7 +24,7 @@ public interface UserApiKeyRepository extends JpaRepository<UserApiKey, Long> {
 
     /**
      * Batch 查詢：取得指定交易所的所有 API Key 記錄
-     * 用於 MultiUserDataStreamManager 避免 dual lookup（hasApiKey + getUserBinanceKeys）
+     * 用於 MultiUserDataStreamManager 避免 dual lookup（hasApiKey + getUserExchangeKeys）
      */
     List<UserApiKey> findByExchange(String exchange);
 

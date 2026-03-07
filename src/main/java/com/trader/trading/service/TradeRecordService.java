@@ -251,6 +251,7 @@ public class TradeRecordService {
         Trade trade = Trade.builder()
                 .tradeId(tradeId)
                 .userId(getActiveUserId())  // 多用戶模式用 ThreadLocal，否則用全局 defaultUserId
+                .exchange(signal.getExchange() != null ? signal.getExchange() : "BINANCE")
                 .symbol(signal.getSymbol())
                 .side(signal.getSide().name())
                 .entryPrice(entryOrder.getPrice())

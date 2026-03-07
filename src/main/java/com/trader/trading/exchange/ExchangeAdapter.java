@@ -115,7 +115,7 @@ public interface ExchangeAdapter {
 
     /**
      * 設定當前線程的 per-user 認證
-     * 取代現有 ThreadLocal&lt;BinanceKeys&gt; 模式
+     * 取代現有 ThreadLocal&lt;ExchangeKeys&gt; 模式
      */
     void setCredentials(ExchangeCredentials credentials);
 

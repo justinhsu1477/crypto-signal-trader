@@ -52,7 +52,7 @@ public class BinanceAdapter implements ExchangeAdapter {
 
     /**
      * ThreadLocal 暫存 per-user API Key（新版，使用 ExchangeCredentials）
-     * 與 BinanceFuturesService 的舊版 ThreadLocal&lt;BinanceKeys&gt; 平行存在，
+     * 與 BinanceFuturesService 的舊版 ThreadLocal&lt;ExchangeKeys&gt; 平行存在，
      * Phase 5 遷移完成後刪除舊版。
      */
     private static final ThreadLocal<ExchangeCredentials> CURRENT_CREDENTIALS = new ThreadLocal<>();

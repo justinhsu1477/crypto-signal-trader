@@ -8,7 +8,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Component;
@@ -108,13 +108,13 @@ public class MultiUserDataStreamManager {
      * 條件：enabled=true && autoTradeEnabled=true && 有 API Key
      *
      * 效能優化：一次 batch 查詢所有 API Key，避免 per-user 查詢 (N+1) 和
-     * hasApiKey + getUserBinanceKeys 的 dual lookup (2N → 1)
+     * hasApiKey + getUserExchangeKeys 的 dual lookup (2N → 1)
      */
     public void startAllStreams() {
         shuttingDown = false;
 
         // Batch 查詢：一次取得所有 Binance API Key（解密後），避免 N+1 和 dual lookup
-        Map<String, BinanceKeys> allKeys = userApiKeyService.getAllBinanceKeys("BINANCE");
+        Map<String, ExchangeKeys> allKeys = userApiKeyService.getAllExchangeKeys("BINANCE");
 
         List<User> eligibleUsers = userRepository.findAll().stream()
                 .filter(User::isEnabled)
@@ -127,7 +127,7 @@ public class MultiUserDataStreamManager {
         for (User user : eligibleUsers) {
             try {
                 // 使用已預載的 keys，不再重複查 DB
-                BinanceKeys keys = allKeys.get(user.getUserId());
+                ExchangeKeys keys = allKeys.get(user.getUserId());
                 startUserStreamWithKeys(user.getUserId(), formatUserDisplay(user), keys);
             } catch (Exception e) {
                 log.error("用戶 {} Stream 啟動失敗: {}", user.getUserId(), e.getMessage());
@@ -147,7 +147,7 @@ public class MultiUserDataStreamManager {
             return;
         }
 
-        Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+        Optional<ExchangeKeys> keysOpt = userApiKeyService.getUserExchangeKeys(userId, "BINANCE");
         if (keysOpt.isEmpty()) {
             log.warn("用戶 {} 未設定 API Key，無法啟動 stream", userId);
             return;
@@ -163,7 +163,7 @@ public class MultiUserDataStreamManager {
      * 啟動單一用戶的 stream（使用已預載的 keys，避免重複查 DB）
      * 供 startAllStreams() batch 模式使用
      */
-    private void startUserStreamWithKeys(String userId, String displayName, BinanceKeys keys) {
+    private void startUserStreamWithKeys(String userId, String displayName, ExchangeKeys keys) {
         if (activeStreams.containsKey(userId)) {
             log.debug("用戶 {} 已有 active stream，跳過", userId);
             return;
@@ -380,7 +380,7 @@ public class MultiUserDataStreamManager {
                 deleteListenKey(context.getApiKey(), context.getListenKey());
 
                 // 重新取得 API Key（可能已更新）
-                Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+                Optional<ExchangeKeys> keysOpt = userApiKeyService.getUserExchangeKeys(userId, "BINANCE");
                 if (keysOpt.isEmpty()) {
                     log.warn("用戶 {} API Key 已不存在，移除 stream", userId);
                     activeStreams.remove(userId);
@@ -388,7 +388,7 @@ public class MultiUserDataStreamManager {
                 }
 
                 // 使用最新的 API Key（用戶可能已更換）
-                BinanceKeys freshKeys = keysOpt.get();
+                ExchangeKeys freshKeys = keysOpt.get();
                 context.updateApiKey(freshKeys.apiKey(), freshKeys.secretKey());
 
                 // 重建 stream

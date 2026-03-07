@@ -35,11 +35,11 @@ class UserApiKeyServiceTest {
         service = new UserApiKeyService(userApiKeyRepository, aesEncryptionUtil);
     }
 
-    // ==================== getUserBinanceKeys ====================
+    // ==================== getUserExchangeKeys ====================
 
     @Nested
-    @DisplayName("getUserBinanceKeys")
-    class GetUserBinanceKeysTests {
+    @DisplayName("getUserExchangeKeys")
+    class GetUserExchangeKeysTests {
 
         @Test
         @DisplayName("用戶未設定 API Key → empty")
@@ -47,7 +47,7 @@ class UserApiKeyServiceTest {
             when(userApiKeyRepository.findByUserIdAndExchange("user1", "BINANCE"))
                     .thenReturn(Optional.empty());
 
-            Optional<UserApiKeyService.BinanceKeys> result = service.getUserBinanceKeys("user1");
+            Optional<UserApiKeyService.ExchangeKeys> result = service.getUserExchangeKeys("user1", "BINANCE");
             assertThat(result).isEmpty();
         }
 
@@ -62,12 +62,12 @@ class UserApiKeyServiceTest {
             when(userApiKeyRepository.findByUserIdAndExchange("user1", "BINANCE"))
                     .thenReturn(Optional.of(entity));
 
-            Optional<UserApiKeyService.BinanceKeys> result = service.getUserBinanceKeys("user1");
+            Optional<UserApiKeyService.ExchangeKeys> result = service.getUserExchangeKeys("user1", "BINANCE");
             assertThat(result).isEmpty();
         }
 
         @Test
-        @DisplayName("正常解密 → 返回 BinanceKeys")
+        @DisplayName("正常解密 → 返回 ExchangeKeys")
         void normalDecrypt_returnsKeys() {
             UserApiKey entity = new UserApiKey();
             entity.setUserId("user1");
@@ -79,7 +79,7 @@ class UserApiKeyServiceTest {
             when(aesEncryptionUtil.decrypt("enc-api")).thenReturn("plain-api");
             when(aesEncryptionUtil.decrypt("enc-secret")).thenReturn("plain-secret");
 
-            Optional<UserApiKeyService.BinanceKeys> result = service.getUserBinanceKeys("user1");
+            Optional<UserApiKeyService.ExchangeKeys> result = service.getUserExchangeKeys("user1", "BINANCE");
 
             assertThat(result).isPresent();
             assertThat(result.get().apiKey()).isEqualTo("plain-api");
@@ -100,7 +100,7 @@ class UserApiKeyServiceTest {
                     .thenThrow(new AesDecryptionException(
                             ErrorType.AUTH_TAG_MISMATCH, "GCM tag 不符", null));
 
-            Optional<UserApiKeyService.BinanceKeys> result = service.getUserBinanceKeys("user1");
+            Optional<UserApiKeyService.ExchangeKeys> result = service.getUserExchangeKeys("user1", "BINANCE");
             assertThat(result).isEmpty();
         }
 
@@ -118,16 +118,16 @@ class UserApiKeyServiceTest {
                     .thenThrow(new AesDecryptionException(
                             ErrorType.DATA_CORRUPTED, "Base64 損壞", null));
 
-            Optional<UserApiKeyService.BinanceKeys> result = service.getUserBinanceKeys("user1");
+            Optional<UserApiKeyService.ExchangeKeys> result = service.getUserExchangeKeys("user1", "BINANCE");
             assertThat(result).isEmpty();
         }
     }
 
-    // ==================== getAllBinanceKeys ====================
+    // ==================== getAllExchangeKeys ====================
 
     @Nested
-    @DisplayName("getAllBinanceKeys")
-    class GetAllBinanceKeysTests {
+    @DisplayName("getAllExchangeKeys")
+    class GetAllExchangeKeysTests {
 
         @Test
         @DisplayName("混合成功與失敗 — 只回傳成功的")
@@ -155,7 +155,7 @@ class UserApiKeyServiceTest {
                     .thenThrow(new AesDecryptionException(
                             ErrorType.AUTH_TAG_MISMATCH, "key mismatch", null));
 
-            Map<String, UserApiKeyService.BinanceKeys> result = service.getAllBinanceKeys("BINANCE");
+            Map<String, UserApiKeyService.ExchangeKeys> result = service.getAllExchangeKeys("BINANCE");
 
             assertThat(result).hasSize(1);
             assertThat(result).containsKey("user-ok");
@@ -174,7 +174,7 @@ class UserApiKeyServiceTest {
         void hasApiKey_true() {
             when(userApiKeyRepository.findByUserIdAndExchange("user1", "BINANCE"))
                     .thenReturn(Optional.of(new UserApiKey()));
-            assertThat(service.hasApiKey("user1")).isTrue();
+            assertThat(service.hasApiKey("user1", "BINANCE")).isTrue();
         }
 
         @Test
@@ -182,7 +182,7 @@ class UserApiKeyServiceTest {
         void hasApiKey_false() {
             when(userApiKeyRepository.findByUserIdAndExchange("user1", "BINANCE"))
                     .thenReturn(Optional.empty());
-            assertThat(service.hasApiKey("user1")).isFalse();
+            assertThat(service.hasApiKey("user1", "BINANCE")).isFalse();
         }
 
         @Test

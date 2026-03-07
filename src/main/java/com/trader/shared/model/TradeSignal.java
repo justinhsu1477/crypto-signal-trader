@@ -44,6 +44,8 @@ public class TradeSignal {
     private Double newTakeProfit;    // MOVE_SL / CLOSE / DCA 時的新止盈價
     private boolean isDca;           // 是否為補倉（DCA）
     private SignalSource source;     // 訊號來源 (可選)
+    @Builder.Default
+    private String exchange = "BINANCE";  // 交易所名稱，供 TradeRecordService 寫入 Trade
 
     public enum Side {
         LONG, SHORT

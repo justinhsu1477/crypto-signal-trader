@@ -4,15 +4,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.NotificationService;
+import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeRequest;
+import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
 
@@ -20,6 +26,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -36,7 +43,12 @@ import static org.mockito.Mockito.*;
 class BroadcastTradeServiceTest {
 
     private UserRepository userRepository;
-    private BinanceFuturesService binanceFuturesService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
+    private TradingOrchestrator orchestrator;
+    private TradeConfigResolver tradeConfigResolver;
+    private TradeRecordService tradeRecordService;
+    private SignalDeduplicationService deduplicationService;
+    private SymbolLockRegistry symbolLockRegistry;
     private NotificationService discordWebhookService;
     private UserApiKeyService userApiKeyService;
     private SubscriptionRepository subscriptionRepository;
@@ -45,13 +57,19 @@ class BroadcastTradeServiceTest {
     private BroadcastLogRepository broadcastLogRepository;
     private ObjectMapper objectMapper;
     private ExecutorService broadcastExecutor;
+    private ExchangeAdapter mockAdapter;
 
     private BroadcastTradeService service;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
-        binanceFuturesService = mock(BinanceFuturesService.class);
+        exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
+        orchestrator = mock(TradingOrchestrator.class);
+        tradeConfigResolver = mock(TradeConfigResolver.class);
+        tradeRecordService = mock(TradeRecordService.class);
+        deduplicationService = mock(SignalDeduplicationService.class);
+        symbolLockRegistry = mock(SymbolLockRegistry.class);
         discordWebhookService = mock(NotificationService.class);
         userApiKeyService = mock(UserApiKeyService.class);
         subscriptionRepository = mock(SubscriptionRepository.class);
@@ -60,10 +78,16 @@ class BroadcastTradeServiceTest {
         broadcastLogRepository = mock(BroadcastLogRepository.class);
         objectMapper = new ObjectMapper(); // real ObjectMapper for JSON serialization
         broadcastExecutor = Executors.newFixedThreadPool(2);
+        mockAdapter = mock(ExchangeAdapter.class);
 
         service = new BroadcastTradeService(
                 userRepository,
-                binanceFuturesService,
+                exchangeAdapterFactory,
+                orchestrator,
+                tradeConfigResolver,
+                tradeRecordService,
+                deduplicationService,
+                symbolLockRegistry,
                 discordWebhookService,
                 userApiKeyService,
                 subscriptionRepository,
@@ -76,11 +100,33 @@ class BroadcastTradeServiceTest {
         // 預設 AI 評分 — 非同步，立即返回 null
         when(signalScoringService.scoreAsync(any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
+
+        // 預設：exchangeAdapterFactory 回傳 mockAdapter
+        when(exchangeAdapterFactory.getAdapter(anyString())).thenReturn(mockAdapter);
+
+        // 預設：tradeConfigResolver 回傳允許 BTCUSDT 和 ETHUSDT 的 config
+        when(tradeConfigResolver.resolve(anyString())).thenReturn(new EffectiveTradeConfig(
+                1.0, 1000.0, 500.0, 0.05, 0.1, 3, 1.5, 10,
+                List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"));
+
+        // 預設：getUserExchangeKeys 回傳有效 key
+        when(userApiKeyService.getUserExchangeKeys(anyString(), anyString()))
+                .thenReturn(Optional.of(new ExchangeKeys("key", "secret")));
+
+        // 預設：symbolLockRegistry 回傳新的 lock
+        when(symbolLockRegistry.getLock(anyString())).thenReturn(new ReentrantLock());
     }
 
     @AfterEach
     void tearDown() {
         broadcastExecutor.shutdownNow();
+    }
+
+    /** 建立一個成功的 OrderResult（orchestrator 回傳需至少一個 success + orderId） */
+    private List<OrderResult> successResult() {
+        return List.of(OrderResult.builder()
+                .success(true).orderId("mock-order-1").symbol("BTCUSDT")
+                .price(50000.0).quantity(0.01).build());
     }
 
     private TradeRequest createRequest(String action, String symbol, String side) {
@@ -105,7 +151,7 @@ class BroadcastTradeServiceTest {
         void emptyUsersSavesLog() {
             when(userRepository.findAll()).thenReturn(List.of());
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of());
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             service.broadcastTrade(request);
@@ -133,9 +179,8 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(admin, user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1"));
-            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
-                    .thenReturn(List.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of("u1", Set.of("BINANCE")));
+            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("ENTRY", "ETHUSDT", "SHORT");
             Map<String, Object> result = service.broadcastTrade(request);
@@ -167,8 +212,8 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1"));
-            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of("u1", Set.of("BINANCE")));
+            when(orchestrator.executeSignal(any(), any()))
                     .thenThrow(new RuntimeException("Insufficient balance"));
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
@@ -193,9 +238,8 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1"));
-            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
-                    .thenReturn(List.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of("u1", Set.of("BINANCE")));
+            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
             when(broadcastLogRepository.save(any()))
                     .thenThrow(new RuntimeException("DB connection lost"));
 
@@ -212,7 +256,7 @@ class BroadcastTradeServiceTest {
         void signalFieldsCorrectlyMapped() {
             when(userRepository.findAll()).thenReturn(List.of());
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of());
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setIsDca(true);
@@ -236,7 +280,7 @@ class BroadcastTradeServiceTest {
         void nullSourceAuthor() {
             when(userRepository.findAll()).thenReturn(List.of());
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of());
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
 
             TradeRequest request = createRequest("CLOSE", "ETHUSDT", null);
             request.setSource(null);
@@ -258,9 +302,8 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1"));
-            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
-                    .thenReturn(List.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of("u1", Set.of("BINANCE")));
+            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
 
             SignalScore score = SignalScore.builder()
                     .confidence(85).riskLevel("LOW").reasoning("Strong trend").latencyMs(500).build();
@@ -288,9 +331,9 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1, user2));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2"));
-            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
-                    .thenReturn(List.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(
+                    Map.of("u1", Set.of("BINANCE"), "u2", Set.of("BINANCE")));
+            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setTargetUserIds(List.of("u1"));
@@ -302,9 +345,8 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("successCount")).isEqualTo(1);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(1); // u2
 
-            // 只對 u1 執行，u2 不執行
-            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
-            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), eq("u2"));
+            // orchestrator.executeSignal 被呼叫（代表 u1 執行了）
+            verify(orchestrator).executeSignal(any(), any());
         }
 
         @Test
@@ -321,12 +363,11 @@ class BroadcastTradeServiceTest {
             // u1 有訂閱, u2 有訂閱, u3 無訂閱
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
             // u1 有 API Key, u2 無 API Key
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1"));
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of("u1", Set.of("BINANCE")));
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             // u1 will execute, but let's make it succeed
-            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
-                    .thenReturn(List.of());
+            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
 
             service.broadcastTrade(request);
 
@@ -356,9 +397,9 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1, user2));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2"));
-            when(binanceFuturesService.executeSignalForBroadcast(any(), anyString()))
-                    .thenReturn(List.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(
+                    Map.of("u1", Set.of("BINANCE"), "u2", Set.of("BINANCE")));
+            when(orchestrator.executeClose(any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("CLOSE", "BTCUSDT", null);
             request.setTargetUserIds(null); // 明確設 null
@@ -368,8 +409,7 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("totalUsers")).isEqualTo(2);
             assertThat(result.get("successCount")).isEqualTo(2);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(0);
-            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
-            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u2"));
+            verify(orchestrator, times(2)).executeClose(any(), any());
         }
 
         @Test
@@ -382,9 +422,9 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1, user2));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2"));
-            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
-                    .thenReturn(List.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(
+                    Map.of("u1", Set.of("BINANCE"), "u2", Set.of("BINANCE")));
+            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("ENTRY", "ETHUSDT", "LONG");
             request.setTargetUserIds(List.of("u1"));
@@ -394,8 +434,8 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("totalUsers")).isEqualTo(1);
             assertThat(result.get("successCount")).isEqualTo(1);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(1);
-            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
-            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), eq("u2"));
+            // orchestrator 只被呼叫一次（u1）
+            verify(orchestrator, times(1)).executeSignal(any(), any());
         }
 
         @Test
@@ -406,7 +446,7 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1"));
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of("u1", Set.of("BINANCE")));
 
             TradeRequest request = createRequest("CLOSE", "BTCUSDT", null);
             request.setTargetUserIds(List.of("non-existent-id"));
@@ -415,7 +455,8 @@ class BroadcastTradeServiceTest {
 
             assertThat(result.get("totalUsers")).isEqualTo(0);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(1); // u1 被排除
-            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+            verify(orchestrator, never()).executeClose(any(), any());
+            verify(orchestrator, never()).executeSignal(any(), any());
         }
 
         @Test
@@ -426,7 +467,7 @@ class BroadcastTradeServiceTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
-            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of()); // u1 無 API Key
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of()); // u1 無 API Key
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setTargetUserIds(List.of("u1")); // 指定 u1，但 u1 無 API Key
@@ -437,7 +478,8 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("totalUsers")).isEqualTo(0);
             assertThat(result.get("skippedNoApiKey")).isEqualTo(1);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(0); // targetUserIds 過濾時 activeUsers 已為空
-            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+            verify(orchestrator, never()).executeSignal(any(), any());
+            verify(orchestrator, never()).executeClose(any(), any());
         }
     }
 }

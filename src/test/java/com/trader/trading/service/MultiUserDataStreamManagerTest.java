@@ -6,7 +6,7 @@ import com.trader.trading.config.MultiUserConfig;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import okhttp3.*;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -89,10 +89,10 @@ class MultiUserDataStreamManagerTest {
 
             when(userRepository.findAll()).thenReturn(List.of(user1, user2, user3disabled, user4noAuto, user5noKey));
 
-            // Batch 模式：只有 u1, u2 有 API Key（u5 沒有，getAllBinanceKeys 不回傳）
-            when(userApiKeyService.getAllBinanceKeys("BINANCE")).thenReturn(Map.of(
-                    "u1", new BinanceKeys("key1", "secret1"),
-                    "u2", new BinanceKeys("key2", "secret2")));
+            // Batch 模式：只有 u1, u2 有 API Key（u5 沒有，getAllExchangeKeys 不回傳）
+            when(userApiKeyService.getAllExchangeKeys("BINANCE")).thenReturn(Map.of(
+                    "u1", new ExchangeKeys("key1", "secret1"),
+                    "u2", new ExchangeKeys("key2", "secret2")));
 
             // startAllStreams 會因為 createListenKey HTTP call 失敗而進入 reconnect
             // 但 context 仍會被放入 activeStreams
@@ -106,7 +106,7 @@ class MultiUserDataStreamManagerTest {
         @DisplayName("沒有符合條件的用戶 — activeStreams 為空")
         void noEligibleUsers() {
             when(userRepository.findAll()).thenReturn(List.of());
-            when(userApiKeyService.getAllBinanceKeys("BINANCE")).thenReturn(Map.of());
+            when(userApiKeyService.getAllExchangeKeys("BINANCE")).thenReturn(Map.of());
 
             manager.startAllStreams();
 
@@ -123,7 +123,7 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("用戶無 API Key 時不建立 stream")
         void noApiKeySkips() {
-            when(userApiKeyService.getUserBinanceKeys("u1")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserExchangeKeys("u1", "BINANCE")).thenReturn(Optional.empty());
 
             manager.startUserStream("u1");
 
@@ -133,8 +133,8 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("重複呼叫同一用戶 — 跳過不重建")
         void duplicateStartSkips() {
-            when(userApiKeyService.getUserBinanceKeys("u1"))
-                    .thenReturn(Optional.of(new BinanceKeys("key1", "secret1")));
+            when(userApiKeyService.getUserExchangeKeys("u1", "BINANCE"))
+                    .thenReturn(Optional.of(new ExchangeKeys("key1", "secret1")));
 
             // 第一次啟動（會因 HTTP mock 失敗進 reconnect，但 context 會存入 map）
             manager.startUserStream("u1");
@@ -163,8 +163,8 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("停止已存在的用戶 — 從 map 移除")
         void stopExistingUserRemovesFromMap() {
-            when(userApiKeyService.getUserBinanceKeys("u1"))
-                    .thenReturn(Optional.of(new BinanceKeys("key1", "secret1")));
+            when(userApiKeyService.getUserExchangeKeys("u1", "BINANCE"))
+                    .thenReturn(Optional.of(new ExchangeKeys("key1", "secret1")));
 
             manager.startUserStream("u1");
             assertThat(manager.getActiveStreams()).containsKey("u1");
@@ -183,8 +183,8 @@ class MultiUserDataStreamManagerTest {
         @Test
         @DisplayName("停止所有 stream 並清空 map")
         void stopsAllAndClearsMap() {
-            when(userApiKeyService.getUserBinanceKeys(anyString()))
-                    .thenReturn(Optional.of(new BinanceKeys("key", "secret")));
+            when(userApiKeyService.getUserExchangeKeys(anyString(), eq("BINANCE")))
+                    .thenReturn(Optional.of(new ExchangeKeys("key", "secret")));
 
             manager.startUserStream("u1");
             manager.startUserStream("u2");
@@ -354,7 +354,7 @@ class MultiUserDataStreamManagerTest {
             UserStreamContext context = new UserStreamContext("u1", "User 1", "old-key", "old-secret");
             manager.getActiveStreams().put("u1", context);
 
-            when(userApiKeyService.getUserBinanceKeys("u1")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserExchangeKeys("u1", "BINANCE")).thenReturn(Optional.empty());
 
             manager.reconnect("u1");
 
@@ -367,8 +367,8 @@ class MultiUserDataStreamManagerTest {
             UserStreamContext context = new UserStreamContext("u1", "User 1", "old-key", "old-secret");
             manager.getActiveStreams().put("u1", context);
 
-            when(userApiKeyService.getUserBinanceKeys("u1"))
-                    .thenReturn(Optional.of(new BinanceKeys("new-key", "new-secret")));
+            when(userApiKeyService.getUserExchangeKeys("u1", "BINANCE"))
+                    .thenReturn(Optional.of(new ExchangeKeys("new-key", "new-secret")));
 
             // createListenKey 會失敗（HTTP mock 未完整設定），但 context API Key 應已更新
             manager.reconnect("u1");
@@ -493,7 +493,7 @@ class MultiUserDataStreamManagerTest {
             assertThat(manager.isShuttingDown()).isTrue();
 
             when(userRepository.findAll()).thenReturn(List.of());
-            when(userApiKeyService.getAllBinanceKeys("BINANCE")).thenReturn(Map.of());
+            when(userApiKeyService.getAllExchangeKeys("BINANCE")).thenReturn(Map.of());
             manager.startAllStreams();
 
             assertThat(manager.isShuttingDown()).isFalse();
@@ -515,9 +515,9 @@ class MultiUserDataStreamManagerTest {
             when(userRepository.findAll()).thenReturn(List.of(user1, user2));
 
             // Batch 模式：兩個用戶都有 API Key
-            when(userApiKeyService.getAllBinanceKeys("BINANCE")).thenReturn(Map.of(
-                    "u1", new BinanceKeys("key1", "secret1"),
-                    "u2", new BinanceKeys("key2", "secret2")));
+            when(userApiKeyService.getAllExchangeKeys("BINANCE")).thenReturn(Map.of(
+                    "u1", new ExchangeKeys("key1", "secret1"),
+                    "u2", new ExchangeKeys("key2", "secret2")));
 
             manager.startAllStreams();
 
