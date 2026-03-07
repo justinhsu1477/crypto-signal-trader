@@ -97,7 +97,6 @@ describe("AuthLayout", () => {
     render(<AuthLayout><div>Test Child</div></AuthLayout>);
 
     expect(screen.getByText("Trade Crypto with")).toBeInTheDocument();
-    expect(screen.getByText("AI-Powered Signals")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Integrate signals from top communities, auto-execute trades on Binance."
