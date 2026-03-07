@@ -21,7 +21,6 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
-  ShieldAlert,
 } from "lucide-react";
 
 function StatusDot({ status }: { status: string }) {
