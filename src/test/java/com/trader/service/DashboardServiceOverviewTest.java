@@ -7,7 +7,8 @@ import com.trader.subscription.dto.SubscriptionStatusResponse;
 import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
-import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.TradeRecordService;
@@ -44,7 +45,8 @@ class DashboardServiceOverviewTest {
     private DashboardService dashboardService;
     private TradeRecordService tradeRecordService;
     private SubscriptionService subscriptionService;
-    private BinanceFuturesService binanceFuturesService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
+    private ExchangeAdapter defaultAdapter;
     private RiskConfig riskConfig;
     private TradeConfigResolver tradeConfigResolver;
     private MultiUserConfig multiUserConfig;
@@ -54,7 +56,9 @@ class DashboardServiceOverviewTest {
     void setUp() {
         tradeRecordService = Mockito.mock(TradeRecordService.class);
         subscriptionService = Mockito.mock(SubscriptionService.class);
-        binanceFuturesService = Mockito.mock(BinanceFuturesService.class);
+        defaultAdapter = Mockito.mock(ExchangeAdapter.class);
+        exchangeAdapterFactory = Mockito.mock(ExchangeAdapterFactory.class);
+        Mockito.when(exchangeAdapterFactory.getDefaultAdapter()).thenReturn(defaultAdapter);
         riskConfig = Mockito.mock(RiskConfig.class);
         tradeConfigResolver = Mockito.mock(TradeConfigResolver.class);
         multiUserConfig = new MultiUserConfig(); // default enabled=false
@@ -68,7 +72,7 @@ class DashboardServiceOverviewTest {
         Mockito.when(tradeConfigResolver.resolve(Mockito.any())).thenReturn(defaultConfig);
 
         dashboardService = new DashboardService(
-                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, Mockito.mock(UserRepository.class),
+                tradeRecordService, subscriptionService, exchangeAdapterFactory, riskConfig, Mockito.mock(UserRepository.class),
                 tradeConfigResolver, multiUserConfig, userApiKeyService,
                 Mockito.mock(com.trader.user.service.UserDiscordWebhookService.class),
                 Mockito.mock(StartOfDayBalanceCache.class),
@@ -95,7 +99,7 @@ class DashboardServiceOverviewTest {
             when(tradeRecordService.getTodayStats(userId)).thenReturn(todayStats);
             when(tradeRecordService.findAllOpenTrades(userId)).thenReturn(List.of());
             when(tradeRecordService.getTodayRealizedLoss(userId)).thenReturn(-100.0);
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
             when(subscriptionService.getStatus(userId)).thenReturn(
                     SubscriptionStatusResponse.builder().status("NONE").active(false).build());
 
@@ -128,7 +132,7 @@ class DashboardServiceOverviewTest {
         @DisplayName("正常情境 — 有餘額、有持倉、有今日盈虧")
         void normalScenario() {
             // 設定餘額
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
 
             // 設定今日統計
             Map<String, Object> todayStats = new LinkedHashMap<>();
@@ -174,7 +178,7 @@ class DashboardServiceOverviewTest {
         @Test
         @DisplayName("Binance API 失敗 → 餘額降級為 0")
         void binanceApiFailed() {
-            when(binanceFuturesService.getAvailableBalance())
+            when(defaultAdapter.getAvailableBalance())
                     .thenThrow(new RuntimeException("API timeout"));
 
             Map<String, Object> todayStats = new LinkedHashMap<>();
@@ -196,7 +200,7 @@ class DashboardServiceOverviewTest {
         @Test
         @DisplayName("無持倉、無交易 → 帳戶概況為空值/零")
         void emptyAccount() {
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(10000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(10000.0);
 
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
@@ -223,7 +227,7 @@ class DashboardServiceOverviewTest {
     class RiskBudgetTest {
 
         private void setupBasicMocks() {
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);
@@ -298,7 +302,7 @@ class DashboardServiceOverviewTest {
     class SubscriptionInfoTest {
 
         private void setupBasicMocks() {
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);
@@ -364,7 +368,7 @@ class DashboardServiceOverviewTest {
     class OpenPositionSummaryTest {
 
         private void setupBasicMocksExceptOpenTrades() {
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
             Map<String, Object> todayStats = new LinkedHashMap<>();
             todayStats.put("trades", 0L);
             todayStats.put("netProfit", 0.0);

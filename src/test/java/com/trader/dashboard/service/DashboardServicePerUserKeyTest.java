@@ -4,15 +4,16 @@ import com.trader.shared.config.RiskConfig;
 import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
-import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.repository.UserRepository;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import org.junit.jupiter.api.*;
-import org.mockito.MockedStatic;
 
 import java.util.*;
 
@@ -33,7 +34,8 @@ class DashboardServicePerUserKeyTest {
 
     private TradeRecordService tradeRecordService;
     private SubscriptionService subscriptionService;
-    private BinanceFuturesService binanceFuturesService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
+    private ExchangeAdapter defaultAdapter;
     private RiskConfig riskConfig;
     private UserRepository userRepository;
     private TradeConfigResolver tradeConfigResolver;
@@ -47,7 +49,10 @@ class DashboardServicePerUserKeyTest {
     void setUp() {
         tradeRecordService = mock(TradeRecordService.class);
         subscriptionService = mock(SubscriptionService.class);
-        binanceFuturesService = mock(BinanceFuturesService.class);
+        defaultAdapter = mock(ExchangeAdapter.class);
+        exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
+        when(exchangeAdapterFactory.getDefaultAdapter()).thenReturn(defaultAdapter);
+        when(exchangeAdapterFactory.getAdapter(anyString())).thenReturn(defaultAdapter);
         riskConfig = mock(RiskConfig.class);
         userRepository = mock(UserRepository.class);
         tradeConfigResolver = mock(TradeConfigResolver.class);
@@ -67,7 +72,7 @@ class DashboardServicePerUserKeyTest {
                 .thenThrow(new RuntimeException("no subscription"));
 
         dashboardService = new DashboardService(
-                tradeRecordService, subscriptionService, binanceFuturesService,
+                tradeRecordService, subscriptionService, exchangeAdapterFactory,
                 riskConfig, userRepository, tradeConfigResolver,
                 multiUserConfig, userApiKeyService,
                 mock(com.trader.user.service.UserDiscordWebhookService.class),
@@ -82,22 +87,22 @@ class DashboardServicePerUserKeyTest {
     class SingleUserMode {
 
         @Test
-        @DisplayName("直接使用全局 API Key — 不呼叫 setCurrentUserKeys")
+        @DisplayName("直接使用預設交易所 API Key — 不呼叫 getUserPrimaryExchangeKeys")
         void usesGlobalApiKey() {
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
 
             var overview = dashboardService.getOverview(USER_ID);
 
             assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(5000.0);
 
             // 確認不呼叫 per-user key 相關方法
-            verify(userApiKeyService, never()).getUserBinanceKeys(anyString());
+            verify(userApiKeyService, never()).getUserPrimaryExchangeKeys(anyString());
         }
 
         @Test
-        @DisplayName("Binance API 失敗 — 餘額為 0，不崩潰")
+        @DisplayName("交易所 API 失敗 — 餘額為 0，不崩潰")
         void balanceFailureReturnsZero() {
-            when(binanceFuturesService.getAvailableBalance()).thenThrow(new RuntimeException("timeout"));
+            when(defaultAdapter.getAvailableBalance()).thenThrow(new RuntimeException("timeout"));
 
             var overview = dashboardService.getOverview(USER_ID);
 
@@ -115,51 +120,49 @@ class DashboardServicePerUserKeyTest {
         }
 
         @Test
-        @DisplayName("有 API Key → 設定 per-user Key → 查詢餘額 → finally 清除")
+        @DisplayName("有 API Key → 設定 per-user credentials → 查詢餘額 → finally 清除")
         void setsAndClearsUserKeys() {
-            BinanceKeys userKeys = new BinanceKeys("user-api-key", "user-secret-key");
-            when(userApiKeyService.getUserBinanceKeys(USER_ID)).thenReturn(Optional.of(userKeys));
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(8888.0);
+            ExchangeKeys userKeys = new ExchangeKeys("user-api-key", "user-secret-key");
+            when(userApiKeyService.getUserPrimaryExchangeKeys(USER_ID))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", userKeys)));
+            when(defaultAdapter.getAvailableBalance()).thenReturn(8888.0);
 
-            try (MockedStatic<BinanceFuturesService> bfsMock = mockStatic(BinanceFuturesService.class)) {
-                var overview = dashboardService.getOverview(USER_ID);
+            var overview = dashboardService.getOverview(USER_ID);
 
-                assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(8888.0);
+            assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(8888.0);
 
-                // 驗證 per-user key 注入和清除（account + riskBudget 各呼叫一次）
-                bfsMock.verify(() -> BinanceFuturesService.setCurrentUserKeys(userKeys), atLeast(1));
-                bfsMock.verify(() -> BinanceFuturesService.clearCurrentUserKeys(), atLeast(1));
-            }
+            // 驗證 adapter credentials 注入和清除
+            verify(defaultAdapter, atLeast(1)).setCredentials(any(ExchangeCredentials.class));
+            verify(defaultAdapter, atLeast(1)).clearCredentials();
         }
 
         @Test
-        @DisplayName("無 API Key → 餘額返回 0，不呼叫 Binance API")
+        @DisplayName("無 API Key → 餘額返回 0，不呼叫交易所 API")
         void noApiKeyReturnsZeroBalance() {
-            when(userApiKeyService.getUserBinanceKeys(USER_ID)).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys(USER_ID)).thenReturn(Optional.empty());
 
             var overview = dashboardService.getOverview(USER_ID);
 
             assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(0.0);
-            // 不應呼叫 Binance API
-            verify(binanceFuturesService, never()).getAvailableBalance();
+            // 不應呼叫交易所 API
+            verify(defaultAdapter, never()).getAvailableBalance();
         }
 
         @Test
-        @DisplayName("有 API Key 但 Binance 拋例外 → 餘額為 0，Key 仍被清除")
+        @DisplayName("有 API Key 但交易所拋例外 → 餘額為 0，credentials 仍被清除")
         void apiExceptionStillClearsKeys() {
-            BinanceKeys userKeys = new BinanceKeys("user-api-key", "user-secret-key");
-            when(userApiKeyService.getUserBinanceKeys(USER_ID)).thenReturn(Optional.of(userKeys));
-            when(binanceFuturesService.getAvailableBalance()).thenThrow(new RuntimeException("Binance error"));
+            ExchangeKeys userKeys = new ExchangeKeys("user-api-key", "user-secret-key");
+            when(userApiKeyService.getUserPrimaryExchangeKeys(USER_ID))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", userKeys)));
+            when(defaultAdapter.getAvailableBalance()).thenThrow(new RuntimeException("Exchange error"));
 
-            try (MockedStatic<BinanceFuturesService> bfsMock = mockStatic(BinanceFuturesService.class)) {
-                var overview = dashboardService.getOverview(USER_ID);
+            var overview = dashboardService.getOverview(USER_ID);
 
-                assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(0.0);
+            assertThat(overview.getAccount().getAvailableBalance()).isEqualTo(0.0);
 
-                // 即使 API 失敗，仍應清除 key（account + riskBudget 各呼叫一次）
-                bfsMock.verify(() -> BinanceFuturesService.setCurrentUserKeys(userKeys), atLeast(1));
-                bfsMock.verify(() -> BinanceFuturesService.clearCurrentUserKeys(), atLeast(1));
-            }
+            // 即使 API 失敗，仍應清除 credentials
+            verify(defaultAdapter, atLeast(1)).setCredentials(any(ExchangeCredentials.class));
+            verify(defaultAdapter, atLeast(1)).clearCredentials();
         }
     }
 }

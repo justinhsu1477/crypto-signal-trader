@@ -2,11 +2,14 @@ package com.trader.advisor.service;
 
 import com.trader.advisor.config.AdvisorConfig;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import org.junit.jupiter.api.*;
 import org.springframework.http.ResponseEntity;
 
@@ -29,6 +32,7 @@ class AdvisorSchedulerTest {
     private MultiUserConfig multiUserConfig;
     private UserRepository userRepository;
     private UserApiKeyService userApiKeyService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
     private AdvisorScheduler scheduler;
 
     @BeforeEach
@@ -38,8 +42,10 @@ class AdvisorSchedulerTest {
         multiUserConfig = new MultiUserConfig(); // 預設 enabled=false
         userRepository = mock(UserRepository.class);
         userApiKeyService = mock(UserApiKeyService.class);
+        exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
         scheduler = new AdvisorScheduler(advisorService, advisorConfig,
-                multiUserConfig, userRepository, userApiKeyService);
+                multiUserConfig, userRepository, userApiKeyService,
+                exchangeAdapterFactory);
     }
 
     @AfterEach
@@ -100,17 +106,24 @@ class AdvisorSchedulerTest {
             User userC = createUser("user-c", false); // disabled
 
             when(userRepository.findAll()).thenReturn(List.of(userA, userB, userC));
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
-            when(userApiKeyService.getUserBinanceKeys("user-b"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-b", "secret-b")));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-b"))
+                    .thenReturn(Optional.of(Map.entry("BYBIT", new ExchangeKeys("key-b", "secret-b"))));
+
+            ExchangeAdapter adapterA = mock(ExchangeAdapter.class);
+            ExchangeAdapter adapterB = mock(ExchangeAdapter.class);
+            when(exchangeAdapterFactory.getAdapter("BINANCE")).thenReturn(adapterA);
+            when(exchangeAdapterFactory.getAdapter("BYBIT")).thenReturn(adapterB);
 
             scheduler.scheduledAdvisory();
 
             // 2 個有效用戶，執行 2 次
             verify(advisorService, times(2)).runAdvisory();
-            verify(advisorService, times(2)).setAdvisoryUserKeys(anyString());
-            verify(advisorService, times(2)).clearAdvisoryUserKeys();
+            verify(advisorService, times(2)).setAdvisoryContext(any(ExchangeAdapter.class));
+            verify(advisorService, times(2)).clearAdvisoryContext();
+            verify(adapterA).setCredentials(new ExchangeCredentials("key-a", "secret-a"));
+            verify(adapterB).setCredentials(new ExchangeCredentials("key-b", "secret-b"));
         }
 
         @Test
@@ -120,7 +133,7 @@ class AdvisorSchedulerTest {
 
             User user = createUser("user-no-key", true);
             when(userRepository.findAll()).thenReturn(List.of(user));
-            when(userApiKeyService.getUserBinanceKeys("user-no-key"))
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-no-key"))
                     .thenReturn(Optional.empty());
 
             scheduler.scheduledAdvisory();
@@ -137,10 +150,13 @@ class AdvisorSchedulerTest {
             User userB = createUser("user-b", true);
 
             when(userRepository.findAll()).thenReturn(List.of(userA, userB));
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
-            when(userApiKeyService.getUserBinanceKeys("user-b"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-b", "secret-b")));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-b"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-b", "secret-b"))));
+
+            ExchangeAdapter adapter = mock(ExchangeAdapter.class);
+            when(exchangeAdapterFactory.getAdapter("BINANCE")).thenReturn(adapter);
 
             // 第一次呼叫拋例外，第二次成功
             doThrow(new RuntimeException("Gemini fail"))
@@ -158,14 +174,17 @@ class AdvisorSchedulerTest {
 
             User user = createUser("user-a", true);
             when(userRepository.findAll()).thenReturn(List.of(user));
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
+
+            ExchangeAdapter adapter = mock(ExchangeAdapter.class);
+            when(exchangeAdapterFactory.getAdapter("BINANCE")).thenReturn(adapter);
             doThrow(new RuntimeException("fail")).when(advisorService).runAdvisory();
 
             scheduler.scheduledAdvisory();
 
             // 驗證 finally 有清除
-            verify(advisorService).clearAdvisoryUserKeys();
+            verify(advisorService).clearAdvisoryContext();
             assertThat(TradeRecordService.getCurrentUserId()).isNull();
         }
     }

@@ -4,11 +4,14 @@ import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,7 +19,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -39,7 +41,7 @@ import java.util.stream.Collectors;
 public class UnprotectedPositionRecoveryTask {
 
     private final TradeRepository tradeRepository;
-    private final BinanceFuturesService binanceFuturesService;
+    private final ExchangeAdapterFactory exchangeAdapterFactory;
     private final TradeRecordService tradeRecordService;
     private final NotificationService notificationService;
     private final MultiUserConfig multiUserConfig;
@@ -67,7 +69,8 @@ public class UnprotectedPositionRecoveryTask {
 
     private void checkGlobal() {
         List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
-        RecoverySummary summary = checkTradesForUser(openTrades, null);
+        ExchangeAdapter adapter = exchangeAdapterFactory.getDefaultAdapter();
+        RecoverySummary summary = checkTradesForUser(openTrades, null, adapter);
         logSummary(summary);
         cleanupStaleAttempts(openTrades);
     }
@@ -84,22 +87,25 @@ public class UnprotectedPositionRecoveryTask {
         for (User user : users) {
             String userId = user.getUserId();
             try {
-                Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
-                if (keysOpt.isEmpty()) {
+                var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(userId);
+                if (primaryOpt.isEmpty()) {
                     continue;
                 }
 
-                BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+                String exchange = primaryOpt.get().getKey();
+                ExchangeKeys keys = primaryOpt.get().getValue();
+                ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+                adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
                 TradeRecordService.setCurrentUserId(userId);
 
                 try {
                     List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(userId, "OPEN");
                     allOpenTrades.addAll(openTrades);
-                    RecoverySummary summary = checkTradesForUser(openTrades, userId);
+                    RecoverySummary summary = checkTradesForUser(openTrades, userId, adapter);
                     totalRecovered += summary.recovered;
                     totalFailed += summary.failed;
                 } finally {
-                    BinanceFuturesService.clearCurrentUserKeys();
+                    adapter.clearCredentials();
                     TradeRecordService.clearCurrentUserId();
                 }
             } catch (Exception e) {
@@ -118,14 +124,14 @@ public class UnprotectedPositionRecoveryTask {
         cleanupStaleAttempts(allOpenTrades);
     }
 
-    RecoverySummary checkTradesForUser(List<Trade> openTrades, String userId) {
+    RecoverySummary checkTradesForUser(List<Trade> openTrades, String userId, ExchangeAdapter adapter) {
         if (openTrades.isEmpty()) {
             return new RecoverySummary(0, 0, 0, 0);
         }
 
         Map<String, Double> positionMap;
         try {
-            positionMap = binanceFuturesService.getAllPositionAmounts();
+            positionMap = adapter.getAllPositionAmounts();
         } catch (Exception e) {
             log.error("查詢持倉失敗，跳過本輪 SL 檢查: {}", e.getMessage());
             return new RecoverySummary(openTrades.size(), 0, 0, openTrades.size());
@@ -151,7 +157,7 @@ public class UnprotectedPositionRecoveryTask {
             // 2. 查 SL 是否存在
             double[] sltp;
             try {
-                sltp = binanceFuturesService.getCurrentSLTPPrices(symbol);
+                sltp = adapter.getCurrentSLTPPrices(symbol);
             } catch (Exception e) {
                 log.warn("查詢 {symbol} SL/TP 失敗: {}", symbol, e.getMessage());
                 skipped++;
@@ -212,13 +218,13 @@ public class UnprotectedPositionRecoveryTask {
 
             try {
                 // 3d. lock 內 double-check：再查一次持倉 + SL
-                double currentAmt = binanceFuturesService.getCurrentPositionAmount(symbol);
+                double currentAmt = adapter.getCurrentPositionAmount(symbol);
                 if (currentAmt == 0) {
                     skipped++;
                     continue;
                 }
 
-                double[] currentSltp = binanceFuturesService.getCurrentSLTPPrices(symbol);
+                double[] currentSltp = adapter.getCurrentSLTPPrices(symbol);
                 if (currentSltp[0] != 0) {
                     // SL 已被補上（race condition 解決）
                     skipped++;
@@ -227,7 +233,7 @@ public class UnprotectedPositionRecoveryTask {
 
                 // 3e. 執行 SL 補掛
                 String closeSide = "LONG".equals(trade.getSide()) ? "SELL" : "BUY";
-                OrderResult slResult = binanceFuturesService.placeStopLoss(
+                OrderResult slResult = adapter.setStopLoss(
                         symbol, closeSide, trade.getStopLoss(), Math.abs(currentAmt));
 
                 if (slResult.isSuccess()) {

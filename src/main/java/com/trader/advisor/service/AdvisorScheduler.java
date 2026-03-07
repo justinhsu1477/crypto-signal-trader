@@ -2,10 +2,14 @@ package com.trader.advisor.service;
 
 import com.trader.advisor.config.AdvisorConfig;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +41,7 @@ public class AdvisorScheduler {
     private final MultiUserConfig multiUserConfig;
     private final UserRepository userRepository;
     private final UserApiKeyService userApiKeyService;
+    private final ExchangeAdapterFactory exchangeAdapterFactory;
 
     /**
      * 定時觸發 AI 顧問分析
@@ -75,14 +80,14 @@ public class AdvisorScheduler {
      * 多用戶模式 — 遍歷每個有 API Key 的用戶
      *
      * 利用 ThreadLocal 機制：
-     * - setAdvisoryUserKeys → BinanceFuturesService 用該用戶 API Key 查餘額/持倉
+     * - setAdvisoryContext → 設定 per-user ExchangeAdapter（支援多交易所）
      * - setCurrentUserId → TradeRecordService 查該用戶的交易紀錄
      * - runAdvisory() 內部方法（findAllOpenTrades 等）會自動讀 ThreadLocal
      */
     private void runForAllUsers() {
         List<User> users = userRepository.findAll().stream()
                 .filter(User::isEnabled)
-                .filter(u -> userApiKeyService.getUserBinanceKeys(u.getUserId()).isPresent())
+                .filter(u -> userApiKeyService.getUserPrimaryExchangeKeys(u.getUserId()).isPresent())
                 .toList();
 
         log.info("AI Advisor 多用戶排程觸發: {} 個用戶", users.size());
@@ -90,14 +95,22 @@ public class AdvisorScheduler {
 
         for (User user : users) {
             try {
-                advisorService.setAdvisoryUserKeys(user.getUserId());
+                var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(user.getUserId());
+                if (primaryOpt.isEmpty()) continue;
+
+                String exchange = primaryOpt.get().getKey();
+                ExchangeKeys keys = primaryOpt.get().getValue();
+                ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+                adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
+
+                advisorService.setAdvisoryContext(adapter);
                 TradeRecordService.setCurrentUserId(user.getUserId());
                 advisorService.runAdvisory();
                 success++;
             } catch (Exception e) {
                 log.error("AI Advisor 用戶 {} 執行失敗: {}", user.getUserId(), e.getMessage());
             } finally {
-                advisorService.clearAdvisoryUserKeys();
+                advisorService.clearAdvisoryContext();
                 TradeRecordService.clearCurrentUserId();
             }
         }

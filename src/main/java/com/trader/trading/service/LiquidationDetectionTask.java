@@ -7,11 +7,14 @@ import com.google.gson.JsonObject;
 import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -34,7 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class LiquidationDetectionTask {
 
-    private final BinanceFuturesService binanceFuturesService;
+    private final ExchangeAdapterFactory exchangeAdapterFactory;
     private final TradeRecordService tradeRecordService;
     private final TradeRepository tradeRepository;
     private final NotificationService notificationService;
@@ -60,7 +63,8 @@ public class LiquidationDetectionTask {
     }
 
     private void checkGlobal() {
-        int detected = detectForceOrders(null);
+        ExchangeAdapter adapter = exchangeAdapterFactory.getDefaultAdapter();
+        int detected = detectForceOrders(null, adapter);
         if (detected > 0) {
             log.warn("強制平倉偵測完成: 發現 {} 筆", detected);
         }
@@ -74,16 +78,19 @@ public class LiquidationDetectionTask {
         for (User user : users) {
             String userId = user.getUserId();
             try {
-                Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
-                if (keysOpt.isEmpty()) continue;
+                var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(userId);
+                if (primaryOpt.isEmpty()) continue;
 
-                BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+                String exchange = primaryOpt.get().getKey();
+                ExchangeKeys keys = primaryOpt.get().getValue();
+                ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+                adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
                 TradeRecordService.setCurrentUserId(userId);
 
                 try {
-                    detectForceOrders(userId);
+                    detectForceOrders(userId, adapter);
                 } finally {
-                    BinanceFuturesService.clearCurrentUserKeys();
+                    adapter.clearCredentials();
                     TradeRecordService.clearCurrentUserId();
                 }
             } catch (Exception e) {
@@ -92,10 +99,10 @@ public class LiquidationDetectionTask {
         }
     }
 
-    int detectForceOrders(String userId) {
+    int detectForceOrders(String userId, ExchangeAdapter adapter) {
         String response;
         try {
-            response = binanceFuturesService.getForceOrders();
+            response = adapter.getForceOrdersRaw();
         } catch (Exception e) {
             log.warn("查詢 forceOrders 失敗: {}", e.getMessage());
             return 0;

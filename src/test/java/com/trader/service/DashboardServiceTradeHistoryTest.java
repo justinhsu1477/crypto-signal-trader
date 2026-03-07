@@ -5,7 +5,7 @@ import com.trader.dashboard.service.DashboardService;
 import com.trader.shared.config.RiskConfig;
 import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.entity.Trade;
-import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.TradeRecordService;
@@ -44,14 +44,14 @@ class DashboardServiceTradeHistoryTest {
     void setUp() {
         tradeRecordService = Mockito.mock(TradeRecordService.class);
         SubscriptionService subscriptionService = Mockito.mock(SubscriptionService.class);
-        BinanceFuturesService binanceFuturesService = Mockito.mock(BinanceFuturesService.class);
+        ExchangeAdapterFactory exchangeAdapterFactory = Mockito.mock(ExchangeAdapterFactory.class);
         RiskConfig riskConfig = Mockito.mock(RiskConfig.class);
         UserRepository userRepository = Mockito.mock(UserRepository.class);
         multiUserConfig = new MultiUserConfig(); // default enabled=false
         userApiKeyService = Mockito.mock(UserApiKeyService.class);
 
         dashboardService = new DashboardService(
-                tradeRecordService, subscriptionService, binanceFuturesService, riskConfig, userRepository,
+                tradeRecordService, subscriptionService, exchangeAdapterFactory, riskConfig, userRepository,
                 Mockito.mock(TradeConfigResolver.class), multiUserConfig, userApiKeyService,
                 Mockito.mock(com.trader.user.service.UserDiscordWebhookService.class),
                 Mockito.mock(StartOfDayBalanceCache.class),

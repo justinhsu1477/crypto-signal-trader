@@ -3,11 +3,14 @@ package com.trader.trading.service;
 import com.trader.shared.config.AppConstants;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -26,11 +29,11 @@ import java.util.stream.Collectors;
  * 2. 殭屍 OPEN Trade — 應用離線期間 SL/TP 在 Binance 端觸發，但 DB 仍標 OPEN
  *
  * 策略：
- * - PENDING_CLOSE → 查詢 Binance 當前持倉，若已無持倉則標為 CLOSED（用 markPrice 估算 exitPrice）
- * - OPEN → 與 Binance getCurrentPositionAmount 比對，若無持倉則標為 CANCELLED
+ * - PENDING_CLOSE → 查詢交易所當前持倉，若已無持倉則標為 CLOSED（用 markPrice 估算 exitPrice）
+ * - OPEN → 與交易所 getCurrentPositionAmount 比對，若無持倉則標為 CANCELLED
  *
  * 多用戶模式：
- * - 按 userId 分組 Trade，每組使用該用戶的 API Key 查詢 Binance 持倉
+ * - 按 userId 分組 Trade，每組使用該用戶的 API Key + 對應交易所 Adapter 查詢持倉
  * - 全局摘要發給 Admin，per-user 通知發給各用戶
  */
 @Slf4j
@@ -38,18 +41,18 @@ import java.util.stream.Collectors;
 public class StartupReconciliationService {
 
     private final TradeRepository tradeRepository;
-    private final BinanceFuturesService binanceFuturesService;
+    private final ExchangeAdapterFactory exchangeAdapterFactory;
     private final NotificationService discordWebhookService;
     private final MultiUserConfig multiUserConfig;
     private final UserApiKeyService userApiKeyService;
 
     public StartupReconciliationService(TradeRepository tradeRepository,
-                                         BinanceFuturesService binanceFuturesService,
+                                         ExchangeAdapterFactory exchangeAdapterFactory,
                                          NotificationService discordWebhookService,
                                          MultiUserConfig multiUserConfig,
                                          UserApiKeyService userApiKeyService) {
         this.tradeRepository = tradeRepository;
-        this.binanceFuturesService = binanceFuturesService;
+        this.exchangeAdapterFactory = exchangeAdapterFactory;
         this.discordWebhookService = discordWebhookService;
         this.multiUserConfig = multiUserConfig;
         this.userApiKeyService = userApiKeyService;
@@ -86,10 +89,11 @@ public class StartupReconciliationService {
      */
     private void reconcileGlobal() {
         List<String> report = new ArrayList<>();
+        ExchangeAdapter adapter = exchangeAdapterFactory.getDefaultAdapter();
 
-        int pendingFixed = reconcilePendingCloseTrades(report);
-        int zombieCleaned = reconcileZombieOpenTrades(report);
-        int phantomDetected = detectPhantomPositions(report);
+        int pendingFixed = reconcilePendingCloseTrades(report, tradeRepository.findByStatus("PENDING_CLOSE"), adapter);
+        int zombieCleaned = reconcileZombieOpenTrades(report, tradeRepository.findByStatus("OPEN"), adapter);
+        int phantomDetected = detectPhantomPositions(report, tradeRepository.findByStatus("OPEN"), null, adapter);
 
         log.info("啟動對帳完成: PENDING_CLOSE 修復={}, 殭屍清理={}, 隱形倉位={}",
                 pendingFixed, zombieCleaned, phantomDetected);
@@ -133,8 +137,8 @@ public class StartupReconciliationService {
         allUserIds.addAll(openByUser.keySet());
 
         // 隱形倉位偵測需要掃描所有有 API Key 的用戶（不只有 DB 紀錄的）
-        Map<String, BinanceKeys> allUserKeys = userApiKeyService.getAllBinanceKeys("BINANCE");
-        allUserIds.addAll(allUserKeys.keySet());
+        Map<String, Set<String>> allUserExchangeMap = userApiKeyService.getUserExchangeMap();
+        allUserIds.addAll(allUserExchangeMap.keySet());
 
         if (allUserIds.isEmpty()) {
             log.info("啟動對帳（多用戶）: 無用戶需對帳，跳過");
@@ -148,23 +152,24 @@ public class StartupReconciliationService {
         List<String> globalReport = new ArrayList<>();
 
         for (String userId : allUserIds) {
-            Optional<BinanceKeys> keysOpt = allUserKeys.containsKey(userId)
-                    ? Optional.of(allUserKeys.get(userId))
-                    : userApiKeyService.getUserBinanceKeys(userId);
-            if (keysOpt.isEmpty()) {
+            var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(userId);
+            if (primaryOpt.isEmpty()) {
                 log.warn("啟動對帳: 用戶 {} 未設定 API Key，跳過", userId);
                 continue;
             }
 
-            BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+            String exchange = primaryOpt.get().getKey();
+            ExchangeKeys keys = primaryOpt.get().getValue();
+            ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+            adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
             try {
                 List<String> report = new ArrayList<>();
                 int pFixed = reconcilePendingCloseTrades(report,
-                        pendingByUser.getOrDefault(userId, List.of()));
+                        pendingByUser.getOrDefault(userId, List.of()), adapter);
                 int zCleaned = reconcileZombieOpenTrades(report,
-                        openByUser.getOrDefault(userId, List.of()));
+                        openByUser.getOrDefault(userId, List.of()), adapter);
                 int phantom = detectPhantomPositions(report,
-                        openByUser.getOrDefault(userId, List.of()), userId);
+                        openByUser.getOrDefault(userId, List.of()), userId, adapter);
 
                 totalPendingFixed += pFixed;
                 totalZombieCleaned += zCleaned;
@@ -181,7 +186,7 @@ public class StartupReconciliationService {
             } catch (Exception e) {
                 log.error("啟動對帳 用戶 {} 失敗: {}", userId, e.getMessage());
             } finally {
-                BinanceFuturesService.clearCurrentUserKeys();
+                adapter.clearCredentials();
             }
         }
 
@@ -205,21 +210,13 @@ public class StartupReconciliationService {
     // ==================== 對帳核心邏輯 ====================
 
     /**
-     * 修復 PENDING_CLOSE 交易（單人模式 wrapper — 自行查 DB）
-     */
-    @Transactional
-    int reconcilePendingCloseTrades(List<String> report) {
-        return reconcilePendingCloseTrades(report, tradeRepository.findByStatus("PENDING_CLOSE"));
-    }
-
-    /**
-     * 修復 PENDING_CLOSE 交易（接收外部傳入的 Trade list）
+     * 修復 PENDING_CLOSE 交易（接收外部傳入的 Trade list + ExchangeAdapter）
      *
-     * 若 Binance 已無持倉 → 用 markPrice 估算 exitPrice 並標為 CLOSED
-     * 若 Binance 仍有持倉 → 保持 PENDING_CLOSE（WebSocket 重連後會收到事件）
+     * 若交易所已無持倉 → 用 markPrice 估算 exitPrice 並標為 CLOSED
+     * 若交易所仍有持倉 → 保持 PENDING_CLOSE（WebSocket 重連後會收到事件）
      */
     @Transactional
-    int reconcilePendingCloseTrades(List<String> report, List<Trade> pendingTrades) {
+    int reconcilePendingCloseTrades(List<String> report, List<Trade> pendingTrades, ExchangeAdapter adapter) {
         if (pendingTrades.isEmpty()) return 0;
 
         log.info("發現 {} 筆 PENDING_CLOSE 交易待修復", pendingTrades.size());
@@ -227,11 +224,11 @@ public class StartupReconciliationService {
 
         for (Trade trade : pendingTrades) {
             try {
-                double positionAmt = binanceFuturesService.getCurrentPositionAmount(trade.getSymbol());
+                double positionAmt = adapter.getCurrentPositionAmount(trade.getSymbol());
 
                 if (positionAmt == 0) {
-                    // Binance 已無持倉 → 用 markPrice 作為估算 exitPrice
-                    double estimatedExitPrice = binanceFuturesService.getMarkPrice(trade.getSymbol());
+                    // 交易所已無持倉 → 用 markPrice 作為估算 exitPrice
+                    double estimatedExitPrice = adapter.getMarkPrice(trade.getSymbol());
 
                     trade.setStatus("CLOSED");
                     if (trade.getExitPrice() == null || trade.getExitPrice() == 0) {
@@ -271,23 +268,15 @@ public class StartupReconciliationService {
     }
 
     /**
-     * 清理殭屍 OPEN 交易（單人模式 wrapper — 自行查 DB）
-     */
-    @Transactional
-    int reconcileZombieOpenTrades(List<String> report) {
-        return reconcileZombieOpenTrades(report, tradeRepository.findByStatus("OPEN"));
-    }
-
-    /**
-     * 清理殭屍 OPEN 交易（接收外部傳入的 Trade list）
+     * 清理殭屍 OPEN 交易（接收外部傳入的 Trade list + ExchangeAdapter）
      *
-     * 若 Binance 已無持倉 且 無未成交掛單 → 標為 CANCELLED (STALE_CLEANUP_STARTUP)
+     * 若交易所已無持倉 且 無未成交掛單 → 標為 CANCELLED (STALE_CLEANUP_STARTUP)
      *
-     * 注意：若 Binance 無持倉但仍有 LIMIT 掛單（入場單尚未成交），
+     * 注意：若交易所無持倉但仍有 LIMIT 掛單（入場單尚未成交），
      * 不應標為 CANCELLED，需等待掛單成交或過期。
      */
     @Transactional
-    int reconcileZombieOpenTrades(List<String> report, List<Trade> openTrades) {
+    int reconcileZombieOpenTrades(List<String> report, List<Trade> openTrades, ExchangeAdapter adapter) {
         if (openTrades.isEmpty()) return 0;
 
         log.info("檢查 {} 筆 OPEN 交易是否為殭屍紀錄", openTrades.size());
@@ -295,13 +284,13 @@ public class StartupReconciliationService {
 
         for (Trade trade : openTrades) {
             try {
-                double positionAmt = binanceFuturesService.getCurrentPositionAmount(trade.getSymbol());
+                double positionAmt = adapter.getCurrentPositionAmount(trade.getSymbol());
 
                 if (positionAmt == 0) {
                     // 無持倉 → 再檢查是否有未成交的入場掛單（LIMIT 單可能尚未成交）
                     boolean hasPendingOrders = false;
                     try {
-                        hasPendingOrders = binanceFuturesService.hasOpenEntryOrders(trade.getSymbol());
+                        hasPendingOrders = adapter.hasOpenEntryOrders(trade.getSymbol());
                     } catch (Exception orderEx) {
                         // 查詢掛單失敗 → 保守策略：不標 CANCELLED，避免誤殺
                         String detail = String.format("⏳ %s %s 無持倉但查詢掛單失敗: %s → 保守跳過",
@@ -326,7 +315,7 @@ public class StartupReconciliationService {
                         tradeRepository.save(trade);
                         cleaned++;
 
-                        String detail = String.format("🧹 %s %s %s OPEN → CANCELLED (Binance 無持倉且無掛單)",
+                        String detail = String.format("🧹 %s %s %s OPEN → CANCELLED (交易所無持倉且無掛單)",
                                 trade.getTradeId(), trade.getSymbol(), trade.getSide());
                         report.add(detail);
                         log.info(detail);
@@ -379,31 +368,20 @@ public class StartupReconciliationService {
         }
     }
 
-    // ==================== 反向掃描：Binance→DB 隱形倉位偵測 ====================
+    // ==================== 反向掃描：交易所→DB 隱形倉位偵測 ====================
 
     /**
-     * 偵測隱形倉位（單人模式 wrapper）
+     * 偵測隱形倉位（接收外部 Trade list + userId + ExchangeAdapter）
      *
-     * 反向掃描：查 Binance 所有持倉，比對 DB 是否有對應 OPEN Trade。
-     * 若 Binance 有持倉但 DB 無紀錄 → 發 CRITICAL 告警。
-     */
-    int detectPhantomPositions(List<String> report) {
-        List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
-        return detectPhantomPositions(report, openTrades, null);
-    }
-
-    /**
-     * 偵測隱形倉位（接收外部 Trade list + userId）
-     *
-     * 比對 Binance 實際持倉 vs DB OPEN Trade，找出「Binance 有但 DB 沒有」的倉位。
+     * 比對交易所實際持倉 vs DB OPEN Trade，找出「交易所有但 DB 沒有」的倉位。
      * 只發告警不自動操作（避免誤判）。
      */
-    int detectPhantomPositions(List<String> report, List<Trade> openTrades, String userId) {
+    int detectPhantomPositions(List<String> report, List<Trade> openTrades, String userId, ExchangeAdapter adapter) {
         Map<String, Double> positionMap;
         try {
-            positionMap = binanceFuturesService.getAllPositionAmounts();
+            positionMap = adapter.getAllPositionAmounts();
         } catch (Exception e) {
-            log.warn("隱形倉位偵測：查詢 Binance 持倉失敗: {}", e.getMessage());
+            log.warn("隱形倉位偵測：查詢交易所持倉失敗: {}", e.getMessage());
             return 0;
         }
 
@@ -422,18 +400,18 @@ public class StartupReconciliationService {
             double positionAmt = entry.getValue();
 
             if (!dbOpenSymbols.contains(symbol)) {
-                // Binance 有持倉但 DB 無紀錄 → 隱形倉位！
+                // 交易所有持倉但 DB 無紀錄 → 隱形倉位！
                 detected++;
                 String side = positionAmt > 0 ? "LONG" : "SHORT";
                 String detail = String.format(
-                        "🚨 隱形倉位: %s %s 數量=%.6f (Binance 有持倉但 DB 無紀錄, userId=%s)",
+                        "🚨 隱形倉位: %s %s 數量=%.6f (交易所有持倉但 DB 無紀錄, userId=%s)",
                         symbol, side, Math.abs(positionAmt), userId);
                 report.add(detail);
                 log.error(detail);
 
                 // 發送 CRITICAL 告警
                 String alertMsg = String.format(
-                        "%s %s\n數量: %.6f\nuserId: %s\n⚠️ Binance 有持倉但 DB 無紀錄！\n請立即手動確認並處理",
+                        "%s %s\n數量: %.6f\nuserId: %s\n⚠️ 交易所有持倉但 DB 無紀錄！\n請立即手動確認並處理",
                         symbol, side, Math.abs(positionAmt), userId);
                 discordWebhookService.sendNotificationToAdmins(
                         "🚨 隱形倉位偵測", alertMsg, DiscordWebhookService.COLOR_RED);

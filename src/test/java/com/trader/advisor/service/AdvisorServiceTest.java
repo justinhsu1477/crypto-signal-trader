@@ -5,9 +5,9 @@ import com.trader.notification.service.DiscordWebhookService;
 import com.trader.shared.config.RiskConfig;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
-import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
 import com.trader.trading.service.TradeRecordService;
-import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
 
@@ -25,25 +25,27 @@ import static org.mockito.Mockito.*;
 class AdvisorServiceTest {
 
     private GeminiService geminiService;
-    private BinanceFuturesService binanceFuturesService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
+    private ExchangeAdapter defaultAdapter;
     private TradeRecordService tradeRecordService;
     private DiscordWebhookService webhookService;
     private AdvisorConfig advisorConfig;
     private RiskConfig riskConfig;
     private MultiUserConfig multiUserConfig;
-    private UserApiKeyService userApiKeyService;
     private AdvisorService advisorService;
 
     @BeforeEach
     void setUp() {
         geminiService = mock(GeminiService.class);
-        binanceFuturesService = mock(BinanceFuturesService.class);
+        exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
+        defaultAdapter = mock(ExchangeAdapter.class);
         tradeRecordService = mock(TradeRecordService.class);
         webhookService = mock(DiscordWebhookService.class);
         advisorConfig = mock(AdvisorConfig.class);
         riskConfig = mock(RiskConfig.class);
         multiUserConfig = new MultiUserConfig(); // 預設 enabled=false（單用戶）
-        userApiKeyService = mock(UserApiKeyService.class);
+
+        when(exchangeAdapterFactory.getDefaultAdapter()).thenReturn(defaultAdapter);
 
         // 預設 config
         when(advisorConfig.getRecentTradesCount()).thenReturn(10);
@@ -53,9 +55,9 @@ class AdvisorServiceTest {
         when(riskConfig.getMaxDcaPerSymbol()).thenReturn(3);
 
         advisorService = new AdvisorService(
-                geminiService, binanceFuturesService, tradeRecordService,
+                geminiService, exchangeAdapterFactory, tradeRecordService,
                 webhookService, advisorConfig, riskConfig,
-                multiUserConfig, userApiKeyService);
+                multiUserConfig);
     }
 
     @Nested
@@ -147,7 +149,7 @@ class AdvisorServiceTest {
         @Test
         @DisplayName("餘額查詢失敗 — context 仍包含其他段")
         void balanceFailureStillBuildsContext() {
-            when(binanceFuturesService.getAvailableBalance()).thenThrow(new RuntimeException("timeout"));
+            when(defaultAdapter.getAvailableBalance()).thenThrow(new RuntimeException("timeout"));
             when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of());
             when(tradeRecordService.getTodayStats()).thenReturn(Map.of("trades", 0, "wins", 0, "losses", 0));
             when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
@@ -168,7 +170,7 @@ class AdvisorServiceTest {
         @Test
         @DisplayName("有持倉 — context 包含持倉詳情")
         void openPositionsIncluded() {
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(10000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(10000.0);
             Trade trade = new Trade();
             trade.setSymbol("BTCUSDT");
             trade.setSide("LONG");
@@ -177,7 +179,7 @@ class AdvisorServiceTest {
             trade.setStopLoss(49000.0);
             trade.setDcaCount(1);
             when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of(trade));
-            when(binanceFuturesService.getMarkPrice("BTCUSDT")).thenReturn(51000.0);
+            when(defaultAdapter.getMarkPrice("BTCUSDT")).thenReturn(51000.0);
             when(tradeRecordService.getTodayStats()).thenReturn(Map.of("trades", 1, "wins", 1, "losses", 0));
             when(tradeRecordService.getTodayRealizedLoss()).thenReturn(-10.0);
             when(tradeRecordService.getClosedTradesForRange(any(), any())).thenReturn(List.of());
@@ -199,7 +201,7 @@ class AdvisorServiceTest {
         @Test
         @DisplayName("markPrice 查詢失敗 — 顯示查詢失敗但不崩潰")
         void markPriceFailureSafe() {
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(10000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(10000.0);
             Trade trade = new Trade();
             trade.setSymbol("ETHUSDT");
             trade.setSide("SHORT");
@@ -207,7 +209,7 @@ class AdvisorServiceTest {
             trade.setEntryQuantity(0.1);
             trade.setStopLoss(null);
             when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of(trade));
-            when(binanceFuturesService.getMarkPrice("ETHUSDT")).thenThrow(new RuntimeException("API error"));
+            when(defaultAdapter.getMarkPrice("ETHUSDT")).thenThrow(new RuntimeException("API error"));
             when(tradeRecordService.getTodayStats()).thenReturn(Map.of("trades", 0, "wins", 0, "losses", 0));
             when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
             when(tradeRecordService.getClosedTradesForRange(any(), any())).thenReturn(List.of());
@@ -226,7 +228,7 @@ class AdvisorServiceTest {
         @Test
         @DisplayName("所有 service 都拋例外 — 不崩潰")
         void allServicesFail() {
-            when(binanceFuturesService.getAvailableBalance()).thenThrow(new RuntimeException("fail"));
+            when(defaultAdapter.getAvailableBalance()).thenThrow(new RuntimeException("fail"));
             when(tradeRecordService.findAllOpenTrades()).thenThrow(new RuntimeException("fail"));
             when(tradeRecordService.getTodayStats()).thenThrow(new RuntimeException("fail"));
             when(tradeRecordService.getTodayRealizedLoss()).thenThrow(new RuntimeException("fail"));
@@ -255,7 +257,7 @@ class AdvisorServiceTest {
     // ========== helper ==========
 
     private void setupDefaultMocks() {
-        when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+        when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
         when(tradeRecordService.findAllOpenTrades()).thenReturn(List.of());
         when(tradeRecordService.getTodayStats()).thenReturn(Map.of("trades", 0, "wins", 0, "losses", 0));
         when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);

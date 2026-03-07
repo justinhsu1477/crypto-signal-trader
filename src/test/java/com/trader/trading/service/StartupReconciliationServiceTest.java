@@ -2,18 +2,18 @@ package com.trader.trading.service;
 
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -30,7 +30,8 @@ import static org.mockito.Mockito.*;
 class StartupReconciliationServiceTest {
 
     private TradeRepository tradeRepository;
-    private BinanceFuturesService binanceFuturesService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
+    private ExchangeAdapter defaultAdapter;
     private NotificationService discordWebhookService;
     private MultiUserConfig multiUserConfig;
     private UserApiKeyService userApiKeyService;
@@ -39,18 +40,16 @@ class StartupReconciliationServiceTest {
     @BeforeEach
     void setUp() {
         tradeRepository = mock(TradeRepository.class);
-        binanceFuturesService = mock(BinanceFuturesService.class);
+        exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
+        defaultAdapter = mock(ExchangeAdapter.class);
+        when(exchangeAdapterFactory.getDefaultAdapter()).thenReturn(defaultAdapter);
+        when(exchangeAdapterFactory.getAdapter(anyString())).thenReturn(defaultAdapter);
         discordWebhookService = mock(NotificationService.class);
         multiUserConfig = new MultiUserConfig(); // 預設 enabled=false
         userApiKeyService = mock(UserApiKeyService.class);
         service = new StartupReconciliationService(
-                tradeRepository, binanceFuturesService, discordWebhookService,
+                tradeRepository, exchangeAdapterFactory, discordWebhookService,
                 multiUserConfig, userApiKeyService);
-    }
-
-    @AfterEach
-    void tearDown() {
-        BinanceFuturesService.clearCurrentUserKeys();
     }
 
     // ==================== reconcileZombieOpenTrades ====================
@@ -62,43 +61,39 @@ class StartupReconciliationServiceTest {
         @Test
         @DisplayName("無 OPEN 交易 → 直接回傳 0")
         void noOpenTrades_returnsZero() {
-            when(tradeRepository.findByStatus("OPEN")).thenReturn(Collections.emptyList());
-
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report);
+            int result = service.reconcileZombieOpenTrades(report, Collections.emptyList(), defaultAdapter);
 
             assertThat(result).isZero();
             assertThat(report).isEmpty();
-            verify(binanceFuturesService, never()).getCurrentPositionAmount(any());
+            verify(defaultAdapter, never()).getCurrentPositionAmount(any());
         }
 
         @Test
-        @DisplayName("Binance 有持倉 → 保留 OPEN，不做任何處理")
+        @DisplayName("交易所有持倉 → 保留 OPEN，不做任何處理")
         void hasPosition_keepOpen() {
             Trade trade = createOpenTrade("trade-1", "BTCUSDT", "LONG");
-            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.143);
+            when(defaultAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.143);
 
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report);
+            int result = service.reconcileZombieOpenTrades(report, List.of(trade), defaultAdapter);
 
             assertThat(result).isZero();
             assertThat(report).isEmpty();
             assertThat(trade.getStatus()).isEqualTo("OPEN");
             verify(tradeRepository, never()).save(any());
-            verify(binanceFuturesService, never()).hasOpenEntryOrders(any());
+            verify(defaultAdapter, never()).hasOpenEntryOrders(any());
         }
 
         @Test
-        @DisplayName("Binance 無持倉 + 無掛單 → 標為 CANCELLED")
+        @DisplayName("交易所無持倉 + 無掛單 → 標為 CANCELLED")
         void noPositionNoOrders_markCancelled() {
             Trade trade = createOpenTrade("trade-2", "ETHUSDT", "SHORT");
-            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("ETHUSDT")).thenReturn(false);
+            when(defaultAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("ETHUSDT")).thenReturn(false);
 
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report);
+            int result = service.reconcileZombieOpenTrades(report, List.of(trade), defaultAdapter);
 
             assertThat(result).isEqualTo(1);
             assertThat(trade.getStatus()).isEqualTo("CANCELLED");
@@ -110,15 +105,14 @@ class StartupReconciliationServiceTest {
         }
 
         @Test
-        @DisplayName("Binance 無持倉 + 有未成交掛單 → 保留 OPEN（不清理）")
+        @DisplayName("交易所無持倉 + 有未成交掛單 → 保留 OPEN（不清理）")
         void noPositionButHasOrders_keepOpen() {
             Trade trade = createOpenTrade("trade-3", "BTCUSDT", "LONG");
-            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("BTCUSDT")).thenReturn(true);
+            when(defaultAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("BTCUSDT")).thenReturn(true);
 
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report);
+            int result = service.reconcileZombieOpenTrades(report, List.of(trade), defaultAdapter);
 
             assertThat(result).isZero();
             assertThat(trade.getStatus()).isEqualTo("OPEN");
@@ -128,16 +122,15 @@ class StartupReconciliationServiceTest {
         }
 
         @Test
-        @DisplayName("Binance 無持倉 + 查詢掛單失敗 → 保守跳過（不清理）")
+        @DisplayName("交易所無持倉 + 查詢掛單失敗 → 保守跳過（不清理）")
         void noPositionOrderQueryFails_skipConservatively() {
             Trade trade = createOpenTrade("trade-4", "SOLUSDT", "LONG");
-            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getCurrentPositionAmount("SOLUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("SOLUSDT"))
+            when(defaultAdapter.getCurrentPositionAmount("SOLUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("SOLUSDT"))
                     .thenThrow(new RuntimeException("API error"));
 
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report);
+            int result = service.reconcileZombieOpenTrades(report, List.of(trade), defaultAdapter);
 
             assertThat(result).isZero();
             assertThat(trade.getStatus()).isEqualTo("OPEN");
@@ -147,15 +140,14 @@ class StartupReconciliationServiceTest {
         }
 
         @Test
-        @DisplayName("查詢 Binance 持倉失敗 → 跳過不處理")
+        @DisplayName("查詢交易所持倉失敗 → 跳過不處理")
         void positionQueryFails_skip() {
             Trade trade = createOpenTrade("trade-5", "XRPUSDT", "SHORT");
-            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getCurrentPositionAmount("XRPUSDT"))
+            when(defaultAdapter.getCurrentPositionAmount("XRPUSDT"))
                     .thenThrow(new RuntimeException("Network error"));
 
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report);
+            int result = service.reconcileZombieOpenTrades(report, List.of(trade), defaultAdapter);
 
             assertThat(result).isZero();
             assertThat(trade.getStatus()).isEqualTo("OPEN");
@@ -171,22 +163,20 @@ class StartupReconciliationServiceTest {
             Trade liveTrade = createOpenTrade("trade-7", "BTCUSDT", "SHORT");
             Trade pendingTrade = createOpenTrade("trade-8", "SOLUSDT", "LONG");
 
-            when(tradeRepository.findByStatus("OPEN"))
-                    .thenReturn(List.of(zombieTrade, liveTrade, pendingTrade));
-
             // ETHUSDT: 無持倉+無掛單 → 清理
-            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("ETHUSDT")).thenReturn(false);
+            when(defaultAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("ETHUSDT")).thenReturn(false);
 
             // BTCUSDT: 有持倉 → 保留
-            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(-0.5);
+            when(defaultAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(-0.5);
 
             // SOLUSDT: 無持倉+有掛單 → 保留
-            when(binanceFuturesService.getCurrentPositionAmount("SOLUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("SOLUSDT")).thenReturn(true);
+            when(defaultAdapter.getCurrentPositionAmount("SOLUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("SOLUSDT")).thenReturn(true);
 
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report);
+            int result = service.reconcileZombieOpenTrades(report,
+                    List.of(zombieTrade, liveTrade, pendingTrade), defaultAdapter);
 
             assertThat(result).isEqualTo(1);
             assertThat(zombieTrade.getStatus()).isEqualTo("CANCELLED");
@@ -215,21 +205,22 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(tradeA, tradeB));
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
 
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
-            when(userApiKeyService.getUserBinanceKeys("user-b"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-b", "secret-b")));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-b"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-b", "secret-b"))));
 
             // 兩個用戶都有持倉 → 不清理
-            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.01);
-            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(-0.1);
+            when(defaultAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.01);
+            when(defaultAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(-0.1);
 
             service.reconcileOnStartup();
 
-            // 驗證每個用戶的 API Key 都被設定過
-            verify(userApiKeyService).getUserBinanceKeys("user-a");
-            verify(userApiKeyService).getUserBinanceKeys("user-b");
+            // 驗證每個用戶的 API Key 都被查詢
+            verify(userApiKeyService).getUserPrimaryExchangeKeys("user-a");
+            verify(userApiKeyService).getUserPrimaryExchangeKeys("user-b");
             // 沒有清理
             verify(tradeRepository, never()).save(any());
         }
@@ -241,13 +232,14 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(userApiKeyService.getUserBinanceKeys("user-no-key"))
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-no-key"))
                     .thenReturn(Optional.empty());
 
             service.reconcileOnStartup();
 
-            // 未查詢 Binance（因為沒有 API Key）
-            verify(binanceFuturesService, never()).getCurrentPositionAmount(any());
+            // 未查詢交易所（因為沒有 API Key）
+            verify(defaultAdapter, never()).getCurrentPositionAmount(any());
         }
 
         @Test
@@ -257,10 +249,11 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
-            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("ETHUSDT")).thenReturn(false);
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
+            when(defaultAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("ETHUSDT")).thenReturn(false);
 
             service.reconcileOnStartup();
 
@@ -288,32 +281,34 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(tradeA, tradeB));
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
 
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
-            when(userApiKeyService.getUserBinanceKeys("user-b"))
-                    .thenReturn(Optional.of(new BinanceKeys("key-b", "secret-b")));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-b"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-b", "secret-b"))));
 
             // user-a 查詢失敗
-            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT"))
+            when(defaultAdapter.getCurrentPositionAmount("BTCUSDT"))
                     .thenThrow(new RuntimeException("API timeout"));
             // user-b 正常（有持倉 → 不清理）
-            when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(-0.1);
+            when(defaultAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(-0.1);
 
             // 不應拋出例外
             assertThatCode(() -> service.reconcileOnStartup()).doesNotThrowAnyException();
         }
 
         @Test
-        @DisplayName("無待對帳交易 — 直接跳過不查用戶 API Key")
+        @DisplayName("無待對帳交易且無 API Key 用戶 — 直接跳過")
         void noTradesSkipsApiKeyLookup() {
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of());
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
 
             service.reconcileOnStartup();
 
-            verify(userApiKeyService, never()).getUserBinanceKeys(any());
-            verify(binanceFuturesService, never()).getCurrentPositionAmount(any());
+            verify(userApiKeyService, never()).getUserPrimaryExchangeKeys(any());
+            verify(defaultAdapter, never()).getCurrentPositionAmount(any());
         }
 
         @Test
@@ -324,39 +319,40 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
+            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
 
             service.reconcileOnStartup();
 
             // 沒有 userId → 不會去查 API Key
-            verify(userApiKeyService, never()).getUserBinanceKeys(any());
+            verify(userApiKeyService, never()).getUserPrimaryExchangeKeys(any());
         }
     }
 
     // ==================== 帶 Trade list 參數的重載方法 ====================
 
     @Nested
-    @DisplayName("reconcileZombieOpenTrades(report, trades) — 接收外部 Trade list")
+    @DisplayName("reconcileZombieOpenTrades(report, trades, adapter) — 接收外部 Trade list + adapter")
     class OverloadedMethodTests {
 
         @Test
         @DisplayName("傳入空 list → 直接回傳 0")
         void emptyListReturnsZero() {
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report, List.of());
+            int result = service.reconcileZombieOpenTrades(report, List.of(), defaultAdapter);
 
             assertThat(result).isZero();
-            verify(binanceFuturesService, never()).getCurrentPositionAmount(any());
+            verify(defaultAdapter, never()).getCurrentPositionAmount(any());
         }
 
         @Test
         @DisplayName("傳入指定 Trade list — 只處理該 list")
         void processesOnlyProvidedTrades() {
             Trade trade = createOpenTrade("trade-x", "SOLUSDT", "LONG");
-            when(binanceFuturesService.getCurrentPositionAmount("SOLUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("SOLUSDT")).thenReturn(false);
+            when(defaultAdapter.getCurrentPositionAmount("SOLUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("SOLUSDT")).thenReturn(false);
 
             List<String> report = new ArrayList<>();
-            int result = service.reconcileZombieOpenTrades(report, List.of(trade));
+            int result = service.reconcileZombieOpenTrades(report, List.of(trade), defaultAdapter);
 
             assertThat(result).isEqualTo(1);
             assertThat(trade.getStatus()).isEqualTo("CANCELLED");
@@ -397,8 +393,8 @@ class StartupReconciliationServiceTest {
             Trade trade = createOpenTrade("trade-x", "BTCUSDT", "LONG");
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
-            when(binanceFuturesService.hasOpenEntryOrders("BTCUSDT")).thenReturn(false);
+            when(defaultAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
+            when(defaultAdapter.hasOpenEntryOrders("BTCUSDT")).thenReturn(false);
 
             service.reconcileOnStartup();
 
@@ -422,11 +418,11 @@ class StartupReconciliationServiceTest {
         @DisplayName("Binance 有持倉 + DB 有 OPEN → 正常，不告警")
         void positionMatchesDb_noAlert() {
             Trade trade = createOpenTrade("t1", "BTCUSDT", "LONG");
-            when(binanceFuturesService.getAllPositionAmounts())
+            when(defaultAdapter.getAllPositionAmounts())
                     .thenReturn(java.util.Map.of("BTCUSDT", 0.001));
 
             List<String> report = new ArrayList<>();
-            int detected = service.detectPhantomPositions(report, List.of(trade), null);
+            int detected = service.detectPhantomPositions(report, List.of(trade), null, defaultAdapter);
 
             assertThat(detected).isZero();
             verify(discordWebhookService, never()).sendNotificationToAdmins(
@@ -437,11 +433,11 @@ class StartupReconciliationServiceTest {
         @DisplayName("Binance 有持倉但 DB 無紀錄 → CRITICAL 告警")
         void phantomPosition_sendsAlert() {
             // DB 無任何 OPEN Trade，但 Binance 有 BTCUSDT 持倉
-            when(binanceFuturesService.getAllPositionAmounts())
+            when(defaultAdapter.getAllPositionAmounts())
                     .thenReturn(java.util.Map.of("BTCUSDT", 0.001));
 
             List<String> report = new ArrayList<>();
-            int detected = service.detectPhantomPositions(report, List.of(), null);
+            int detected = service.detectPhantomPositions(report, List.of(), null, defaultAdapter);
 
             assertThat(detected).isEqualTo(1);
             assertThat(report.get(0)).contains("隱形倉位");
@@ -452,11 +448,11 @@ class StartupReconciliationServiceTest {
         @Test
         @DisplayName("Binance 無持倉 → 不告警")
         void noPositions_noAlert() {
-            when(binanceFuturesService.getAllPositionAmounts())
+            when(defaultAdapter.getAllPositionAmounts())
                     .thenReturn(java.util.Map.of());
 
             List<String> report = new ArrayList<>();
-            int detected = service.detectPhantomPositions(report, List.of(), null);
+            int detected = service.detectPhantomPositions(report, List.of(), null, defaultAdapter);
 
             assertThat(detected).isZero();
         }
@@ -464,11 +460,11 @@ class StartupReconciliationServiceTest {
         @Test
         @DisplayName("Binance 查詢失敗 → 不告警不拋異常")
         void apiFails_gracefulSkip() {
-            when(binanceFuturesService.getAllPositionAmounts())
+            when(defaultAdapter.getAllPositionAmounts())
                     .thenThrow(new RuntimeException("API timeout"));
 
             List<String> report = new ArrayList<>();
-            int detected = service.detectPhantomPositions(report, List.of(), null);
+            int detected = service.detectPhantomPositions(report, List.of(), null, defaultAdapter);
 
             assertThat(detected).isZero();
         }
@@ -478,11 +474,11 @@ class StartupReconciliationServiceTest {
         void partialMatch_onlyDetectsMissing() {
             Trade trade = createOpenTrade("t1", "BTCUSDT", "LONG");
             // Binance 有 BTC + ETH，但 DB 只有 BTC
-            when(binanceFuturesService.getAllPositionAmounts())
+            when(defaultAdapter.getAllPositionAmounts())
                     .thenReturn(java.util.Map.of("BTCUSDT", 0.001, "ETHUSDT", -0.5));
 
             List<String> report = new ArrayList<>();
-            int detected = service.detectPhantomPositions(report, List.of(trade), null);
+            int detected = service.detectPhantomPositions(report, List.of(trade), null, defaultAdapter);
 
             assertThat(detected).isEqualTo(1);
             assertThat(report.get(0)).contains("ETHUSDT");

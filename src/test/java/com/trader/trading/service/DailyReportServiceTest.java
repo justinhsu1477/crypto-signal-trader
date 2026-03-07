@@ -4,13 +4,16 @@ import com.trader.shared.config.RiskConfig;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserDiscordWebhookRepository;
 import com.trader.user.repository.UserRepository;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
@@ -31,7 +34,8 @@ class DailyReportServiceTest {
 
     private TradeRecordService tradeRecordService;
     private DiscordWebhookService webhookService;
-    private BinanceFuturesService binanceFuturesService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
+    private ExchangeAdapter defaultAdapter;
     private BinanceUserDataStreamService userDataStreamService;
     private MonitorHeartbeatService monitorHeartbeatService;
     private RiskConfig riskConfig;
@@ -115,7 +119,9 @@ class DailyReportServiceTest {
         void setUp() {
             tradeRecordService = mock(TradeRecordService.class);
             webhookService = mock(DiscordWebhookService.class);
-            binanceFuturesService = mock(BinanceFuturesService.class);
+            defaultAdapter = mock(ExchangeAdapter.class);
+            exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
+            when(exchangeAdapterFactory.getDefaultAdapter()).thenReturn(defaultAdapter);
             userDataStreamService = mock(BinanceUserDataStreamService.class);
             monitorHeartbeatService = mock(MonitorHeartbeatService.class);
             riskConfig = mock(RiskConfig.class);
@@ -126,7 +132,7 @@ class DailyReportServiceTest {
             tradeConfigResolver = mock(TradeConfigResolver.class);
 
             service = new DailyReportService(
-                    tradeRecordService, webhookService, binanceFuturesService,
+                    tradeRecordService, webhookService, exchangeAdapterFactory,
                     userDataStreamService, monitorHeartbeatService, riskConfig,
                     multiUserConfig, userRepository, userApiKeyService,
                     userDiscordWebhookRepository, tradeConfigResolver,
@@ -141,7 +147,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getStatsForDateRange(any(), any())).thenReturn(emptyStats());
             when(tradeRecordService.getClosedTradesForRange(any(), any())).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary()).thenReturn(emptySummary());
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(10000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(10000.0);
             when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
 
@@ -164,7 +170,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getStatsForDateRange(any(), any())).thenReturn(emptyStats());
             when(tradeRecordService.getClosedTradesForRange(any(), any())).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary()).thenReturn(emptySummary());
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(10000.0);
+            when(defaultAdapter.getAvailableBalance()).thenReturn(10000.0);
             when(tradeRecordService.getTodayRealizedLoss()).thenReturn(0.0);
             when(riskConfig.getMaxDailyLossUsdt()).thenReturn(2000.0);
 
@@ -213,7 +219,10 @@ class DailyReportServiceTest {
         void setUp() {
             tradeRecordService = mock(TradeRecordService.class);
             webhookService = mock(DiscordWebhookService.class);
-            binanceFuturesService = mock(BinanceFuturesService.class);
+            defaultAdapter = mock(ExchangeAdapter.class);
+            exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
+            when(exchangeAdapterFactory.getDefaultAdapter()).thenReturn(defaultAdapter);
+            when(exchangeAdapterFactory.getAdapter(anyString())).thenReturn(defaultAdapter);
             userDataStreamService = mock(BinanceUserDataStreamService.class);
             monitorHeartbeatService = mock(MonitorHeartbeatService.class);
             riskConfig = mock(RiskConfig.class);
@@ -229,7 +238,7 @@ class DailyReportServiceTest {
                     .thenReturn(List.of("user-A", "user-B", "user-C", "user-D", "user-E", "user-X"));
 
             service = new DailyReportService(
-                    tradeRecordService, webhookService, binanceFuturesService,
+                    tradeRecordService, webhookService, exchangeAdapterFactory,
                     userDataStreamService, monitorHeartbeatService, riskConfig,
                     multiUserConfig, userRepository, userApiKeyService,
                     userDiscordWebhookRepository, tradeConfigResolver,
@@ -254,10 +263,10 @@ class DailyReportServiceTest {
             when(tradeRecordService.getTodayRealizedLoss(anyString())).thenReturn(0.0);
 
             // per-user API Key（用戶 A 有 key，用戶 B 無 key）
-            when(userApiKeyService.getUserBinanceKeys("user-A"))
-                    .thenReturn(Optional.of(new BinanceKeys("apiA", "secretA")));
-            when(userApiKeyService.getUserBinanceKeys("user-B")).thenReturn(Optional.empty());
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(5000.0);
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-A"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("apiA", "secretA"))));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-B")).thenReturn(Optional.empty());
+            when(defaultAdapter.getAvailableBalance()).thenReturn(5000.0);
 
             // per-user risk config
             EffectiveTradeConfig config = new EffectiveTradeConfig(
@@ -292,7 +301,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-A"))).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
             when(tradeRecordService.getTodayRealizedLoss("user-A")).thenReturn(0.0);
-            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-A")).thenReturn(Optional.empty());
 
             EffectiveTradeConfig config = new EffectiveTradeConfig(
                     0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
@@ -329,7 +338,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-B"))).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary("user-B")).thenReturn(emptySummary());
             when(tradeRecordService.getTodayRealizedLoss("user-B")).thenReturn(0.0);
-            when(userApiKeyService.getUserBinanceKeys("user-B")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-B")).thenReturn(Optional.empty());
 
             EffectiveTradeConfig config = new EffectiveTradeConfig(
                     0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
@@ -354,9 +363,10 @@ class DailyReportServiceTest {
             when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
             when(tradeRecordService.getTodayRealizedLoss("user-A")).thenReturn(0.0);
 
-            BinanceKeys keys = new BinanceKeys("user-api-key", "user-secret-key");
-            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.of(keys));
-            when(binanceFuturesService.getAvailableBalance()).thenReturn(8888.88);
+            ExchangeKeys keys = new ExchangeKeys("user-api-key", "user-secret-key");
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-A"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", keys)));
+            when(defaultAdapter.getAvailableBalance()).thenReturn(8888.88);
 
             EffectiveTradeConfig config = new EffectiveTradeConfig(
                     0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
@@ -365,7 +375,7 @@ class DailyReportServiceTest {
             service.sendDailyReport();
 
             // 驗證有查詢餘額（appendBalanceForUser + appendRiskBudgetForUser 各一次）
-            verify(binanceFuturesService, times(2)).getAvailableBalance();
+            verify(defaultAdapter, times(2)).getAvailableBalance();
 
             // 驗證通知內容包含餘額
             ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
@@ -382,10 +392,11 @@ class DailyReportServiceTest {
             when(userRepository.findAll()).thenReturn(List.of(userA, userB));
 
             // user-A 有 API Key
-            BinanceKeys keysA = new BinanceKeys("apiA", "secretA");
-            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.of(keysA));
+            ExchangeKeys keysA = new ExchangeKeys("apiA", "secretA");
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-A"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", keysA)));
             // user-B 沒有 API Key
-            when(userApiKeyService.getUserBinanceKeys("user-B")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-B")).thenReturn(Optional.empty());
 
             Map<String, Object> cleanupResult = Map.of("cleaned", 1, "skipped", 0);
             when(tradeRecordService.cleanupStaleTrades(any())).thenReturn(cleanupResult);
@@ -418,7 +429,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-A"))).thenReturn(statsA);
             when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-A"))).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
-            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-A")).thenReturn(Optional.empty());
 
             // user-B: 2 trades, -50 USDT
             Map<String, Object> statsB = emptyStats();
@@ -427,7 +438,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-B"))).thenReturn(statsB);
             when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-B"))).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary("user-B")).thenReturn(emptySummary());
-            when(userApiKeyService.getUserBinanceKeys("user-B")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-B")).thenReturn(Optional.empty());
 
             // per-user risk config
             EffectiveTradeConfig config = new EffectiveTradeConfig(
@@ -460,7 +471,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-A"))).thenReturn(emptyStats());
             when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-A"))).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
-            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-A")).thenReturn(Optional.empty());
 
             EffectiveTradeConfig config = new EffectiveTradeConfig(
                     0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
@@ -487,7 +498,7 @@ class DailyReportServiceTest {
             when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-X"))).thenReturn(List.of());
             when(tradeRecordService.getStatsSummary("user-X")).thenReturn(emptySummary());
             when(tradeRecordService.getTodayRealizedLoss("user-X")).thenReturn(-500.0);
-            when(userApiKeyService.getUserBinanceKeys("user-X")).thenReturn(Optional.empty());
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-X")).thenReturn(Optional.empty());
 
             // per-user config: maxDailyLossUsdt = 1000（與全局 2000 不同）
             EffectiveTradeConfig config = new EffectiveTradeConfig(

@@ -11,7 +11,9 @@ import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.config.MultiUserConfig;
-import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.repository.TradeRepository;
@@ -22,7 +24,7 @@ import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import com.trader.user.service.UserDiscordWebhookService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,7 +59,7 @@ public class DashboardService {
 
     private final TradeRecordService tradeRecordService;
     private final SubscriptionService subscriptionService;
-    private final BinanceFuturesService binanceFuturesService;
+    private final ExchangeAdapterFactory exchangeAdapterFactory;
     private final RiskConfig riskConfig;
     private final UserRepository userRepository;
     private final TradeConfigResolver tradeConfigResolver;
@@ -125,24 +127,27 @@ public class DashboardService {
      */
     private double fetchBalanceWithUserKeys(String userId) {
         if (multiUserConfig.isEnabled()) {
-            Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
-            if (keysOpt.isEmpty()) {
-                log.warn("用戶 {} 未設定 Binance API Key，無法查詢帳戶餘額", userId);
+            var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(userId);
+            if (primaryOpt.isEmpty()) {
+                log.warn("用戶 {} 未設定交易所 API Key，無法查詢帳戶餘額", userId);
                 return 0;
             }
-            String apiKeyPrefix = keysOpt.get().apiKey().substring(0, 8);
-            log.debug("用戶 {} 查詢帳戶餘額（per-user key, prefix={}...）", userId, apiKeyPrefix);
-            BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+            String exchange = primaryOpt.get().getKey();
+            ExchangeKeys keys = primaryOpt.get().getValue();
+            ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+            String apiKeyPrefix = keys.apiKey().substring(0, 8);
+            log.debug("用戶 {} 查詢帳戶餘額（per-user key, prefix={}..., exchange={}）", userId, apiKeyPrefix, exchange);
+            adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
             try {
-                double balance = binanceFuturesService.getAvailableBalance();
+                double balance = adapter.getAvailableBalance();
                 log.debug("用戶 {} 餘額查詢成功: {} USDT", userId, balance);
                 return balance;
             } finally {
-                BinanceFuturesService.clearCurrentUserKeys();
+                adapter.clearCredentials();
             }
         }
-        // 單用戶模式 → 直接使用全局 API Key
-        return binanceFuturesService.getAvailableBalance();
+        // 單用戶模式 → 直接使用預設交易所 API Key
+        return exchangeAdapterFactory.getDefaultAdapter().getAvailableBalance();
     }
 
     private DashboardOverview.RiskBudget buildRiskBudget(String userId, double cachedBalance) {

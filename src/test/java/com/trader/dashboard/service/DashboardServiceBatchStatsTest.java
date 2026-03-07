@@ -5,7 +5,7 @@ import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.repository.TradeRepository;
-import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
@@ -62,7 +62,7 @@ class DashboardServiceBatchStatsTest {
         dashboardService = new DashboardService(
                 tradeRecordService,
                 mock(SubscriptionService.class),
-                mock(BinanceFuturesService.class),
+                mock(ExchangeAdapterFactory.class),
                 mock(RiskConfig.class),
                 mock(UserRepository.class),
                 tradeConfigResolver,

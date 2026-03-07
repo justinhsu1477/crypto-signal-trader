@@ -8,7 +8,7 @@ import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.subscription.service.SubscriptionService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.repository.TradeRepository;
-import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
@@ -58,7 +58,7 @@ class DashboardServiceFunnelTest {
         dashboardService = new DashboardService(
                 mock(TradeRecordService.class),
                 mock(SubscriptionService.class),
-                mock(BinanceFuturesService.class),
+                mock(ExchangeAdapterFactory.class),
                 mock(RiskConfig.class),
                 userRepository,
                 mock(TradeConfigResolver.class),

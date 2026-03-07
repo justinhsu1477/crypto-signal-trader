@@ -10,8 +10,11 @@ import com.trader.notification.service.NotificationService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserDiscordWebhookRepository;
 import com.trader.user.repository.UserRepository;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -23,7 +26,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -59,7 +61,7 @@ public class DailyReportService {
 
     private final TradeRecordService tradeRecordService;
     private final NotificationService webhookService;
-    private final BinanceFuturesService binanceFuturesService;
+    private final ExchangeAdapterFactory exchangeAdapterFactory;
     private final BinanceUserDataStreamService userDataStreamService;
     private final MonitorHeartbeatService monitorHeartbeatService;
     private final RiskConfig riskConfig;
@@ -72,7 +74,7 @@ public class DailyReportService {
 
     public DailyReportService(TradeRecordService tradeRecordService,
                               NotificationService webhookService,
-                              BinanceFuturesService binanceFuturesService,
+                              ExchangeAdapterFactory exchangeAdapterFactory,
                               BinanceUserDataStreamService userDataStreamService,
                               MonitorHeartbeatService monitorHeartbeatService,
                               RiskConfig riskConfig,
@@ -84,7 +86,7 @@ public class DailyReportService {
                               StartOfDayBalanceCache startOfDayBalanceCache) {
         this.tradeRecordService = tradeRecordService;
         this.webhookService = webhookService;
-        this.binanceFuturesService = binanceFuturesService;
+        this.exchangeAdapterFactory = exchangeAdapterFactory;
         this.userDataStreamService = userDataStreamService;
         this.monitorHeartbeatService = monitorHeartbeatService;
         this.riskConfig = riskConfig;
@@ -126,8 +128,9 @@ public class DailyReportService {
      */
     private void cleanupGlobal() {
         log.info("排程殭屍 Trade 清理開始...");
+        ExchangeAdapter defaultAdapter = exchangeAdapterFactory.getDefaultAdapter();
         Map<String, Object> result = tradeRecordService.cleanupStaleTrades(
-                binanceFuturesService::getCurrentPositionAmount);
+                defaultAdapter::getCurrentPositionAmount);
 
         int cleaned = (int) result.get("cleaned");
         int skipped = (int) result.get("skipped");
@@ -158,19 +161,22 @@ public class DailyReportService {
         for (User user : users) {
             String userId = user.getUserId();
             try {
-                // 設定 per-user API Key 以查詢該用戶的幣安持倉
-                Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
-                if (keysOpt.isEmpty()) {
+                // 取得用戶的主要交易所及 API Key
+                var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(userId);
+                if (primaryOpt.isEmpty()) {
                     log.debug("用戶 {} 未設定 API Key，跳過殭屍清理", userId);
                     continue;
                 }
 
-                BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+                String exchange = primaryOpt.get().getKey();
+                ExchangeKeys keys = primaryOpt.get().getValue();
+                ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+                adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
                 TradeRecordService.setCurrentUserId(userId);
 
                 try {
                     Map<String, Object> result = tradeRecordService.cleanupStaleTrades(
-                            symbol -> binanceFuturesService.getCurrentPositionAmount(symbol));
+                            adapter::getCurrentPositionAmount);
 
                     int cleaned = (int) result.get("cleaned");
                     int skipped = (int) result.get("skipped");
@@ -184,7 +190,7 @@ public class DailyReportService {
                                 DiscordWebhookService.COLOR_BLUE);
                     }
                 } finally {
-                    BinanceFuturesService.clearCurrentUserKeys();
+                    adapter.clearCredentials();
                     TradeRecordService.clearCurrentUserId();
                 }
             } catch (Exception e) {
@@ -422,7 +428,7 @@ public class DailyReportService {
     private void appendBalance(StringBuilder sb) {
         sb.append("💰 帳戶餘額\n");
         try {
-            double balance = binanceFuturesService.getAvailableBalance();
+            double balance = exchangeAdapterFactory.getDefaultAdapter().getAvailableBalance();
             sb.append(String.format("可用餘額: %.2f USDT\n", balance));
         } catch (Exception e) {
             sb.append("可用餘額: 查詢失敗\n");
@@ -439,19 +445,22 @@ public class DailyReportService {
      */
     private void appendBalanceForUser(StringBuilder sb, String userId) {
         sb.append("💰 帳戶餘額\n");
-        Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
-        if (keysOpt.isEmpty()) {
+        var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(userId);
+        if (primaryOpt.isEmpty()) {
             sb.append("可用餘額: 未設定 API Key\n");
         } else {
-            BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+            String exchange = primaryOpt.get().getKey();
+            ExchangeKeys keys = primaryOpt.get().getValue();
+            ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+            adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
             try {
-                double balance = binanceFuturesService.getAvailableBalance();
+                double balance = adapter.getAvailableBalance();
                 sb.append(String.format("可用餘額: %.2f USDT\n", balance));
             } catch (Exception e) {
                 sb.append("可用餘額: 查詢失敗\n");
                 log.warn("用戶 {} 每日報告取餘額失敗: {}", userId, e.getMessage());
             } finally {
-                BinanceFuturesService.clearCurrentUserKeys();
+                adapter.clearCredentials();
             }
         }
         sb.append("\n");
@@ -541,7 +550,7 @@ public class DailyReportService {
         try {
             double todayLoss = tradeRecordService.getTodayRealizedLoss(); // 負數
             String userId = tradeRecordService.getActiveUserId();
-            double balance = binanceFuturesService.getAvailableBalance();
+            double balance = exchangeAdapterFactory.getDefaultAdapter().getAvailableBalance();
             double sodBalance = startOfDayBalanceCache.getOrCompute(userId, () -> balance);
             EffectiveTradeConfig config = tradeConfigResolver.resolve(userId);
             double maxDaily = config.effectiveDailyLossLimit(sodBalance);
@@ -564,16 +573,19 @@ public class DailyReportService {
 
             // 取餘額需要 per-user API Key
             double balance;
-            Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
-            if (keysOpt.isPresent()) {
-                BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+            var primaryOpt = userApiKeyService.getUserPrimaryExchangeKeys(userId);
+            if (primaryOpt.isPresent()) {
+                String exchange = primaryOpt.get().getKey();
+                ExchangeKeys keys = primaryOpt.get().getValue();
+                ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
+                adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
                 try {
-                    balance = binanceFuturesService.getAvailableBalance();
+                    balance = adapter.getAvailableBalance();
                 } catch (Exception e) {
                     log.warn("用戶 {} 風控取餘額失敗: {}", userId, e.getMessage());
                     balance = 0;
                 } finally {
-                    BinanceFuturesService.clearCurrentUserKeys();
+                    adapter.clearCredentials();
                 }
             } else {
                 balance = 0;

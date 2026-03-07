@@ -3,15 +3,19 @@ package com.trader.trading.service;
 import com.google.gson.Gson;
 import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.exchange.ExchangeAdapterFactory;
+import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.BinanceKeys;
+import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import org.junit.jupiter.api.*;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -20,7 +24,8 @@ import static org.mockito.Mockito.*;
 
 class LiquidationDetectionTaskTest {
 
-    private BinanceFuturesService binanceFuturesService;
+    private ExchangeAdapterFactory exchangeAdapterFactory;
+    private ExchangeAdapter defaultAdapter;
     private TradeRecordService tradeRecordService;
     private TradeRepository tradeRepository;
     private NotificationService notificationService;
@@ -31,7 +36,10 @@ class LiquidationDetectionTaskTest {
 
     @BeforeEach
     void setUp() {
-        binanceFuturesService = mock(BinanceFuturesService.class);
+        exchangeAdapterFactory = mock(ExchangeAdapterFactory.class);
+        defaultAdapter = mock(ExchangeAdapter.class);
+        when(exchangeAdapterFactory.getDefaultAdapter()).thenReturn(defaultAdapter);
+        when(exchangeAdapterFactory.getAdapter(anyString())).thenReturn(defaultAdapter);
         tradeRecordService = mock(TradeRecordService.class);
         tradeRepository = mock(TradeRepository.class);
         notificationService = mock(NotificationService.class);
@@ -40,14 +48,13 @@ class LiquidationDetectionTaskTest {
         userRepository = mock(UserRepository.class);
 
         task = new LiquidationDetectionTask(
-                binanceFuturesService, tradeRecordService, tradeRepository,
+                exchangeAdapterFactory, tradeRecordService, tradeRepository,
                 notificationService, multiUserConfig, userApiKeyService,
                 userRepository, new Gson());
     }
 
     @AfterEach
     void tearDown() {
-        BinanceFuturesService.clearCurrentUserKeys();
         TradeRecordService.clearCurrentUserId();
     }
 
@@ -58,7 +65,7 @@ class LiquidationDetectionTaskTest {
         @Test
         @DisplayName("無強制平倉 → 不發告警")
         void noForceOrders_noAlert() {
-            when(binanceFuturesService.getForceOrders()).thenReturn("[]");
+            when(defaultAdapter.getForceOrdersRaw()).thenReturn("[]");
 
             task.scheduledLiquidationCheck();
 
@@ -68,7 +75,7 @@ class LiquidationDetectionTaskTest {
         @Test
         @DisplayName("API 失敗 → 不拋異常")
         void apiFailure_doesNotThrow() {
-            when(binanceFuturesService.getForceOrders()).thenThrow(new RuntimeException("API error"));
+            when(defaultAdapter.getForceOrdersRaw()).thenThrow(new RuntimeException("API error"));
 
             assertThatCode(() -> task.scheduledLiquidationCheck()).doesNotThrowAnyException();
         }
@@ -80,7 +87,7 @@ class LiquidationDetectionTaskTest {
             String response = String.format(
                     "[{\"orderId\":\"12345\",\"symbol\":\"BTCUSDT\",\"side\":\"SELL\"," +
                     "\"avgPrice\":65000.0,\"origQty\":0.001,\"time\":%d}]", recentTime);
-            when(binanceFuturesService.getForceOrders()).thenReturn(response);
+            when(defaultAdapter.getForceOrdersRaw()).thenReturn(response);
 
             task.scheduledLiquidationCheck();
 
@@ -97,7 +104,7 @@ class LiquidationDetectionTaskTest {
             String response = String.format(
                     "[{\"orderId\":\"99999\",\"symbol\":\"ETHUSDT\",\"side\":\"BUY\"," +
                     "\"avgPrice\":3000.0,\"origQty\":0.1,\"time\":%d}]", oldTime);
-            when(binanceFuturesService.getForceOrders()).thenReturn(response);
+            when(defaultAdapter.getForceOrdersRaw()).thenReturn(response);
 
             task.scheduledLiquidationCheck();
 
@@ -116,7 +123,7 @@ class LiquidationDetectionTaskTest {
             String response = String.format(
                     "[{\"orderId\":\"dup-1\",\"symbol\":\"BTCUSDT\",\"side\":\"SELL\"," +
                     "\"avgPrice\":65000.0,\"origQty\":0.001,\"time\":%d}]", recentTime);
-            when(binanceFuturesService.getForceOrders()).thenReturn(response);
+            when(defaultAdapter.getForceOrdersRaw()).thenReturn(response);
 
             // 第一次
             task.scheduledLiquidationCheck();
@@ -142,14 +149,14 @@ class LiquidationDetectionTaskTest {
         void loopsUsersWithPerUserKeys() {
             User user = User.builder().userId("user-a").enabled(true).build();
             when(userRepository.findAll()).thenReturn(List.of(user));
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key", "secret")));
-            when(binanceFuturesService.getForceOrders()).thenReturn("[]");
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key", "secret"))));
+            when(defaultAdapter.getForceOrdersRaw()).thenReturn("[]");
 
             task.scheduledLiquidationCheck();
 
-            verify(userApiKeyService).getUserBinanceKeys("user-a");
-            verify(binanceFuturesService).getForceOrders();
+            verify(userApiKeyService).getUserPrimaryExchangeKeys("user-a");
+            verify(defaultAdapter).getForceOrdersRaw();
         }
 
         @Test
@@ -157,14 +164,14 @@ class LiquidationDetectionTaskTest {
         void detectsLiquidation_sendsPerUserAndAdmin() {
             User user = User.builder().userId("user-a").enabled(true).build();
             when(userRepository.findAll()).thenReturn(List.of(user));
-            when(userApiKeyService.getUserBinanceKeys("user-a"))
-                    .thenReturn(Optional.of(new BinanceKeys("key", "secret")));
+            when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
+                    .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key", "secret"))));
 
             long recentTime = Instant.now().toEpochMilli() - 60_000;
             String response = String.format(
                     "[{\"orderId\":\"mu-1\",\"symbol\":\"BTCUSDT\",\"side\":\"SELL\"," +
                     "\"avgPrice\":65000.0,\"origQty\":0.001,\"time\":%d}]", recentTime);
-            when(binanceFuturesService.getForceOrders()).thenReturn(response);
+            when(defaultAdapter.getForceOrdersRaw()).thenReturn(response);
 
             task.scheduledLiquidationCheck();
 
