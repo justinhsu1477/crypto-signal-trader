@@ -54,18 +54,19 @@ public class NotificationConsumer {
     public void consumeUserNotification(NotificationMessage msg) {
         log.debug("消費 USER 通知: userId={}, title={}", msg.getUserId(), msg.getTitle());
 
+        // 隔離 Discord 與 LINE，避免一方異常導致另一方被跳過
         if (msg.getCategory() != null) {
-            discordService.sendNotificationToUser(
+            safeSend("Discord", () -> discordService.sendNotificationToUser(
                     msg.getUserId(), msg.getCategory(),
-                    msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToUser(
+                    msg.getTitle(), msg.getMessage(), msg.getColor()));
+            safeSend("LINE", () -> lineService.sendNotificationToUser(
                     msg.getUserId(), msg.getCategory(),
-                    msg.getTitle(), msg.getMessage(), msg.getColor());
+                    msg.getTitle(), msg.getMessage(), msg.getColor()));
         } else {
-            discordService.sendNotificationToUser(
-                    msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToUser(
-                    msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor());
+            safeSend("Discord", () -> discordService.sendNotificationToUser(
+                    msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor()));
+            safeSend("LINE", () -> lineService.sendNotificationToUser(
+                    msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor()));
         }
         // 成功 → Spring auto ACK（不需手動呼叫 channel.basicAck）
     }
@@ -85,23 +86,36 @@ public class NotificationConsumer {
         log.debug("消費 ADMIN 通知: type={}, title={}, displayName={}",
                 msg.getType(), msg.getTitle(), msg.getDisplayName());
 
+        // 隔離 Discord 與 LINE，避免一方異常導致另一方被跳過
         if (msg.getType() == NotificationMessage.NotificationType.SYSTEM) {
             // 系統通知 → 多用戶模式下路由到 Admin per-user（全局 webhook 已停用）
             // 切回單用戶模式時，改回 sendNotification() 即可
-            discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+            safeSend("Discord", () -> discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor()));
+            safeSend("LINE", () -> lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor()));
         } else if (msg.getDisplayName() != null && !msg.getDisplayName().isBlank()) {
             // 帶用戶名前綴的 admin 通知（風控告警等）
-            discordService.sendNotificationToAdmins(
-                    msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToAdmins(
-                    msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
+            safeSend("Discord", () -> discordService.sendNotificationToAdmins(
+                    msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor()));
+            safeSend("LINE", () -> lineService.sendNotificationToAdmins(
+                    msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor()));
         } else {
             // Admin 通知 → 只發到 admin per-user webhook（不發到全局）
-            discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+            safeSend("Discord", () -> discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor()));
+            safeSend("LINE", () -> lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor()));
         }
         // 成功 → Spring auto ACK
         // 失敗 → exception 向上拋 → Spring retry (max 3 次, 指數退避) → DLQ
+    }
+
+    /**
+     * 安全發送 — 任何頻道的異常都不會影響其他頻道
+     * Discord 失敗不影響 LINE，LINE 失敗不影響 Discord
+     */
+    private void safeSend(String channel, Runnable action) {
+        try {
+            action.run();
+        } catch (Exception e) {
+            log.error("{} 通知發送異常（已隔離，不影響其他頻道）: {}", channel, e.getMessage(), e);
+        }
     }
 }

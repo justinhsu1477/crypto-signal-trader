@@ -74,7 +74,10 @@ public class LineNotificationService implements NotificationService {
      */
     @Override
     public void sendNotification(String title, String message, int color) {
-        if (!lineConfig.isEnabled()) return;
+        if (!lineConfig.isEnabled()) {
+            log.debug("LINE 全域開關關閉，跳過系統通知: {}", title);
+            return;
+        }
         sendNotificationToAdmins(title, message, color);
     }
 
@@ -84,14 +87,21 @@ public class LineNotificationService implements NotificationService {
      */
     @Override
     public void sendNotificationToUser(String userId, String title, String message, int color) {
-        if (!lineConfig.isEnabled()) return;
+        if (!lineConfig.isEnabled()) {
+            log.debug("LINE 全域開關關閉，跳過用戶 {} 通知: {}", userId, title);
+            return;
+        }
         if (!isNotificationEnabledForUser(userId)) {
-            log.debug("用戶 {} LINE 通知已關閉，跳過: {}", userId, title);
+            log.info("用戶 {} LINE 通知已關閉，跳過: {}", userId, title);
             return;
         }
 
         Optional<String> lineUserId = getLineUserIdForUser(userId);
-        lineUserId.ifPresent(lid -> pushMessage(lid, title, message));
+        if (lineUserId.isEmpty()) {
+            log.info("用戶 {} 未綁定 LINE 帳號，跳過通知: {}", userId, title);
+            return;
+        }
+        pushMessage(lineUserId.get(), title, message);
     }
 
     /**
@@ -109,14 +119,21 @@ public class LineNotificationService implements NotificationService {
      * 用於 AnnouncementConsumer，有圖時送 text + image 兩則訊息。
      */
     public void sendAnnouncementToUser(String userId, String title, String message, int color, String imageUrl) {
-        if (!lineConfig.isEnabled()) return;
+        if (!lineConfig.isEnabled()) {
+            log.debug("LINE 全域開關關閉，跳過用戶 {} 公告: {}", userId, title);
+            return;
+        }
         if (!isNotificationEnabledForUser(userId)) {
-            log.debug("用戶 {} LINE 通知已關閉，跳過公告: {}", userId, title);
+            log.info("用戶 {} LINE 通知已關閉，跳過公告: {}", userId, title);
             return;
         }
 
         Optional<String> lineUserId = getLineUserIdForUser(userId);
-        lineUserId.ifPresent(lid -> pushAnnouncementMessage(lid, title, message, imageUrl));
+        if (lineUserId.isEmpty()) {
+            log.info("用戶 {} 未綁定 LINE 帳號，跳過公告: {}", userId, title);
+            return;
+        }
+        pushAnnouncementMessage(lineUserId.get(), title, message, imageUrl);
     }
 
     /**
