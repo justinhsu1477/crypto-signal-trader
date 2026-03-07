@@ -673,6 +673,63 @@ public class TradeRecordService {
     }
 
     /**
+     * LIMIT 入場掛單成交 — 更新 Trade 的 entryPrice 為真實成交均價
+     *
+     * 場景：廣播跟單使用 LIMIT 掛單入場，下單時 DB 存的是「委託價」。
+     * 當 WebSocket 收到 ORDER_TRADE_UPDATE (type=LIMIT, status=FILLED) 時呼叫此方法，
+     * 用真實成交均價覆蓋委託價，並記錄 LIMIT_ENTRY_FILLED 事件。
+     *
+     * @param symbol          交易對
+     * @param entryOrderId    入場單 orderId（與 Trade.entryOrderId 比對）
+     * @param avgPrice        真實成交均價
+     * @param filledQty       成交數量
+     * @param commission      手續費
+     * @param transactionTime 成交時間戳（毫秒）
+     * @return 更新後的 Trade；null = 找不到對應交易（代表不是入場單）
+     */
+    @Transactional
+    public Trade recordLimitEntryFilled(String symbol, String entryOrderId,
+                                         double avgPrice, double filledQty,
+                                         double commission, long transactionTime) {
+        Optional<Trade> tradeOpt;
+        if (multiUserConfig.isEnabled()) {
+            String userId = getActiveUserId();
+            tradeOpt = tradeRepository.findByUserIdAndEntryOrderIdAndStatus(userId, entryOrderId, "OPEN");
+        } else {
+            tradeOpt = tradeRepository.findByEntryOrderIdAndStatus(entryOrderId, "OPEN");
+        }
+
+        if (tradeOpt.isEmpty()) {
+            log.debug("LIMIT 成交但無匹配入場單: {} entryOrderId={}", symbol, entryOrderId);
+            return null;
+        }
+
+        Trade trade = tradeOpt.get();
+
+        // 更新入場價為真實成交均價
+        trade.setEntryPrice(avgPrice);
+        trade.setEntryQuantity(filledQty);
+        trade.setEntryTime(LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(transactionTime), AppConstants.ZONE_ID));
+
+        if (commission > 0) {
+            trade.setEntryCommission(round2(commission));
+        }
+
+        tradeRepository.save(trade);
+
+        // 寫入 LIMIT_ENTRY_FILLED 事件
+        saveEvent(trade.getTradeId(), "LIMIT_ENTRY_FILLED",
+                avgPrice, filledQty, entryOrderId, "LIMIT_FILLED",
+                commission, 0);
+
+        log.info("LIMIT 入場成交: tradeId={} {} 成交價={} qty={}",
+                trade.getTradeId(), symbol, avgPrice, filledQty);
+
+        return trade;
+    }
+
+    /**
      * 通用事件紀錄 — 記錄任何訂單操作的結果（成功或失敗）
      * 適用於不需要更動 Trade 主紀錄，只需新增 TradeEvent 的場景
      *

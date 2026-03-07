@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.entity.Trade;
 import com.trader.trading.service.BinanceUserDataStreamService;
 import com.trader.trading.service.MultiUserDataStreamManager;
 import com.trader.trading.service.OrderEventHandler;
@@ -117,18 +118,49 @@ class BinanceUserDataStreamServiceTest {
         }
 
         @Test
-        @DisplayName("LIMIT FILLED → 不呼叫 recordCloseFromStream（入場單由 executeSignal 處理）")
-        void limitFilledDoesNotTriggerClose() {
+        @DisplayName("LIMIT FILLED 入場單匹配 → recordLimitEntryFilled + 不呼叫 recordCloseFromStream")
+        void limitFilledEntryOrderDoesNotTriggerClose() {
+            Trade mockTrade = Trade.builder()
+                    .tradeId("trade-001").symbol("BTCUSDT").side("LONG").build();
+            when(tradeRecordService.recordLimitEntryFilled(
+                    eq("BTCUSDT"), eq("111222333"), eq(95000.0),
+                    eq(0.5), eq(9.5), eq(1700000000000L)))
+                    .thenReturn(mockTrade);
+
             JsonObject event = buildOrderTradeUpdate(
                     "BTCUSDT", "LIMIT", "FILLED", "BUY",
                     95000.0, 0.5, 9.5, "USDT", 0.0, 111222333L, 1700000000000L);
 
             orderEventHandler.handleOrderTradeUpdate(event);
 
+            verify(tradeRecordService).recordLimitEntryFilled(
+                    eq("BTCUSDT"), eq("111222333"), eq(95000.0),
+                    eq(0.5), eq(9.5), eq(1700000000000L));
             verify(tradeRecordService, never()).recordCloseFromStream(
                     anyString(), anyDouble(), anyDouble(),
                     anyDouble(), anyDouble(),
                     anyString(), anyString(), anyLong());
+        }
+
+        @Test
+        @DisplayName("LIMIT FILLED 非入場單 → fallback 到 processStreamClose")
+        void limitFilledCloseOrderTriggersClose() {
+            when(tradeRecordService.recordLimitEntryFilled(
+                    anyString(), anyString(), anyDouble(),
+                    anyDouble(), anyDouble(), anyLong()))
+                    .thenReturn(null);
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "LIMIT", "FILLED", "SELL",
+                    95000.0, 0.5, 9.5, "USDT", 500.0, 111222333L, 1700000000000L);
+
+            orderEventHandler.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(95000.0), eq(0.5),
+                    eq(9.5), eq(500.0),
+                    eq("111222333"), eq("SIGNAL_CLOSE"),
+                    eq(1700000000000L));
         }
 
         @Test

@@ -3,6 +3,7 @@ package com.trader.trading.service;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.entity.Trade;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
@@ -308,15 +309,25 @@ class OrderEventHandlerTest {
         }
     }
 
-    // ==================== 非 SL/TP 類型 ====================
+    // ==================== LIMIT FILLED — 入場成交 / 平倉 fallback ====================
 
     @Nested
-    @DisplayName("MARKET/LIMIT FILLED — 不觸發平倉")
-    class NonSlTpTypes {
+    @DisplayName("LIMIT FILLED — 入場成交通知 + 平倉 fallback")
+    class LimitFilled {
 
         @Test
-        @DisplayName("LIMIT FILLED → 不呼叫 recordCloseFromStream")
-        void limitFilledDoesNotTriggerClose() {
+        @DisplayName("LIMIT FILLED + entryOrderId 匹配 → recordLimitEntryFilled + 綠色通知")
+        void limitFilledEntryOrder() {
+            Trade mockTrade = Trade.builder()
+                    .tradeId("test-trade-1")
+                    .symbol("BTCUSDT")
+                    .side("LONG")
+                    .build();
+            when(tradeRecordService.recordLimitEntryFilled(
+                    eq("BTCUSDT"), eq("111222333"), eq(95000.0),
+                    eq(0.5), eq(9.5), eq(1700000000000L)))
+                    .thenReturn(mockTrade);
+
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
 
@@ -326,11 +337,89 @@ class OrderEventHandlerTest {
 
             handler.handleOrderTradeUpdate(event);
 
+            verify(tradeRecordService).recordLimitEntryFilled(
+                    eq("BTCUSDT"), eq("111222333"), eq(95000.0),
+                    eq(0.5), eq(9.5), eq(1700000000000L));
             verify(tradeRecordService, never()).recordCloseFromStream(
                     anyString(), anyDouble(), anyDouble(),
                     anyDouble(), anyDouble(),
                     anyString(), anyString(), anyLong());
+
+            assertThat(lastTitle).isEqualTo("✅ 限價入場成交");
+            assertThat(lastMessage).contains("BTCUSDT");
+            assertThat(lastMessage).contains("LONG");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_GREEN);
         }
+
+        @Test
+        @DisplayName("LIMIT FILLED + entryOrderId 不匹配 → processStreamClose (SIGNAL_CLOSE)")
+        void limitFilledCloseOrder() {
+            when(tradeRecordService.recordLimitEntryFilled(
+                    anyString(), anyString(), anyDouble(),
+                    anyDouble(), anyDouble(), anyLong()))
+                    .thenReturn(null);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "LIMIT", "FILLED", "SELL",
+                    95000.0, 0.5, 19.0, "USDT", 500.0, 999888777L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(95000.0), eq(0.5),
+                    eq(19.0), eq(500.0),
+                    eq("999888777"), eq("SIGNAL_CLOSE"),
+                    eq(1700000000000L));
+        }
+
+        @Test
+        @DisplayName("LIMIT FILLED 入場成交 + adminNotifier 存在 → admin 也收到通知")
+        void limitFilledEntryWithAdminNotifier() {
+            Trade mockTrade = Trade.builder()
+                    .tradeId("test-trade-2")
+                    .symbol("ETHUSDT")
+                    .side("SHORT")
+                    .build();
+            when(tradeRecordService.recordLimitEntryFilled(
+                    eq("ETHUSDT"), eq("222333444"), eq(3500.0),
+                    eq(1.0), eq(1.4), eq(1700000000000L)))
+                    .thenReturn(mockTrade);
+
+            // Admin notifier 捕獲
+            AtomicReference<String> adminTitle = new AtomicReference<>();
+            AtomicReference<String> adminMsg = new AtomicReference<>();
+            OrderEventHandler.NotificationSender adminSender = (title, msg, color) -> {
+                adminTitle.set(title);
+                adminMsg.set(msg);
+            };
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, adminSender, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "ETHUSDT", "LIMIT", "FILLED", "SELL",
+                    3500.0, 1.0, 1.4, "USDT", 0.0, 222333444L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // 用戶通知
+            assertThat(lastTitle).isEqualTo("✅ 限價入場成交");
+
+            // Admin 通知
+            assertThat(adminTitle.get()).isEqualTo("✅ 限價入場成交");
+            assertThat(adminMsg.get()).contains("ETHUSDT");
+            assertThat(adminMsg.get()).contains("SHORT");
+        }
+    }
+
+    // ==================== 非 SL/TP 類型 ====================
+
+    @Nested
+    @DisplayName("MARKET FILLED — 無 Algo hint 時不觸發平倉")
+    class NonSlTpTypes {
 
         @Test
         @DisplayName("MARKET FILLED → 不呼叫 recordCloseFromStream")

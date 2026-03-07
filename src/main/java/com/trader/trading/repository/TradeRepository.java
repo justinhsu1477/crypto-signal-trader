@@ -154,6 +154,19 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
            "AND t.exitReason = 'STALE_CLEANUP_STARTUP' AND t.updatedAt >= :since ORDER BY t.updatedAt DESC")
     List<Trade> findUserRecentlyStaleCleanedTrades(@Param("userId") String userId, @Param("symbol") String symbol, @Param("since") LocalDateTime since);
 
+    // ========== entryOrderId 查詢（LIMIT 入場成交用） ==========
+
+    /**
+     * 依 entryOrderId 找 OPEN 交易（全局查詢，單用戶模式）
+     * 用於 WebSocket LIMIT FILLED 事件判斷是否為入場單成交
+     */
+    Optional<Trade> findByEntryOrderIdAndStatus(String entryOrderId, String status);
+
+    /**
+     * 依 userId + entryOrderId 找 OPEN 交易（多用戶隔離）
+     */
+    Optional<Trade> findByUserIdAndEntryOrderIdAndStatus(String userId, String entryOrderId, String status);
+
     // ========== userId 相關查詢（多用戶支援） ==========
 
     /**
