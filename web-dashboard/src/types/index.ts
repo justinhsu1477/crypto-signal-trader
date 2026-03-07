@@ -710,6 +710,23 @@ export interface AnnouncementListResponse {
   unreadCount: number;
 }
 
+// ==================== Admin Send Notification ====================
+
+export interface AdminSendNotificationRequest {
+  userIds: string[];
+  title: string;
+  message: string;
+  color?: "GREEN" | "BLUE" | "YELLOW" | "RED";
+}
+
+export interface AdminSendNotificationResponse {
+  message: string;
+  totalUsers: number;
+  successCount: number;
+  failCount: number;
+  invalidUserIds: string[];
+}
+
 // ==================== Admin Metrics ====================
 
 export interface AdminMetricsResponse {
