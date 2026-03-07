@@ -1,17 +1,15 @@
 package com.trader.service;
 
-import com.trader.shared.config.BinanceConfig;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.exchange.binance.BinanceAdapter;
+import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.validation.TradeSignalValidator;
-import com.trader.user.service.UserApiKeyService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
@@ -29,13 +27,14 @@ import static org.mockito.Mockito.*;
  * 3. 虧損為 0 → 允許
  * 4. maxDailyLoss=0 → 不啟用熔斷
  * 5. 多筆虧損累加恰好到達上限
- * 6. 熔斷後發 Discord 通知
+ * 6. 熔斷後發通知
  */
 class DailyLossCircuitBreakerTest {
 
     private TradeRecordService mockTradeRecord;
-    private DiscordWebhookService mockWebhook;
+    private NotificationService mockWebhook;
     private TradeConfigResolver mockTradeConfigResolver;
+    private BinanceAdapter mockAdapter;
     private BinanceFuturesService service;
 
     @BeforeEach
@@ -48,9 +47,9 @@ class DailyLossCircuitBreakerTest {
         );
         mockTradeRecord = mock(TradeRecordService.class);
         SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
-        mockWebhook = mock(DiscordWebhookService.class);
-        UserApiKeyService mockApiKey = mock(UserApiKeyService.class);
+        mockWebhook = mock(NotificationService.class);
         mockTradeConfigResolver = mock(TradeConfigResolver.class);
+        mockAdapter = mock(BinanceAdapter.class);
 
         // 預設 config：maxDailyLoss = 2000
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
@@ -59,27 +58,25 @@ class DailyLossCircuitBreakerTest {
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
 
-        service = spy(new BinanceFuturesService(
-                null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
-                riskConfig, mockTradeRecord, mockDedup, mockWebhook,
-                new MultiUserConfig(), new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                new TradeSignalValidator(), null));
+        TradingOrchestrator orchestrator = new TradingOrchestrator(
+                mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(),
+                null, new SymbolLockRegistry(), mockTradeConfigResolver,
+                mock(StartOfDayBalanceCache.class), new TradeSignalValidator(), null);
+
+        service = new BinanceFuturesService(
+                mockAdapter, orchestrator, riskConfig, mockTradeRecord, mockDedup,
+                new MultiUserConfig(), new SymbolLockRegistry(), null,
+                mockTradeConfigResolver);
 
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
     }
 
     private void setupMocks(double balance, double todayLoss) {
-        doReturn(balance).when(service).getAvailableBalance();
-        doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
-        doReturn(0).when(service).getActivePositionCount();
-        doReturn(false).when(service).hasOpenEntryOrders(anyString());
-        doReturn(95000.0).when(service).getMarkPrice(anyString());
-        doReturn("{}").when(service).setLeverage(anyString(), anyInt());
-        try {
-            doReturn("{}").when(service).setMarginType(anyString(), anyString());
-        } catch (Exception e) { /* ignore */ }
+        when(mockAdapter.getAvailableBalance()).thenReturn(balance);
+        when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
+        when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
+        when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(todayLoss);
     }
 
@@ -132,8 +129,8 @@ class DailyLossCircuitBreakerTest {
                 .side("SELL").type("STOP_MARKET").price(93000).quantity(0.01)
                 .build();
 
-        doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-        doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+        when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+        when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
         List<OrderResult> results = service.executeSignal(longEntry());
 
@@ -156,8 +153,8 @@ class DailyLossCircuitBreakerTest {
                 .side("SELL").type("STOP_MARKET").price(93000).quantity(0.01)
                 .build();
 
-        doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-        doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+        when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+        when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
         List<OrderResult> results = service.executeSignal(longEntry());
 
@@ -185,8 +182,8 @@ class DailyLossCircuitBreakerTest {
                 .side("SELL").type("STOP_MARKET").price(93000).quantity(0.01)
                 .build();
 
-        doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-        doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+        when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+        when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
         List<OrderResult> results = service.executeSignal(longEntry());
 

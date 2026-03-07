@@ -1,13 +1,13 @@
 package com.trader.service;
 
-import com.trader.shared.config.BinanceConfig;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.exchange.binance.BinanceAdapter;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.validation.TradeSignalValidator;
@@ -37,8 +37,9 @@ class TradeLifecycleTest {
 
     private TradeRecordService mockTradeRecord;
     private SignalDeduplicationService mockDedup;
-    private DiscordWebhookService mockWebhook;
+    private NotificationService mockWebhook;
     private TradeConfigResolver mockTradeConfigResolver;
+    private BinanceAdapter mockAdapter;
     private BinanceFuturesService service;
 
     @BeforeEach
@@ -51,9 +52,10 @@ class TradeLifecycleTest {
         );
         mockTradeRecord = mock(TradeRecordService.class);
         mockDedup = mock(SignalDeduplicationService.class);
-        mockWebhook = mock(DiscordWebhookService.class);
+        mockWebhook = mock(NotificationService.class);
         UserApiKeyService mockApiKey = mock(UserApiKeyService.class);
         mockTradeConfigResolver = mock(TradeConfigResolver.class);
+        mockAdapter = mock(BinanceAdapter.class);
 
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
                 0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
@@ -61,12 +63,16 @@ class TradeLifecycleTest {
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
 
-        service = spy(new BinanceFuturesService(
-                null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
-                riskConfig, mockTradeRecord, mockDedup, mockWebhook,
-                new MultiUserConfig(), new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                new TradeSignalValidator(), null));
+        TradingOrchestrator orchestrator = new TradingOrchestrator(
+                mockTradeRecord, mockDedup, mockWebhook,
+                new MultiUserConfig(), new ObjectMapper(), new SymbolLockRegistry(),
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class),
+                new TradeSignalValidator(), null);
+
+        service = new BinanceFuturesService(
+                mockAdapter, orchestrator, riskConfig, mockTradeRecord, mockDedup,
+                new MultiUserConfig(), new SymbolLockRegistry(), mockApiKey,
+                mockTradeConfigResolver);
 
         when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
@@ -74,15 +80,11 @@ class TradeLifecycleTest {
     }
 
     private void setupEntryMocks(double balance, double position, double markPrice) {
-        doReturn(balance).when(service).getAvailableBalance();
-        doReturn(position).when(service).getCurrentPositionAmount(anyString());
-        doReturn(0).when(service).getActivePositionCount();
-        doReturn(false).when(service).hasOpenEntryOrders(anyString());
-        doReturn(markPrice).when(service).getMarkPrice(anyString());
-        doReturn("{}").when(service).setLeverage(anyString(), anyInt());
-        try {
-            doReturn("{}").when(service).setMarginType(anyString(), anyString());
-        } catch (Exception e) { /* ignore */ }
+        when(mockAdapter.getAvailableBalance()).thenReturn(balance);
+        when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(position);
+        when(mockAdapter.getActivePositionCount()).thenReturn(0);
+        when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
+        when(mockAdapter.getMarkPrice(anyString())).thenReturn(markPrice);
     }
 
     private OrderResult ok(String id, String side, double price, double qty) {
@@ -106,8 +108,8 @@ class TradeLifecycleTest {
 
             OrderResult entry = ok("E1", "BUY", 95000, 0.1);
             OrderResult sl = ok("SL1", "SELL", 93000, 0.1);
-            doReturn(entry).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(sl).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entry);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(sl);
 
             TradeSignal entrySignal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
@@ -120,14 +122,13 @@ class TradeLifecycleTest {
             verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
 
             // === Step 2: MOVE_SL ===
-            doReturn(0.1).when(service).getCurrentPositionAmount("BTCUSDT");
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.1);
 
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult newSl = ok("SL2", "SELL", 95500, 0.1);
-            doReturn(newSl).when(service).placeStopLoss(anyString(), eq("SELL"), eq(95500.0), anyDouble());
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), eq(95500.0), anyDouble())).thenReturn(newSl);
 
             TradeSignal moveSLSignal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -140,11 +141,11 @@ class TradeLifecycleTest {
             verify(mockTradeRecord).recordMoveSL(eq("BTCUSDT"), any(), eq(93000.0), eq(95500.0));
 
             // === Step 3: FULL CLOSE ===
-            doReturn(0.1).when(service).getCurrentPositionAmount("BTCUSDT");
-            doReturn(98000.0).when(service).getMarkPrice(anyString());
+            when(mockAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.1);
+            when(mockAdapter.getMarkPrice(anyString())).thenReturn(98000.0);
 
             OrderResult closeOrder = ok("C1", "SELL", 98000, 0.1);
-            doReturn(closeOrder).when(service).placeMarketOrder(eq("BTCUSDT"), eq("SELL"), anyDouble());
+            when(mockAdapter.placeMarketOrder(eq("BTCUSDT"), eq("SELL"), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal closeSignal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -165,8 +166,8 @@ class TradeLifecycleTest {
 
             OrderResult entry = ok("E1", "SELL", 95000, 0.1);
             OrderResult sl = ok("SL1", "BUY", 97000, 0.1);
-            doReturn(entry).when(service).placeLimitOrder(anyString(), eq("SELL"), anyDouble(), anyDouble());
-            doReturn(sl).when(service).placeStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(entry);
+            when(mockAdapter.setStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(sl);
 
             TradeSignal entrySignal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.SHORT)
@@ -178,12 +179,11 @@ class TradeLifecycleTest {
             assertThat(entryResults.get(0).isSuccess()).isTrue();
 
             // === Step 2: FULL CLOSE ===
-            doReturn(-0.1).when(service).getCurrentPositionAmount("BTCUSDT");
-            doReturn(93000.0).when(service).getMarkPrice(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(-0.1);
+            when(mockAdapter.getMarkPrice(anyString())).thenReturn(93000.0);
 
             OrderResult closeOrder = ok("C1", "BUY", 93000, 0.1);
-            doReturn(closeOrder).when(service).placeMarketOrder(eq("BTCUSDT"), eq("BUY"), anyDouble());
+            when(mockAdapter.placeMarketOrder(eq("BTCUSDT"), eq("BUY"), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal closeSignal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -194,7 +194,7 @@ class TradeLifecycleTest {
             List<OrderResult> closeResults = service.executeClose(closeSignal);
             assertThat(closeResults.get(0).isSuccess()).isTrue();
             // 做空平倉方向應為 BUY
-            verify(service).placeMarketOrder(eq("BTCUSDT"), eq("BUY"), anyDouble());
+            verify(mockAdapter).placeMarketOrder(eq("BTCUSDT"), eq("BUY"), anyDouble());
         }
     }
 
@@ -237,12 +237,12 @@ class TradeLifecycleTest {
             when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(0);
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+
 
             OrderResult dcaEntry = ok("DCA1", "BUY", 94000, 0.02);
             OrderResult dcaSl = ok("SL1", "SELL", 93000, 0.52);
-            doReturn(dcaEntry).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(dcaSl).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(dcaEntry);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(dcaSl);
 
             TradeSignal dcaSignal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -258,7 +258,7 @@ class TradeLifecycleTest {
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
             // 應該用 BUY（LONG 方向）
-            verify(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            verify(mockAdapter).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
         }
     }
 
@@ -274,10 +274,9 @@ class TradeLifecycleTest {
             setupEntryMocks(1000, 0, 95000);
 
             OrderResult entry = ok("12345", "BUY", 95000, 0.01);
-            doReturn(entry).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("{}").when(service).cancelOrder(anyString(), eq(12345L));
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entry);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL failed"));
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
@@ -288,8 +287,8 @@ class TradeLifecycleTest {
             service.executeSignal(signal);
 
             // 取消成功 → 不需要市價平倉
-            verify(service).cancelOrder(eq("BTCUSDT"), eq(12345L));
-            verify(service, never()).placeMarketOrder(anyString(), anyString(), anyDouble());
+            verify(mockAdapter).cancelOrder(eq("BTCUSDT"), eq("12345"));
+            verify(mockAdapter, never()).placeMarketOrder(anyString(), anyString(), anyDouble());
         }
 
         @Test
@@ -298,14 +297,14 @@ class TradeLifecycleTest {
             setupEntryMocks(1000, 0, 95000);
 
             OrderResult entry = ok("12345", "BUY", 95000, 0.01);
-            doReturn(entry).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doThrow(new RuntimeException("cancel failed")).when(service)
-                    .cancelOrder(anyString(), anyLong());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entry);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL failed"));
+            doThrow(new RuntimeException("cancel failed")).when(mockAdapter)
+                    .cancelOrder(anyString(), anyString());
 
             OrderResult marketClose = ok("MC1", "SELL", 95000, 0.01);
-            doReturn(marketClose).when(service).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
+            when(mockAdapter.placeMarketOrder(anyString(), eq("SELL"), anyDouble())).thenReturn(marketClose);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
@@ -315,7 +314,7 @@ class TradeLifecycleTest {
 
             service.executeSignal(signal);
 
-            verify(service).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
+            verify(mockAdapter).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
             verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("FAIL_SAFE_CLOSE"), any(), anyString());
         }
 
@@ -325,13 +324,13 @@ class TradeLifecycleTest {
             setupEntryMocks(1000, 0, 95000);
 
             OrderResult entry = ok("12345", "BUY", 95000, 0.01);
-            doReturn(entry).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doThrow(new RuntimeException("cancel failed")).when(service)
-                    .cancelOrder(anyString(), anyLong());
-            doReturn(OrderResult.fail("market close failed")).when(service)
-                    .placeMarketOrder(anyString(), anyString(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entry);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL failed"));
+            doThrow(new RuntimeException("cancel failed")).when(mockAdapter)
+                    .cancelOrder(anyString(), anyString());
+            when(mockAdapter.placeMarketOrder(anyString(), anyString(), anyDouble()))
+                    .thenReturn(OrderResult.fail("market close failed"));
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
@@ -362,7 +361,7 @@ class TradeLifecycleTest {
         @DisplayName("有未成交掛單 → 拒絕新入場（防止重複）")
         void rejectWhenOpenEntryOrders() {
             setupEntryMocks(10000, 0, 95000);
-            doReturn(true).when(service).hasOpenEntryOrders("BTCUSDT");
+            when(mockAdapter.hasOpenEntryOrders("BTCUSDT")).thenReturn(true);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
@@ -381,17 +380,17 @@ class TradeLifecycleTest {
         @DisplayName("DCA 跳過掛單檢查（允許多張 LIMIT 同時存在）")
         void dcaSkipsOpenOrderCheck() {
             setupEntryMocks(10000, 0.5, 95000);
-            doReturn(true).when(service).hasOpenEntryOrders("BTCUSDT");
+            when(mockAdapter.hasOpenEntryOrders("BTCUSDT")).thenReturn(true);
 
             when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(0);
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+
 
             OrderResult dcaEntry = ok("DCA1", "BUY", 94000, 0.02);
             OrderResult dcaSl = ok("SL1", "SELL", 93000, 0.52);
-            doReturn(dcaEntry).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(dcaSl).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(dcaEntry);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(dcaSl);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -411,8 +410,8 @@ class TradeLifecycleTest {
         @Test
         @DisplayName("API 查詢餘額失敗 → 拒絕交易（RuntimeException 被攔截）")
         void rejectWhenBalanceQueryFails() {
-            doThrow(new RuntimeException("API timeout")).when(service).getAvailableBalance();
-            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            when(mockAdapter.getAvailableBalance()).thenThrow(new RuntimeException("API timeout"));
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
@@ -430,8 +429,8 @@ class TradeLifecycleTest {
         @Test
         @DisplayName("持倉查詢失敗 → 拒絕交易")
         void rejectWhenPositionQueryFails() {
-            doReturn(10000.0).when(service).getAvailableBalance();
-            doThrow(new RuntimeException("查詢持倉失敗")).when(service).getCurrentPositionAmount(anyString());
+            when(mockAdapter.getAvailableBalance()).thenReturn(10000.0);
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenThrow(new RuntimeException("查詢持倉失敗"));
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)
@@ -453,10 +452,10 @@ class TradeLifecycleTest {
             OrderResult entry = ok("E1", "BUY", 95000, 0.01);
             OrderResult sl = ok("SL1", "SELL", 93000, 0.01);
 
-            doReturn(entry).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(sl).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("TP placement failed")).when(service)
-                    .placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entry);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(sl);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("TP placement failed"));
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT").side(TradeSignal.Side.LONG)

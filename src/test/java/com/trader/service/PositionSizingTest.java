@@ -2,10 +2,9 @@ package com.trader.service;
 
 import com.trader.shared.config.RiskConfig;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.exchange.binance.BinanceAdapter;
 import com.trader.trading.service.BinanceFuturesService;
-import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.SymbolLockRegistry;
-import com.trader.trading.validation.TradeSignalValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -13,8 +12,11 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 測試動態以損定倉的倉位計算和價格/數量格式化。
@@ -24,6 +26,7 @@ import static org.assertj.core.api.Assertions.*;
 class PositionSizingTest {
 
     private BinanceFuturesService service;
+    private BinanceAdapter mockAdapter;
 
     @BeforeEach
     void setUp() {
@@ -36,9 +39,24 @@ class PositionSizingTest {
                 0.20,   // riskPercent (20%)
                 3, 2.0, 20, List.of("BTCUSDT", "ETHUSDT"), "BTCUSDT"
         );
-        service = new BinanceFuturesService(null, null, riskConfig, null, null, null, new MultiUserConfig(), null,
-                new SymbolLockRegistry(), null, null, null, new com.trader.shared.util.BinanceApiRateLimiter(),
-                new TradeSignalValidator(), null);
+        mockAdapter = mock(BinanceAdapter.class);
+        // Stub formatPrice — 與 BinanceAdapter 實作一致
+        when(mockAdapter.formatPrice(anyDouble())).thenAnswer(inv -> {
+            double price = inv.getArgument(0);
+            if (price >= 1000) return String.format(Locale.US, "%.1f", price);
+            else if (price >= 1) return String.format(Locale.US, "%.2f", price);
+            else return String.format(Locale.US, "%.4f", price);
+        });
+        // Stub formatQuantity — 與 BinanceAdapter 實作一致
+        when(mockAdapter.formatQuantity(anyString(), anyDouble())).thenAnswer(inv -> {
+            String symbol = inv.getArgument(0);
+            double quantity = inv.getArgument(1);
+            if (symbol.startsWith("BTC") || symbol.startsWith("ETH"))
+                return String.format(Locale.US, "%.3f", quantity);
+            else return String.format(Locale.US, "%.2f", quantity);
+        });
+        service = new BinanceFuturesService(mockAdapter, null, riskConfig, null, null, new MultiUserConfig(),
+                new SymbolLockRegistry(), null, null);
     }
 
     @Nested
@@ -125,9 +143,8 @@ class PositionSizingTest {
                     0,  // maxPositionUsdt = 0 → 不啟用 cap
                     2000, 0.80, 0, true, 0.20, 3, 2.0, 20, List.of("BTCUSDT"), "BTCUSDT"
             );
-            BinanceFuturesService svc = new BinanceFuturesService(null, null, noCap, null, null, null, new MultiUserConfig(), null,
-                    new SymbolLockRegistry(), null, null, null, new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null);
+            BinanceFuturesService svc = new BinanceFuturesService(mockAdapter, null, noCap, null, null, new MultiUserConfig(),
+                    new SymbolLockRegistry(), null, null);
             // 1R = 1000 × 0.20 = 200, riskDistance = 1, qty = 200
             double qty = svc.calculatePositionSize(1000, 95000, 94999);
             assertThat(qty).isEqualTo(200.0);

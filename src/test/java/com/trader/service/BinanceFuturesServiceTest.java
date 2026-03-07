@@ -1,21 +1,19 @@
 package com.trader.service;
 
-import com.trader.shared.config.BinanceConfig;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
-import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.exchange.binance.BinanceAdapter;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.validation.TradeSignalValidator;
 import com.trader.user.service.UserApiKeyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
-import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.Optional;
@@ -27,7 +25,7 @@ import static org.mockito.Mockito.*;
 /**
  * BinanceFuturesService 核心交易邏輯測試
  *
- * 策略：spy 真實物件 + doReturn mock 內部 API 呼叫
+ * 策略：mock BinanceAdapter + 真實 TradingOrchestrator
  * 測試重點：進場流程、DCA、平倉、移動止損、風控
  */
 class BinanceFuturesServiceTest {
@@ -39,6 +37,7 @@ class BinanceFuturesServiceTest {
     private UserApiKeyService mockUserApiKeyService;
     private TradeConfigResolver mockTradeConfigResolver;
     private MultiUserConfig multiUserConfig;
+    private BinanceAdapter mockAdapter;
     private BinanceFuturesService service;
 
     @BeforeEach
@@ -55,6 +54,7 @@ class BinanceFuturesServiceTest {
         mockUserApiKeyService = mock(UserApiKeyService.class);
         mockTradeConfigResolver = mock(TradeConfigResolver.class);
         multiUserConfig = new MultiUserConfig(); // 預設 enabled=false（單用戶）
+        mockAdapter = mock(BinanceAdapter.class);
 
         // mock TradeConfigResolver — 回傳與全局 RiskConfig 一致的 EffectiveTradeConfig
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
@@ -63,12 +63,16 @@ class BinanceFuturesServiceTest {
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
 
-        service = spy(new BinanceFuturesService(
-                null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
-                riskConfig, mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
-                new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                new TradeSignalValidator(), null));
+        TradingOrchestrator orchestrator = new TradingOrchestrator(
+                mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
+                new ObjectMapper(), new SymbolLockRegistry(),
+                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class),
+                new TradeSignalValidator(), null);
+
+        service = new BinanceFuturesService(
+                mockAdapter, orchestrator, riskConfig, mockTradeRecord, mockDedup,
+                multiUserConfig, new SymbolLockRegistry(), mockUserApiKeyService,
+                mockTradeConfigResolver);
 
         // 通用 mock — 大部分測試需要的基礎環境
         when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
@@ -136,15 +140,11 @@ class BinanceFuturesServiceTest {
      * 設定正常進場前的通用 mock（餘額、持倉、掛單、標記價格）
      */
     private void setupEntryMocks(double balance, double currentPosition, double markPrice) {
-        doReturn(balance).when(service).getAvailableBalance();
-        doReturn(currentPosition).when(service).getCurrentPositionAmount(anyString());
-        doReturn(0).when(service).getActivePositionCount();
-        doReturn(false).when(service).hasOpenEntryOrders(anyString());
-        doReturn(markPrice).when(service).getMarkPrice(anyString());
-        doReturn("{}").when(service).setLeverage(anyString(), anyInt());
-        try {
-            doReturn("{}").when(service).setMarginType(anyString(), anyString());
-        } catch (Exception e) { /* ignore */ }
+        when(mockAdapter.getAvailableBalance()).thenReturn(balance);
+        when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(currentPosition);
+        when(mockAdapter.getActivePositionCount()).thenReturn(0);
+        when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
+        when(mockAdapter.getMarkPrice(anyString())).thenReturn(markPrice);
     }
 
     // ==================== Entry Flow ====================
@@ -161,8 +161,8 @@ class BinanceFuturesServiceTest {
             OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.01);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.01);
 
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             List<OrderResult> results = service.executeSignal(signal);
@@ -180,8 +180,8 @@ class BinanceFuturesServiceTest {
             OrderResult entryOrder = successOrder("E1", "SELL", 95000, 0.01);
             OrderResult slOrder = successOrder("SL1", "BUY", 97000, 0.01);
 
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("SELL"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.SHORT, 95000, 97000);
             List<OrderResult> results = service.executeSignal(signal);
@@ -195,8 +195,8 @@ class BinanceFuturesServiceTest {
         void entryOrderFails() {
             setupEntryMocks(1000, 0, 95000);
 
-            doReturn(OrderResult.fail("Insufficient margin")).when(service)
-                    .placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("Insufficient margin"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             List<OrderResult> results = service.executeSignal(signal);
@@ -213,16 +213,15 @@ class BinanceFuturesServiceTest {
 
             // orderId 必須是數字字串（fail-safe 用 Long.parseLong 解析）
             OrderResult entryOrder = successOrder("12345", "BUY", 95000, 0.01);
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL placement failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL placement failed"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             List<OrderResult> results = service.executeSignal(signal);
 
             // 應該嘗試取消入場單
-            verify(service).cancelOrder(eq("BTCUSDT"), eq(12345L));
+            verify(mockAdapter).cancelOrder(eq("BTCUSDT"), eq("12345"));
             // 結果應標記為失敗（fail-safe 觸發）
             assertThat(results.get(0).isSuccess()).isFalse();
         }
@@ -320,9 +319,9 @@ class BinanceFuturesServiceTest {
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.01);
             OrderResult tpOrder = successOrder("TP1", "SELL", 100000, 0.01);
 
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -337,7 +336,7 @@ class BinanceFuturesServiceTest {
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            verify(mockAdapter).setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
         }
 
         @Test
@@ -377,13 +376,13 @@ class BinanceFuturesServiceTest {
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
             // DCA 呼叫 cancelSLTPOrders → 內部呼叫 getOpenAlgoOrders
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+
 
             OrderResult entryOrder = successOrder("DCA1", "BUY", 94000, 0.02);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.52);
 
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildDcaSignal(94000, 92000);
             List<OrderResult> results = service.executeSignal(signal);
@@ -428,13 +427,13 @@ class BinanceFuturesServiceTest {
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+
 
             OrderResult entryOrder = successOrder("DCA1", "BUY", 94000, 0.02);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.52);
 
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             // DCA 不帶止損：stopLoss=0, newStopLoss=null（模擬 Controller 的行為）
             TradeSignal signal = TradeSignal.builder()
@@ -452,7 +451,7 @@ class BinanceFuturesServiceTest {
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
             // 確認用 DB 的現有 SL (93000) 重掛
-            verify(service).placeStopLoss(eq("BTCUSDT"), eq("SELL"), eq(93000.0), anyDouble());
+            verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("SELL"), eq(93000.0), anyDouble());
         }
     }
 
@@ -465,12 +464,11 @@ class BinanceFuturesServiceTest {
         @Test
         @DisplayName("全倉平倉成功 — 使用 MARKET 單")
         void fullCloseSuccess() {
-            doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
-            doReturn(95000.0).when(service).getMarkPrice(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
+            when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
-            doReturn(closeOrder).when(service).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
+            when(mockAdapter.placeMarketOrder(anyString(), eq("SELL"), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);
@@ -483,21 +481,20 @@ class BinanceFuturesServiceTest {
         @Test
         @DisplayName("部分平倉 50% — SL 重掛剩餘倉位")
         void partialCloseWithSLRehang() {
-            doReturn(1.0).when(service).getCurrentPositionAmount(anyString());
-            doReturn(95000.0).when(service).getMarkPrice(anyString());
-            doReturn(new double[]{93000.0, 100000.0}).when(service).getCurrentSLTPPrices(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(1.0);
+            when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
+            when(mockAdapter.getCurrentSLTPPrices(anyString())).thenReturn(new double[]{93000.0, 100000.0});
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
             // 部分平倉後重掛 TP
             OrderResult tpOrder = successOrder("TP1", "SELL", 100000, 0.5);
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
             // cancelSLTPOrders 內部需要 getOpenAlgoOrders
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+
 
             TradeSignal signal = buildCloseSignal(0.5);
             List<OrderResult> results = service.executeClose(signal);
@@ -505,22 +502,21 @@ class BinanceFuturesServiceTest {
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
             // 應該重掛 SL
-            verify(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            verify(mockAdapter).setStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
         }
 
         @Test
         @DisplayName("無持倉但有未成交委託 → 撤銷掛單 → 返回 SUCCESS")
         void closeNoPositionWithPendingOrders() {
-            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
-            doReturn(true).when(service).hasOpenEntryOrders(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
+            when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(true);
 
             when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);
 
-            verify(service).cancelAllOrders(anyString());
+            verify(mockAdapter).cancelAllOrders(anyString());
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
             assertThat(results.get(0).getErrorMessage()).contains("未成交委託已撤銷");
@@ -529,16 +525,15 @@ class BinanceFuturesServiceTest {
         @Test
         @DisplayName("無持倉也無掛單 → 返回 FAIL 並忽略")
         void closeNoPositionNoPendingOrders() {
-            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
-            doReturn(false).when(service).hasOpenEntryOrders(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
+            when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
 
             when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);
 
-            verify(service).cancelAllOrders(anyString());
+            verify(mockAdapter).cancelAllOrders(anyString());
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isFalse();
             assertThat(results.get(0).getErrorMessage()).contains("無持倉也無掛單");
@@ -554,11 +549,10 @@ class BinanceFuturesServiceTest {
         @Test
         @DisplayName("移動 SL 到新價格 — 成功")
         void moveSLSuccess() {
-            doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
 
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
@@ -573,29 +567,27 @@ class BinanceFuturesServiceTest {
         @Test
         @DisplayName("成本保護 — newSL=null 使用入場價")
         void costProtectionUsesEntryPrice() {
-            doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
 
             when(mockTradeRecord.getEntryPrice("BTCUSDT")).thenReturn(95000.0);
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult slOrder = successOrder("SL1", "SELL", 95000, 0.5);
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildMoveSLSignal(null, null);
             List<OrderResult> results = service.executeMoveSL(signal);
 
             assertThat(results).isNotEmpty();
             // 應該用入場價 95000 而非 null
-            verify(service).placeStopLoss(eq("BTCUSDT"), anyString(), eq(95000.0), anyDouble());
+            verify(mockAdapter).setStopLoss(eq("BTCUSDT"), anyString(), eq(95000.0), anyDouble());
         }
 
         @Test
         @DisplayName("移動 SL + 更新 TP")
         void moveSLWithNewTP() {
-            doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
 
             when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
@@ -603,20 +595,20 @@ class BinanceFuturesServiceTest {
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
             OrderResult tpOrder = successOrder("TP1", "SELL", 100000, 0.5);
 
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = buildMoveSLSignal(94500.0, 100000.0);
             List<OrderResult> results = service.executeMoveSL(signal);
 
             assertThat(results.size()).isGreaterThanOrEqualTo(2);
-            verify(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            verify(mockAdapter).setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
         }
 
         @Test
         @DisplayName("無持倉 → 回傳 fail")
         void moveSLNoPosition() {
-            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
 
             when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
@@ -640,20 +632,20 @@ class BinanceFuturesServiceTest {
             setupEntryMocks(1000, 0, 95000);
 
             OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.01);
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doThrow(new RuntimeException("cancel failed")).when(service).cancelOrder(anyString(), anyLong());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL failed"));
+            doThrow(new RuntimeException("cancel failed")).when(mockAdapter).cancelOrder(anyString(), anyString());
 
             // 市價平倉
             OrderResult marketClose = successOrder("MC1", "SELL", 95000, 0.01);
-            doReturn(marketClose).when(service).placeMarketOrder(anyString(), anyString(), anyDouble());
+            when(mockAdapter.placeMarketOrder(anyString(), anyString(), anyDouble())).thenReturn(marketClose);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             List<OrderResult> results = service.executeSignal(signal);
 
             // 應該嘗試市價平倉
-            verify(service).placeMarketOrder(anyString(), anyString(), anyDouble());
+            verify(mockAdapter).placeMarketOrder(anyString(), anyString(), anyDouble());
         }
     }
 
@@ -666,8 +658,6 @@ class BinanceFuturesServiceTest {
         @Test
         @DisplayName("每日虧損熔斷通知 — 包含 userId")
         void circuitBreakerNotificationContainsUserId() {
-            setupEntryMocks(1000, 0, 95000);
-
             // 模擬今日虧損已達上限
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-3000.0);
             // SOD balance cache
@@ -681,13 +671,18 @@ class BinanceFuturesServiceTest {
             );
             when(mockTradeConfigResolver.resolve(any())).thenReturn(config);
 
-            // 重建 service 以注入 sodCache
-            service = spy(new BinanceFuturesService(
-                    null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
-                    riskConfig, mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
-                    new ObjectMapper(), new SymbolLockRegistry(), mockUserApiKeyService,
-                    mockTradeConfigResolver, sodCache, new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null));
+            // 重建 orchestrator + service 以注入 sodCache
+            TradingOrchestrator orchestrator = new TradingOrchestrator(
+                    mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
+                    new ObjectMapper(), new SymbolLockRegistry(),
+                    mockTradeConfigResolver, sodCache,
+                    new TradeSignalValidator(), null);
+
+            service = new BinanceFuturesService(
+                    mockAdapter, orchestrator, riskConfig, mockTradeRecord, mockDedup,
+                    multiUserConfig, new SymbolLockRegistry(), mockUserApiKeyService,
+                    mockTradeConfigResolver);
+
             setupEntryMocks(1000, 0, 95000);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
@@ -697,7 +692,7 @@ class BinanceFuturesServiceTest {
             verify(mockWebhook).sendNotification(
                     eq("🚨 每日虧損熔斷"),
                     contains("用戶: Test User (test@example.com)"),
-                    eq(DiscordWebhookService.COLOR_RED));
+                    eq(NotificationService.COLOR_RED));
         }
 
         @Test
@@ -706,10 +701,9 @@ class BinanceFuturesServiceTest {
             setupEntryMocks(1000, 0, 95000);
 
             OrderResult entryOrder = successOrder("12345", "BUY", 95000, 0.01);
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL placement failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL placement failed"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             service.executeSignal(signal);
@@ -718,15 +712,14 @@ class BinanceFuturesServiceTest {
             verify(mockWebhook).sendNotification(
                     eq("🛑 Fail-Safe: 止損失敗，入場單已取消"),
                     contains("用戶: Test User (test@example.com)"),
-                    eq(DiscordWebhookService.COLOR_RED));
+                    eq(NotificationService.COLOR_RED));
         }
 
         @Test
         @DisplayName("無持倉平倉通知 — 包含 userId")
         void closeNoPositionNotificationContainsUserId() {
-            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
-            doReturn(false).when(service).hasOpenEntryOrders(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
+            when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
             when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
@@ -746,10 +739,9 @@ class BinanceFuturesServiceTest {
             setupEntryMocks(1000, 0, 95000);
 
             OrderResult entryOrder = successOrder("12345", "BUY", 95000, 0.01);
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL failed"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             service.executeSignal(signal);
@@ -770,10 +762,9 @@ class BinanceFuturesServiceTest {
             setupEntryMocks(1000, 0, 95000);
 
             OrderResult entryOrder = successOrder("12345", "BUY", 95000, 0.01);
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(OrderResult.fail("SL failed")).when(service)
-                    .placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("{}").when(service).cancelOrder(anyString(), anyLong());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble()))
+                    .thenReturn(OrderResult.fail("SL failed"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             service.executeSignal(signal);
@@ -790,18 +781,11 @@ class BinanceFuturesServiceTest {
 
         @Test
         @DisplayName("廣播 context 無持倉平倉 — 不發 notifyGlobal")
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        void closeNoPositionBroadcastContextSkipsNotifyGlobal() throws Exception {
-            // 模擬廣播 context：設入 CURRENT_USER_KEYS ThreadLocal
-            var field = BinanceFuturesService.class.getDeclaredField("CURRENT_USER_KEYS");
-            field.setAccessible(true);
-            var threadLocal = (ThreadLocal<?>) field.get(null);
-
+        void closeNoPositionBroadcastContextSkipsNotifyGlobal() {
             try {
-                ((ThreadLocal) threadLocal).set(new UserApiKeyService.BinanceKeys("test", "test"));
+                TradingOrchestrator.setBroadcastContext(true);
 
-                doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
-                doReturn("{}").when(service).cancelAllOrders(anyString());
+                when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
                 when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
                 TradeSignal signal = buildCloseSignal(1.0);
@@ -810,7 +794,7 @@ class BinanceFuturesServiceTest {
                 // 廣播 context 下，無持倉平倉不應發 notifyGlobal
                 verify(mockWebhook, never()).sendNotification(contains("無持倉"), anyString(), anyInt());
             } finally {
-                threadLocal.getClass().getMethod("remove").invoke(threadLocal);
+                TradingOrchestrator.clearBroadcastContext();
             }
         }
     }
@@ -832,8 +816,8 @@ class BinanceFuturesServiceTest {
 
             OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.01);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.01);
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             List<OrderResult> results = service.executeSignal(signal);
@@ -854,8 +838,8 @@ class BinanceFuturesServiceTest {
 
             OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.01);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.01);
-            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(entryOrder);
+            when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
             List<OrderResult> results = service.executeSignal(signal);
@@ -872,12 +856,11 @@ class BinanceFuturesServiceTest {
             multiUserConfig.setEnabled(true);
             TradeRecordService.setCurrentUserId("user-test");
 
-            doReturn(0.5).when(service).getCurrentPositionAmount(anyString());
-            doReturn(95000.0).when(service).getMarkPrice(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
+            when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
-            doReturn(closeOrder).when(service).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
+            when(mockAdapter.placeMarketOrder(anyString(), eq("SELL"), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);

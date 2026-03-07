@@ -1,11 +1,12 @@
 package com.trader.service;
 
-import com.trader.shared.config.BinanceConfig;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.exchange.binance.BinanceAdapter;
+import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.SignalDeduplicationService;
@@ -13,14 +14,13 @@ import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.trading.service.TradingOrchestrator;
 import com.trader.trading.validation.TradeSignalValidator;
-import okhttp3.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,7 +29,10 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * 告警通知測試 — 確保 TP 失敗和連線中斷時發送 Discord 通知。
+ * 告警通知測試 — 確保 TP 失敗時發送 Discord 通知。
+ *
+ * 注意：連線中斷告警（ConnectionFailureAlerts）和冪等重試（IdempotentRetry）
+ * 測試已移至 BinanceAdapterTest 範疇，因為這些測試的是 Adapter 層級的 HTTP 行為。
  */
 class AlertNotificationTest {
 
@@ -60,29 +63,33 @@ class AlertNotificationTest {
         void entryTpFailureSendsYellowAlert() {
             TradeRecordService mockTradeRecord = mock(TradeRecordService.class);
             SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
-            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
+            NotificationService mockWebhook = mock(NotificationService.class);
+            BinanceAdapter mockAdapter = mock(BinanceAdapter.class);
 
             when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
             when(mockDedup.isDuplicate(any())).thenReturn(false);
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
             when(mockDedup.generateHash(any())).thenReturn("testhash");
 
-            BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, mockDedup, mockWebhook, new MultiUserConfig(), null,
-                    new SymbolLockRegistry(), null, mockTradeConfigResolver,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null));
+            TradingOrchestrator orchestrator = new TradingOrchestrator(
+                    mockTradeRecord, mockDedup, mockWebhook,
+                    new MultiUserConfig(), new ObjectMapper(),
+                    new SymbolLockRegistry(), mockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class),
+                    new TradeSignalValidator(), null);
+
+            BinanceFuturesService service = new BinanceFuturesService(
+                    mockAdapter, orchestrator, riskConfig,
+                    mockTradeRecord, mockDedup,
+                    new MultiUserConfig(), new SymbolLockRegistry(),
+                    null, mockTradeConfigResolver);
 
             // 餘額查詢 + 所有前置檢查通過
-            doReturn(1000.0).when(service).getAvailableBalance();
-            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
-            doReturn(0).when(service).getActivePositionCount();
-            doReturn(false).when(service).hasOpenEntryOrders(anyString());
-            doReturn(95000.0).when(service).getMarkPrice(anyString());
-
-            // 設定槓桿和保證金成功（不拋異常）
-            doReturn("{}").when(service).setLeverage(anyString(), anyInt());
-            doReturn("{}").when(service).setMarginType(anyString(), anyString());
+            when(mockAdapter.getAvailableBalance()).thenReturn(1000.0);
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
+            when(mockAdapter.getActivePositionCount()).thenReturn(0);
+            when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
+            when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
 
             // 入場單和止損單成功
             OrderResult entryOk = OrderResult.builder()
@@ -94,9 +101,9 @@ class AlertNotificationTest {
             // TP 失敗
             OrderResult tpFail = OrderResult.fail("TP order rejected by exchange");
 
-            doReturn(entryOk).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOk).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(tpFail).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(entryOk);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOk);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpFail);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -118,25 +125,38 @@ class AlertNotificationTest {
             verify(mockWebhook).sendNotification(
                     contains("止盈單失敗"),
                     contains("請手動設定 TP"),
-                    eq(DiscordWebhookService.COLOR_YELLOW));
+                    eq(NotificationService.COLOR_YELLOW));
         }
 
         @Test
         @DisplayName("MOVE_SL 流程 — TP 失敗應發送 Discord 黃色告警")
         void moveSLTpFailureSendsYellowAlert() {
             TradeRecordService mockTradeRecord = mock(TradeRecordService.class);
-            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
+            NotificationService mockWebhook = mock(NotificationService.class);
+            BinanceAdapter mockAdapter = mock(BinanceAdapter.class);
+            TradeConfigResolver localMockTradeConfigResolver = mock(TradeConfigResolver.class);
 
-            BinanceFuturesService service = spy(new BinanceFuturesService(
-                    null, null, riskConfig, mockTradeRecord, null, mockWebhook, new MultiUserConfig(), null,
-                    new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null));
+            EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
+                    0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
+                    List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
+            );
+            when(localMockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
+
+            TradingOrchestrator orchestrator = new TradingOrchestrator(
+                    mockTradeRecord, null, mockWebhook,
+                    new MultiUserConfig(), new ObjectMapper(),
+                    new SymbolLockRegistry(), localMockTradeConfigResolver,
+                    mock(StartOfDayBalanceCache.class),
+                    new TradeSignalValidator(), null);
+
+            BinanceFuturesService service = new BinanceFuturesService(
+                    mockAdapter, orchestrator, riskConfig,
+                    mockTradeRecord, null,
+                    new MultiUserConfig(), new SymbolLockRegistry(),
+                    null, localMockTradeConfigResolver);
 
             // 有持倉
-            doReturn(0.25).when(service).getCurrentPositionAmount(anyString());
-            // 取消掛單成功
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.25);
             // 查詢舊 SL
             when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
 
@@ -144,11 +164,11 @@ class AlertNotificationTest {
             OrderResult slOk = OrderResult.builder()
                     .success(true).orderId("200").symbol("BTCUSDT").side("SELL")
                     .type("STOP_MARKET").price(94000).quantity(0.25).build();
-            doReturn(slOk).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOk);
 
             // 新 TP 失敗
             OrderResult tpFail = OrderResult.fail("TP error");
-            doReturn(tpFail).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpFail);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -169,155 +189,7 @@ class AlertNotificationTest {
             verify(mockWebhook).sendNotification(
                     contains("止盈單失敗"),
                     contains("請手動設定 TP"),
-                    eq(DiscordWebhookService.COLOR_YELLOW));
-        }
-    }
-
-    @Nested
-    @DisplayName("Binance 連線中斷告警")
-    class ConnectionFailureAlerts {
-
-        @Test
-        @DisplayName("IOException 應觸發 Discord 紅色連線中斷告警")
-        void ioExceptionTriggersConnectionAlert() throws Exception {
-            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
-            OkHttpClient mockHttpClient = mock(OkHttpClient.class);
-            Call mockCall = mock(Call.class);
-
-            when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
-            when(mockCall.execute()).thenThrow(new IOException("Connection refused"));
-
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
-            BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
-                    new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null);
-
-            // getExchangeInfo 會呼叫 executeRequest → IOException
-            assertThatThrownBy(() -> service.getExchangeInfo())
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Binance API request failed");
-
-            // 應發送連線中斷紅色告警
-            verify(mockWebhook).sendNotification(
-                    contains("連線中斷"),
-                    contains("API 無法連線"),
-                    eq(DiscordWebhookService.COLOR_RED));
-        }
-
-        @Test
-        @DisplayName("HTTP 非 200 回應應拋 RuntimeException 但不觸發連線中斷告警")
-        void httpErrorThrowsExceptionButNoConnectionAlert() throws Exception {
-            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
-            OkHttpClient mockHttpClient = mock(OkHttpClient.class);
-            Call mockCall = mock(Call.class);
-
-            // 模擬 Binance 回 HTTP 400（非連線問題）
-            Response mockResponse = new Response.Builder()
-                    .request(new Request.Builder().url("https://fapi.binance.com/fapi/v1/exchangeInfo").build())
-                    .protocol(Protocol.HTTP_1_1)
-                    .code(400)
-                    .message("Bad Request")
-                    .body(ResponseBody.create("{\"code\":-1100,\"msg\":\"Illegal characters\"}", MediaType.get("application/json")))
-                    .build();
-
-            when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
-            when(mockCall.execute()).thenReturn(mockResponse);
-
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "key", "secret");
-            BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
-                    new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null);
-
-            // HTTP 非 200 應拋出 RuntimeException（包含 Binance 錯誤訊息）
-            assertThatThrownBy(() -> service.getExchangeInfo())
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Illegal characters");
-
-            // 不應觸發連線中斷告警（只有 IOException 才會）
-            verify(mockWebhook, never()).sendNotification(
-                    contains("連線中斷"), anyString(), anyInt());
-        }
-    }
-
-    @Nested
-    @DisplayName("SL/TP Idempotent Retry")
-    class IdempotentRetry {
-
-        @Test
-        @DisplayName("SL 第一次 IOException → 重試成功 → 不走 Fail-Safe")
-        void slRetrySucceedsOnSecondAttempt() throws Exception {
-            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
-            OkHttpClient mockHttpClient = mock(OkHttpClient.class);
-            Call mockCall1 = mock(Call.class);
-            Call mockCall2 = mock(Call.class);
-
-            // 第一次 IOException，第二次成功
-            when(mockHttpClient.newCall(any(Request.class)))
-                    .thenReturn(mockCall1)
-                    .thenReturn(mockCall2);
-            when(mockCall1.execute()).thenThrow(new IOException("Connection reset"));
-
-            Response successResponse = new Response.Builder()
-                    .request(new Request.Builder().url("https://fapi.binance.com/fapi/v1/algoOrder").build())
-                    .protocol(Protocol.HTTP_1_1)
-                    .code(200)
-                    .message("OK")
-                    .body(ResponseBody.create(
-                            "{\"algoId\":999,\"clientAlgoId\":\"SL-test\",\"algoType\":\"CONDITIONAL\",\"orderType\":\"STOP_MARKET\",\"symbol\":\"BTCUSDT\",\"algoStatus\":\"NEW\",\"triggerPrice\":\"93000.0\"}",
-                            MediaType.get("application/json")))
-                    .build();
-            when(mockCall2.execute()).thenReturn(successResponse);
-
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
-            BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
-                    new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null);
-
-            OrderResult result = service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25);
-
-            // 重試後成功
-            assertThat(result.isSuccess()).isTrue();
-            assertThat(result.getOrderId()).isEqualTo("999");
-
-            // 不應觸發「全部失敗」的告警
-            verify(mockWebhook, never()).sendNotification(
-                    contains("全部失敗"), anyString(), anyInt());
-        }
-
-        @Test
-        @DisplayName("SL 全部重試失敗 → 拋異常 + Discord 告警")
-        void slRetryAllFailsThrowsAndAlerts() throws Exception {
-            DiscordWebhookService mockWebhook = mock(DiscordWebhookService.class);
-            OkHttpClient mockHttpClient = mock(OkHttpClient.class);
-            Call mockCall = mock(Call.class);
-
-            // 每次都 IOException
-            when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
-            when(mockCall.execute()).thenThrow(new IOException("Connection refused"));
-
-            BinanceConfig config = new BinanceConfig("https://fapi.binance.com", null, "testkey", "testsecret");
-            BinanceFuturesService service = new BinanceFuturesService(
-                    mockHttpClient, config, riskConfig, null, null, mockWebhook, new MultiUserConfig(), null,
-                    new SymbolLockRegistry(), null, null,
-                    mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                    new TradeSignalValidator(), null);
-
-            // 全部重試失敗 → 拋 RuntimeException
-            assertThatThrownBy(() -> service.placeStopLoss("BTCUSDT", "SELL", 93000, 0.25))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("failed after");
-
-            // 應觸發 Discord 紅色告警
-            verify(mockWebhook).sendNotification(
-                    contains("重試全部失敗"),
-                    contains("Connection refused"),
-                    eq(DiscordWebhookService.COLOR_RED));
+                    eq(NotificationService.COLOR_YELLOW));
         }
     }
 }

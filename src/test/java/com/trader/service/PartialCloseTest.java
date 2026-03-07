@@ -1,17 +1,17 @@
 package com.trader.service;
 
-import com.trader.shared.config.BinanceConfig;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.config.RiskConfig;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.exchange.binance.BinanceAdapter;
+import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.*;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.validation.TradeSignalValidator;
 import com.trader.user.service.UserApiKeyService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
@@ -34,7 +34,8 @@ import static org.mockito.Mockito.*;
 class PartialCloseTest {
 
     private TradeRecordService mockTradeRecord;
-    private DiscordWebhookService mockWebhook;
+    private NotificationService mockWebhook;
+    private BinanceAdapter mockAdapter;
     private BinanceFuturesService service;
 
     @BeforeEach
@@ -47,9 +48,10 @@ class PartialCloseTest {
         );
         mockTradeRecord = mock(TradeRecordService.class);
         SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
-        mockWebhook = mock(DiscordWebhookService.class);
+        mockWebhook = mock(NotificationService.class);
         UserApiKeyService mockApiKey = mock(UserApiKeyService.class);
         TradeConfigResolver mockTradeConfigResolver = mock(TradeConfigResolver.class);
+        mockAdapter = mock(BinanceAdapter.class);
 
         EffectiveTradeConfig defaultConfig = new EffectiveTradeConfig(
                 0.20, 50000, 2000, 0.0, 0.0, 3, 2.0, 20,
@@ -57,19 +59,24 @@ class PartialCloseTest {
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
 
-        service = spy(new BinanceFuturesService(
-                null, new BinanceConfig("https://fake.test", null, "testkey", "testsecret"),
-                riskConfig, mockTradeRecord, mockDedup, mockWebhook,
-                new MultiUserConfig(), new ObjectMapper(), new SymbolLockRegistry(), mockApiKey,
-                mockTradeConfigResolver, mock(StartOfDayBalanceCache.class), new com.trader.shared.util.BinanceApiRateLimiter(),
-                new TradeSignalValidator(), null));
+        TradingOrchestrator orchestrator = new TradingOrchestrator(
+                mockTradeRecord, mockDedup, mockWebhook,
+                new MultiUserConfig(), new ObjectMapper(),
+                new SymbolLockRegistry(), mockTradeConfigResolver,
+                mock(StartOfDayBalanceCache.class),
+                new TradeSignalValidator(), null);
+
+        service = new BinanceFuturesService(
+                mockAdapter, orchestrator, riskConfig,
+                mockTradeRecord, mockDedup,
+                new MultiUserConfig(), new SymbolLockRegistry(),
+                mockApiKey, mockTradeConfigResolver);
     }
 
     private void setupCloseBaseMocks(double positionAmt, double oldSl, double oldTp) {
-        doReturn(positionAmt).when(service).getCurrentPositionAmount(anyString());
-        doReturn(95000.0).when(service).getMarkPrice(anyString());
-        doReturn(new double[]{oldSl, oldTp}).when(service).getCurrentSLTPPrices(anyString());
-        doReturn("{}").when(service).cancelAllOrders(anyString());
+        when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(positionAmt);
+        when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
+        when(mockAdapter.getCurrentSLTPPrices(anyString())).thenReturn(new double[]{oldSl, oldTp});
     }
 
     private OrderResult successOrder(String id, String side, double price, double qty) {
@@ -94,10 +101,9 @@ class PartialCloseTest {
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
             OrderResult tpOrder = successOrder("TP1", "SELL", 100000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -109,7 +115,7 @@ class PartialCloseTest {
             List<OrderResult> results = service.executeClose(signal);
 
             // 驗證用新 SL 價格 94500 重掛
-            verify(service).placeStopLoss(eq("BTCUSDT"), eq("SELL"), eq(94500.0), anyDouble());
+            verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("SELL"), eq(94500.0), anyDouble());
         }
 
         @Test
@@ -121,10 +127,9 @@ class PartialCloseTest {
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.5);
             OrderResult tpOrder = successOrder("TP1", "SELL", 100000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -136,7 +141,7 @@ class PartialCloseTest {
             List<OrderResult> results = service.executeClose(signal);
 
             // 驗證用舊 SL 價格 93000 重掛
-            verify(service).placeStopLoss(eq("BTCUSDT"), eq("SELL"), eq(93000.0), anyDouble());
+            verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("SELL"), eq(93000.0), anyDouble());
         }
 
         @Test
@@ -150,9 +155,8 @@ class PartialCloseTest {
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             OrderResult slOrder = successOrder("SL1", "SELL", 95000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -163,7 +167,7 @@ class PartialCloseTest {
             List<OrderResult> results = service.executeClose(signal);
 
             // 驗證用開倉價 95000 做成本保護
-            verify(service).placeStopLoss(eq("BTCUSDT"), eq("SELL"), eq(95000.0), anyDouble());
+            verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("SELL"), eq(95000.0), anyDouble());
         }
 
         @Test
@@ -174,8 +178,7 @@ class PartialCloseTest {
             when(mockTradeRecord.getEntryPrice("BTCUSDT")).thenReturn(null);
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -199,9 +202,8 @@ class PartialCloseTest {
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -212,7 +214,7 @@ class PartialCloseTest {
             service.executeClose(signal);
 
             // 原始 1.0 BTC，平倉 0.5，剩餘應為 0.5
-            verify(service).placeStopLoss(eq("BTCUSDT"), eq("SELL"), eq(93000.0), eq(0.5));
+            verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("SELL"), eq(93000.0), eq(0.5));
         }
     }
 
@@ -231,10 +233,9 @@ class PartialCloseTest {
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.5);
             OrderResult tpOrder = successOrder("TP1", "SELL", 105000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -246,7 +247,7 @@ class PartialCloseTest {
             service.executeClose(signal);
 
             // 驗證用新 TP 105000
-            verify(service).placeTakeProfit(eq("BTCUSDT"), eq("SELL"), eq(105000.0), eq(0.5));
+            verify(mockAdapter).setTakeProfit(eq("BTCUSDT"), eq("SELL"), eq(105000.0), eq(0.5));
         }
 
         @Test
@@ -258,10 +259,9 @@ class PartialCloseTest {
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.5);
             OrderResult tpOrder = successOrder("TP1", "SELL", 100000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
+            when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -273,7 +273,7 @@ class PartialCloseTest {
             service.executeClose(signal);
 
             // 驗證用舊 TP 100000
-            verify(service).placeTakeProfit(eq("BTCUSDT"), eq("SELL"), eq(100000.0), eq(0.5));
+            verify(mockAdapter).setTakeProfit(eq("BTCUSDT"), eq("SELL"), eq(100000.0), eq(0.5));
         }
 
         @Test
@@ -284,9 +284,8 @@ class PartialCloseTest {
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), anyString(), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -297,7 +296,7 @@ class PartialCloseTest {
             service.executeClose(signal);
 
             // 不應掛 TP
-            verify(service, never()).placeTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
+            verify(mockAdapter, never()).setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble());
         }
     }
 
@@ -311,19 +310,17 @@ class PartialCloseTest {
         @DisplayName("做空 50% 部分平倉 — 平倉方向 BUY + SL 重掛 BUY")
         void shortPartialCloseDirectionCorrect() {
             // 空倉 -1.0 BTC
-            doReturn(-1.0).when(service).getCurrentPositionAmount(anyString());
-            doReturn(95000.0).when(service).getMarkPrice(anyString());
-            doReturn(new double[]{97000, 90000}).when(service).getCurrentSLTPPrices(anyString());
-            doReturn("{}").when(service).cancelAllOrders(anyString());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(-1.0);
+            when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
+            when(mockAdapter.getCurrentSLTPPrices(anyString())).thenReturn(new double[]{97000, 90000});
 
             OrderResult closeOrder = successOrder("C1", "BUY", 94000, 0.5);
             OrderResult slOrder = successOrder("SL1", "BUY", 97000, 0.5);
             OrderResult tpOrder = successOrder("TP1", "BUY", 90000, 0.5);
 
-            doReturn(closeOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn(tpOrder).when(service).placeTakeProfit(anyString(), eq("BUY"), anyDouble(), anyDouble());
-            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+            when(mockAdapter.placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(closeOrder);
+            when(mockAdapter.setStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(slOrder);
+            when(mockAdapter.setTakeProfit(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -335,9 +332,9 @@ class PartialCloseTest {
 
             assertThat(results).isNotEmpty();
             // 平倉應該用 BUY
-            verify(service).placeLimitOrder(eq("BTCUSDT"), eq("BUY"), anyDouble(), anyDouble());
+            verify(mockAdapter).placeLimitOrder(eq("BTCUSDT"), eq("BUY"), anyDouble(), anyDouble());
             // SL 重掛也用 BUY
-            verify(service).placeStopLoss(eq("BTCUSDT"), eq("BUY"), eq(97000.0), eq(0.5));
+            verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("BUY"), eq(97000.0), eq(0.5));
         }
     }
 }
