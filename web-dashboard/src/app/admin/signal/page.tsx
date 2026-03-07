@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import { useAuth } from "@/lib/auth-context";
 import {
   adminBroadcastTrade,
+  getAdminSystemOverview,
   type BroadcastTradeRequest,
   type BroadcastTradeResponse,
 } from "@/lib/api";
@@ -29,7 +30,14 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  UserCircle,
+  CheckSquare,
+  Square,
 } from "lucide-react";
+import type { UserTradingSummary } from "@/types";
 
 const SYMBOLS = [
   "BTCUSDT",
@@ -62,11 +70,48 @@ export default function AdminSignalPage() {
   const [newTakeProfit, setNewTakeProfit] = useState("");
   const [isDca, setIsDca] = useState(false);
 
+  // Target user state
+  const [targetEnabled, setTargetEnabled] = useState(false);
+  const [users, setUsers] = useState<UserTradingSummary[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [userSearch, setUserSearch] = useState("");
+
   // UI state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<BroadcastTradeResponse | null>(null);
   const [error, setError] = useState("");
+
+  // Load users when target mode is enabled
+  useEffect(() => {
+    if (targetEnabled && users.length === 0 && !usersLoading) {
+      setUsersLoading(true);
+      getAdminSystemOverview()
+        .then((overview) => setUsers(overview.userSummaries))
+        .catch(() => {})
+        .finally(() => setUsersLoading(false));
+    }
+  }, [targetEnabled, users.length, usersLoading]);
+
+  const filteredUsers = useMemo(() => {
+    if (!userSearch.trim()) return users;
+    const q = userSearch.toLowerCase();
+    return users.filter(
+      (u) =>
+        (u.name && u.name.toLowerCase().includes(q)) ||
+        (u.email && u.email.toLowerCase().includes(q))
+    );
+  }, [users, userSearch]);
+
+  const toggleUser = useCallback((userId: string) => {
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }, []);
 
   function resetForm() {
     setEntryPrice("");
@@ -76,6 +121,9 @@ export default function AdminSignalPage() {
     setNewStopLoss("");
     setNewTakeProfit("");
     setIsDca(false);
+    setTargetEnabled(false);
+    setSelectedUserIds(new Set());
+    setUserSearch("");
     setResult(null);
     setError("");
   }
@@ -119,6 +167,9 @@ export default function AdminSignalPage() {
         break;
       case "CANCEL":
         break;
+    }
+    if (targetEnabled && selectedUserIds.size > 0) {
+      req.target_user_ids = Array.from(selectedUserIds);
     }
     return req;
   }
@@ -390,6 +441,105 @@ export default function AdminSignalPage() {
           </TabsContent>
         </Tabs>
 
+        {/* Target Users — collapsible */}
+        <Separator className="my-6" />
+        <div>
+          <button
+            type="button"
+            onClick={() => setTargetEnabled((v) => !v)}
+            className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors w-full text-left"
+          >
+            {targetEnabled ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+            {t("adminSignal.targetUsers")}
+            {targetEnabled && selectedUserIds.size > 0 && (
+              <span className="ml-auto text-xs text-yellow-400 font-normal">
+                {t("adminSignal.targetUsersEnabled").replace(
+                  "{count}",
+                  String(selectedUserIds.size)
+                )}
+              </span>
+            )}
+            {!targetEnabled && (
+              <span className="ml-auto text-xs text-muted-foreground font-normal">
+                {t("adminSignal.allUsers")}
+              </span>
+            )}
+          </button>
+          <p className="text-xs text-muted-foreground mt-1 ml-6">
+            {t("adminSignal.targetUsersDesc")}
+          </p>
+
+          {targetEnabled && (
+            <div className="mt-3 rounded-lg border border-border overflow-hidden">
+              {/* Search */}
+              <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                <input
+                  type="text"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder={t("adminSignal.searchUsers")}
+                  className="w-full bg-transparent text-sm focus:outline-none"
+                />
+                {selectedUserIds.size > 0 && (
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {t("adminSignal.selectedCount").replace(
+                      "{count}",
+                      String(selectedUserIds.size)
+                    )}
+                  </span>
+                )}
+              </div>
+
+              {/* User list */}
+              <div className="overflow-y-auto max-h-[250px]">
+                {usersLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
+                  </div>
+                ) : filteredUsers.length === 0 ? (
+                  <div className="py-4 text-center text-sm text-muted-foreground">
+                    {t("common.noData")}
+                  </div>
+                ) : (
+                  filteredUsers.map((user) => {
+                    const selected = selectedUserIds.has(user.userId);
+                    return (
+                      <button
+                        key={user.userId}
+                        type="button"
+                        onClick={() => toggleUser(user.userId)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-accent/50 transition-colors ${
+                          selected ? "bg-accent/30" : ""
+                        }`}
+                      >
+                        {selected ? (
+                          <CheckSquare className="h-4 w-4 text-primary shrink-0" />
+                        ) : (
+                          <Square className="h-4 w-4 text-muted-foreground shrink-0" />
+                        )}
+                        <UserCircle className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">
+                            {user.name || "unknown"}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {user.email || "LINE"}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Result */}
         {result && (
           <div className="mt-6">
@@ -416,6 +566,14 @@ export default function AdminSignalPage() {
                       String(result.skippedNoApiKey ?? 0)
                     )}
                 </p>
+                {(result.skippedNotTargeted ?? 0) > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {t("adminSignal.skippedNotTargeted").replace(
+                      "{count}",
+                      String(result.skippedNotTargeted)
+                    )}
+                  </p>
+                )}
               </div>
             ) : result.status === "SKIPPED" ? (
               <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-4">
@@ -466,10 +624,18 @@ export default function AdminSignalPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-4">
+          <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-4 space-y-2">
             <code className="text-sm font-mono text-yellow-300 whitespace-pre-wrap">
               {getSummaryText()}
             </code>
+            {targetEnabled && selectedUserIds.size > 0 && (
+              <p className="text-sm text-yellow-400 font-medium">
+                {t("adminSignal.confirmTargeted").replace(
+                  "{count}",
+                  String(selectedUserIds.size)
+                )}
+              </p>
+            )}
           </div>
 
           <DialogFooter>

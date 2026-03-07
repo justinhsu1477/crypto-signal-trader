@@ -3,6 +3,8 @@ package com.trader.shared.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 結構化交易請求 DTO
  * 接收 Python AI 解析後的 JSON
@@ -41,4 +43,7 @@ public class TradeRequest {
 
     @JsonProperty("signal_timestamp")
     private Long signalTimestamp;  // 訊號產生時間（epoch millis），用於時效性驗證（可選）
+
+    @JsonProperty("target_user_ids")
+    private List<String> targetUserIds;  // 可選，null/空 = 全部用戶（Admin 緊急廣播指定用戶用）
 }
