@@ -54,6 +54,7 @@
             </encoder>
         </appender>
 
+        <logger name="com.trader.notification" level="DEBUG"/>
         <logger name="com.trader" level="INFO"/>
         <root level="WARN">
             <appender-ref ref="CONSOLE"/>
