@@ -3,6 +3,7 @@ package com.trader.trading.service;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.notification.service.DiscordWebhookService;
+import com.trader.trading.entity.Trade;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
@@ -150,10 +151,32 @@ public class OrderEventHandler {
                         realizedProfit, orderId, "TP_TRIGGERED", transactionTime);
                 break;
 
-            case "LIMIT":
+            case "LIMIT": {
                 log.info("{}{} 訂單成交: {} {} @ {} qty={}",
                         logPrefix, orderType, symbol, side, avgPrice, filledQty);
+
+                // 嘗試匹配入場單（entryOrderId = orderId）
+                Trade updatedTrade = tradeRecordService.recordLimitEntryFilled(
+                        symbol, orderId, avgPrice, filledQty, commission, transactionTime);
+
+                if (updatedTrade != null) {
+                    // === LIMIT 入場成交 → 通知用戶 ===
+                    String entryTitle = "✅ 限價入場成交";
+                    String entryBody = String.format("%s %s\n成交價: %.2f\n數量: %.4f\n手續費: %.4f USDT",
+                            symbol, updatedTrade.getSide(), avgPrice, filledQty, commission);
+                    notificationSender.send(entryTitle, entryBody, DiscordWebhookService.COLOR_GREEN);
+                    if (adminNotifier != null) {
+                        adminNotifier.send(entryTitle,
+                                String.format("%s %s 成交 @ %.2f", symbol, updatedTrade.getSide(), avgPrice),
+                                DiscordWebhookService.COLOR_GREEN);
+                    }
+                } else {
+                    // === 非入場單 = 平倉 LIMIT → 走平倉流程 ===
+                    processStreamClose(symbol, avgPrice, filledQty, commission,
+                            realizedProfit, orderId, "SIGNAL_CLOSE", transactionTime);
+                }
                 break;
+            }
 
             case "MARKET": {
                 // Algo SL/TP 觸發後，Binance 以 MARKET 單成交
