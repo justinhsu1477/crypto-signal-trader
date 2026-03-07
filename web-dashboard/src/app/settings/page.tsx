@@ -114,18 +114,16 @@ export default function SettingsPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   // ─── Prerequisite check ───
-  const hasBinanceKey = apiKeys.some(
-    (k) => k.exchange === "BINANCE" && k.hasApiKey
-  );
-  const canEnableAutoTrade = hasBinanceKey && subscriptionActive;
+  const hasExchangeKey = apiKeys.some((k) => k.hasApiKey);
+  const canEnableAutoTrade = hasExchangeKey && subscriptionActive;
   const prerequisitesLoading = keysLoading || subscriptionLoading;
 
   // ─── Auto-expand tutorial for new users ───
   useEffect(() => {
     if (!keysLoading && tutorialOpen === null) {
-      setTutorialOpen(!hasBinanceKey);
+      setTutorialOpen(!hasExchangeKey);
     }
-  }, [keysLoading, hasBinanceKey, tutorialOpen]);
+  }, [keysLoading, hasExchangeKey, tutorialOpen]);
 
   // ─── Sidebar nav items ───
   const navItems: {
@@ -379,7 +377,7 @@ export default function SettingsPage() {
             className="w-full flex items-center justify-between px-4 py-3 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors text-left"
           >
             <span className="font-medium text-sm text-amber-800 dark:text-amber-200">
-              🔑 {t("settings.apiKeyTutorialTitle")}
+              🔑 {exchange === "BYBIT" ? t("settings.bybitApiKeyTutorialTitle") : t("settings.apiKeyTutorialTitle")}
             </span>
             {tutorialOpen ? (
               <ChevronUp className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -397,71 +395,118 @@ export default function SettingsPage() {
           >
             <div className="overflow-hidden">
               <div className="px-4 py-4 space-y-4 text-sm text-amber-900 dark:text-amber-100">
-                {/* Prerequisite warning */}
-                <div className="p-3 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
-                  <p className="font-medium">⚠️ {t("settings.apiKeyPrerequisite")}</p>
-                </div>
-
-                {/* Steps */}
-                <ol className="space-y-3 list-none">
-                  {/* Step 1 */}
-                  <li className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">1</span>
-                    <p className="pt-0.5">{t("settings.apiKeyStep1")}</p>
-                  </li>
-
-                  {/* Step 2 — Permissions */}
-                  <li className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">2</span>
-                    <div className="space-y-1.5 pt-0.5">
-                      <p className="font-medium">{t("settings.apiKeyStep2Title")}</p>
-                      <div className="space-y-1 text-xs">
-                        <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.apiKeyStep2Check1")}</p>
-                        <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.apiKeyStep2Check2")}</p>
-                        <p className="text-red-600 dark:text-red-400">❌ {t("settings.apiKeyStep2Warning")}</p>
-                      </div>
+                {exchange === "BYBIT" ? (
+                  <>
+                    {/* Bybit Prerequisite */}
+                    <div className="p-3 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
+                      <p className="font-medium">⚠️ {t("settings.bybitApiKeyPrerequisite")}</p>
                     </div>
-                  </li>
-
-                  {/* Step 3 — IP whitelist */}
-                  <li className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">3</span>
-                    <div className="space-y-1.5 pt-0.5">
-                      <p className="font-medium">{t("settings.apiKeyStep3Title")}</p>
-                      <p className="text-xs text-amber-700 dark:text-amber-300">{t("settings.apiKeyStep3Desc")}</p>
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-amber-300 dark:border-amber-700 rounded-md font-mono text-sm">
-                        <span><vm-ip></span>
-                        <button
-                          type="button"
-                          onClick={handleCopyIp}
-                          className="p-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-800 transition-colors"
-                          title="Copy IP"
-                        >
-                          {ipCopied ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-500" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                          )}
-                        </button>
-                      </div>
+                    {/* Bybit Steps */}
+                    <ol className="space-y-3 list-none">
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">1</span>
+                        <p className="pt-0.5">{t("settings.bybitApiKeyStep1")}</p>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">2</span>
+                        <div className="space-y-1.5 pt-0.5">
+                          <p className="font-medium">{t("settings.bybitApiKeyStep2Title")}</p>
+                          <div className="space-y-1 text-xs">
+                            <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.bybitApiKeyStep2Check1")}</p>
+                            <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.bybitApiKeyStep2Check2")}</p>
+                            <p className="text-red-600 dark:text-red-400">❌ {t("settings.bybitApiKeyStep2Warning")}</p>
+                          </div>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">3</span>
+                        <div className="space-y-1.5 pt-0.5">
+                          <p className="font-medium">{t("settings.bybitApiKeyStep3Title")}</p>
+                          <p className="text-xs">{t("settings.bybitApiKeyStep3Desc")}</p>
+                          <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border rounded px-3 py-1.5 font-mono text-xs">
+                            <span><vm-ip></span>
+                            <button type="button" onClick={handleCopyIp} className="hover:opacity-70 transition-opacity">
+                              {ipCopied ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">4</span>
+                        <div className="space-y-1 pt-0.5">
+                          <p>{t("settings.bybitApiKeyStep4")}</p>
+                          <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ {t("settings.bybitApiKeyStep4Warning")}</p>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">5</span>
+                        <p className="pt-0.5">{t("settings.bybitApiKeyStep5")}</p>
+                      </li>
+                    </ol>
+                  </>
+                ) : (
+                  <>
+                    {/* Binance Prerequisite (existing) */}
+                    <div className="p-3 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
+                      <p className="font-medium">⚠️ {t("settings.apiKeyPrerequisite")}</p>
                     </div>
-                  </li>
-
-                  {/* Step 4 — Copy keys */}
-                  <li className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">4</span>
-                    <div className="space-y-1 pt-0.5">
-                      <p>{t("settings.apiKeyStep4")}</p>
-                      <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ {t("settings.apiKeyStep4Warning")}</p>
-                    </div>
-                  </li>
-
-                  {/* Step 5 — Save */}
-                  <li className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">5</span>
-                    <p className="pt-0.5">{t("settings.apiKeyStep5")}</p>
-                  </li>
-                </ol>
+                    {/* Binance Steps (existing) */}
+                    <ol className="space-y-3 list-none">
+                      {/* Step 1 */}
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">1</span>
+                        <p className="pt-0.5">{t("settings.apiKeyStep1")}</p>
+                      </li>
+                      {/* Step 2 — Permissions */}
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">2</span>
+                        <div className="space-y-1.5 pt-0.5">
+                          <p className="font-medium">{t("settings.apiKeyStep2Title")}</p>
+                          <div className="space-y-1 text-xs">
+                            <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.apiKeyStep2Check1")}</p>
+                            <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.apiKeyStep2Check2")}</p>
+                            <p className="text-red-600 dark:text-red-400">❌ {t("settings.apiKeyStep2Warning")}</p>
+                          </div>
+                        </div>
+                      </li>
+                      {/* Step 3 — IP whitelist */}
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">3</span>
+                        <div className="space-y-1.5 pt-0.5">
+                          <p className="font-medium">{t("settings.apiKeyStep3Title")}</p>
+                          <p className="text-xs">{t("settings.apiKeyStep3Desc")}</p>
+                          <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border rounded px-3 py-1.5 font-mono text-xs">
+                            <span><vm-ip></span>
+                            <button type="button" onClick={handleCopyIp} className="hover:opacity-70 transition-opacity">
+                              {ipCopied ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                      {/* Step 4 — Copy keys */}
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">4</span>
+                        <div className="space-y-1 pt-0.5">
+                          <p>{t("settings.apiKeyStep4")}</p>
+                          <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ {t("settings.apiKeyStep4Warning")}</p>
+                        </div>
+                      </li>
+                      {/* Step 5 — Save */}
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">5</span>
+                        <p className="pt-0.5">{t("settings.apiKeyStep5")}</p>
+                      </li>
+                    </ol>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -544,14 +589,17 @@ export default function SettingsPage() {
                     htmlFor="exchange"
                     className="text-xs text-muted-foreground"
                   >
-                    Exchange
+                    {t("settings.selectExchange")}
                   </Label>
-                  <Input
+                  <select
                     id="exchange"
                     value={exchange}
                     onChange={(e) => setExchange(e.target.value)}
-                    placeholder="BINANCE"
-                  />
+                    className="border-input bg-transparent dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                  >
+                    <option value="BINANCE">Binance</option>
+                    <option value="BYBIT">Bybit</option>
+                  </select>
                 </div>
 
                 <div className="space-y-2">
@@ -671,7 +719,7 @@ export default function SettingsPage() {
                   🔒 {t("settings.autoTradePrerequisite")}
                 </p>
                 <ul className="list-disc list-inside text-xs space-y-0.5">
-                  {!hasBinanceKey && (
+                  {!hasExchangeKey && (
                     <li>❌ {t("settings.autoTradeMissingApiKey")}</li>
                   )}
                   {!subscriptionActive && (

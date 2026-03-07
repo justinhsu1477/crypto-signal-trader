@@ -631,12 +631,13 @@ const translations = {
     updatedAt: { en: "Updated at {time}", "zh-TW": "更新於 {time}", "zh-CN": "更新于 {time}", ja: "{time} に更新" },
     noApiKeys: { en: "No API keys configured", "zh-TW": "尚未設定任何 API Key", "zh-CN": "尚未配置任何 API Key", ja: "設定されたAPIキーなし" },
     addUpdateApiKey: { en: "Add / Update API Key", "zh-TW": "新增 / 更新 API Key", "zh-CN": "新增 / 更新 API Key", ja: "APIキーを追加/更新" },
+    selectExchange: { en: "Select Exchange", "zh-TW": "選擇交易所", "zh-CN": "选择交易所", ja: "取引所を選択" },
     apiKeyPlaceholder: { en: "Enter API Key", "zh-TW": "輸入 API Key", "zh-CN": "输入 API Key", ja: "APIキーを入力" },
     secretKeyPlaceholder: { en: "Enter Secret Key", "zh-TW": "輸入 Secret Key", "zh-CN": "输入 Secret Key", ja: "シークレットキーを入力" },
     fillRequired: { en: "Please fill in API Key and Secret Key", "zh-TW": "請填寫 API Key 和 Secret Key", "zh-CN": "请填写 API Key 和 Secret Key", ja: "APIキーとシークレットキーを入力してください" },
     saveApiKey: { en: "Save API Key", "zh-TW": "儲存 API Key", "zh-CN": "保存 API Key", ja: "APIキーを保存" },
     // API Key Tutorial
-    apiKeyTutorialTitle: { en: "How to set up Binance API Key?", "zh-TW": "如何設定幣安 API Key？", "zh-CN": "如何设置币安 API Key？", ja: "Binance APIキーをセットアップするにはどうすればいいですか？" },
+    apiKeyTutorialTitle: { en: "How to set up Binance API Key?", "zh-TW": "如何設定幣安 API Key？", "zh-CN": "如何设置币安 API Key？", ja: "Binance APIキーの設定方法" },
     apiKeyPrerequisite: {
       en: "You must activate Binance Futures first: Open Binance App → Futures Trading → Complete the risk assessment quiz",
       "zh-TW": "必須先開通合約帳戶：開啟幣安 App → 合約交易 → 完成風險測驗",
@@ -687,6 +688,55 @@ const translations = {
       "zh-TW": "點擊下方「儲存 API Key」即完成設定",
       "zh-CN": "点击下方「保存 API Key」即完成设置",
     },
+    // Bybit API Key Tutorial
+    bybitApiKeyTutorialTitle: { en: "How to set up Bybit API Key?", "zh-TW": "如何設定 Bybit API Key？", "zh-CN": "如何设置 Bybit API Key？", ja: "Bybit APIキーの設定方法" },
+    bybitApiKeyPrerequisite: {
+      en: "You must activate Bybit Derivatives trading first: Open Bybit App → Derivatives → Complete identity verification",
+      "zh-TW": "必須先開通衍生品交易：開啟 Bybit App → 衍生品交易 → 完成身份驗證",
+      "zh-CN": "必须先开通衍生品交易：打开 Bybit App → 衍生品交易 → 完成身份验证",
+    },
+    bybitApiKeyStep1: {
+      en: "Bybit Website → Account → API Management → Create New Key",
+      "zh-TW": "Bybit 官網 → 帳戶 → API 管理 → 建立新金鑰",
+      "zh-CN": "Bybit 官网 → 账户 → API 管理 → 创建新密钥",
+    },
+    bybitApiKeyStep2Title: {
+      en: "Set Permissions",
+      "zh-TW": "設定權限",
+      "zh-CN": "设置权限",
+    },
+    bybitApiKeyStep2Check1: { en: "Read-Write for Contract Trade", "zh-TW": "合約交易 讀寫權限", "zh-CN": "合约交易 读写权限" },
+    bybitApiKeyStep2Check2: { en: "Read-Only for Position", "zh-TW": "倉位 唯讀權限", "zh-CN": "仓位 只读权限" },
+    bybitApiKeyStep2Warning: {
+      en: "Do NOT enable \"Withdraw\" permission — our system only trades",
+      "zh-TW": "不需要啟用「提領」權限 — 系統只做交易",
+      "zh-CN": "不需要启用「提现」权限 — 系统只做交易",
+    },
+    bybitApiKeyStep3Title: {
+      en: "Set IP Restriction",
+      "zh-TW": "設定 IP 限制",
+      "zh-CN": "设置 IP 限制",
+    },
+    bybitApiKeyStep3Desc: {
+      en: "Select \"Restrict to trusted IPs only\" → Enter the IP below:",
+      "zh-TW": "選擇「僅限信任的 IP」→ 輸入以下 IP：",
+      "zh-CN": "选择「仅限受信任的 IP」→ 输入以下 IP：",
+    },
+    bybitApiKeyStep4: {
+      en: "Copy your API Key and Secret Key, then paste them into the form below",
+      "zh-TW": "複製 API Key 和 Secret Key，貼到下方表單",
+      "zh-CN": "复制 API Key 和 Secret Key，粘贴到下方表单",
+    },
+    bybitApiKeyStep4Warning: {
+      en: "Secret Key is only shown once — copy it immediately!",
+      "zh-TW": "Secret Key 只會顯示一次，請立即複製！",
+      "zh-CN": "Secret Key 只会显示一次，请立即复制！",
+    },
+    bybitApiKeyStep5: {
+      en: "Click \"Save API Key\" below to complete setup",
+      "zh-TW": "點擊下方「儲存 API Key」即完成設定",
+      "zh-CN": "点击下方「保存 API Key」即完成设置",
+    },
     // Auto Trade
     autoTrade: { en: "Auto Trade Settings", "zh-TW": "自動跟單設定", "zh-CN": "自动跟单设置" },
     autoTradeLabel: { en: "Auto Trade", "zh-TW": "自動跟單", "zh-CN": "自动跟单" },
@@ -711,9 +761,9 @@ const translations = {
       "zh-CN": "确认启用自动跟单？",
     },
     autoTradeConfirmEnableDesc: {
-      en: "Once enabled, broadcast signals will automatically execute trades on your Binance account. Make sure your API key and trading parameters are properly configured.",
-      "zh-TW": "啟用後，廣播訊號將自動在您的幣安帳戶上執行交易。請確認 API Key 和交易參數已正確設定。",
-      "zh-CN": "启用后，广播信号将自动在您的币安账户上执行交易。请确认 API Key 和交易参数已正确设置。",
+      en: "Once enabled, broadcast signals will automatically execute trades on your exchange account. Make sure your API key and trading parameters are properly configured.",
+      "zh-TW": "啟用後，廣播訊號將自動在您的交易所帳戶上執行交易。請確認 API Key 和交易參數已正確設定。",
+      "zh-CN": "启用后，广播信号将自动在您的交易所账户上执行交易。请确认 API Key 和交易参数已正确设置。",
     },
     autoTradeConfirmEnable: { en: "Enable", "zh-TW": "啟用", "zh-CN": "启用" },
     autoTradeConfirmDisableTitle: {
@@ -728,14 +778,14 @@ const translations = {
     },
     autoTradeConfirmDisable: { en: "Disable", "zh-TW": "停止", "zh-CN": "停止" },
     autoTradePrerequisite: {
-      en: "You must configure Binance API Key and Discord Webhook before enabling auto trade.",
-      "zh-TW": "您必須先設定 Binance API Key 和 Discord Webhook 才能啟用自動跟單。",
-      "zh-CN": "您必须先配置 Binance API Key 和 Discord Webhook 才能启用自动跟单。",
+      en: "You must configure an exchange API Key and have an active subscription before enabling auto trade.",
+      "zh-TW": "您必須先設定交易所 API Key 並擁有有效訂閱才能啟用自動跟單。",
+      "zh-CN": "您必须先配置交易所 API Key 并拥有有效订阅才能启用自动跟单。",
     },
     autoTradeMissingApiKey: {
-      en: "Binance API Key not configured",
-      "zh-TW": "尚未設定 Binance API Key",
-      "zh-CN": "尚未配置 Binance API Key",
+      en: "Exchange API Key not configured",
+      "zh-TW": "尚未設定交易所 API Key",
+      "zh-CN": "尚未配置交易所 API Key",
     },
     autoTradeMissingSubscription: {
       en: "No active subscription",
