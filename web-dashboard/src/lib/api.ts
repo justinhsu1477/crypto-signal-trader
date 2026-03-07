@@ -833,3 +833,15 @@ import type { FunnelStatsResponse } from "@/types";
 export async function getAdminFunnelStats(): Promise<FunnelStatsResponse> {
   return request<FunnelStatsResponse>("/api/admin/dashboard/funnel");
 }
+
+// ─── Admin Send Notification ───
+
+import type { AdminSendNotificationRequest, AdminSendNotificationResponse } from "@/types";
+
+export async function adminSendNotification(data: AdminSendNotificationRequest): Promise<AdminSendNotificationResponse> {
+  return request<AdminSendNotificationResponse>("/api/admin/notifications/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}

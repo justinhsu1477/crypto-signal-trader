@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminUserDetail, updateAdminUser } from "@/lib/api";
+import { getAdminUserDetail, updateAdminUser, adminSendNotification } from "@/lib/api";
 import type { AdminUserDetailResponse } from "@/types";
 import {
   ArrowLeft, Check, X, Power, Shield, Mail, Key, Bell,
-  TrendingUp, MessageSquare, Link2,
+  TrendingUp, MessageSquare, Link2, Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,6 +21,7 @@ export default function AdminUserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [notifDialogOpen, setNotifDialogOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -291,8 +292,24 @@ export default function AdminUserDetailPage() {
             icon={Shield}
             label={`${t("admin.changeRole")} → ${data.role === "ADMIN" ? "USER" : "ADMIN"}`}
           />
+          <ActionButton
+            onClick={() => setNotifDialogOpen(true)}
+            disabled={updating}
+            variant="neutral"
+            icon={Send}
+            label={t("adminNotif.sendToUser")}
+          />
         </div>
       </Section>
+
+      {/* Send Notification Dialog */}
+      {notifDialogOpen && (
+        <SendNotifDialog
+          userId={userId}
+          userName={data.name || data.email || ""}
+          onClose={() => setNotifDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -353,5 +370,123 @@ function ActionButton({ onClick, disabled, variant, icon: Icon, label }: {
       <Icon className="h-4 w-4" />
       {label}
     </button>
+  );
+}
+
+function SendNotifDialog({ userId, userName, onClose }: {
+  userId: string;
+  userName: string;
+  onClose: () => void;
+}) {
+  const { t } = useT();
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [color, setColor] = useState<"BLUE" | "GREEN" | "YELLOW" | "RED">("BLUE");
+  const [sending, setSending] = useState(false);
+
+  const colorOptions = [
+    { value: "BLUE" as const, label: t("adminNotif.colorBlue"), dot: "bg-blue-400" },
+    { value: "GREEN" as const, label: t("adminNotif.colorGreen"), dot: "bg-green-400" },
+    { value: "YELLOW" as const, label: t("adminNotif.colorYellow"), dot: "bg-yellow-400" },
+    { value: "RED" as const, label: t("adminNotif.colorRed"), dot: "bg-red-400" },
+  ];
+
+  async function handleSend() {
+    if (!title.trim() || !message.trim()) return;
+    setSending(true);
+    try {
+      const result = await adminSendNotification({
+        userIds: [userId],
+        title: title.trim(),
+        message: message.trim(),
+        color,
+      });
+      if (result.successCount > 0) {
+        toast.success(t("adminNotif.success"));
+      } else {
+        toast.error(t("adminNotif.failed"));
+      }
+      onClose();
+    } catch {
+      toast.error(t("adminNotif.failed"));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      {/* Dialog */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg space-y-4">
+          <h3 className="text-lg font-semibold">{t("adminNotif.dialogTitle")}</h3>
+          <p className="text-sm text-muted-foreground">{userName}</p>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">{t("adminNotif.notifTitle")}</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={t("adminNotif.notifTitlePlaceholder")}
+              maxLength={100}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">{t("adminNotif.notifMessage")}</label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={t("adminNotif.notifMessagePlaceholder")}
+              maxLength={2000}
+              rows={4}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">{t("adminNotif.color")}</label>
+            <div className="flex flex-wrap gap-2">
+              {colorOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setColor(opt.value)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-colors ${
+                    color === opt.value
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${opt.dot}`} />
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={onClose}
+              className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={!title.trim() || !message.trim() || sending}
+              className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+              {sending ? t("adminNotif.sending") : t("adminNotif.send")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

@@ -20,6 +20,7 @@ import {
   Bell,
   Zap,
   Radio,
+  Send,
   TrendingUp,
   Users2,
 } from "lucide-react";
@@ -52,6 +53,7 @@ export function Sidebar() {
     { href: "/admin/analytics", label: t("nav.adminAnalytics"), icon: TrendingUp },
     { href: "/admin/insights", label: t("nav.adminInsights"), icon: Users2 },
     { href: "/admin/broadcast-logs", label: t("nav.adminBroadcastLogs"), icon: Radio },
+    { href: "/admin/notifications", label: t("nav.adminNotifications"), icon: Send },
     { href: "/admin/announcements", label: t("nav.adminAnnouncements"), icon: Megaphone },
     { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },
   ];
