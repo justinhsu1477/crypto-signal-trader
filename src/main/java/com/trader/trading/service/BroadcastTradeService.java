@@ -8,6 +8,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
@@ -201,10 +202,10 @@ public class BroadcastTradeService {
         for (User user : activeUsers) {
             tasks.add(() -> {
                 String userDisplay = formatUserDisplay(user);
-                // 設入 ThreadLocal，讓 BinanceFuturesService.notifyGlobal() 也能讀到
-                TradeRecordService.setCurrentUserDisplayName(userDisplay);
+                TradeContext ctx = TradeContext.forBroadcast(user.getUserId(), userDisplay);
+                ctx.installThreadLocals();
                 try {
-                    List<OrderResult> results = binanceFuturesService.executeSignalForBroadcast(request, user.getUserId());
+                    List<OrderResult> results = binanceFuturesService.executeSignalForBroadcast(request, ctx.userId());
                     successCount.incrementAndGet();
                     userResultsLog.add(new UserResultData(user.getUserId(), user.getEmail(), true, null));
                     log.debug("跟單成功: userId={}", user.getUserId());
@@ -273,7 +274,7 @@ public class BroadcastTradeService {
                             DiscordWebhookService.COLOR_RED);
                 } finally {
                     // 防禦性清除 ThreadLocal — 防止線程池複用時殘留上一用戶的 context
-                    TradeRecordService.clearCurrentUserDisplayName();
+                    TradeContext.clearThreadLocals();
                 }
                 return null;
             });

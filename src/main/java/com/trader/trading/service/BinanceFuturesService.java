@@ -14,6 +14,7 @@ import com.trader.shared.model.TradeRequest;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.model.TradeContext;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.BinanceApiRateLimiter;
@@ -1842,7 +1843,9 @@ public class BinanceFuturesService {
                     "用戶 " + userId + " 未設定 Binance API Key，無法執行廣播跟單");
         }
         CURRENT_USER_KEYS.set(userKeysOpt.get());
-        TradeRecordService.setCurrentUserId(userId);  // 同步設定 TradeRecordService 的 userId
+        // 使用 TradeContext bridge 設入 userId（displayName 由 BroadcastTradeService 預設入）
+        TradeContext ctx = TradeContext.forBroadcast(userId, TradeRecordService.getCurrentUserDisplayName());
+        ctx.installThreadLocals();
         log.info("廣播跟單: userId={} 使用 per-user API Key", userId);
 
         List<OrderResult> broadcastResults = List.of();
@@ -1958,10 +1961,9 @@ public class BinanceFuturesService {
         log.info("廣播跟單完成: userId={} action={} symbol={}", userId, action, symbol);
         return broadcastResults;
         } finally {
-            // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
+            // 集中清除所有 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
             CURRENT_USER_KEYS.remove();
-            TradeRecordService.clearCurrentUserId();
-            TradeRecordService.clearCurrentUserDisplayName();
+            TradeContext.clearThreadLocals();
         }
     }
 }

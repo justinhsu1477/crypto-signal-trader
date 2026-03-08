@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
+import com.trader.trading.model.TradeContext;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
@@ -456,8 +457,9 @@ public class MultiUserDataStreamManager {
         public void onMessage(WebSocket ws, String text) {
             context.updateLastMessageTime();
 
-            // 設定 ThreadLocal userId，讓 TradeRecordService 走 per-user 查詢
-            TradeRecordService.setCurrentUserId(context.getUserId());
+            // 使用 TradeContext bridge 設入 userId，讓 TradeRecordService 走 per-user 查詢
+            TradeContext ctx = TradeContext.forWebSocket(context.getUserId());
+            ctx.installThreadLocals();
             try {
                 JsonObject json = gson.fromJson(text, JsonObject.class);
                 String eventType = json.has("e") ? json.get("e").getAsString() : "";
@@ -483,7 +485,7 @@ public class MultiUserDataStreamManager {
             } catch (Exception e) {
                 log.error("用戶 {} 處理 WebSocket 訊息失敗: {}", context.getUserId(), e.getMessage(), e);
             } finally {
-                TradeRecordService.clearCurrentUserId();
+                TradeContext.clearThreadLocals();
             }
         }
 
