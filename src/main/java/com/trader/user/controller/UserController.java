@@ -2,6 +2,7 @@ package com.trader.user.controller;
 
 import com.trader.shared.dto.ErrorResponse;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.trading.repository.TradeRepository;
 import com.trader.user.dto.ApiKeyMetadata;
 import com.trader.user.dto.SaveApiKeyRequest;
 import com.trader.user.dto.SaveApiKeyResponse;
@@ -23,6 +24,7 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+    private final TradeRepository tradeRepository;
 
     /**
      * 取得當前登入用戶資訊
@@ -49,11 +51,35 @@ public class UserController {
      * PUT /api/user/api-keys
      * Body: {@link SaveApiKeyRequest}
      *
+     * 交易所切換驗證：一用戶一交易所，切換前必須先平倉所有持倉。
+     *
      * @return {@link SaveApiKeyResponse}
      */
     @PutMapping("/api-keys")
     public ResponseEntity<?> saveApiKeys(@Valid @RequestBody SaveApiKeyRequest request) {
         String userId = SecurityUtil.getCurrentUserId();
+        String newExchange = request.getExchange();
+
+        // 交易所切換檢查：如果用戶已綁定不同交易所的 API Key，檢查是否有 OPEN trade
+        List<UserApiKey> existingKeys = userService.getApiKeys(userId);
+        if (!existingKeys.isEmpty()) {
+            UserApiKey existing = existingKeys.get(0);
+            if (!existing.getExchange().equals(newExchange)) {
+                // 切換交易所 — 檢查是否有未平倉交易
+                long openTradeCount = tradeRepository.countByUserIdAndStatus(userId, "OPEN");
+                if (openTradeCount > 0) {
+                    log.warn("用戶 {} 嘗試切換交易所 {} → {}，但有 {} 筆未平倉交易",
+                            userId, existing.getExchange(), newExchange, openTradeCount);
+                    return ResponseEntity.badRequest()
+                            .body(ErrorResponse.builder()
+                                    .error("EXCHANGE_SWITCH_BLOCKED")
+                                    .message("切換交易所前請先平倉所有持倉（目前有 " + openTradeCount + " 筆未平倉交易）")
+                                    .build());
+                }
+                log.info("用戶 {} 切換交易所 {} → {}（無未平倉交易，允許切換）",
+                        userId, existing.getExchange(), newExchange);
+            }
+        }
 
         UserApiKey saved = userService.saveApiKey(
                 userId, request.getExchange(),

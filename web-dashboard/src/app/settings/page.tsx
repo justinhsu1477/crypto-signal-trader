@@ -118,6 +118,10 @@ export default function SettingsPage() {
   const canEnableAutoTrade = hasExchangeKey && subscriptionActive;
   const prerequisitesLoading = keysLoading || subscriptionLoading;
 
+  // ─── Exchange switch detection ───
+  const currentExchange = apiKeys.find((k) => k.hasApiKey)?.exchange;
+  const isSwitchingExchange = !!currentExchange && currentExchange !== exchange;
+
   // ─── Auto-expand tutorial for new users ───
   useEffect(() => {
     if (!keysLoading && tutorialOpen === null) {
@@ -601,6 +605,17 @@ export default function SettingsPage() {
                     <option value="BYBIT">Bybit</option>
                   </select>
                 </div>
+
+                {/* Exchange switch warning */}
+                {isSwitchingExchange && (
+                  <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-800 dark:text-amber-200">
+                      <p className="font-medium">{t("settings.exchangeSwitchWarningTitle", { from: currentExchange, to: exchange })}</p>
+                      <p className="text-xs mt-1">{t("settings.exchangeSwitchWarningDesc")}</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label

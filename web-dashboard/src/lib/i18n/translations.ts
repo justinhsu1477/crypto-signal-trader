@@ -636,6 +636,18 @@ const translations = {
     secretKeyPlaceholder: { en: "Enter Secret Key", "zh-TW": "輸入 Secret Key", "zh-CN": "输入 Secret Key", ja: "シークレットキーを入力" },
     fillRequired: { en: "Please fill in API Key and Secret Key", "zh-TW": "請填寫 API Key 和 Secret Key", "zh-CN": "请填写 API Key 和 Secret Key", ja: "APIキーとシークレットキーを入力してください" },
     saveApiKey: { en: "Save API Key", "zh-TW": "儲存 API Key", "zh-CN": "保存 API Key", ja: "APIキーを保存" },
+    exchangeSwitchWarningTitle: {
+      en: "Switching exchange from {from} to {to}",
+      "zh-TW": "正在切換交易所：{from} → {to}",
+      "zh-CN": "正在切换交易所：{from} → {to}",
+      ja: "取引所を {from} から {to} に切り替え",
+    },
+    exchangeSwitchWarningDesc: {
+      en: "Please close all open positions before switching exchanges. If you have open trades, the switch will be blocked.",
+      "zh-TW": "切換交易所前請先平倉所有持倉。如果有未平倉交易，系統將拒絕切換。",
+      "zh-CN": "切换交易所前请先平仓所有持仓。如果有未平仓交易，系统将拒绝切换。",
+      ja: "取引所を切り替える前に、すべてのポジションを決済してください。未決済の取引がある場合、切り替えはブロックされます。",
+    },
     // API Key Tutorial
     apiKeyTutorialTitle: { en: "How to set up Binance API Key?", "zh-TW": "如何設定幣安 API Key？", "zh-CN": "如何设置币安 API Key？", ja: "Binance APIキーの設定方法" },
     apiKeyPrerequisite: {

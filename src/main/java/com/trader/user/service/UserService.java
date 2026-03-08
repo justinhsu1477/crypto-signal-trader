@@ -44,6 +44,9 @@ public class UserService {
 
     /**
      * 儲存或更新用戶的交易所 API Key（AES-256-GCM 加密後存入 DB）
+     *
+     * 一用戶一交易所：UNIQUE(user_id) 約束確保每個用戶最多一筆 API Key。
+     * 如果用戶切換交易所，更新現有記錄的 exchange 欄位。
      */
     @Transactional
     public UserApiKey saveApiKey(String userId, String exchange,
@@ -51,12 +54,21 @@ public class UserService {
         String encryptedApiKey = aesEncryptionUtil.encrypt(apiKey);
         String encryptedSecretKey = aesEncryptionUtil.encrypt(secretKey);
 
-        UserApiKey entity = userApiKeyRepository
-                .findByUserIdAndExchange(userId, exchange)
-                .orElse(UserApiKey.builder()
-                        .userId(userId)
-                        .exchange(exchange)
-                        .build());
+        // UNIQUE(user_id)：找用戶的唯一 API Key 記錄（不分交易所）
+        List<UserApiKey> existingKeys = userApiKeyRepository.findByUserId(userId);
+        UserApiKey entity;
+        if (!existingKeys.isEmpty()) {
+            entity = existingKeys.get(0);
+            if (!entity.getExchange().equals(exchange)) {
+                log.info("用戶 {} 切換交易所 {} → {}", userId, entity.getExchange(), exchange);
+                entity.setExchange(exchange);
+            }
+        } else {
+            entity = UserApiKey.builder()
+                    .userId(userId)
+                    .exchange(exchange)
+                    .build();
+        }
 
         entity.setEncryptedApiKey(encryptedApiKey);
         entity.setEncryptedSecretKey(encryptedSecretKey);

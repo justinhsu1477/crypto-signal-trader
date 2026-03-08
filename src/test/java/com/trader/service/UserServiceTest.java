@@ -51,14 +51,14 @@ class UserServiceTest {
     }
 
     @Nested
-    @DisplayName("儲存 API Key")
+    @DisplayName("儲存 API Key（一用戶一交易所）")
     class SaveApiKey {
 
         @Test
         @DisplayName("新 Key → 加密後存入 DB")
         void newKey_encryptsAndSaves() {
-            when(userApiKeyRepository.findByUserIdAndExchange("user-1", "BINANCE"))
-                    .thenReturn(Optional.empty());
+            when(userApiKeyRepository.findByUserId("user-1"))
+                    .thenReturn(List.of());
             when(aesEncryptionUtil.encrypt("raw-api-key")).thenReturn("encrypted-api");
             when(aesEncryptionUtil.encrypt("raw-secret-key")).thenReturn("encrypted-secret");
             when(userApiKeyRepository.save(any(UserApiKey.class)))
@@ -74,7 +74,7 @@ class UserServiceTest {
         }
 
         @Test
-        @DisplayName("已存在 Key → upsert 更新")
+        @DisplayName("已存在同交易所 Key → upsert 更新")
         void existingKey_updatesInPlace() {
             UserApiKey existing = UserApiKey.builder()
                     .id(99L)
@@ -84,8 +84,8 @@ class UserServiceTest {
                     .encryptedSecretKey("old-encrypted-secret")
                     .build();
 
-            when(userApiKeyRepository.findByUserIdAndExchange("user-1", "BINANCE"))
-                    .thenReturn(Optional.of(existing));
+            when(userApiKeyRepository.findByUserId("user-1"))
+                    .thenReturn(List.of(existing));
             when(aesEncryptionUtil.encrypt("new-api-key")).thenReturn("new-encrypted-api");
             when(aesEncryptionUtil.encrypt("new-secret-key")).thenReturn("new-encrypted-secret");
             when(userApiKeyRepository.save(any(UserApiKey.class)))
@@ -103,8 +103,8 @@ class UserServiceTest {
         @Test
         @DisplayName("明文不會存入 DB（ArgumentCaptor 驗證）")
         void plaintextNeverSavedToDb() {
-            when(userApiKeyRepository.findByUserIdAndExchange(anyString(), anyString()))
-                    .thenReturn(Optional.empty());
+            when(userApiKeyRepository.findByUserId(anyString()))
+                    .thenReturn(List.of());
             when(aesEncryptionUtil.encrypt("plain-api")).thenReturn("enc-api");
             when(aesEncryptionUtil.encrypt("plain-secret")).thenReturn("enc-secret");
             when(userApiKeyRepository.save(any(UserApiKey.class)))
@@ -121,27 +121,29 @@ class UserServiceTest {
         }
 
         @Test
-        @DisplayName("不同交易所 Key → 各自獨立")
-        void differentExchanges_independent() {
-            when(userApiKeyRepository.findByUserIdAndExchange("user-1", "BINANCE"))
-                    .thenReturn(Optional.empty());
-            when(userApiKeyRepository.findByUserIdAndExchange("user-1", "OKX"))
-                    .thenReturn(Optional.empty());
+        @DisplayName("切換交易所 → 更新現有記錄的 exchange 欄位")
+        void switchExchange_updatesExchangeField() {
+            UserApiKey existing = UserApiKey.builder()
+                    .id(99L)
+                    .userId("user-1")
+                    .exchange("BINANCE")
+                    .encryptedApiKey("old-api")
+                    .encryptedSecretKey("old-secret")
+                    .build();
+
+            when(userApiKeyRepository.findByUserId("user-1"))
+                    .thenReturn(List.of(existing));
             when(aesEncryptionUtil.encrypt(anyString())).thenReturn("encrypted");
             when(userApiKeyRepository.save(any(UserApiKey.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
-            UserApiKey binance = userService.saveApiKey(
-                    "user-1", "BINANCE", "b-api", "b-secret");
-            UserApiKey okx = userService.saveApiKey(
-                    "user-1", "OKX", "o-api", "o-secret");
+            UserApiKey result = userService.saveApiKey(
+                    "user-1", "BYBIT", "bybit-api", "bybit-secret");
 
-            assertThat(binance.getExchange()).isEqualTo("BINANCE");
-            assertThat(okx.getExchange()).isEqualTo("OKX");
-
-            // 各自呼叫一次 findByUserIdAndExchange
-            verify(userApiKeyRepository).findByUserIdAndExchange("user-1", "BINANCE");
-            verify(userApiKeyRepository).findByUserIdAndExchange("user-1", "OKX");
+            // 驗證 exchange 更新、id 保留
+            assertThat(result.getId()).isEqualTo(99L);
+            assertThat(result.getExchange()).isEqualTo("BYBIT");
+            verify(userApiKeyRepository).findByUserId("user-1");
         }
     }
 
