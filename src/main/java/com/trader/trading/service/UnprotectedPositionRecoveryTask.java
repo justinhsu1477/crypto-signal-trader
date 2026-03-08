@@ -4,6 +4,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -90,7 +91,8 @@ public class UnprotectedPositionRecoveryTask {
                 }
 
                 BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
-                TradeRecordService.setCurrentUserId(userId);
+                TradeContext ctx = TradeContext.forScheduledTask(userId);
+                ctx.installThreadLocals();
 
                 try {
                     List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(userId, "OPEN");
@@ -100,7 +102,7 @@ public class UnprotectedPositionRecoveryTask {
                     totalFailed += summary.failed;
                 } finally {
                     BinanceFuturesService.clearCurrentUserKeys();
-                    TradeRecordService.clearCurrentUserId();
+                    TradeContext.clearThreadLocals();
                 }
             } catch (Exception e) {
                 log.error("用戶 {} SL 保護檢查失敗: {}", userId, e.getMessage());

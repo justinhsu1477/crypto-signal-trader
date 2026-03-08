@@ -5,6 +5,7 @@ import com.trader.shared.config.RiskConfig;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.model.TradeContext;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.user.entity.User;
@@ -166,7 +167,8 @@ public class DailyReportService {
                 }
 
                 BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
-                TradeRecordService.setCurrentUserId(userId);
+                TradeContext ctx = TradeContext.forScheduledTask(userId);
+                ctx.installThreadLocals();
 
                 try {
                     Map<String, Object> result = tradeRecordService.cleanupStaleTrades(
@@ -185,7 +187,7 @@ public class DailyReportService {
                     }
                 } finally {
                     BinanceFuturesService.clearCurrentUserKeys();
-                    TradeRecordService.clearCurrentUserId();
+                    TradeContext.clearThreadLocals();
                 }
             } catch (Exception e) {
                 log.error("用戶 {} 殭屍清理失敗: {}", userId, e.getMessage());

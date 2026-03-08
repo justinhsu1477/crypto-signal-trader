@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -78,13 +79,14 @@ public class LiquidationDetectionTask {
                 if (keysOpt.isEmpty()) continue;
 
                 BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
-                TradeRecordService.setCurrentUserId(userId);
+                TradeContext ctx = TradeContext.forScheduledTask(userId);
+                ctx.installThreadLocals();
 
                 try {
                     detectForceOrders(userId);
                 } finally {
                     BinanceFuturesService.clearCurrentUserKeys();
-                    TradeRecordService.clearCurrentUserId();
+                    TradeContext.clearThreadLocals();
                 }
             } catch (Exception e) {
                 log.error("用戶 {} 強制平倉偵測失敗: {}", userId, e.getMessage());

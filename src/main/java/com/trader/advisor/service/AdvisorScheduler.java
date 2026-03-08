@@ -2,6 +2,7 @@ package com.trader.advisor.service;
 
 import com.trader.advisor.config.AdvisorConfig;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
@@ -90,15 +91,16 @@ public class AdvisorScheduler {
 
         for (User user : users) {
             try {
-                advisorService.setAdvisoryUserKeys(user.getUserId());
-                TradeRecordService.setCurrentUserId(user.getUserId());
+                TradeContext ctx = TradeContext.forScheduledTask(user.getUserId());
+                advisorService.setAdvisoryUserKeys(ctx.userId());
+                ctx.installThreadLocals();
                 advisorService.runAdvisory();
                 success++;
             } catch (Exception e) {
                 log.error("AI Advisor 用戶 {} 執行失敗: {}", user.getUserId(), e.getMessage());
             } finally {
                 advisorService.clearAdvisoryUserKeys();
-                TradeRecordService.clearCurrentUserId();
+                TradeContext.clearThreadLocals();
             }
         }
 
