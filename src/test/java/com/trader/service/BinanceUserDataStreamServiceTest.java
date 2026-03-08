@@ -64,7 +64,7 @@ class BinanceUserDataStreamServiceTest {
                 tradeRecordService, new SymbolLockRegistry(),
                 discordWebhookService::sendNotification,
                 null,
-                gson, "");
+                gson, "", "BINANCE");
     }
 
     // ==================== 事件處理 ====================

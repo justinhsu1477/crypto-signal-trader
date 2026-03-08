@@ -35,6 +35,7 @@ public class OrderEventHandler {
     private final NotificationSender adminNotifier;  // nullable — 單用戶模式為 null
     private final Gson gson;
     private final String logPrefix;  // 日誌前綴：空字串 or "用戶 {userId} "
+    private final String exchangeName;  // 交易所名稱（通知顯示用）：BINANCE / BYBIT
 
     /**
      * handleProtectionLost tryLock 等待上限（毫秒）
@@ -70,13 +71,15 @@ public class OrderEventHandler {
                               NotificationSender notificationSender,
                               NotificationSender adminNotifier,
                               Gson gson,
-                              String logPrefix) {
+                              String logPrefix,
+                              String exchangeName) {
         this.tradeRecordService = tradeRecordService;
         this.symbolLockRegistry = symbolLockRegistry;
         this.notificationSender = notificationSender;
         this.adminNotifier = adminNotifier;
         this.gson = gson;
         this.logPrefix = logPrefix != null ? logPrefix : "";
+        this.exchangeName = exchangeName != null ? exchangeName : "";
     }
 
     /**
@@ -164,6 +167,9 @@ public class OrderEventHandler {
                     String entryTitle = "✅ 限價入場成交";
                     String entryBody = String.format("%s %s\n成交價: %.2f\n數量: %.4f\n手續費: %.4f USDT",
                             symbol, updatedTrade.getSide(), avgPrice, filledQty, commission);
+                    if (!exchangeName.isEmpty()) {
+                        entryBody += "\n交易所: " + exchangeName;
+                    }
                     notificationSender.send(entryTitle, entryBody, DiscordWebhookService.COLOR_GREEN);
                     if (adminNotifier != null) {
                         adminNotifier.send(entryTitle,
@@ -328,6 +334,9 @@ public class OrderEventHandler {
         String partialTitle = "⚠️ " + (isSL ? "止損" : "止盈") + "單部分成交";
         String partialBody = String.format("%s %s\n成交: %.4f / %.4f\n剩餘 %.4f 等待完全成交",
                 symbol, orderType, filledQty, origQty, remainingQty);
+        if (!exchangeName.isEmpty()) {
+            partialBody += "\n交易所: " + exchangeName;
+        }
         notificationSender.send(partialTitle, partialBody, DiscordWebhookService.COLOR_YELLOW);
         if (adminNotifier != null) {
             adminNotifier.send(partialTitle, partialBody, DiscordWebhookService.COLOR_YELLOW);
@@ -402,6 +411,9 @@ public class OrderEventHandler {
             String closeTitle = emoji + " " + label + " (自動)";
             String closeBody = String.format("%s\n出場價: %.2f\n數量: %.4f\n手續費: %.4f USDT\n已實現損益: %.2f USDT",
                     symbol, exitPrice, exitQty, commission, realizedProfit);
+            if (!exchangeName.isEmpty()) {
+                closeBody += "\n交易所: " + exchangeName;
+            }
             int closeColor = "SL_TRIGGERED".equals(exitReason)
                     ? DiscordWebhookService.COLOR_RED
                     : DiscordWebhookService.COLOR_GREEN;
@@ -508,11 +520,204 @@ public class OrderEventHandler {
                 String alertTitle = "🚨 強制平倉 (LIQUIDATION)";
                 String alertBody = String.format("%s\n倉位數量: %.6f\n未實現損益: %.2f USDT\n⚠️ 請立即檢查帳戶風險！",
                         symbol, positionAmt, unrealizedPnl);
+                if (!exchangeName.isEmpty()) {
+                    alertBody += "\n交易所: " + exchangeName;
+                }
                 notificationSender.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
                 if (adminNotifier != null) {
                     adminNotifier.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
                 }
             }
+        }
+    }
+
+    // ==================== Bybit V5 事件處理 ====================
+
+    /**
+     * 處理 Bybit execution 事件
+     *
+     * Bybit V5 execution 格式：
+     * - symbol: "BTCUSDT"
+     * - orderId: 訂單 ID
+     * - orderLinkId: 客戶端自訂 ID（對應我們的 clientOrderId）
+     * - side: "Buy" / "Sell"
+     * - execPrice: 成交價
+     * - execQty: 成交數量
+     * - execFee: 手續費
+     * - execType: "Trade" / "BustTrade"（強平） / "Funding"
+     * - orderType: "Market" / "Limit"
+     * - stopOrderType: "" / "StopLoss" / "TakeProfit" / "TrailingStop"
+     * - closedSize: 平倉數量（若為平倉）
+     * - leavesQty: 剩餘數量
+     * - execTime: 成交時間（毫秒）
+     */
+    public void handleBybitExecution(JsonObject data) {
+        String symbol = getStr(data, "symbol");
+        String orderId = getStr(data, "orderId");
+        String orderLinkId = getStr(data, "orderLinkId");
+        String side = getStr(data, "side");
+        String execType = getStr(data, "execType");
+        String orderType = getStr(data, "orderType");
+        String stopOrderType = getStr(data, "stopOrderType");
+        double execPrice = getDouble(data, "execPrice");
+        double execQty = getDouble(data, "execQty");
+        double execFee = getDouble(data, "execFee");
+        double closedSize = getDouble(data, "closedSize");
+        double leavesQty = getDouble(data, "leavesQty");
+        long execTime = getLong(data, "execTime");
+
+        log.info("{}Bybit execution: {} {} {} execType={} orderType={} stopOrderType={} price={} qty={}",
+                logPrefix, symbol, side, orderId, execType, orderType, stopOrderType, execPrice, execQty);
+
+        // Funding Fee — 忽略
+        if ("Funding".equals(execType)) {
+            log.debug("{}Bybit Funding Fee，忽略: {} fee={}", logPrefix, symbol, execFee);
+            return;
+        }
+
+        // 強制平倉（BustTrade）
+        if ("BustTrade".equals(execType)) {
+            log.error("{}🚨 Bybit 偵測到強制平倉 (BustTrade): {} qty={}", logPrefix, symbol, execQty);
+            try {
+                tradeRecordService.recordOrderEvent(symbol, "LIQUIDATION", null,
+                        gson.toJson(Map.of("orderId", orderId, "execQty", execQty,
+                                "execPrice", execPrice, "reason", "BustTrade")));
+            } catch (Exception e) {
+                log.error("{}記錄 Bybit 強制平倉事件失敗: {}", logPrefix, e.getMessage());
+            }
+
+            if (closedSize > 0) {
+                try {
+                    ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+                    lock.lock();
+                    try {
+                        tradeRecordService.markTradeClosedByLiquidation(symbol);
+                    } finally {
+                        lock.unlock();
+                    }
+                } catch (Exception e) {
+                    log.error("{}Bybit 強制平倉標記 Trade CLOSED 失敗: {} - {}", logPrefix, symbol, e.getMessage());
+                }
+            }
+
+            String alertTitle = "🚨 強制平倉 (BustTrade)";
+            String alertBody = String.format("%s\n成交價: %.2f\n數量: %.4f\n⚠️ 請立即檢查帳戶風險！",
+                    symbol, execPrice, execQty);
+            if (!exchangeName.isEmpty()) {
+                alertBody += "\n交易所: " + exchangeName;
+            }
+            notificationSender.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
+            if (adminNotifier != null) {
+                adminNotifier.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
+            }
+            return;
+        }
+
+        // 正常成交（Trade）
+        if (!"Trade".equals(execType)) {
+            log.debug("{}Bybit 非關注 execType: {}", logPrefix, execType);
+            return;
+        }
+
+        // 判斷是入場還是平倉
+        if (closedSize > 0) {
+            // 平倉成交
+            String exitReason = resolveBybitExitReason(stopOrderType, orderType, orderLinkId);
+            double realizedProfit = 0; // Bybit execution 不直接含 realizedPnl，由 DB 計算
+
+            log.info("{}Bybit 平倉成交: {} {} exitReason={} price={} qty={} fee={}",
+                    logPrefix, symbol, exitReason, exitReason, execPrice, closedSize, execFee);
+            processStreamClose(symbol, execPrice, closedSize, execFee,
+                    realizedProfit, orderId, exitReason, execTime);
+        } else if (leavesQty == 0 && execQty > 0) {
+            // LIMIT 入場成交（完全成交）
+            log.info("{}Bybit 入場成交: {} {} @ {} qty={}", logPrefix, symbol, side, execPrice, execQty);
+            Trade updatedTrade = tradeRecordService.recordLimitEntryFilled(
+                    symbol, orderId, execPrice, execQty, execFee, execTime);
+
+            if (updatedTrade != null) {
+                String entryTitle = "✅ 限價入場成交";
+                String entryBody = String.format("%s %s\n成交價: %.2f\n數量: %.4f\n手續費: %.4f USDT",
+                        symbol, updatedTrade.getSide(), execPrice, execQty, execFee);
+                if (!exchangeName.isEmpty()) {
+                    entryBody += "\n交易所: " + exchangeName;
+                }
+                notificationSender.send(entryTitle, entryBody, DiscordWebhookService.COLOR_GREEN);
+                if (adminNotifier != null) {
+                    adminNotifier.send(entryTitle,
+                            String.format("%s %s 成交 @ %.2f", symbol, updatedTrade.getSide(), execPrice),
+                            DiscordWebhookService.COLOR_GREEN);
+                }
+            }
+        } else {
+            // 部分成交或其他
+            log.debug("{}Bybit 部分成交或非關注情境: {} leavesQty={} execQty={}",
+                    logPrefix, symbol, leavesQty, execQty);
+        }
+    }
+
+    /**
+     * 處理 Bybit position 事件
+     *
+     * 主要用途：偵測保護消失（SL/TP 被移除）
+     * Bybit position 推送包含 stopLoss / takeProfit 欄位，
+     * 若值為 "0" 或為空，表示保護已消失。
+     *
+     * 注意：position 事件目前僅做 log，不主動告警。
+     * 真正的止損/止盈觸發由 execution 事件處理。
+     */
+    public void handleBybitPosition(JsonObject data) {
+        String symbol = getStr(data, "symbol");
+        String side = getStr(data, "side");
+        double size = getDouble(data, "size");
+        String stopLoss = getStr(data, "stopLoss");
+        String takeProfit = getStr(data, "takeProfit");
+
+        log.debug("{}Bybit position: {} {} size={} SL={} TP={}",
+                logPrefix, symbol, side, size, stopLoss, takeProfit);
+
+        // 倉位歸零 → 倉位已平
+        if (size == 0) {
+            log.info("{}Bybit 倉位歸零: {}", logPrefix, symbol);
+        }
+    }
+
+    /**
+     * 根據 Bybit stopOrderType 推斷平倉原因
+     */
+    private String resolveBybitExitReason(String stopOrderType, String orderType, String orderLinkId) {
+        if ("StopLoss".equals(stopOrderType)) return "SL_TRIGGERED";
+        if ("TakeProfit".equals(stopOrderType)) return "TP_TRIGGERED";
+        if ("TrailingStop".equals(stopOrderType)) return "SL_TRIGGERED";
+
+        // 檢查 orderLinkId 前綴
+        if (orderLinkId != null) {
+            if (orderLinkId.startsWith("SL-")) return "SL_TRIGGERED";
+            if (orderLinkId.startsWith("TP-")) return "TP_TRIGGERED";
+        }
+
+        return "SIGNAL_CLOSE";
+    }
+
+    // ==================== JSON 工具方法 ====================
+
+    private static String getStr(JsonObject obj, String key) {
+        return obj.has(key) ? obj.get(key).getAsString() : "";
+    }
+
+    private static double getDouble(JsonObject obj, String key) {
+        try {
+            return obj.has(key) ? obj.get(key).getAsDouble() : 0;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private static long getLong(JsonObject obj, String key) {
+        try {
+            return obj.has(key) ? obj.get(key).getAsLong() : 0;
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 }

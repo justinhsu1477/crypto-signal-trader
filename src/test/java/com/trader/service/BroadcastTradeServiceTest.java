@@ -101,10 +101,10 @@ class BroadcastTradeServiceTest {
         // 預設：orchestrator MOVE_SL 回傳成功結果
         when(mockOrchestrator.executeMoveSL(any(), any())).thenReturn(successResult());
 
-        // 預設：所有用戶都有 API Key（既有測試不受影響）
-        when(mockApiKey.getUserExchangeMap())
-                .thenReturn(Map.of("u1", Set.of("BINANCE"), "u2", Set.of("BINANCE"),
-                        "u3", Set.of("BINANCE"), "u4", Set.of("BINANCE"), "u5", Set.of("BINANCE")));
+        // 預設：所有用戶都有 API Key（既有測試不受影響，一用戶一交易所）
+        when(mockApiKey.getUserIdExchangeMap())
+                .thenReturn(Map.of("u1", "BINANCE", "u2", "BINANCE",
+                        "u3", "BINANCE", "u4", "BINANCE", "u5", "BINANCE"));
 
         // 預設：所有用戶都有有效訂閱（既有測試不受影響）
         when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
@@ -213,8 +213,8 @@ class BroadcastTradeServiceTest {
                     createUser("u2", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
             // 只有 u1 有 API Key，u2 沒有
-            when(mockApiKey.getUserExchangeMap())
-                    .thenReturn(Map.of("u1", Set.of("BINANCE")));
+            when(mockApiKey.getUserIdExchangeMap())
+                    .thenReturn(Map.of("u1", "BINANCE"));
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
 
@@ -269,8 +269,8 @@ class BroadcastTradeServiceTest {
             when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
                     .thenReturn(List.of("u1", "u2"));
             // 只有 u1 有 API Key（u2 無 API Key, u3 已被訂閱過濾）
-            when(mockApiKey.getUserExchangeMap())
-                    .thenReturn(Map.of("u1", Set.of("BINANCE")));
+            when(mockApiKey.getUserIdExchangeMap())
+                    .thenReturn(Map.of("u1", "BINANCE"));
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
 
@@ -287,7 +287,7 @@ class BroadcastTradeServiceTest {
                     createUser("u2", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
             // 沒有任何用戶有 API Key
-            when(mockApiKey.getUserExchangeMap())
+            when(mockApiKey.getUserIdExchangeMap())
                     .thenReturn(Map.of());
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
@@ -1210,7 +1210,7 @@ class BroadcastTradeServiceTest {
             when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
                     .thenReturn(List.of());
             // u1 也無 API Key（但因訂閱先過濾，不會計入 skippedNoApiKey）
-            when(mockApiKey.getUserExchangeMap())
+            when(mockApiKey.getUserIdExchangeMap())
                     .thenReturn(Map.of());
 
             Map<String, Object> result = service.broadcastTrade(createEntryRequest());
@@ -1223,16 +1223,16 @@ class BroadcastTradeServiceTest {
         @DisplayName("大量用戶 — 並行執行不阻塞")
         void manyUsersConcurrentExecution() {
             List<User> manyUsers = new ArrayList<>();
-            Map<String, Set<String>> manyUserExchangeMap = new HashMap<>();
+            Map<String, String> manyUserExchangeMap = new HashMap<>();
             List<String> manyUserIds = new ArrayList<>();
             for (int i = 0; i < 20; i++) {
                 String id = "u" + i;
                 manyUsers.add(createUser(id, true, true));
-                manyUserExchangeMap.put(id, Set.of("BINANCE"));
+                manyUserExchangeMap.put(id, "BINANCE");
                 manyUserIds.add(id);
             }
             when(mockUserRepo.findAll()).thenReturn(manyUsers);
-            when(mockApiKey.getUserExchangeMap()).thenReturn(manyUserExchangeMap);
+            when(mockApiKey.getUserIdExchangeMap()).thenReturn(manyUserExchangeMap);
             when(mockSubscriptionRepo.findUserIdsWithActiveSubscription())
                     .thenReturn(manyUserIds);
 

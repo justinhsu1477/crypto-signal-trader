@@ -137,8 +137,8 @@ public class BroadcastTradeService {
             log.warn("廣播跟單: 跳過 {} 個用戶 (無有效訂閱)", skippedNoSubscription);
         }
 
-        // Batch 查詢：取得所有用戶的交易所配對（避免 N+1，支援多交易所路由）
-        Map<String, Set<String>> userExchangeMap = userApiKeyService.getUserExchangeMap();
+        // Batch 查詢：取得所有用戶的交易所對應（一用戶一交易所，避免 N+1）
+        Map<String, String> userExchangeMap = userApiKeyService.getUserIdExchangeMap();
         Set<String> userIdsWithApiKey = userExchangeMap.keySet();
 
         // 過濾：已設定 API Key
@@ -223,10 +223,10 @@ public class BroadcastTradeService {
         for (User user : activeUsers) {
             tasks.add(() -> {
                 String userDisplay = formatUserDisplay(user);
+                String exchange = userExchangeMap.getOrDefault(user.getUserId(), "BINANCE");
                 // 設入 ThreadLocal，讓 BinanceFuturesService.notifyGlobal() 也能讀到
                 TradeRecordService.setCurrentUserDisplayName(userDisplay);
                 try {
-                    String exchange = resolveUserExchange(user.getUserId(), userExchangeMap);
                     ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
                     List<OrderResult> results = executeSignalForUser(request, user.getUserId(), adapter, exchange);
                     successCount.incrementAndGet();
@@ -262,12 +262,12 @@ public class BroadcastTradeService {
                     discordWebhookService.sendNotificationToUser(
                             user.getUserId(),
                             successTitle,
-                            formatUserResultBody(request, mainResult, userDisplay, score),
+                            formatUserResultBody(request, mainResult, userDisplay, score, exchange),
                             DiscordWebhookService.COLOR_GREEN);
 
                     // 收集成交明細供 Admin 報告（限 maxSuccessDetails 筆）
                     if (mainResult != null && successDetails.size() < maxSuccessDetails) {
-                        successDetails.add(formatAdminDetailLine(request, mainResult, userDisplay));
+                        successDetails.add(formatAdminDetailLine(request, mainResult, userDisplay, exchange));
                     }
 
                     // CLOSE: 收集 PnL 做彙總
@@ -290,8 +290,9 @@ public class BroadcastTradeService {
                     discordWebhookService.sendNotificationToUser(
                             user.getUserId(),
                             "❌ 廣播跟單失敗",
-                            String.format("%s\n用戶: %s\n錯誤: %s",
+                            String.format("%s\n交易所: %s\n用戶: %s\n錯誤: %s",
                                     request.getSymbol(),
+                                    exchange,
                                     userDisplay,
                                     e.getMessage()),
                             DiscordWebhookService.COLOR_RED);
@@ -431,19 +432,6 @@ public class BroadcastTradeService {
                     "status", "INTERRUPTED",
                     "error", e.getMessage());
         }
-    }
-
-    // ==================== 多交易所路由 ====================
-
-    /**
-     * 決定用戶使用哪個交易所
-     * 只有一個 → 用那個；多個 → 預設 BINANCE（Phase 5 加前端選擇器）
-     */
-    private String resolveUserExchange(String userId, Map<String, Set<String>> userExchangeMap) {
-        Set<String> exchanges = userExchangeMap.getOrDefault(userId, Set.of());
-        if (exchanges.isEmpty()) return "BINANCE";
-        if (exchanges.size() == 1) return exchanges.iterator().next();
-        return exchanges.contains("BINANCE") ? "BINANCE" : exchanges.iterator().next();
     }
 
     /**
@@ -627,7 +615,7 @@ public class BroadcastTradeService {
     /**
      * 格式化用戶成交通知（enriched，含實際成交價/PnL）
      */
-    private String formatUserResultBody(TradeRequest request, OrderResult result, String userDisplay, SignalScore score) {
+    private String formatUserResultBody(TradeRequest request, OrderResult result, String userDisplay, SignalScore score, String exchange) {
         StringBuilder sb = new StringBuilder();
         sb.append(request.getSymbol());
 
@@ -677,6 +665,9 @@ public class BroadcastTradeService {
             default -> sb.append("\n");
         }
 
+        if (exchange != null && !exchange.isEmpty()) {
+            sb.append("交易所: ").append(exchange).append("\n");
+        }
         sb.append("用戶: ").append(userDisplay);
 
         // AI 評分（若已就緒）
@@ -694,22 +685,23 @@ public class BroadcastTradeService {
     /**
      * 格式化 Admin 報告的單行明細
      */
-    private String formatAdminDetailLine(TradeRequest request, OrderResult result, String userDisplay) {
+    private String formatAdminDetailLine(TradeRequest request, OrderResult result, String userDisplay, String exchange) {
+        String exchangePrefix = (exchange != null && !exchange.isEmpty()) ? "[" + exchange + "] " : "";
         String action = request.getAction() != null ? request.getAction().toUpperCase() : "";
         return switch (action) {
             case "ENTRY" -> {
                 if (result.getPrice() > 0 && result.getQuantity() > 0) {
-                    yield userDisplay + ": " + result.getPrice() + " × " + result.getQuantity();
+                    yield exchangePrefix + userDisplay + ": " + result.getPrice() + " × " + result.getQuantity();
                 }
-                yield userDisplay + ": 成功";
+                yield exchangePrefix + userDisplay + ": 成功";
             }
             case "CLOSE" -> {
                 if (result.getNetProfit() != null) {
-                    yield userDisplay + ": " + String.format("%+.2f USDT", result.getNetProfit());
+                    yield exchangePrefix + userDisplay + ": " + String.format("%+.2f USDT", result.getNetProfit());
                 }
-                yield userDisplay + ": 成功";
+                yield exchangePrefix + userDisplay + ": 成功";
             }
-            default -> userDisplay + ": 成功";
+            default -> exchangePrefix + userDisplay + ": 成功";
         };
     }
 

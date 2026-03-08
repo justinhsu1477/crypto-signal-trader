@@ -90,7 +90,7 @@ public class BinanceUserDataStreamService {
                 tradeRecordService, symbolLockRegistry,
                 discordWebhookService::sendNotification,
                 null,
-                gson, "");
+                gson, "", "BINANCE");
 
         // WebSocket 專用 client：無 read timeout + 每 20 秒 ping
         this.wsClient = httpClient.newBuilder()
