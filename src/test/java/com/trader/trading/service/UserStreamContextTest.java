@@ -15,7 +15,7 @@ class UserStreamContextTest {
 
     @BeforeEach
     void setUp() {
-        context = new UserStreamContext("user-1", "User 1", "api-key-123", "secret-key-456");
+        context = new UserStreamContext("user-1", "User 1", "BINANCE", "api-key-123", "secret-key-456");
     }
 
     @Nested

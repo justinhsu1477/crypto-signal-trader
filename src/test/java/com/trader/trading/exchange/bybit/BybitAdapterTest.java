@@ -553,8 +553,50 @@ class BybitAdapterTest {
         }
 
         @Test
-        @DisplayName("getForceOrdersRaw — 回傳空陣列")
-        void forceOrdersRaw() {
+        @DisplayName("getForceOrdersRaw — 有 BustTrade 記錄 → 轉換為統一格式")
+        void forceOrdersRawWithData() throws IOException {
+            mockHttpResponse(200, bybitOk("""
+                    {"list":[{
+                        "execId":"exec-001","orderId":"order-001","symbol":"BTCUSDT",
+                        "side":"Sell","execType":"BustTrade","execPrice":"90000.50",
+                        "execQty":"0.250","execTime":"1709900000000"
+                    }]}"""));
+
+            String result = adapter.getForceOrdersRaw();
+
+            com.google.gson.JsonArray arr = new com.google.gson.Gson().fromJson(result, com.google.gson.JsonArray.class);
+            assertThat(arr).hasSize(1);
+            com.google.gson.JsonObject obj = arr.get(0).getAsJsonObject();
+            assertThat(obj.get("orderId").getAsString()).isEqualTo("exec-001");
+            assertThat(obj.get("time").getAsLong()).isEqualTo(1709900000000L);
+            assertThat(obj.get("symbol").getAsString()).isEqualTo("BTCUSDT");
+            assertThat(obj.get("side").getAsString()).isEqualTo("SELL");
+            assertThat(obj.get("avgPrice").getAsDouble()).isEqualTo(90000.50);
+            assertThat(obj.get("origQty").getAsDouble()).isEqualTo(0.250);
+        }
+
+        @Test
+        @DisplayName("getForceOrdersRaw — 空 list → 回傳 []")
+        void forceOrdersRawEmpty() throws IOException {
+            mockHttpResponse(200, bybitOk("""
+                    {"list":[]}"""));
+
+            assertThat(adapter.getForceOrdersRaw()).isEqualTo("[]");
+        }
+
+        @Test
+        @DisplayName("getForceOrdersRaw — API 失敗 → 回傳 []（不拋異常）")
+        void forceOrdersRawApiFailure() throws IOException {
+            when(mockCall.execute()).thenThrow(new IOException("Connection refused"));
+
+            assertThat(adapter.getForceOrdersRaw()).isEqualTo("[]");
+        }
+
+        @Test
+        @DisplayName("getForceOrdersRaw — retCode 非 0 → 回傳 []")
+        void forceOrdersRawApiError() throws IOException {
+            mockHttpResponse(200, bybitError(10001, "Invalid request"));
+
             assertThat(adapter.getForceOrdersRaw()).isEqualTo("[]");
         }
     }

@@ -429,11 +429,48 @@ public class BybitAdapter implements ExchangeAdapter {
                 Map.of("category", "linear", "symbol", symbol));
     }
 
+    /**
+     * 查詢強制平倉記錄 — Bybit V5 透過 /v5/execution/list?execType=BustTrade
+     *
+     * Bybit 回傳格式：{ "result": { "list": [ { execId, orderId, symbol, side, execPrice, execQty, execTime, ... } ] } }
+     * 轉換為 LiquidationDetectionTask 期望的格式：[ { orderId, time, symbol, side, avgPrice, origQty } ]
+     */
     @Override
     public String getForceOrdersRaw() {
-        // Bybit V5 沒有直接的 forceOrders 端點，回傳空陣列
-        // 強平記錄可透過 /v5/position/list 的 liqPrice 或交易紀錄查詢
-        return "[]";
+        try {
+            String response = sendSignedGet("/v5/execution/list",
+                    Map.of("category", "linear", "execType", "BustTrade"));
+
+            JsonObject result = parseBybitResponse(response);
+            JsonArray list = result.getAsJsonArray("list");
+            if (list == null || list.isEmpty()) {
+                return "[]";
+            }
+
+            // 轉換為 LiquidationDetectionTask 期望的統一格式
+            JsonArray normalized = new JsonArray();
+            for (JsonElement elem : list) {
+                JsonObject exec = elem.getAsJsonObject();
+                JsonObject mapped = new JsonObject();
+                mapped.addProperty("orderId",
+                        exec.has("execId") ? exec.get("execId").getAsString() : "");
+                mapped.addProperty("time",
+                        exec.has("execTime") ? Long.parseLong(exec.get("execTime").getAsString()) : 0L);
+                mapped.addProperty("symbol",
+                        exec.has("symbol") ? exec.get("symbol").getAsString() : "UNKNOWN");
+                mapped.addProperty("side",
+                        exec.has("side") ? exec.get("side").getAsString().toUpperCase() : "");
+                mapped.addProperty("avgPrice",
+                        exec.has("execPrice") ? parseDoubleOrZero(exec.get("execPrice").getAsString()) : 0);
+                mapped.addProperty("origQty",
+                        exec.has("execQty") ? parseDoubleOrZero(exec.get("execQty").getAsString()) : 0);
+                normalized.add(mapped);
+            }
+            return gson.toJson(normalized);
+        } catch (Exception e) {
+            log.warn("查詢 Bybit 強制平倉記錄失敗: {}", e.getMessage());
+            return "[]";
+        }
     }
 
     // ==================== 帳戶配置 ====================

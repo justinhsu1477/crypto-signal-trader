@@ -25,6 +25,8 @@ public class UserStreamContext {
     @Getter
     private final String displayName;
     @Getter
+    private final String exchange;  // 交易所名稱：BINANCE / BYBIT
+    @Getter
     private final Instant createdAt;
 
     // API 憑證（可更新 — 用戶可能在重連期間換了 key）
@@ -45,9 +47,11 @@ public class UserStreamContext {
     private final AtomicReference<Instant> lastMessageTime = new AtomicReference<>(null);
     private volatile ScheduledFuture<?> pendingReconnect;
 
-    public UserStreamContext(String userId, String displayName, String apiKey, String secretKey) {
+    public UserStreamContext(String userId, String displayName, String exchange,
+                              String apiKey, String secretKey) {
         this.userId = userId;
         this.displayName = displayName;
+        this.exchange = exchange != null ? exchange : "BINANCE";
         this.apiKey = apiKey;
         this.secretKey = secretKey;
         this.createdAt = Instant.now();
@@ -164,6 +168,7 @@ public class UserStreamContext {
         long elapsed = lastMsg != null ? Instant.now().getEpochSecond() - lastMsg.getEpochSecond() : -1;
         return Map.of(
                 "userId", userId,
+                "exchange", exchange,
                 "connected", connected,
                 "listenKeyActive", listenKey != null,
                 "lastMessageTime", lastMsg != null ? lastMsg.toString() : "never",
