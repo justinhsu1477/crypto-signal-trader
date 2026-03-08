@@ -13,8 +13,9 @@ import com.trader.trading.exchange.ExchangeAdapter;
 import com.trader.trading.exchange.ExchangeCredentials;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import java.util.concurrent.TimeUnit;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -61,10 +62,21 @@ public class BinanceAdapter implements ExchangeAdapter {
     private static final int ORDER_MAX_RETRIES = 2;
     private static final long[] ORDER_RETRY_DELAYS_MS = {1000, 3000};
 
-    public BinanceAdapter(OkHttpClient httpClient,
-                          BinanceConfig binanceConfig,
+    public BinanceAdapter(BinanceConfig binanceConfig,
                           BinanceApiRateLimiter binanceApiRateLimiter,
-                          @Autowired(required = false) MetricsService metricsService) {
+                          MetricsService metricsService) {
+        this(new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .build(), binanceConfig, binanceApiRateLimiter, metricsService);
+    }
+
+    /** 測試用建構子 — 允許注入 mock OkHttpClient */
+    BinanceAdapter(OkHttpClient httpClient,
+                   BinanceConfig binanceConfig,
+                   BinanceApiRateLimiter binanceApiRateLimiter,
+                   MetricsService metricsService) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.binanceApiRateLimiter = binanceApiRateLimiter;
@@ -778,22 +790,25 @@ public class BinanceAdapter implements ExchangeAdapter {
     }
 
     /**
-     * 取得當前生效的 API Key
-     * 優先順序：ExchangeCredentials ThreadLocal → 全局 Config
+     * 取得當前生效的 API Key（fail-fast：未設定 credentials 時拋 exception）
+     * 所有 per-user credential 由呼叫端透過 setCredentials() 設入。
      */
     private String getActiveApiKey() {
         ExchangeCredentials creds = CURRENT_CREDENTIALS.get();
-        if (creds != null) return creds.apiKey();
-        return binanceConfig.getApiKey();
+        if (creds == null) {
+            throw new IllegalStateException("BINANCE API 呼叫缺少 credentials — 請先呼叫 setCredentials()");
+        }
+        return creds.apiKey();
     }
 
     /**
-     * 取得當前生效的 Secret Key
-     * 優先順序：ExchangeCredentials ThreadLocal → 全局 Config
+     * 取得當前生效的 Secret Key（fail-fast）
      */
     private String getActiveSecretKey() {
         ExchangeCredentials creds = CURRENT_CREDENTIALS.get();
-        if (creds != null) return creds.secretKey();
-        return binanceConfig.getSecretKey();
+        if (creds == null) {
+            throw new IllegalStateException("BINANCE API 呼叫缺少 credentials — 請先呼叫 setCredentials()");
+        }
+        return creds.secretKey();
     }
 }
