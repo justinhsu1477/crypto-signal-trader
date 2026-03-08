@@ -93,6 +93,12 @@ binance:
     allowed-symbols:              # 允許的交易對清單（可加多個）
       - BTCUSDT
 
+# ========== 廣播跟單批次設定 ==========
+broadcast:
+  executor:
+    batch-size: ${BROADCAST_BATCH_SIZE:15}        # 每批用戶數（預設 15）
+    batch-delay-ms: ${BROADCAST_BATCH_DELAY_MS:200}  # 批次間延遲 ms（預設 200）
+
 discord:
   webhook:
     url: ${DISCORD_WEBHOOK_URL:}                    # Discord Webhook URL（全局 fallback）

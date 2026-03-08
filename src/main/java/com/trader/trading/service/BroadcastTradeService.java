@@ -17,6 +17,7 @@ import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.user.service.UserApiKeyService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.trader.shared.config.AppConstants;
@@ -48,6 +49,8 @@ public class BroadcastTradeService {
     private final BroadcastLogRepository broadcastLogRepository;
     private final ObjectMapper objectMapper;
     private final ExecutorService broadcastExecutor;
+    private final int batchSize;
+    private final long batchDelayMs;
 
     private static final long TASK_TIMEOUT_SECONDS = 30;
 
@@ -64,7 +67,9 @@ public class BroadcastTradeService {
             TradeRepository tradeRepository,
             BroadcastLogRepository broadcastLogRepository,
             ObjectMapper objectMapper,
-            @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor) {
+            @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor,
+            @Value("${broadcast.executor.batch-size:15}") int batchSize,
+            @Value("${broadcast.executor.batch-delay-ms:200}") long batchDelayMs) {
         this.userRepository = userRepository;
         this.binanceFuturesService = binanceFuturesService;
         this.discordWebhookService = discordWebhookService;
@@ -75,6 +80,8 @@ public class BroadcastTradeService {
         this.broadcastLogRepository = broadcastLogRepository;
         this.objectMapper = objectMapper;
         this.broadcastExecutor = broadcastExecutor;
+        this.batchSize = batchSize;
+        this.batchDelayMs = batchDelayMs;
     }
 
     /**
@@ -281,17 +288,30 @@ public class BroadcastTradeService {
         }
 
         try {
-            // invokeAll：全部提交，等待全部完成（或超時）
-            List<Future<Void>> futures = broadcastExecutor.invokeAll(tasks, TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            // 分批派發：避免瞬間打爆 Binance API rate limit（2400 次/分鐘）
+            long totalCancelledCount = 0;
+            int totalBatches = (tasks.size() + batchSize - 1) / batchSize;
 
-            // 檢查是否有任務超時被取消
-            long cancelledCount = futures.stream().filter(Future::isCancelled).count();
-            if (cancelledCount > 0) {
-                log.warn("廣播跟單: {} 個任務超時被取消", cancelledCount);
+            for (int i = 0; i < tasks.size(); i += batchSize) {
+                List<Callable<Void>> batch = tasks.subList(i, Math.min(i + batchSize, tasks.size()));
+                int batchNum = (i / batchSize) + 1;
+                log.debug("廣播跟單: 執行批次 {}/{} ({} 個用戶)", batchNum, totalBatches, batch.size());
+
+                List<Future<Void>> futures = broadcastExecutor.invokeAll(batch, TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                long cancelledInBatch = futures.stream().filter(Future::isCancelled).count();
+                if (cancelledInBatch > 0) {
+                    log.warn("廣播跟單: 批次 {}/{} 有 {} 個任務超時", batchNum, totalBatches, cancelledInBatch);
+                }
+                totalCancelledCount += cancelledInBatch;
+
+                // 非最後一批 → 延遲，讓 Binance API 計數器有時間回復
+                if (i + batchSize < tasks.size() && batchDelayMs > 0) {
+                    Thread.sleep(batchDelayMs);
+                }
             }
 
-            log.info("廣播跟單完成: 成功={} 失敗={} 超時取消={}",
-                    successCount.get(), failCount.get(), cancelledCount);
+            log.info("廣播跟單完成: 成功={} 失敗={} 超時取消={} 批次數={}",
+                    successCount.get(), failCount.get(), totalCancelledCount, totalBatches);
 
             // 動態等待 AI 評分：Gemini 總可用時間 = 交易執行耗時 + 剩餘等待，上限 6 秒
             // Gemini Flash 模型回應此類短 prompt 通常 2-3 秒，6 秒綽綽有餘
@@ -327,7 +347,7 @@ public class BroadcastTradeService {
             StringBuilder summaryBuilder = new StringBuilder(
                     String.format("%s %s\n成功: %d 人\n失敗: %d 人\n超時: %d 人\n跳過 (無訂閱): %d 人\n跳過 (無 API Key): %d 人\n總計: %d 人",
                     request.getSymbol(), request.getAction(),
-                    successCount.get(), failCount.get(), cancelledCount,
+                    successCount.get(), failCount.get(), totalCancelledCount,
                     skippedNoSubscription, skippedNoApiKey, activeUsers.size()));
             if (skippedNotTargeted > 0) {
                 summaryBuilder.append(String.format("\n非指定用戶: %d 人", skippedNotTargeted));
@@ -376,7 +396,7 @@ public class BroadcastTradeService {
 
             String summary = summaryBuilder.toString();
             String summaryTitle = isCloseAction ? "📊 廣播平倉報告" : "📊 廣播跟單報告";
-            int summaryColor = failCount.get() > 0 || cancelledCount > 0
+            int summaryColor = failCount.get() > 0 || totalCancelledCount > 0
                     ? DiscordWebhookService.COLOR_YELLOW
                     : DiscordWebhookService.COLOR_GREEN;
             for (User admin : adminUsers) {
