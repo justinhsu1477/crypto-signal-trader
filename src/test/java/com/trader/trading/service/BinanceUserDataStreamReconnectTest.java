@@ -3,6 +3,7 @@ package com.trader.trading.service;
 import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.user.service.UserApiKeyService;
 import okhttp3.*;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -32,6 +33,7 @@ class BinanceUserDataStreamReconnectTest {
     private DiscordWebhookService discordWebhookService;
     private MultiUserConfig multiUserConfig;
     private MultiUserDataStreamManager multiUserManager;
+    private UserApiKeyService userApiKeyService;
     private BinanceUserDataStreamService service;
 
     @BeforeEach
@@ -42,6 +44,7 @@ class BinanceUserDataStreamReconnectTest {
         discordWebhookService = mock(DiscordWebhookService.class);
         multiUserConfig = mock(MultiUserConfig.class);
         multiUserManager = mock(MultiUserDataStreamManager.class);
+        userApiKeyService = mock(UserApiKeyService.class);
 
         when(multiUserConfig.isEnabled()).thenReturn(false);
 
@@ -55,7 +58,8 @@ class BinanceUserDataStreamReconnectTest {
 
         service = new BinanceUserDataStreamService(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
-                new SymbolLockRegistry(), multiUserConfig, multiUserManager);
+                new SymbolLockRegistry(), multiUserConfig, multiUserManager,
+                userApiKeyService, "system-trader");
     }
 
     @AfterEach

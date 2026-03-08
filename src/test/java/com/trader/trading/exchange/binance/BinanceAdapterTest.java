@@ -52,11 +52,11 @@ class BinanceAdapterTest {
         when(mockHttpClient.newCall(any(Request.class))).thenReturn(mockCall);
 
         binanceConfig = new BinanceConfig(
-                "https://fapi.binance.com", "wss://fstream.binance.com",
-                "test-api-key", "test-secret-key"
+                "https://fapi.binance.com", "wss://fstream.binance.com"
         );
         mockRateLimiter = mock(BinanceApiRateLimiter.class);
         adapter = new BinanceAdapter(mockHttpClient, binanceConfig, mockRateLimiter, null);
+        adapter.setCredentials(new ExchangeCredentials("test-api-key", "test-secret-key"));
     }
 
     @AfterEach
@@ -826,16 +826,13 @@ class BinanceAdapterTest {
     class CredentialResolution {
 
         @Test
-        @DisplayName("未設認證 → 使用全局 Config API Key")
-        void usesGlobalConfig() throws IOException {
-            mockHttpResponse(200, """
-                    [{"asset":"USDT","balance":"1000","availableBalance":"1000","crossUnPnl":"0"}]""");
+        @DisplayName("未設認證 → 拋出 IllegalStateException（fail-fast）")
+        void throwsWhenNoCredentials() {
+            adapter.clearCredentials();
 
-            adapter.getAvailableBalance();
-
-            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
-            verify(mockHttpClient).newCall(captor.capture());
-            assertThat(captor.getValue().header("X-MBX-APIKEY")).isEqualTo("test-api-key");
+            assertThatThrownBy(() -> adapter.getAvailableBalance())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("credentials");
         }
 
         @Test
@@ -854,19 +851,14 @@ class BinanceAdapterTest {
         }
 
         @Test
-        @DisplayName("clearCredentials → 回復使用全局 Config")
-        void clearFallsBackToGlobal() throws IOException {
+        @DisplayName("clearCredentials → 拋出 IllegalStateException（不再 fallback）")
+        void clearThrowsWhenNoCredentials() {
             adapter.setCredentials(new ExchangeCredentials("per-user-key", "per-user-secret"));
             adapter.clearCredentials();
 
-            mockHttpResponse(200, """
-                    [{"asset":"USDT","balance":"1000","availableBalance":"1000","crossUnPnl":"0"}]""");
-
-            adapter.getAvailableBalance();
-
-            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
-            verify(mockHttpClient).newCall(captor.capture());
-            assertThat(captor.getValue().header("X-MBX-APIKEY")).isEqualTo("test-api-key");
+            assertThatThrownBy(() -> adapter.getAvailableBalance())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("credentials");
         }
 
         @Test

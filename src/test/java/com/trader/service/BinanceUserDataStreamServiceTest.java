@@ -11,6 +11,7 @@ import com.trader.trading.service.MultiUserDataStreamManager;
 import com.trader.trading.service.OrderEventHandler;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.user.service.UserApiKeyService;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -31,6 +32,7 @@ class BinanceUserDataStreamServiceTest {
     private DiscordWebhookService discordWebhookService;
     private MultiUserConfig multiUserConfig;
     private MultiUserDataStreamManager multiUserManager;
+    private UserApiKeyService userApiKeyService;
     private BinanceUserDataStreamService service;
     private OrderEventHandler orderEventHandler;
     private final Gson gson = new Gson();
@@ -43,6 +45,7 @@ class BinanceUserDataStreamServiceTest {
         discordWebhookService = mock(DiscordWebhookService.class);
         multiUserConfig = mock(MultiUserConfig.class);
         multiUserManager = mock(MultiUserDataStreamManager.class);
+        userApiKeyService = mock(UserApiKeyService.class);
 
         // 預設單用戶模式（所有舊測試不受影響）
         when(multiUserConfig.isEnabled()).thenReturn(false);
@@ -57,7 +60,8 @@ class BinanceUserDataStreamServiceTest {
 
         service = new BinanceUserDataStreamService(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
-                new SymbolLockRegistry(), multiUserConfig, multiUserManager);
+                new SymbolLockRegistry(), multiUserConfig, multiUserManager,
+                userApiKeyService, "system-trader");
 
         // 直接建立 OrderEventHandler 測試事件處理邏輯
         orderEventHandler = new OrderEventHandler(

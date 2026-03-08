@@ -9,6 +9,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.exchange.binance.BinanceAdapter;
 import com.trader.trading.service.*;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.validation.TradeSignalValidator;
 import com.trader.user.service.UserApiKeyService;
@@ -76,7 +77,7 @@ class BinanceFuturesServiceTest {
 
         // 通用 mock — 大部分測試需要的基礎環境
         when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
-        when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
+        when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
@@ -169,7 +170,7 @@ class BinanceFuturesServiceTest {
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any(), anyString());
         }
 
         @Test
@@ -203,7 +204,7 @@ class BinanceFuturesServiceTest {
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
-            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("ENTRY_FAILED"), any(), any());
+            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("ENTRY_FAILED"), any(), any(), anyString());
         }
 
         @Test
@@ -371,8 +372,8 @@ class BinanceFuturesServiceTest {
         void dcaSuccessWithExistingPosition() {
             setupEntryMocks(1000, 0.5, 95000);  // 已有 0.5 BTC 多倉
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(1);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(1);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
             // DCA 呼叫 cancelSLTPOrders → 內部呼叫 getOpenAlgoOrders
@@ -396,7 +397,7 @@ class BinanceFuturesServiceTest {
         void dcaExceedsMaxLayers() {
             setupEntryMocks(1000, 0.5, 95000);
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(3);  // max = 3
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(3);  // max = 3
 
             TradeSignal signal = buildDcaSignal(94000, 92000);
             List<OrderResult> results = service.executeSignal(signal);
@@ -423,8 +424,8 @@ class BinanceFuturesServiceTest {
         void dcaWithoutNewStopLossUsesExistingSL() {
             setupEntryMocks(1000, 0.5, 95000);  // 已有 0.5 BTC 多倉
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(1);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(1);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
 
@@ -475,7 +476,7 @@ class BinanceFuturesServiceTest {
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordClose(anyString(), any(), anyString());
+            verify(mockTradeRecord).recordClose(anyString(), any(), anyString(), anyString());
         }
 
         @Test
@@ -511,7 +512,7 @@ class BinanceFuturesServiceTest {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(true);
 
-            when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+            when(mockTradeRecord.findOpenTrade(anyString(), anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);
@@ -528,7 +529,7 @@ class BinanceFuturesServiceTest {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
 
-            when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+            when(mockTradeRecord.findOpenTrade(anyString(), anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
             List<OrderResult> results = service.executeClose(signal);
@@ -554,7 +555,7 @@ class BinanceFuturesServiceTest {
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
             when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             TradeSignal signal = buildMoveSLSignal(94500.0, null);
@@ -569,8 +570,8 @@ class BinanceFuturesServiceTest {
         void costProtectionUsesEntryPrice() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
 
-            when(mockTradeRecord.getEntryPrice("BTCUSDT")).thenReturn(95000.0);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getEntryPrice(eq("BTCUSDT"), anyString())).thenReturn(95000.0);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult slOrder = successOrder("SL1", "SELL", 95000, 0.5);
@@ -589,7 +590,7 @@ class BinanceFuturesServiceTest {
         void moveSLWithNewTP() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
 
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
@@ -610,7 +611,7 @@ class BinanceFuturesServiceTest {
         void moveSLNoPosition() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
 
-            when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+            when(mockTradeRecord.findOpenTrade(anyString(), anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildMoveSLSignal(94500.0, null);
             List<OrderResult> results = service.executeMoveSL(signal);
@@ -659,7 +660,7 @@ class BinanceFuturesServiceTest {
         @DisplayName("每日虧損熔斷通知 — 包含 userId")
         void circuitBreakerNotificationContainsUserId() {
             // 模擬今日虧損已達上限
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-3000.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(-3000.0);
             // SOD balance cache
             var sodCache = mock(StartOfDayBalanceCache.class);
             when(sodCache.getOrCompute(anyString(), any())).thenReturn(1000.0);
@@ -691,7 +692,7 @@ class BinanceFuturesServiceTest {
             // 驗證通知內容包含 displayName
             verify(mockWebhook).sendNotification(
                     eq("🚨 每日虧損熔斷"),
-                    contains("用戶: Test User (test@example.com)"),
+                    contains("用戶: test-user"),
                     eq(NotificationService.COLOR_RED));
         }
 
@@ -711,7 +712,7 @@ class BinanceFuturesServiceTest {
             // fail-safe 通知應包含 displayName
             verify(mockWebhook).sendNotification(
                     eq("🛑 Fail-Safe: 止損失敗，入場單已取消"),
-                    contains("用戶: Test User (test@example.com)"),
+                    contains("用戶: test-user"),
                     eq(NotificationService.COLOR_RED));
         }
 
@@ -720,7 +721,7 @@ class BinanceFuturesServiceTest {
         void closeNoPositionNotificationContainsUserId() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
-            when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+            when(mockTradeRecord.findOpenTrade(anyString(), anyString())).thenReturn(Optional.empty());
 
             TradeSignal signal = buildCloseSignal(1.0);
             service.executeClose(signal);
@@ -728,7 +729,7 @@ class BinanceFuturesServiceTest {
             // 無持倉平倉通知應包含 displayName（場景 B：無掛單）
             verify(mockWebhook).sendNotification(
                     contains("無持倉也無掛單"),
-                    contains("用戶: Test User (test@example.com)"),
+                    contains("用戶: test-user"),
                     anyInt());
         }
 
@@ -782,20 +783,24 @@ class BinanceFuturesServiceTest {
         @Test
         @DisplayName("廣播 context 無持倉平倉 — 不發 notifyGlobal")
         void closeNoPositionBroadcastContextSkipsNotifyGlobal() {
-            try {
-                TradingOrchestrator.setBroadcastContext(true);
+            // 廣播 context 已由 TradeContext.forBroadcast() 顯式傳遞，
+            // 需要直接呼叫 orchestrator 才能測試。
+            // 此處透過 field reflection 取得 orchestrator 或重新建構。
+            TradingOrchestrator orchestrator = new TradingOrchestrator(
+                    mockTradeRecord, mockDedup, mockWebhook, multiUserConfig,
+                    new ObjectMapper(), new SymbolLockRegistry(),
+                    mockTradeConfigResolver, mock(StartOfDayBalanceCache.class),
+                    new TradeSignalValidator(), null);
 
-                when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
-                when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+            when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
+            when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of());
 
-                TradeSignal signal = buildCloseSignal(1.0);
-                service.executeClose(signal);
+            TradeSignal signal = buildCloseSignal(1.0);
+            orchestrator.executeClose(signal, mockAdapter, TradeContext.forBroadcast("test-user", "Test User"));
 
-                // 廣播 context 下，無持倉平倉不應發 notifyGlobal
-                verify(mockWebhook, never()).sendNotification(contains("無持倉"), anyString(), anyInt());
-            } finally {
-                TradingOrchestrator.clearBroadcastContext();
-            }
+            // 廣播 context 下，無持倉平倉不應發 notifyGlobal
+            verify(mockWebhook, never()).sendNotification(contains("無持倉"), anyString(), anyInt());
         }
     }
 
@@ -825,7 +830,7 @@ class BinanceFuturesServiceTest {
             // 進場仍應成功
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any(), anyString());
         }
 
         @Test
@@ -847,7 +852,7 @@ class BinanceFuturesServiceTest {
             // 核心交易邏輯不受通知改動影響
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any(), anyString());
         }
 
         @Test
@@ -867,7 +872,7 @@ class BinanceFuturesServiceTest {
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordClose(anyString(), any(), anyString());
+            verify(mockTradeRecord).recordClose(anyString(), any(), anyString(), anyString());
         }
     }
 }

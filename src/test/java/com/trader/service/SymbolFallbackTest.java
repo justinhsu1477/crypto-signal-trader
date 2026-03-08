@@ -60,6 +60,7 @@ class SymbolFallbackTest {
                 List.of("BTCUSDT", "ETHUSDT"), true, "BTCUSDT"
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
+        when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
 
         TradingOrchestrator orchestrator = new TradingOrchestrator(
                 mockTradeRecord, mockDedup, mockWebhook,
@@ -91,7 +92,7 @@ class SymbolFallbackTest {
                     .tradeId("t1").symbol("ETHUSDT").side("LONG")
                     .entryPrice(3000.0).entryQuantity(1.0).status("OPEN")
                     .build();
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of(ethTrade));
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of(ethTrade));
 
             // ETHUSDT 有持倉
             when(mockAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(1.0);
@@ -123,7 +124,7 @@ class SymbolFallbackTest {
         @DisplayName("DB 有 0 筆 OPEN → 取消所有掛單 + 回傳失敗")
         void noOpenTradesFallbackFails() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of());
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of());
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
 
             TradeSignal closeSignal = TradeSignal.builder()
@@ -146,7 +147,7 @@ class SymbolFallbackTest {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
             Trade t1 = Trade.builder().tradeId("t1").symbol("ETHUSDT").side("LONG").status("OPEN").build();
             Trade t2 = Trade.builder().tradeId("t2").symbol("SOLUSDT").side("SHORT").status("OPEN").build();
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of(t1, t2));
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of(t1, t2));
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
 
             TradeSignal closeSignal = TradeSignal.builder()
@@ -179,8 +180,8 @@ class SymbolFallbackTest {
                     .tradeId("t1").symbol("ETHUSDT").side("LONG")
                     .entryPrice(3000.0).stopLoss(2800.0).status("OPEN")
                     .build();
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of(ethTrade));
-            when(mockTradeRecord.findOpenTrade("ETHUSDT")).thenReturn(Optional.of(ethTrade));
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of(ethTrade));
+            when(mockTradeRecord.findOpenTrade(eq("ETHUSDT"), anyString())).thenReturn(Optional.of(ethTrade));
 
             // ETHUSDT 有持倉
             when(mockAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(1.0);

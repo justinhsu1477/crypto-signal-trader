@@ -58,6 +58,7 @@ class PartialCloseTest {
                 List.of("BTCUSDT"), true, "BTCUSDT"
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
+        when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
 
         TradingOrchestrator orchestrator = new TradingOrchestrator(
                 mockTradeRecord, mockDedup, mockWebhook,
@@ -150,7 +151,7 @@ class PartialCloseTest {
             // 無舊 SL (oldSl=0)
             setupCloseBaseMocks(1.0, 0, 0);
 
-            when(mockTradeRecord.getEntryPrice("BTCUSDT")).thenReturn(95000.0);
+            when(mockTradeRecord.getEntryPrice(eq("BTCUSDT"), anyString())).thenReturn(95000.0);
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             OrderResult slOrder = successOrder("SL1", "SELL", 95000, 0.5);
@@ -175,7 +176,7 @@ class PartialCloseTest {
         void noSLInfoAvailable() {
             // 無舊 SL，也沒有開倉價
             setupCloseBaseMocks(1.0, 0, 0);
-            when(mockTradeRecord.getEntryPrice("BTCUSDT")).thenReturn(null);
+            when(mockTradeRecord.getEntryPrice(eq("BTCUSDT"), anyString())).thenReturn(null);
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
@@ -189,7 +190,7 @@ class PartialCloseTest {
             List<OrderResult> results = service.executeClose(signal);
 
             // 應該記錄 SL_REHUNG_FAILED 事件
-            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("SL_REHUNG_FAILED"), isNull(), anyString());
+            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("SL_REHUNG_FAILED"), isNull(), anyString(), anyString());
             // 結果中應有一個失敗的 SL 結果
             assertThat(results.stream().anyMatch(r -> !r.isSuccess())).isTrue();
         }

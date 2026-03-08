@@ -10,6 +10,7 @@ import com.trader.shared.model.TradeRequest;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.BroadcastLog;
 import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.exchange.ExchangeAdapterFactory;
 import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.repository.BroadcastLogRepository;
@@ -180,7 +181,7 @@ class BroadcastTradeServiceTest {
             when(userRepository.findAll()).thenReturn(List.of(admin, user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
             when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of("u1", "BINANCE"));
-            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
+            when(orchestrator.executeSignal(any(), any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("ENTRY", "ETHUSDT", "SHORT");
             Map<String, Object> result = service.broadcastTrade(request);
@@ -213,7 +214,7 @@ class BroadcastTradeServiceTest {
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
             when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of("u1", "BINANCE"));
-            when(orchestrator.executeSignal(any(), any()))
+            when(orchestrator.executeSignal(any(), any(), any()))
                     .thenThrow(new RuntimeException("Insufficient balance"));
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
@@ -239,7 +240,7 @@ class BroadcastTradeServiceTest {
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
             when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of("u1", "BINANCE"));
-            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
+            when(orchestrator.executeSignal(any(), any(), any())).thenReturn(successResult());
             when(broadcastLogRepository.save(any()))
                     .thenThrow(new RuntimeException("DB connection lost"));
 
@@ -303,7 +304,7 @@ class BroadcastTradeServiceTest {
             when(userRepository.findAll()).thenReturn(List.of(user1));
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1"));
             when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of("u1", "BINANCE"));
-            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
+            when(orchestrator.executeSignal(any(), any(), any())).thenReturn(successResult());
 
             SignalScore score = SignalScore.builder()
                     .confidence(85).riskLevel("LOW").reasoning("Strong trend").latencyMs(500).build();
@@ -333,7 +334,7 @@ class BroadcastTradeServiceTest {
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
             when(userApiKeyService.getUserIdExchangeMap()).thenReturn(
                     Map.of("u1", "BINANCE", "u2", "BINANCE"));
-            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
+            when(orchestrator.executeSignal(any(), any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setTargetUserIds(List.of("u1"));
@@ -346,7 +347,7 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("skippedNotTargeted")).isEqualTo(1); // u2
 
             // orchestrator.executeSignal 被呼叫（代表 u1 執行了）
-            verify(orchestrator).executeSignal(any(), any());
+            verify(orchestrator).executeSignal(any(), any(), any());
         }
 
         @Test
@@ -367,7 +368,7 @@ class BroadcastTradeServiceTest {
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             // u1 will execute, but let's make it succeed
-            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
+            when(orchestrator.executeSignal(any(), any(), any())).thenReturn(successResult());
 
             service.broadcastTrade(request);
 
@@ -399,7 +400,7 @@ class BroadcastTradeServiceTest {
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
             when(userApiKeyService.getUserIdExchangeMap()).thenReturn(
                     Map.of("u1", "BINANCE", "u2", "BINANCE"));
-            when(orchestrator.executeClose(any(), any())).thenReturn(successResult());
+            when(orchestrator.executeClose(any(), any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("CLOSE", "BTCUSDT", null);
             request.setTargetUserIds(null); // 明確設 null
@@ -409,7 +410,7 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("totalUsers")).isEqualTo(2);
             assertThat(result.get("successCount")).isEqualTo(2);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(0);
-            verify(orchestrator, times(2)).executeClose(any(), any());
+            verify(orchestrator, times(2)).executeClose(any(), any(), any());
         }
 
         @Test
@@ -424,7 +425,7 @@ class BroadcastTradeServiceTest {
             when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
             when(userApiKeyService.getUserIdExchangeMap()).thenReturn(
                     Map.of("u1", "BINANCE", "u2", "BINANCE"));
-            when(orchestrator.executeSignal(any(), any())).thenReturn(successResult());
+            when(orchestrator.executeSignal(any(), any(), any())).thenReturn(successResult());
 
             TradeRequest request = createRequest("ENTRY", "ETHUSDT", "LONG");
             request.setTargetUserIds(List.of("u1"));
@@ -435,7 +436,7 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("successCount")).isEqualTo(1);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(1);
             // orchestrator 只被呼叫一次（u1）
-            verify(orchestrator, times(1)).executeSignal(any(), any());
+            verify(orchestrator, times(1)).executeSignal(any(), any(), any());
         }
 
         @Test
@@ -455,8 +456,8 @@ class BroadcastTradeServiceTest {
 
             assertThat(result.get("totalUsers")).isEqualTo(0);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(1); // u1 被排除
-            verify(orchestrator, never()).executeClose(any(), any());
-            verify(orchestrator, never()).executeSignal(any(), any());
+            verify(orchestrator, never()).executeClose(any(), any(), any());
+            verify(orchestrator, never()).executeSignal(any(), any(), any());
         }
 
         @Test
@@ -478,8 +479,8 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("totalUsers")).isEqualTo(0);
             assertThat(result.get("skippedNoApiKey")).isEqualTo(1);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(0); // targetUserIds 過濾時 activeUsers 已為空
-            verify(orchestrator, never()).executeSignal(any(), any());
-            verify(orchestrator, never()).executeClose(any(), any());
+            verify(orchestrator, never()).executeSignal(any(), any(), any());
+            verify(orchestrator, never()).executeClose(any(), any(), any());
         }
     }
 }

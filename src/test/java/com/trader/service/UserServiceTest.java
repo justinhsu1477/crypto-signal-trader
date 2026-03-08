@@ -65,12 +65,13 @@ class UserServiceTest {
                     .thenAnswer(inv -> inv.getArgument(0));
 
             UserApiKey result = userService.saveApiKey(
-                    "user-1", "BINANCE", "raw-api-key", "raw-secret-key");
+                    "user-1", "BINANCE", "raw-api-key", "raw-secret-key", null);
 
             assertThat(result.getUserId()).isEqualTo("user-1");
             assertThat(result.getExchange()).isEqualTo("BINANCE");
             assertThat(result.getEncryptedApiKey()).isEqualTo("encrypted-api");
             assertThat(result.getEncryptedSecretKey()).isEqualTo("encrypted-secret");
+            assertThat(result.getEncryptedPassphrase()).isNull();
         }
 
         @Test
@@ -92,7 +93,7 @@ class UserServiceTest {
                     .thenAnswer(inv -> inv.getArgument(0));
 
             UserApiKey result = userService.saveApiKey(
-                    "user-1", "BINANCE", "new-api-key", "new-secret-key");
+                    "user-1", "BINANCE", "new-api-key", "new-secret-key", null);
 
             // 驗證 id 保留（upsert 而非新建）
             assertThat(result.getId()).isEqualTo(99L);
@@ -110,7 +111,7 @@ class UserServiceTest {
             when(userApiKeyRepository.save(any(UserApiKey.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
-            userService.saveApiKey("user-1", "BINANCE", "plain-api", "plain-secret");
+            userService.saveApiKey("user-1", "BINANCE", "plain-api", "plain-secret", null);
 
             ArgumentCaptor<UserApiKey> captor = ArgumentCaptor.forClass(UserApiKey.class);
             verify(userApiKeyRepository).save(captor.capture());
@@ -138,12 +139,48 @@ class UserServiceTest {
                     .thenAnswer(inv -> inv.getArgument(0));
 
             UserApiKey result = userService.saveApiKey(
-                    "user-1", "BYBIT", "bybit-api", "bybit-secret");
+                    "user-1", "BYBIT", "bybit-api", "bybit-secret", null);
 
             // 驗證 exchange 更新、id 保留
             assertThat(result.getId()).isEqualTo(99L);
             assertThat(result.getExchange()).isEqualTo("BYBIT");
             verify(userApiKeyRepository).findByUserId("user-1");
+        }
+
+        @Test
+        @DisplayName("Bitget Key + passphrase → 加密後存入 DB")
+        void bitgetKey_encryptsPassphrase() {
+            when(userApiKeyRepository.findByUserId("user-1"))
+                    .thenReturn(List.of());
+            when(aesEncryptionUtil.encrypt("bg-api")).thenReturn("enc-api");
+            when(aesEncryptionUtil.encrypt("bg-secret")).thenReturn("enc-secret");
+            when(aesEncryptionUtil.encrypt("bg-passphrase")).thenReturn("enc-passphrase");
+            when(userApiKeyRepository.save(any(UserApiKey.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            UserApiKey result = userService.saveApiKey(
+                    "user-1", "BITGET", "bg-api", "bg-secret", "bg-passphrase");
+
+            assertThat(result.getExchange()).isEqualTo("BITGET");
+            assertThat(result.getEncryptedPassphrase()).isEqualTo("enc-passphrase");
+        }
+
+        @Test
+        @DisplayName("非 Bitget Key + null passphrase → encryptedPassphrase 為 null")
+        void nonBitgetKey_passphraseIsNull() {
+            when(userApiKeyRepository.findByUserId("user-1"))
+                    .thenReturn(List.of());
+            when(aesEncryptionUtil.encrypt("api")).thenReturn("enc-api");
+            when(aesEncryptionUtil.encrypt("secret")).thenReturn("enc-secret");
+            when(userApiKeyRepository.save(any(UserApiKey.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            UserApiKey result = userService.saveApiKey(
+                    "user-1", "BINANCE", "api", "secret", null);
+
+            assertThat(result.getEncryptedPassphrase()).isNull();
+            // 不應呼叫 encrypt 第三次（只有 apiKey + secretKey）
+            verify(aesEncryptionUtil, times(2)).encrypt(anyString());
         }
     }
 

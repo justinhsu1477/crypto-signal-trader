@@ -138,7 +138,8 @@ class SafetyCheckTest {
             NotificationService mockWebhook = mock(NotificationService.class);
             BinanceAdapter mockAdapter = mock(BinanceAdapter.class);
 
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(0.0);
+            when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
             when(mockDedup.isDuplicate(any())).thenReturn(false);
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
@@ -185,7 +186,8 @@ class SafetyCheckTest {
             NotificationService mockWebhook = mock(NotificationService.class);
             BinanceAdapter mockAdapter = mock(BinanceAdapter.class);
 
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-5000.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(-5000.0);
+            when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
             when(mockDedup.isDuplicate(any())).thenReturn(false);
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
@@ -229,7 +231,8 @@ class SafetyCheckTest {
             BinanceAdapter mockAdapter = mock(BinanceAdapter.class);
 
             // 今日虧損 -1000 USDT
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-1000.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(-1000.0);
+            when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
             when(mockDedup.isDuplicate(any())).thenReturn(false);
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
@@ -281,7 +284,7 @@ class SafetyCheckTest {
             SignalDeduplicationService mockDedup = mock(SignalDeduplicationService.class);
             NotificationService mockWebhook = mock(NotificationService.class);
 
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(0.0);
 
             BinanceFuturesService service = new BinanceFuturesService(
                     mock(BinanceAdapter.class), null, riskConfig, mockTradeRecord, mockDedup,
@@ -301,7 +304,8 @@ class SafetyCheckTest {
             BinanceAdapter mockAdapter = mock(BinanceAdapter.class);
 
             // 今日虧損 -1999 USDT（接近上限但未超過）
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-1999.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(-1999.0);
+            when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
             when(mockDedup.isDuplicate(any())).thenReturn(false);
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 
@@ -349,7 +353,8 @@ class SafetyCheckTest {
             BinanceAdapter mockAdapter = mock(BinanceAdapter.class);
 
             // 剛好等於 2000
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-2000.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(-2000.0);
+            when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
             when(mockDedup.isDuplicate(any())).thenReturn(false);
             when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
 

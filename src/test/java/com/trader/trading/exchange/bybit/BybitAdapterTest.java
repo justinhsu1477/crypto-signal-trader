@@ -54,12 +54,11 @@ class BybitAdapterTest {
         bybitConfig = new BybitConfig(
                 "https://api-testnet.bybit.com",
                 "wss://stream-testnet.bybit.com",
-                "test-api-key",
-                "test-secret-key",
                 5000
         );
         mockRateLimiter = mock(BybitApiRateLimiter.class);
         adapter = new BybitAdapter(mockHttpClient, bybitConfig, mockRateLimiter, null);
+        adapter.setCredentials(new ExchangeCredentials("test-api-key", "test-secret-key"));
     }
 
     @AfterEach
@@ -808,18 +807,13 @@ class BybitAdapterTest {
     class CredentialResolution {
 
         @Test
-        @DisplayName("未設認證 → 使用全局 Config API Key")
-        void usesGlobalConfig() throws IOException {
-            mockHttpResponse(200, bybitOk("""
-                    {"list":[{"accountType":"UNIFIED","coin":[
-                        {"coin":"USDT","walletBalance":"1000","availableToWithdraw":"1000"}
-                    ]}]}"""));
+        @DisplayName("未設認證 → 拋出 IllegalStateException（fail-fast）")
+        void throwsWhenNoCredentials() {
+            adapter.clearCredentials();
 
-            adapter.getAvailableBalance();
-
-            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
-            verify(mockHttpClient).newCall(captor.capture());
-            assertThat(captor.getValue().header("X-BAPI-API-KEY")).isEqualTo("test-api-key");
+            assertThatThrownBy(() -> adapter.getAvailableBalance())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("credentials");
         }
 
         @Test
@@ -840,21 +834,14 @@ class BybitAdapterTest {
         }
 
         @Test
-        @DisplayName("clearCredentials → 回復使用全局 Config")
-        void clearFallsBackToGlobal() throws IOException {
+        @DisplayName("clearCredentials → 拋出 IllegalStateException（不再 fallback）")
+        void clearThrowsWhenNoCredentials() {
             adapter.setCredentials(new ExchangeCredentials("per-user-key", "per-user-secret"));
             adapter.clearCredentials();
 
-            mockHttpResponse(200, bybitOk("""
-                    {"list":[{"accountType":"UNIFIED","coin":[
-                        {"coin":"USDT","walletBalance":"1000","availableToWithdraw":"1000"}
-                    ]}]}"""));
-
-            adapter.getAvailableBalance();
-
-            ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
-            verify(mockHttpClient).newCall(captor.capture());
-            assertThat(captor.getValue().header("X-BAPI-API-KEY")).isEqualTo("test-api-key");
+            assertThatThrownBy(() -> adapter.getAvailableBalance())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("credentials");
         }
 
         @Test

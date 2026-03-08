@@ -70,6 +70,7 @@ class DailyLossCircuitBreakerTest {
 
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
+        when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
     }
 
     private void setupMocks(double balance, double todayLoss) {
@@ -77,7 +78,7 @@ class DailyLossCircuitBreakerTest {
         when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
         when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
         when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
-        when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(todayLoss);
+        when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(todayLoss);
     }
 
     private TradeSignal longEntry() {

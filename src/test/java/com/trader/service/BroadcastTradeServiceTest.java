@@ -20,6 +20,7 @@ import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.trading.service.TradingOrchestrator;
+import com.trader.trading.model.TradeContext;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserApiKeyService;
@@ -93,13 +94,13 @@ class BroadcastTradeServiceTest {
         when(mockSymbolLockRegistry.getLock(anyString())).thenReturn(new ReentrantLock());
 
         // 預設：orchestrator ENTRY 回傳成功結果（既有測試不受影響）
-        when(mockOrchestrator.executeSignal(any(), any())).thenReturn(successResult());
+        when(mockOrchestrator.executeSignal(any(), any(), any())).thenReturn(successResult());
 
         // 預設：orchestrator CLOSE 回傳成功結果
-        when(mockOrchestrator.executeClose(any(), any())).thenReturn(successResult());
+        when(mockOrchestrator.executeClose(any(), any(), any())).thenReturn(successResult());
 
         // 預設：orchestrator MOVE_SL 回傳成功結果
-        when(mockOrchestrator.executeMoveSL(any(), any())).thenReturn(successResult());
+        when(mockOrchestrator.executeMoveSL(any(), any(), any())).thenReturn(successResult());
 
         // 預設：所有用戶都有 API Key（既有測試不受影響，一用戶一交易所）
         when(mockApiKey.getUserIdExchangeMap())
@@ -328,7 +329,7 @@ class BroadcastTradeServiceTest {
             service.broadcastTrade(request);
 
             // orchestrator.executeSignal 被呼叫兩次（u1, u2 各一次）
-            verify(mockOrchestrator, timeout(5000).times(2)).executeSignal(any(), any());
+            verify(mockOrchestrator, timeout(5000).times(2)).executeSignal(any(), any(), any());
         }
 
         @Test
@@ -341,7 +342,7 @@ class BroadcastTradeServiceTest {
             when(mockUserRepo.findAll()).thenReturn(users);
 
             // 第一次呼叫成功，第二次失敗，第三次成功
-            when(mockOrchestrator.executeSignal(any(), any()))
+            when(mockOrchestrator.executeSignal(any(), any(), any()))
                     .thenReturn(successResult())
                     .thenThrow(new RuntimeException("API key invalid"))
                     .thenReturn(successResult());
@@ -381,7 +382,7 @@ class BroadcastTradeServiceTest {
             List<User> users = List.of(createUser("u1", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
 
-            when(mockOrchestrator.executeSignal(any(), any()))
+            when(mockOrchestrator.executeSignal(any(), any(), any()))
                     .thenThrow(new RuntimeException("Insufficient margin"));
 
             service.broadcastTrade(createEntryRequest());
@@ -409,7 +410,7 @@ class BroadcastTradeServiceTest {
             User user2 = createUser("u2", true, true);
             when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
 
-            when(mockOrchestrator.executeSignal(any(), any()))
+            when(mockOrchestrator.executeSignal(any(), any(), any()))
                     .thenThrow(new RuntimeException("Insufficient margin"))
                     .thenThrow(new RuntimeException("API key expired"));
 
@@ -447,7 +448,7 @@ class BroadcastTradeServiceTest {
                     .side("BUY").type("MARKET")
                     .price(94950.5).quantity(0.01).commission(0.47)
                     .build();
-            when(mockOrchestrator.executeSignal(any(), any()))
+            when(mockOrchestrator.executeSignal(any(), any(), any()))
                     .thenReturn(List.of(entryResult));
 
             service.broadcastTrade(createEntryRequest());
@@ -472,7 +473,7 @@ class BroadcastTradeServiceTest {
             when(mockUserRepo.findAll()).thenReturn(users);
 
             // 回傳成功但 price=0 的結果，觸發 fallback 顯示請求價
-            when(mockOrchestrator.executeSignal(any(), any()))
+            when(mockOrchestrator.executeSignal(any(), any(), any()))
                     .thenReturn(List.of(OrderResult.builder()
                             .success(true).orderId("mock-1").symbol("BTCUSDT")
                             .price(0).quantity(0).build()));
@@ -501,7 +502,7 @@ class BroadcastTradeServiceTest {
                     .price(96500.0).quantity(0.01)
                     .netProfit(150.32).totalCommission(0.94)
                     .build();
-            when(mockOrchestrator.executeClose(any(), any()))
+            when(mockOrchestrator.executeClose(any(), any(), any()))
                     .thenReturn(List.of(closeResult));
 
             TradeRequest closeRequest = new TradeRequest();
@@ -546,7 +547,7 @@ class BroadcastTradeServiceTest {
             User user2 = createUser("u2", true, true);
             when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
 
-            when(mockOrchestrator.executeSignal(any(), any()))
+            when(mockOrchestrator.executeSignal(any(), any(), any()))
                     .thenReturn(List.of(OrderResult.builder()
                             .success(true).orderId("1").symbol("BTCUSDT")
                             .price(94950.5).quantity(0.01).build()))
@@ -576,7 +577,7 @@ class BroadcastTradeServiceTest {
             User user2 = createUser("u2", true, true);
             when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
 
-            when(mockOrchestrator.executeClose(any(), any()))
+            when(mockOrchestrator.executeClose(any(), any(), any()))
                     .thenReturn(List.of(OrderResult.builder()
                             .success(true).orderId("1").symbol("BTCUSDT")
                             .price(96500.0).quantity(0.01)
@@ -618,7 +619,7 @@ class BroadcastTradeServiceTest {
             User user1 = createUser("u1", true, true);
             when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1));
 
-            when(mockOrchestrator.executeClose(any(), any()))
+            when(mockOrchestrator.executeClose(any(), any(), any()))
                     .thenReturn(List.of(OrderResult.builder()
                             .success(true).orderId("1").symbol("BTCUSDT")
                             .price(96500.0).netProfit(100.0).build()));
@@ -691,7 +692,7 @@ class BroadcastTradeServiceTest {
             // 交易照常執行
             assertThat(result.get("status")).isEqualTo("COMPLETED");
             assertThat(result.get("successCount")).isEqualTo(1);
-            verify(mockOrchestrator, timeout(5000)).executeSignal(any(), any());
+            verify(mockOrchestrator, timeout(5000)).executeSignal(any(), any(), any());
 
             // DB 不應被更新（分數為 null）
             verify(mockTradeRepo, never()).updateAiScore(any(), any(), any(), any());
@@ -703,7 +704,7 @@ class BroadcastTradeServiceTest {
             List<User> users = List.of(createUser("u1", true, true));
             when(mockUserRepo.findAll()).thenReturn(users);
 
-            when(mockOrchestrator.executeClose(any(), any()))
+            when(mockOrchestrator.executeClose(any(), any(), any()))
                     .thenReturn(List.of(OrderResult.builder()
                             .success(true).orderId("1").symbol("BTCUSDT")
                             .price(96500.0).netProfit(100.0).build()));
@@ -716,7 +717,7 @@ class BroadcastTradeServiceTest {
             service.broadcastTrade(closeRequest);
 
             // 交易正常完成
-            verify(mockOrchestrator, timeout(5000)).executeClose(any(), any());
+            verify(mockOrchestrator, timeout(5000)).executeClose(any(), any(), any());
 
             // 通知不含 AI 分數
             ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
@@ -802,7 +803,7 @@ class BroadcastTradeServiceTest {
             service.broadcastTrade(createEntryRequest());
 
             // orchestrator 只被呼叫一次（只有 u1）
-            verify(mockOrchestrator, timeout(5000).times(1)).executeSignal(any(), any());
+            verify(mockOrchestrator, timeout(5000).times(1)).executeSignal(any(), any(), any());
         }
 
         @Test
@@ -894,7 +895,7 @@ class BroadcastTradeServiceTest {
 
             assertThat(result.get("status")).isEqualTo("COMPLETED");
             assertThat(result.get("totalUsers")).isEqualTo(2);
-            verify(mockOrchestrator, timeout(5000).times(2)).executeClose(any(), any());
+            verify(mockOrchestrator, timeout(5000).times(2)).executeClose(any(), any(), any());
         }
 
         @Test
@@ -905,7 +906,7 @@ class BroadcastTradeServiceTest {
             req.setSymbol("BTCUSDT");
             req.setCloseRatio(0.5);
 
-            when(mockOrchestrator.executeClose(any(), any()))
+            when(mockOrchestrator.executeClose(any(), any(), any()))
                     .thenReturn(List.of(OrderResult.builder()
                             .success(true).orderId("1").symbol("BTCUSDT")
                             .price(96000.0).netProfit(50.0).build()));
@@ -933,7 +934,7 @@ class BroadcastTradeServiceTest {
 
             assertThat(result.get("status")).isEqualTo("COMPLETED");
             assertThat(result.get("totalUsers")).isEqualTo(2);
-            verify(mockOrchestrator, timeout(5000).times(2)).executeMoveSL(any(), any());
+            verify(mockOrchestrator, timeout(5000).times(2)).executeMoveSL(any(), any(), any());
         }
 
         @Test
@@ -1058,7 +1059,7 @@ class BroadcastTradeServiceTest {
             User user2 = createUser("u2", true, true);
             when(mockUserRepo.findAll()).thenReturn(List.of(admin, user1, user2));
 
-            when(mockOrchestrator.executeSignal(any(), any()))
+            when(mockOrchestrator.executeSignal(any(), any(), any()))
                     .thenReturn(successResult())
                     .thenThrow(new RuntimeException("error"));
 

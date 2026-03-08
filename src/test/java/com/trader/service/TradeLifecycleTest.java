@@ -74,9 +74,10 @@ class TradeLifecycleTest {
                 new MultiUserConfig(), new SymbolLockRegistry(), mockApiKey,
                 mockTradeConfigResolver);
 
-        when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
+        when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
+        when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
     }
 
     private void setupEntryMocks(double balance, double position, double markPrice) {
@@ -119,12 +120,12 @@ class TradeLifecycleTest {
 
             List<OrderResult> entryResults = service.executeSignal(entrySignal);
             assertThat(entryResults.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any(), anyString());
 
             // === Step 2: MOVE_SL ===
             when(mockAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.1);
 
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult newSl = ok("SL2", "SELL", 95500, 0.1);
@@ -138,7 +139,7 @@ class TradeLifecycleTest {
 
             List<OrderResult> moveSLResults = service.executeMoveSL(moveSLSignal);
             assertThat(moveSLResults.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordMoveSL(eq("BTCUSDT"), any(), eq(93000.0), eq(95500.0));
+            verify(mockTradeRecord).recordMoveSL(eq("BTCUSDT"), any(), eq(93000.0), eq(95500.0), anyString());
 
             // === Step 3: FULL CLOSE ===
             when(mockAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.1);
@@ -155,7 +156,7 @@ class TradeLifecycleTest {
 
             List<OrderResult> closeResults = service.executeClose(closeSignal);
             assertThat(closeResults.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordClose(eq("BTCUSDT"), any(), eq("SIGNAL_CLOSE"));
+            verify(mockTradeRecord).recordClose(eq("BTCUSDT"), any(), eq("SIGNAL_CLOSE"), anyString());
         }
 
         @Test
@@ -209,8 +210,8 @@ class TradeLifecycleTest {
         void dcaDirectionConflict() {
             setupEntryMocks(10000, 0.5, 95000);  // 持有多倉 0.5 BTC
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(1);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(1);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().side("LONG").build()));
 
             TradeSignal dcaSignal = TradeSignal.builder()
@@ -234,8 +235,8 @@ class TradeLifecycleTest {
         void dcaAutoInferDirection() {
             setupEntryMocks(10000, 0.5, 95000);  // 持有多倉
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(0);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(0);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
 
@@ -315,7 +316,7 @@ class TradeLifecycleTest {
             service.executeSignal(signal);
 
             verify(mockAdapter).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
-            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("FAIL_SAFE_CLOSE"), any(), anyString());
+            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("FAIL_SAFE_CLOSE"), any(), anyString(), anyString());
         }
 
         @Test
@@ -347,7 +348,7 @@ class TradeLifecycleTest {
             verify(mockWebhook).sendNotification(contains("全部失敗"), anyString(), anyInt());
 
             // 記錄兩次 fail-safe（一次 SL 失敗，一次全部失敗）
-            verify(mockTradeRecord, atLeast(2)).recordFailSafe(eq("BTCUSDT"), anyString());
+            verify(mockTradeRecord, atLeast(2)).recordFailSafe(eq("BTCUSDT"), anyString(), anyString());
         }
     }
 
@@ -382,8 +383,8 @@ class TradeLifecycleTest {
             setupEntryMocks(10000, 0.5, 95000);
             when(mockAdapter.hasOpenEntryOrders("BTCUSDT")).thenReturn(true);
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(0);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(0);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
 
@@ -469,7 +470,7 @@ class TradeLifecycleTest {
             // 入場和 SL 應該成功
             assertThat(results.get(0).isSuccess()).isTrue();
             // TP 失敗應記錄事件
-            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("TP_FAILED"), any(), isNull());
+            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("TP_FAILED"), any(), isNull(), anyString());
             // 應發 Discord 通知 TP 失敗
             verify(mockWebhook).sendNotification(contains("止盈單失敗"), anyString(), anyInt());
         }

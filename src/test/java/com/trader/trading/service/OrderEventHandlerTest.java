@@ -1532,4 +1532,195 @@ class OrderEventHandlerTest {
             return event;
         }
     }
+
+    // ==================== Bitget Order 事件 ====================
+
+    @Nested
+    @DisplayName("Bitget Order 事件 — handleBitgetOrder")
+    class BitgetOrder {
+
+        private OrderEventHandler handler;
+
+        @BeforeEach
+        void setUpHandler() {
+            handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "", "BITGET");
+        }
+
+        @Test
+        @DisplayName("平倉 (tradeSide=close, planType=pos_loss) → SL_TRIGGERED")
+        void closeSL() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-001", "", "sell",
+                    "market", "filled", "pos_loss", "API", "close",
+                    93000.0, 0.25, 0.25, 5.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(93000.0), eq(0.25), eq(5.0),
+                    eq(0.0), eq("bg-001"), eq("SL_TRIGGERED"), eq(1700000000000L));
+        }
+
+        @Test
+        @DisplayName("平倉 (planType=pos_profit) → TP_TRIGGERED")
+        void closeTP() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-002", "", "sell",
+                    "market", "filled", "pos_profit", "API", "close",
+                    100000.0, 0.25, 0.25, 5.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(100000.0), eq(0.25), eq(5.0),
+                    eq(0.0), eq("bg-002"), eq("TP_TRIGGERED"), eq(1700000000000L));
+        }
+
+        @Test
+        @DisplayName("平倉 (planType 空 + clientOid=SL-xxx) → SL_TRIGGERED")
+        void closeSLByClientOid() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-003", "SL-custom", "sell",
+                    "market", "filled", "", "API", "close",
+                    93000.0, 0.25, 0.25, 5.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), eq("bg-003"), eq("SL_TRIGGERED"), anyLong());
+        }
+
+        @Test
+        @DisplayName("平倉 (planType 空 + clientOid 無前綴) → SIGNAL_CLOSE")
+        void closeSignal() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-004", "custom-id", "sell",
+                    "market", "filled", "", "API", "close",
+                    95000.0, 0.25, 0.25, 3.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyString(), eq("SIGNAL_CLOSE"), anyLong());
+        }
+
+        @Test
+        @DisplayName("入場 (tradeSide=open, orderType=limit) → recordLimitEntryFilled")
+        void limitEntry() {
+            Trade mockTrade = Trade.builder().symbol("BTCUSDT").side("LONG").build();
+            when(tradeRecordService.recordLimitEntryFilled(anyString(), anyString(),
+                    anyDouble(), anyDouble(), anyDouble(), anyLong()))
+                    .thenReturn(mockTrade);
+
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-005", "", "buy",
+                    "limit", "filled", "", "API", "open",
+                    95000.0, 0.25, 0.25, 3.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            verify(tradeRecordService).recordLimitEntryFilled(
+                    eq("BTCUSDT"), eq("bg-005"), eq(95000.0), eq(0.25), eq(3.0), eq(1700000000000L));
+            assertThat(lastTitle).isEqualTo("✅ 限價入場成交");
+        }
+
+        @Test
+        @DisplayName("非 filled 狀態 → 不處理")
+        void notFilled() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-006", "", "buy",
+                    "limit", "new", "", "API", "open",
+                    95000.0, 0.25, 0.0, 0.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            verifyNoInteractions(tradeRecordService);
+        }
+
+        @Test
+        @DisplayName("強平 (enterPointSource=SYS) → LIQUIDATION")
+        void liquidation() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-007", "", "sell",
+                    "market", "filled", "", "SYS", "close",
+                    91000.0, 0.25, 0.25, 5.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            verify(tradeRecordService).recordOrderEvent(eq("BTCUSDT"), eq("LIQUIDATION"), isNull(), anyString());
+            verify(tradeRecordService).markTradeClosedByLiquidation("BTCUSDT");
+            assertThat(lastTitle).contains("強制平倉");
+        }
+
+        @Test
+        @DisplayName("通知包含交易所名稱 BITGET")
+        void notificationContainsExchange() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-008", "", "sell",
+                    "market", "filled", "pos_loss", "API", "close",
+                    93000.0, 0.25, 0.25, 5.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            assertThat(lastMessage).contains("BITGET");
+        }
+
+        @Test
+        @DisplayName("fee 負值 → 取絕對值")
+        void negativeFee() {
+            JsonObject data = buildBitgetOrder("BTCUSDT", "bg-009", "", "sell",
+                    "market", "filled", "pos_loss", "API", "close",
+                    93000.0, 0.25, 0.25, -5.0, 1700000000000L);
+
+            handler.handleBitgetOrder(data);
+
+            // fee 取絕對值 = 5.0
+            verify(tradeRecordService).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(), eq(5.0),
+                    anyDouble(), anyString(), anyString(), anyLong());
+        }
+
+        private JsonObject buildBitgetOrder(String symbol, String orderId, String clientOid,
+                                              String side, String orderType, String status,
+                                              String planType, String enterPointSource,
+                                              String tradeSide, double priceAvg, double size,
+                                              double filledQty, double fee, long uTime) {
+            JsonObject data = new JsonObject();
+            data.addProperty("symbol", symbol);
+            data.addProperty("orderId", orderId);
+            data.addProperty("clientOid", clientOid);
+            data.addProperty("side", side);
+            data.addProperty("orderType", orderType);
+            data.addProperty("status", status);
+            data.addProperty("planType", planType);
+            data.addProperty("enterPointSource", enterPointSource);
+            data.addProperty("tradeSide", tradeSide);
+            data.addProperty("priceAvg", priceAvg);
+            data.addProperty("size", size);
+            data.addProperty("filledQty", filledQty);
+            data.addProperty("fee", fee);
+            data.addProperty("uTime", uTime);
+            return data;
+        }
+    }
+
+    // ==================== Bitget Position 事件 ====================
+
+    @Nested
+    @DisplayName("Bitget Position 事件 — handleBitgetPosition")
+    class BitgetPosition {
+
+        @Test
+        @DisplayName("持倉資料 → 僅 log，不呼叫 tradeRecordService")
+        void positionLogOnly() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "", "BITGET");
+
+            JsonObject data = new JsonObject();
+            data.addProperty("symbol", "BTCUSDT");
+            data.addProperty("holdSide", "long");
+            data.addProperty("total", 0.25);
+            data.addProperty("stopLossTriggerPrice", "93000.0");
+            data.addProperty("stopSurplusTriggerPrice", "100000.0");
+
+            handler.handleBitgetPosition(data);
+
+            verifyNoInteractions(tradeRecordService);
+        }
+    }
 }

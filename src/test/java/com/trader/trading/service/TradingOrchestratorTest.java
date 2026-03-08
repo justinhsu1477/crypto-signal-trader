@@ -8,6 +8,7 @@ import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.validation.TradeSignalValidator;
 import org.junit.jupiter.api.*;
 
@@ -60,7 +61,7 @@ class TradingOrchestratorTest {
         );
         when(mockTradeConfigResolver.resolve(any())).thenReturn(defaultConfig);
         when(mockSodCache.getOrCompute(any(), any())).thenReturn(10000.0);
-        when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
+        when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), any())).thenReturn(false);
         when(mockDedup.generateHash(any())).thenReturn("testhash");
@@ -75,7 +76,7 @@ class TradingOrchestratorTest {
 
     @AfterEach
     void tearDown() {
-        TradingOrchestrator.clearBroadcastContext();
+        // removed: TradingOrchestrator.clearBroadcastContext()
     }
 
     // ==================== 共用 helper ====================
@@ -142,12 +143,12 @@ class TradingOrchestratorTest {
             when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(2);
             assertThat(results.get(0).isSuccess()).isTrue();
             assertThat(results.get(1).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any(), anyString());
         }
 
         @Test
@@ -162,7 +163,7 @@ class TradingOrchestratorTest {
             when(mockAdapter.setStopLoss(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.SHORT, 95000, 97000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(2);
             assertThat(results.get(0).isSuccess()).isTrue();
@@ -193,7 +194,7 @@ class TradingOrchestratorTest {
                     .signalType(TradeSignal.SignalType.ENTRY)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(3);  // entry + SL + TP
             assertThat(results.get(2).isSuccess()).isTrue();
@@ -208,7 +209,7 @@ class TradingOrchestratorTest {
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 5.0, 4.5);
             signal.setSymbol("DOGEUSDT");
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -222,7 +223,7 @@ class TradingOrchestratorTest {
         void dailyLossCircuitBreaker() {
             setupEntryMocks(1000, 0, 95000);
 
-            when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(-3000.0);
+            when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(-3000.0);
             when(mockSodCache.getOrCompute(any(), any())).thenReturn(1000.0);
 
             // 使用有 dailyLossPercent 的 config，讓 maxDailyLoss = 200 (1000 * 0.20)
@@ -233,7 +234,7 @@ class TradingOrchestratorTest {
             when(mockTradeConfigResolver.resolve(any())).thenReturn(strictConfig);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -251,7 +252,7 @@ class TradingOrchestratorTest {
             when(mockDedup.isUserDuplicate(any(), any())).thenReturn(true);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -264,7 +265,7 @@ class TradingOrchestratorTest {
             setupEntryMocks(1000, 0.5, 95000);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -284,7 +285,7 @@ class TradingOrchestratorTest {
                     .signalType(TradeSignal.SignalType.ENTRY)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -302,7 +303,7 @@ class TradingOrchestratorTest {
                     .signalType(TradeSignal.SignalType.ENTRY)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -315,7 +316,7 @@ class TradingOrchestratorTest {
             setupEntryMocks(1000, 0, 50000);  // markPrice=50000 遠離 entry=95000
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -334,8 +335,8 @@ class TradingOrchestratorTest {
         void dcaSuccess() {
             setupEntryMocks(1000, 0.5, 95000);  // 已有 0.5 BTC 多倉
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(1);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(1);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
             OrderResult entryOrder = successOrder("DCA1", "BUY", 94000, 0.02);
@@ -353,13 +354,13 @@ class TradingOrchestratorTest {
                     .isDca(true)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
             // DCA 應取消舊 SL/TP
             verify(mockAdapter).cancelSLTPOrders("BTCUSDT");
-            verify(mockTradeRecord).recordDcaEntry(eq("BTCUSDT"), any(), any(), anyDouble());
+            verify(mockTradeRecord).recordDcaEntry(eq("BTCUSDT"), any(), any(), anyDouble(), anyString());
         }
 
         @Test
@@ -367,7 +368,7 @@ class TradingOrchestratorTest {
         void dcaExceedsMax() {
             setupEntryMocks(1000, 0.5, 95000);
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(3);  // max=3
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(3);  // max=3
 
             TradeSignal signal = TradeSignal.builder()
                     .symbol("BTCUSDT")
@@ -378,7 +379,7 @@ class TradingOrchestratorTest {
                     .isDca(true)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -399,7 +400,7 @@ class TradingOrchestratorTest {
                     .isDca(true)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(1);
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -424,7 +425,7 @@ class TradingOrchestratorTest {
                     .thenReturn(OrderResult.fail("SL failed"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 入場應標記為失敗
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -450,7 +451,7 @@ class TradingOrchestratorTest {
             when(mockAdapter.placeMarketOrder(anyString(), anyString(), anyDouble())).thenReturn(marketClose);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            orchestrator.executeSignal(signal, mockAdapter);
+            orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 應嘗試市價平倉
             verify(mockAdapter).placeMarketOrder(anyString(), anyString(), anyDouble());
@@ -473,11 +474,11 @@ class TradingOrchestratorTest {
             when(mockAdapter.placeMarketOrder(anyString(), eq("SELL"), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal signal = buildCloseSignal(1.0);
-            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordClose(anyString(), any(), anyString());
+            verify(mockTradeRecord).recordClose(anyString(), any(), anyString(), anyString());
             // 全倉平倉用市價單
             verify(mockAdapter).placeMarketOrder(anyString(), eq("SELL"), anyDouble());
         }
@@ -498,7 +499,7 @@ class TradingOrchestratorTest {
             when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = buildCloseSignal(0.5);
-            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
@@ -514,10 +515,10 @@ class TradingOrchestratorTest {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(true);
 
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of());
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of());
 
             TradeSignal signal = buildCloseSignal(1.0);
-            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             verify(mockAdapter).cancelAllOrders(anyString());
             assertThat(results).isNotEmpty();
@@ -531,10 +532,10 @@ class TradingOrchestratorTest {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
 
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of());
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of());
 
             TradeSignal signal = buildCloseSignal(1.0);
-            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -544,14 +545,12 @@ class TradingOrchestratorTest {
         @Test
         @DisplayName("廣播 context 下無持倉 → 不發 notifyGlobal")
         void closeNoPositionBroadcastContextSkipsNotify() {
-            TradingOrchestrator.setBroadcastContext(true);
-
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of());
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of());
 
             TradeSignal signal = buildCloseSignal(1.0);
-            orchestrator.executeClose(signal, mockAdapter);
+            orchestrator.executeClose(signal, mockAdapter, TradeContext.forBroadcast("test-user", "Test User"));
 
             // 廣播 context 下不應發通知
             verify(mockNotification, never()).sendNotification(contains("無持倉"), anyString(), anyInt());
@@ -573,7 +572,7 @@ class TradingOrchestratorTest {
             when(mockAdapter.setTakeProfit(anyString(), eq("BUY"), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = buildCloseSignal(0.5);
-            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             // 空倉平倉方向 = BUY
@@ -592,28 +591,28 @@ class TradingOrchestratorTest {
         @DisplayName("移動 SL 到新價格 — 成功")
         void moveSLSuccess() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
             when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildMoveSLSignal(94500.0, null);
-            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
             verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("SELL"), eq(94500.0), eq(0.5));
-            verify(mockTradeRecord).recordMoveSL(eq("BTCUSDT"), any(), anyDouble(), eq(94500.0));
+            verify(mockTradeRecord).recordMoveSL(eq("BTCUSDT"), any(), anyDouble(), eq(94500.0), anyString());
         }
 
         @Test
         @DisplayName("成本保護 — newSL=null 使用開倉價")
         void costProtectionUsesEntryPrice() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
-            when(mockTradeRecord.getEntryPrice("BTCUSDT")).thenReturn(95000.0);
+            when(mockTradeRecord.getEntryPrice(eq("BTCUSDT"), anyString())).thenReturn(95000.0);
 
             OrderResult slOrder = successOrder("SL1", "SELL", 95000, 0.5);
             when(mockAdapter.setStopLoss(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
@@ -626,7 +625,7 @@ class TradingOrchestratorTest {
                     .newTakeProfit(100000.0)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             // 應用入場價 95000 作為 SL
@@ -637,7 +636,7 @@ class TradingOrchestratorTest {
         @DisplayName("移動 SL + 更新 TP")
         void moveSLWithNewTP() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
@@ -647,7 +646,7 @@ class TradingOrchestratorTest {
             when(mockAdapter.setTakeProfit(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(tpOrder);
 
             TradeSignal signal = buildMoveSLSignal(94500.0, 100000.0);
-            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).hasSize(2);
             verify(mockAdapter).setTakeProfit(eq("BTCUSDT"), anyString(), eq(100000.0), anyDouble());
@@ -657,10 +656,10 @@ class TradingOrchestratorTest {
         @DisplayName("無持倉 → FAIL")
         void moveSLNoPosition() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.0);
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(List.of());
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(List.of());
 
             TradeSignal signal = buildMoveSLSignal(94500.0, null);
-            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isFalse();
@@ -670,7 +669,7 @@ class TradingOrchestratorTest {
         @DisplayName("TP 失敗 — 發送黃色告警")
         void tpFailureSendsYellowAlert() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.25);
-            when(mockTradeRecord.findOpenTrade(anyString())).thenReturn(Optional.empty());
+            when(mockTradeRecord.findOpenTrade(anyString(), anyString())).thenReturn(Optional.empty());
 
             OrderResult slOk = successOrder("SL1", "SELL", 94000, 0.25);
             OrderResult tpFail = OrderResult.fail("TP error");
@@ -684,7 +683,7 @@ class TradingOrchestratorTest {
                     .takeProfits(List.of(98000.0))
                     .build();
 
-            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // SL 成功，TP 失敗
             assertThat(results).hasSize(2);
@@ -710,7 +709,7 @@ class TradingOrchestratorTest {
             // 第一次查 BTCUSDT 無持倉
             when(mockAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
             // DB 有唯一 OPEN trade: ETHUSDT
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(
                     List.of(Trade.builder().symbol("ETHUSDT").build()));
             // 第二次查 ETHUSDT 有持倉
             when(mockAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.5);
@@ -723,7 +722,7 @@ class TradingOrchestratorTest {
             when(mockAdapter.placeMarketOrder(eq("ETHUSDT"), eq("SELL"), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal signal = buildCloseSignal(1.0);
-            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
@@ -738,10 +737,10 @@ class TradingOrchestratorTest {
         @DisplayName("MOVE_SL — Symbol Fallback 生效")
         void moveSLSymbolFallback() {
             when(mockAdapter.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
-            when(mockTradeRecord.findAllOpenTrades()).thenReturn(
+            when(mockTradeRecord.findAllOpenTrades(anyString())).thenReturn(
                     List.of(Trade.builder().symbol("ETHUSDT").build()));
             when(mockAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.5);
-            when(mockTradeRecord.findOpenTrade("ETHUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("ETHUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(2800.0).build()));
 
             OrderResult slOrder = OrderResult.builder()
@@ -751,7 +750,7 @@ class TradingOrchestratorTest {
             when(mockAdapter.setStopLoss(eq("ETHUSDT"), anyString(), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildMoveSLSignal(2900.0, null);
-            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeMoveSL(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
@@ -776,7 +775,7 @@ class TradingOrchestratorTest {
                     .thenReturn(OrderResult.fail("SL failed"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            orchestrator.executeSignal(signal, mockAdapter);
+            orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 單用戶：只有 sendNotification
             verify(mockNotification, atLeastOnce()).sendNotification(anyString(), anyString(), anyInt());
@@ -800,7 +799,7 @@ class TradingOrchestratorTest {
                     .thenReturn(OrderResult.fail("SL failed"));
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            orchestrator.executeSignal(signal, mockAdapter);
+            orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 多用戶模式：不發 sendNotification，改發 per-user + admin
             verify(mockNotification, never()).sendNotification(anyString(), anyString(), anyInt());
@@ -840,7 +839,7 @@ class TradingOrchestratorTest {
                     .signalType(TradeSignal.SignalType.ENTRY)
                     .build();
 
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 入場和止損成功
             assertThat(results.get(0).isSuccess()).isTrue();
@@ -882,7 +881,7 @@ class TradingOrchestratorTest {
                     .newStopLoss(94500.0)
                     .build();
 
-            orchestrator.executeClose(signal, mockAdapter);
+            orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 驗證用新 SL 94500
             verify(mockAdapter).setStopLoss(eq("BTCUSDT"), eq("SELL"), eq(94500.0), anyDouble());
@@ -894,16 +893,16 @@ class TradingOrchestratorTest {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(1.0);
             when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
             when(mockAdapter.getCurrentSLTPPrices(anyString())).thenReturn(new double[]{0, 0});
-            when(mockTradeRecord.getEntryPrice("BTCUSDT")).thenReturn(null);
+            when(mockTradeRecord.getEntryPrice(eq("BTCUSDT"), anyString())).thenReturn(null);
 
             OrderResult closeOrder = successOrder("C1", "SELL", 96000, 0.5);
             when(mockAdapter.placeLimitOrder(anyString(), anyString(), anyDouble(), anyDouble())).thenReturn(closeOrder);
 
             TradeSignal signal = buildCloseSignal(0.5);
-            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeClose(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 應記錄 SL_REHUNG_FAILED 事件
-            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("SL_REHUNG_FAILED"), isNull(), anyString());
+            verify(mockTradeRecord).recordOrderEvent(eq("BTCUSDT"), eq("SL_REHUNG_FAILED"), isNull(), anyString(), anyString());
             // 結果中應有一個失敗的 SL 結果
             assertThat(results.stream().anyMatch(r -> !r.isSuccess())).isTrue();
         }
@@ -929,12 +928,12 @@ class TradingOrchestratorTest {
             when(mockAdapter.setStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble())).thenReturn(slOrder);
 
             TradeSignal signal = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
-            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter);
+            List<OrderResult> results = orchestrator.executeSignal(signal, mockAdapter, TradeContext.fromRequest("test-user"));
 
             // 進場仍應成功
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
-            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any());
+            verify(mockTradeRecord).recordEntry(any(), any(), any(), anyInt(), anyDouble(), any(), anyString());
         }
     }
 }

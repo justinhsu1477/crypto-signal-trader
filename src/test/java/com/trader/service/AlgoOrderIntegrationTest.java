@@ -75,7 +75,7 @@ class AlgoOrderIntegrationTest {
                 mockTradeConfigResolver);
 
         when(mockTradeRecord.getActiveUserId()).thenReturn("test-user");
-        when(mockTradeRecord.getTodayRealizedLoss()).thenReturn(0.0);
+        when(mockTradeRecord.getTodayRealizedLoss(anyString())).thenReturn(0.0);
         when(mockDedup.isDuplicate(any())).thenReturn(false);
         when(mockDedup.isUserDuplicate(any(), anyString())).thenReturn(false);
     }
@@ -159,8 +159,8 @@ class AlgoOrderIntegrationTest {
             when(mockAdapter.hasOpenEntryOrders(anyString())).thenReturn(false);
             when(mockAdapter.getMarkPrice(anyString())).thenReturn(95000.0);
 
-            when(mockTradeRecord.getDcaCount("BTCUSDT")).thenReturn(1);
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.getDcaCount(eq("BTCUSDT"), anyString())).thenReturn(1);
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().side("LONG").stopLoss(93000.0).build()));
 
             OrderResult entryOrder = successOrder("DCA1", "BUY", 94000, 0.02);
@@ -188,7 +188,7 @@ class AlgoOrderIntegrationTest {
         void moveSLFullFlow() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
 
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             OrderResult slOrder = successOrder("SL1", "SELL", 94500, 0.5);
@@ -292,7 +292,7 @@ class AlgoOrderIntegrationTest {
         void moveSLFailureSendsCriticalAlert() {
             when(mockAdapter.getCurrentPositionAmount(anyString())).thenReturn(0.5);
 
-            when(mockTradeRecord.findOpenTrade("BTCUSDT")).thenReturn(
+            when(mockTradeRecord.findOpenTrade(eq("BTCUSDT"), anyString())).thenReturn(
                     Optional.of(Trade.builder().stopLoss(93000.0).build()));
 
             // SL 掛失敗
