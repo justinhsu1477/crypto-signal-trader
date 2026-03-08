@@ -211,7 +211,7 @@ public class MultiUserDataStreamManager {
         }
 
         UserStreamContext context = new UserStreamContext(userId, displayName, exchange,
-                keys.apiKey(), keys.secretKey());
+                keys.apiKey(), keys.secretKey(), keys.passphrase());
 
         try {
             ExchangeStreamProvider.ConnectResult result = provider.connect(
@@ -389,7 +389,7 @@ public class MultiUserDataStreamManager {
 
                 // 使用最新的 API Key（用戶可能已更換）
                 ExchangeKeys freshKeys = keysOpt.get().getValue();
-                context.updateApiKey(freshKeys.apiKey(), freshKeys.secretKey());
+                context.updateApiKey(freshKeys.apiKey(), freshKeys.secretKey(), freshKeys.passphrase());
 
                 // 重建 stream
                 ExchangeStreamProvider.ConnectResult result = provider.connect(
@@ -424,6 +424,7 @@ public class MultiUserDataStreamManager {
         private final UserStreamContext context;
         private final OrderEventHandler orderEventHandler;
         private volatile boolean bybitAuthenticated = false;
+        private volatile boolean bitgetAuthenticated = false;
 
         PerUserWebSocketListener(UserStreamContext context) {
             this.context = context;
@@ -443,12 +444,17 @@ public class MultiUserDataStreamManager {
             context.resetOnConnected();
             log.info("用戶 {} [{}] WebSocket 已連線", context.getUserId(), context.getExchange());
 
-            // Bybit: 連線後需要認證 + 訂閱
+            // Bybit / Bitget: 連線後需要認證 + 訂閱
             if ("BYBIT".equals(context.getExchange())) {
                 String authMsg = BybitStreamProvider.buildAuthMessage(
                         context.getApiKey(), context.getSecretKey());
                 ws.send(authMsg);
                 log.debug("用戶 {} Bybit auth 訊息已發送", context.getUserId());
+            } else if ("BITGET".equals(context.getExchange())) {
+                String authMsg = BitgetStreamProvider.buildAuthMessage(
+                        context.getApiKey(), context.getSecretKey(), context.getPassphrase());
+                ws.send(authMsg);
+                log.debug("用戶 {} Bitget login 訊息已發送", context.getUserId());
             }
 
             if (context.isAlertSent()) {
@@ -473,8 +479,11 @@ public class MultiUserDataStreamManager {
             try {
                 JsonObject json = gson.fromJson(text, JsonObject.class);
 
-                if ("BYBIT".equals(context.getExchange())) {
+                String exchange = context.getExchange();
+                if ("BYBIT".equals(exchange)) {
                     handleBybitMessage(ws, json);
+                } else if ("BITGET".equals(exchange)) {
+                    handleBitgetMessage(ws, json);
                 } else {
                     handleBinanceMessage(json);
                 }
@@ -576,6 +585,71 @@ public class MultiUserDataStreamManager {
             }
         }
 
+        /**
+         * 處理 Bitget 事件
+         *
+         * Bitget V2 Private WebSocket 訊息格式：
+         * - Login 回應: {"event":"login","code":0,...}
+         * - Subscribe 回應: {"event":"subscribe","arg":{...},...}
+         * - 資料推送: {"action":"snapshot/update","arg":{"channel":"orders/positions",...},"data":[{...}]}
+         * - Pong: {"event":"pong",...}
+         */
+        private void handleBitgetMessage(WebSocket ws, JsonObject json) {
+            // 1. 控制訊息（login / subscribe / pong）
+            if (json.has("event")) {
+                String event = json.get("event").getAsString();
+
+                switch (event) {
+                    case "login":
+                        int code = json.has("code") ? json.get("code").getAsInt() : -1;
+                        if (code == 0) {
+                            bitgetAuthenticated = true;
+                            log.info("用戶 {} Bitget login 成功，發送 subscribe", context.getUserId());
+                            ws.send(BitgetStreamProvider.buildSubscribeMessage());
+                        } else {
+                            String msg = json.has("msg") ? json.get("msg").getAsString() : "unknown";
+                            log.error("用戶 {} Bitget login 失敗: code={} msg={}", context.getUserId(), code, msg);
+                            scheduleReconnect(context.getUserId(), context);
+                        }
+                        break;
+                    case "subscribe":
+                        log.info("用戶 {} Bitget subscribe 成功", context.getUserId());
+                        break;
+                    case "pong":
+                        log.debug("用戶 {} Bitget pong", context.getUserId());
+                        break;
+                    case "error":
+                        String errMsg = json.has("msg") ? json.get("msg").getAsString() : "unknown";
+                        log.error("用戶 {} Bitget error: {}", context.getUserId(), errMsg);
+                        break;
+                    default:
+                        log.debug("用戶 {} Bitget unknown event: {}", context.getUserId(), event);
+                }
+                return;
+            }
+
+            // 2. 資料推送（orders / positions）
+            if (json.has("arg") && json.has("data")) {
+                JsonObject arg = json.getAsJsonObject("arg");
+                String channel = arg.has("channel") ? arg.get("channel").getAsString() : "";
+                JsonArray dataArray = json.getAsJsonArray("data");
+
+                for (int i = 0; i < dataArray.size(); i++) {
+                    JsonObject data = dataArray.get(i).getAsJsonObject();
+                    switch (channel) {
+                        case "orders":
+                            orderEventHandler.handleBitgetOrder(data);
+                            break;
+                        case "positions":
+                            orderEventHandler.handleBitgetPosition(data);
+                            break;
+                        default:
+                            log.debug("用戶 {} Bitget unknown channel: {}", context.getUserId(), channel);
+                    }
+                }
+            }
+        }
+
         @Override
         public void onClosing(WebSocket ws, int code, String reason) {
             log.info("用戶 {} WebSocket closing: code={} reason={}", context.getUserId(), code, reason);
@@ -587,6 +661,7 @@ public class MultiUserDataStreamManager {
             log.info("用戶 {} WebSocket closed: code={} reason={}", context.getUserId(), code, reason);
             context.setConnected(false);
             bybitAuthenticated = false;
+            bitgetAuthenticated = false;
 
             if (context.isSelfInitiatedClose() || shuttingDown) {
                 log.debug("用戶 {} 自發關閉，跳過 scheduleReconnect", context.getUserId());
@@ -600,6 +675,7 @@ public class MultiUserDataStreamManager {
             log.error("用戶 {} WebSocket failure: {}", context.getUserId(), t.getMessage());
             context.setConnected(false);
             bybitAuthenticated = false;
+            bitgetAuthenticated = false;
 
             if (!shuttingDown) {
                 if (!context.isAlertSent()) {

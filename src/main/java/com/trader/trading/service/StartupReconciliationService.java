@@ -161,7 +161,7 @@ public class StartupReconciliationService {
             String exchange = primaryOpt.get().getKey();
             ExchangeKeys keys = primaryOpt.get().getValue();
             ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
-            adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
+            adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey(), keys.passphrase()));
             try {
                 List<String> report = new ArrayList<>();
                 int pFixed = reconcilePendingCloseTrades(report,

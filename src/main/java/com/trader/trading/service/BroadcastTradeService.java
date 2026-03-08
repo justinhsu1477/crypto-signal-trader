@@ -13,6 +13,7 @@ import com.trader.trading.entity.BroadcastLog;
 import com.trader.trading.exchange.ExchangeAdapter;
 import com.trader.trading.exchange.ExchangeAdapterFactory;
 import com.trader.trading.exchange.ExchangeCredentials;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
@@ -224,11 +225,9 @@ public class BroadcastTradeService {
             tasks.add(() -> {
                 String userDisplay = formatUserDisplay(user);
                 String exchange = userExchangeMap.getOrDefault(user.getUserId(), "BINANCE");
-                // 設入 ThreadLocal，讓 BinanceFuturesService.notifyGlobal() 也能讀到
-                TradeRecordService.setCurrentUserDisplayName(userDisplay);
                 try {
                     ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
-                    List<OrderResult> results = executeSignalForUser(request, user.getUserId(), adapter, exchange);
+                    List<OrderResult> results = executeSignalForUser(request, user.getUserId(), adapter, exchange, userDisplay);
                     successCount.incrementAndGet();
                     userResultsLog.add(new UserResultData(user.getUserId(), user.getEmail(), true, null));
                     log.debug("跟單成功: userId={}", user.getUserId());
@@ -440,11 +439,12 @@ public class BroadcastTradeService {
      * 從 BinanceFuturesService.executeSignalForBroadcast 搬移過來，
      * 通用化為支援任意交易所。
      *
-     * 4 個 ThreadLocal：adapter.setCredentials / setCurrentUserId / setBroadcastContext / setCurrentUserDisplayName
-     * 全部在 finally 中清除，防止線程池復用時洩漏。
+     * Phase A 重構：TradeContext 取代 BROADCAST_CONTEXT / CURRENT_USER_ID / CURRENT_USER_DISPLAY_NAME 三個 ThreadLocal。
+     * 僅保留 adapter.setCredentials (CURRENT_CREDENTIALS) — Phase B 再處理。
      */
     private List<OrderResult> executeSignalForUser(TradeRequest request, String userId,
-                                                    ExchangeAdapter adapter, String exchange) {
+                                                    ExchangeAdapter adapter, String exchange,
+                                                    String displayName) {
         log.info("廣播跟單執行: userId={} exchange={} action={} symbol={}",
                 userId, exchange, request.getAction(), request.getSymbol());
 
@@ -466,12 +466,13 @@ public class BroadcastTradeService {
                     "用戶 " + userId + " 未設定 " + exchange + " API Key，無法執行廣播跟單");
         }
 
-        // 設入 adapter credentials + ThreadLocal context
+        // 設入 adapter credentials（Phase B 再處理 CURRENT_CREDENTIALS ThreadLocal）
         ExchangeKeys keys = userKeysOpt.get();
-        adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
-        TradeRecordService.setCurrentUserId(userId);
-        TradingOrchestrator.setBroadcastContext(true);
+        adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey(), keys.passphrase()));
         log.info("廣播跟單: userId={} 使用 per-user {} API Key", userId, exchange);
+
+        // 組裝 TradeContext（取代 BROADCAST_CONTEXT + CURRENT_USER_ID + CURRENT_USER_DISPLAY_NAME 三個 ThreadLocal）
+        TradeContext ctx = TradeContext.forBroadcast(userId, displayName);
 
         List<OrderResult> broadcastResults = List.of();
         try {
@@ -518,7 +519,7 @@ public class BroadcastTradeService {
                         signal.setTakeProfits(List.of(request.getTakeProfit()));
                     }
 
-                    List<OrderResult> results = orchestrator.executeSignal(signal, adapter);
+                    List<OrderResult> results = orchestrator.executeSignal(signal, adapter, ctx);
                     boolean ok = results.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
                     if (!ok) {
                         String errors = results.stream()
@@ -539,7 +540,7 @@ public class BroadcastTradeService {
                             .exchange(exchange)
                             .build();
 
-                    List<OrderResult> results = orchestrator.executeClose(signal, adapter);
+                    List<OrderResult> results = orchestrator.executeClose(signal, adapter, ctx);
                     boolean ok = !results.isEmpty() && results.get(0).isSuccess();
                     if (!ok) {
                         String msg = results.isEmpty() ? "CLOSE 失敗"
@@ -557,7 +558,7 @@ public class BroadcastTradeService {
                             .exchange(exchange)
                             .build();
 
-                    List<OrderResult> results = orchestrator.executeMoveSL(signal, adapter);
+                    List<OrderResult> results = orchestrator.executeMoveSL(signal, adapter, ctx);
                     boolean ok = results.stream().allMatch(OrderResult::isSuccess);
                     if (!ok) {
                         throw new RuntimeException("MOVE_SL 失敗: " + symbol);
@@ -589,11 +590,8 @@ public class BroadcastTradeService {
                     userId, exchange, action, symbol);
             return broadcastResults;
         } finally {
-            // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
+            // 清除 adapter credentials，避免線程池復用時 key 洩漏給其他用戶
             adapter.clearCredentials();
-            TradeRecordService.clearCurrentUserId();
-            TradeRecordService.clearCurrentUserDisplayName();
-            TradingOrchestrator.clearBroadcastContext();
         }
     }
 

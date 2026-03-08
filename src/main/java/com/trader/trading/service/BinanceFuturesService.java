@@ -9,6 +9,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.exchange.binance.BinanceAdapter;
+import com.trader.trading.model.TradeContext;
 import com.trader.user.service.UserApiKeyService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -179,23 +180,27 @@ public class BinanceFuturesService {
 
     /**
      * ENTRY: 以損定倉開倉
+     * 注意：從 JwtFilter ThreadLocal 取 userId，組裝 TradeContext
      */
     public List<OrderResult> executeSignal(TradeSignal signal) {
-        return orchestrator.executeSignal(signal, binanceAdapter);
+        TradeContext ctx = TradeContext.fromRequest(tradeRecordService.getActiveUserId());
+        return orchestrator.executeSignal(signal, binanceAdapter, ctx);
     }
 
     /**
      * CLOSE: 分批平倉
      */
     public List<OrderResult> executeClose(TradeSignal signal) {
-        return orchestrator.executeClose(signal, binanceAdapter);
+        TradeContext ctx = TradeContext.fromRequest(tradeRecordService.getActiveUserId());
+        return orchestrator.executeClose(signal, binanceAdapter, ctx);
     }
 
     /**
      * MOVE_SL: 移動止損/止盈
      */
     public List<OrderResult> executeMoveSL(TradeSignal signal) {
-        return orchestrator.executeMoveSL(signal, binanceAdapter);
+        TradeContext ctx = TradeContext.fromRequest(tradeRecordService.getActiveUserId());
+        return orchestrator.executeMoveSL(signal, binanceAdapter, ctx);
     }
 
     // ==================== 以損定倉計算 ====================
@@ -250,10 +255,11 @@ public class BinanceFuturesService {
         }
         // 設入 adapter credentials
         binanceAdapter.setCredentials(new ExchangeCredentials(
-                userKeysOpt.get().apiKey(), userKeysOpt.get().secretKey()));
-        TradeRecordService.setCurrentUserId(userId);
-        TradingOrchestrator.setBroadcastContext(true);
+                userKeysOpt.get().apiKey(), userKeysOpt.get().secretKey(), userKeysOpt.get().passphrase()));
         log.info("廣播跟單: userId={} 使用 per-user API Key", userId);
+
+        // 組裝 TradeContext（取代 ThreadLocal）
+        TradeContext ctx = TradeContext.forBroadcast(userId, userId);
 
         List<OrderResult> broadcastResults = List.of();
         try {
@@ -299,7 +305,7 @@ public class BinanceFuturesService {
                     signal.setTakeProfits(List.of(request.getTakeProfit()));
                 }
 
-                List<OrderResult> results = executeSignal(signal);
+                List<OrderResult> results = orchestrator.executeSignal(signal, binanceAdapter, ctx);
                 boolean ok = results.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
                 if (!ok) {
                     String errors = results.stream()
@@ -319,7 +325,7 @@ public class BinanceFuturesService {
                         .newTakeProfit(request.getNewTakeProfit())
                         .build();
 
-                List<OrderResult> results = executeClose(signal);
+                List<OrderResult> results = orchestrator.executeClose(signal, binanceAdapter, ctx);
                 boolean ok = !results.isEmpty() && results.get(0).isSuccess();
                 if (!ok) {
                     String msg = results.isEmpty() ? "CLOSE 失敗"
@@ -336,7 +342,7 @@ public class BinanceFuturesService {
                         .newTakeProfit(request.getNewTakeProfit())
                         .build();
 
-                List<OrderResult> results = executeMoveSL(signal);
+                List<OrderResult> results = orchestrator.executeMoveSL(signal, binanceAdapter, ctx);
                 boolean ok = results.stream().allMatch(OrderResult::isSuccess);
                 if (!ok) {
                     throw new RuntimeException("MOVE_SL 失敗: " + symbol);
@@ -367,11 +373,8 @@ public class BinanceFuturesService {
         log.info("廣播跟單完成: userId={} action={} symbol={}", userId, action, symbol);
         return broadcastResults;
         } finally {
-            // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
+            // 一定要清除 adapter credentials，避免線程池復用時 key 洩漏給其他用戶
             binanceAdapter.clearCredentials();
-            TradeRecordService.clearCurrentUserId();
-            TradeRecordService.clearCurrentUserDisplayName();
-            TradingOrchestrator.clearBroadcastContext();
         }
     }
 }

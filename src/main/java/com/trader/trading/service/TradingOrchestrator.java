@@ -9,6 +9,7 @@ import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.exchange.ExchangeAdapter;
+import com.trader.trading.model.TradeContext;
 import com.trader.trading.validation.TradeSignalValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,25 +49,6 @@ public class TradingOrchestrator {
     private final TradeSignalValidator tradeSignalValidator;
     private final MetricsService metricsService;  // nullable in tests
 
-    /**
-     * 廣播 context 偵測
-     * executeSignalForBroadcast 執行時設為 true，用於：
-     * - executeClose 中抑制「無持倉」通知（避免廣播時每個用戶都發通知）
-     */
-    private static final ThreadLocal<Boolean> BROADCAST_CONTEXT = ThreadLocal.withInitial(() -> false);
-
-    public static void setBroadcastContext(boolean ctx) {
-        BROADCAST_CONTEXT.set(ctx);
-    }
-
-    public static void clearBroadcastContext() {
-        BROADCAST_CONTEXT.remove();
-    }
-
-    private boolean isBroadcastContext() {
-        return BROADCAST_CONTEXT.get();
-    }
-
     public TradingOrchestrator(TradeRecordService tradeRecordService,
                                 SignalDeduplicationService deduplicationService,
                                 NotificationService notificationService,
@@ -94,7 +76,7 @@ public class TradingOrchestrator {
     /**
      * ENTRY: 以損定倉開倉
      */
-    public List<OrderResult> executeSignal(TradeSignal signal, ExchangeAdapter adapter) {
+    public List<OrderResult> executeSignal(TradeSignal signal, ExchangeAdapter adapter, TradeContext ctx) {
         Optional<String> validationError = tradeSignalValidator.validate(signal);
         if (validationError.isPresent()) {
             log.warn("訊號驗證失敗: {}", validationError.get());
@@ -108,7 +90,7 @@ public class TradingOrchestrator {
         ReentrantLock lock = symbolLockRegistry.getLock(signal.getSymbol());
         lock.lock();
         try {
-            return executeSignalInternal(signal, adapter);
+            return executeSignalInternal(signal, adapter, ctx);
         } catch (RuntimeException e) {
             log.error("交易前置檢查失敗，拒絕執行: {}", e.getMessage());
             return List.of(OrderResult.fail("前置檢查失敗: " + e.getMessage()));
@@ -120,12 +102,12 @@ public class TradingOrchestrator {
     /**
      * CLOSE: 分批平倉
      */
-    public List<OrderResult> executeClose(TradeSignal signal, ExchangeAdapter adapter) {
+    public List<OrderResult> executeClose(TradeSignal signal, ExchangeAdapter adapter, TradeContext ctx) {
         String symbol = signal.getSymbol();
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         lock.lock();
         try {
-            return executeCloseInternal(signal, adapter);
+            return executeCloseInternal(signal, adapter, ctx);
         } catch (RuntimeException e) {
             log.error("平倉前置檢查失敗: {}", e.getMessage());
             return List.of(OrderResult.fail("平倉失敗: " + e.getMessage()));
@@ -137,12 +119,12 @@ public class TradingOrchestrator {
     /**
      * MOVE_SL: 移動止損/止盈
      */
-    public List<OrderResult> executeMoveSL(TradeSignal signal, ExchangeAdapter adapter) {
+    public List<OrderResult> executeMoveSL(TradeSignal signal, ExchangeAdapter adapter, TradeContext ctx) {
         String symbol = signal.getSymbol();
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         lock.lock();
         try {
-            return executeMoveSLInternal(signal, adapter);
+            return executeMoveSLInternal(signal, adapter, ctx);
         } catch (RuntimeException e) {
             log.error("修改 TP/SL 失敗: {}", e.getMessage());
             return List.of(OrderResult.fail("修改 TP/SL 失敗: " + e.getMessage()));
@@ -153,10 +135,10 @@ public class TradingOrchestrator {
 
     // ==================== executeSignal 內部邏輯 ====================
 
-    private List<OrderResult> executeSignalInternal(TradeSignal signal, ExchangeAdapter adapter) {
+    private List<OrderResult> executeSignalInternal(TradeSignal signal, ExchangeAdapter adapter, TradeContext ctx) {
         String symbol = signal.getSymbol();
 
-        EffectiveTradeConfig config = tradeConfigResolver.resolve(getActiveUserId());
+        EffectiveTradeConfig config = tradeConfigResolver.resolve(ctx.userId());
 
         // 1. 交易對白名單檢查
         if (!config.isSymbolAllowed(symbol)) {
@@ -170,15 +152,14 @@ public class TradingOrchestrator {
         log.info("帳戶餘額: {} USDT, 1R = {} USDT ({}%)", balance, riskAmount, config.riskPercent() * 100);
 
         // 1c. 每日虧損熔斷
-        String activeUserId = tradeRecordService.getActiveUserId();
-        double sodBalance = startOfDayBalanceCache.getOrCompute(activeUserId, () -> balance);
-        double todayLoss = tradeRecordService.getTodayRealizedLoss();
+        double sodBalance = startOfDayBalanceCache.getOrCompute(ctx.userId(), () -> balance);
+        double todayLoss = tradeRecordService.getTodayRealizedLoss(ctx.userId());
         double maxDailyLoss = config.effectiveDailyLossLimit(sodBalance);
         if (maxDailyLoss > 0 && Math.abs(todayLoss) >= maxDailyLoss) {
             String msg = String.format("每日虧損熔斷! 今日已虧損 %.2f USDT，上限 %.2f USDT (SOD=%.0f × %.0f%% cap %.0f)",
                     todayLoss, maxDailyLoss, sodBalance, config.dailyLossPercent() * 100, config.maxDailyLossUsdt());
             log.error(msg);
-            notifyGlobal("🚨 每日虧損熔斷", msg, NotificationService.COLOR_RED);
+            notifyGlobal("🚨 每日虧損熔斷", msg, NotificationService.COLOR_RED, ctx);
             return List.of(OrderResult.fail("每日虧損已達上限，暫停交易"));
         }
 
@@ -186,7 +167,7 @@ public class TradingOrchestrator {
         double currentPosition = adapter.getCurrentPositionAmount(symbol);
         if (currentPosition != 0) {
             if (signal.isDca()) {
-                int dcaCount = tradeRecordService.getDcaCount(symbol);
+                int dcaCount = tradeRecordService.getDcaCount(symbol, ctx.userId());
                 int maxDca = config.maxDcaPerSymbol();
                 if (dcaCount >= maxDca - 1) {
                     log.warn("DCA 已達上限: {} 已補倉 {} 次，上限 {} 層", symbol, dcaCount, maxDca);
@@ -221,10 +202,9 @@ public class TradingOrchestrator {
         }
 
         // 2c. 重複訊號防護
-        String currentUserId = getActiveUserId();
-        if (deduplicationService.isUserDuplicate(signal, currentUserId)) {
+        if (deduplicationService.isUserDuplicate(signal, ctx.userId())) {
             log.warn("重複訊號，拒絕執行: userId={} {} {} entry={} SL={}",
-                    currentUserId, symbol, signal.getSide(), signal.getEntryPriceLow(), signal.getStopLoss());
+                    ctx.userId(), symbol, signal.getSide(), signal.getEntryPriceLow(), signal.getStopLoss());
             return List.of(OrderResult.fail("重複訊號，5分鐘內已收到相同訊號"));
         }
 
@@ -271,7 +251,7 @@ public class TradingOrchestrator {
 
         double effectiveSl = sl;
         if (signal.isDca() && sl == 0) {
-            Double existingSl = tradeRecordService.findOpenTrade(symbol)
+            Double existingSl = tradeRecordService.findOpenTrade(symbol, ctx.userId())
                     .map(Trade::getStopLoss).orElse(null);
             if (existingSl != null && existingSl > 0) {
                 effectiveSl = existingSl;
@@ -329,7 +309,7 @@ public class TradingOrchestrator {
         OrderResult entryOrder = adapter.placeLimitOrder(symbol, entrySide, entry, quantity);
         if (!entryOrder.isSuccess()) {
             log.error("入場單失敗: {}", entryOrder.getErrorMessage());
-            tradeRecordService.recordOrderEvent(symbol, "ENTRY_FAILED", entryOrder, null);
+            tradeRecordService.recordOrderEvent(symbol, "ENTRY_FAILED", entryOrder, null, ctx.userId());
             return List.of(entryOrder);
         }
         entryOrder.setRiskSummary(String.format("餘額: %.2f | %s: %.2f (%.0f%%×%.0f) | 保證金: %.2f",
@@ -351,7 +331,7 @@ public class TradingOrchestrator {
                 if (signal.getNewStopLoss() != null) {
                     slOrder = adapter.setStopLoss(symbol, closeSide, signal.getNewStopLoss(), totalQty);
                 } else {
-                    Double existingSl2 = tradeRecordService.findOpenTrade(symbol)
+                    Double existingSl2 = tradeRecordService.findOpenTrade(symbol, ctx.userId())
                             .map(Trade::getStopLoss).orElse(null);
                     if (existingSl2 != null) {
                         slOrder = adapter.setStopLoss(symbol, closeSide, existingSl2, totalQty);
@@ -371,7 +351,7 @@ public class TradingOrchestrator {
                 if (!tpOrder.isSuccess()) {
                     log.warn("DCA 止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
                     tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder,
-                            toJson(Map.of("context", "DCA")));
+                            toJson(Map.of("context", "DCA")), ctx.userId());
                 }
             }
         } else {
@@ -388,14 +368,14 @@ public class TradingOrchestrator {
                 tpOrder = adapter.setTakeProfit(symbol, closeSide, tp, quantity);
                 if (!tpOrder.isSuccess()) {
                     log.warn("止盈單失敗（不影響入場和止損）: {}", tpOrder.getErrorMessage());
-                    tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder, null);
+                    tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder, null, ctx.userId());
                     notifyGlobal(
                             "⚠️ 止盈單失敗（需手動設定）",
                             String.format("%s %s\n入場和止損已正常設定\n止盈錯誤: %s\n請手動設定 TP",
                                     symbol, signal.getSide(), tpOrder.getErrorMessage()),
-                            NotificationService.COLOR_YELLOW);
+                            NotificationService.COLOR_YELLOW, ctx);
                 } else {
-                    tradeRecordService.recordOrderEvent(symbol, "TP_PLACED", tpOrder, null);
+                    tradeRecordService.recordOrderEvent(symbol, "TP_PLACED", tpOrder, null, ctx.userId());
                 }
             }
         }
@@ -404,7 +384,7 @@ public class TradingOrchestrator {
         if (!slOrder.isSuccess()) {
             log.error("止損單失敗! 觸發 Fail-Safe，取消入場單");
             tradeRecordService.recordFailSafe(symbol,
-                    toJson(Map.of("reason", "SL下單失敗", "sl_error", slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "")));
+                    toJson(Map.of("reason", "SL下單失敗", "sl_error", slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "")), ctx.userId());
             try {
                 adapter.cancelOrder(symbol, entryOrder.getOrderId());
                 log.info("Fail-Safe: 已取消入場單 {}", entryOrder.getOrderId());
@@ -413,7 +393,7 @@ public class TradingOrchestrator {
                                 symbol, signal.getSide(),
                                 slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown",
                                 entryOrder.getOrderId()),
-                        NotificationService.COLOR_RED);
+                        NotificationService.COLOR_RED, ctx);
             } catch (Exception e) {
                 log.error("Fail-Safe: 取消入場單失敗，嘗試市價平倉", e);
                 OrderResult marketClose = adapter.placeMarketOrder(symbol, closeSide, quantity);
@@ -422,18 +402,18 @@ public class TradingOrchestrator {
                             symbol, adapter.formatQuantity(symbol, quantity));
                     log.error(alert);
                     notifyGlobal("🚨 Fail-Safe 全部失敗",
-                            alert, NotificationService.COLOR_RED);
+                            alert, NotificationService.COLOR_RED, ctx);
                     tradeRecordService.recordFailSafe(symbol,
-                            toJson(Map.of("reason", "所有自動保護措施失敗", "market_close_error", marketClose.getErrorMessage() != null ? marketClose.getErrorMessage() : "")));
+                            toJson(Map.of("reason", "所有自動保護措施失敗", "market_close_error", marketClose.getErrorMessage() != null ? marketClose.getErrorMessage() : "")), ctx.userId());
                 } else {
                     tradeRecordService.recordOrderEvent(symbol, "FAIL_SAFE_CLOSE", marketClose,
-                            toJson(Map.of("reason", "SL失敗+取消失敗，已市價平倉")));
+                            toJson(Map.of("reason", "SL失敗+取消失敗，已市價平倉")), ctx.userId());
                     notifyGlobal("🛑 Fail-Safe: 止損失敗，已市價平倉",
                             String.format("%s %s\n止損掛單失敗: %s\n取消入場單也失敗，已市價平倉 %s\n⚠️ 請確認帳戶狀態",
                                     symbol, signal.getSide(),
                                     slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown",
                                     adapter.formatQuantity(symbol, quantity)),
-                            NotificationService.COLOR_RED);
+                            NotificationService.COLOR_RED, ctx);
                 }
             }
             entryOrder.setSuccess(false);
@@ -444,11 +424,11 @@ public class TradingOrchestrator {
         // 12. 記錄交易到資料庫
         try {
             if (signal.isDca()) {
-                tradeRecordService.recordDcaEntry(symbol, signal, entryOrder, effectiveRiskAmount);
+                tradeRecordService.recordDcaEntry(symbol, signal, entryOrder, effectiveRiskAmount, ctx.userId());
             } else {
                 String signalHash = deduplicationService.generateHash(signal);
                 tradeRecordService.recordEntry(signal, entryOrder, slOrder, leverage,
-                        effectiveRiskAmount, signalHash);
+                        effectiveRiskAmount, signalHash, ctx.userId());
             }
         } catch (Exception e) {
             log.error("🚨 交易紀錄寫入失敗（交易所已有倉位但 DB 無紀錄）: {} {} - {}",
@@ -460,7 +440,7 @@ public class TradingOrchestrator {
                             entryOrder.getPrice(), sl,
                             adapter.formatQuantity(symbol, quantity), leverage,
                             e.getMessage()),
-                    NotificationService.COLOR_RED);
+                    NotificationService.COLOR_RED, ctx);
         }
 
         List<OrderResult> results = new ArrayList<>();
@@ -480,7 +460,7 @@ public class TradingOrchestrator {
 
     // ==================== executeClose 內部邏輯 ====================
 
-    private List<OrderResult> executeCloseInternal(TradeSignal signal, ExchangeAdapter adapter) {
+    private List<OrderResult> executeCloseInternal(TradeSignal signal, ExchangeAdapter adapter, TradeContext ctx) {
         String symbol = signal.getSymbol();
 
         double positionAmt;
@@ -493,7 +473,7 @@ public class TradingOrchestrator {
 
         // 1b. Symbol fallback
         if (positionAmt == 0) {
-            String resolved = resolveSymbolFallback(symbol);
+            String resolved = resolveSymbolFallback(symbol, ctx);
             if (resolved != null) {
                 log.info("平倉 symbol fallback: {} 無持倉，改用 DB OPEN trade: {}", symbol, resolved);
                 signal = TradeSignal.builder()
@@ -514,18 +494,18 @@ public class TradingOrchestrator {
                 boolean hadPendingOrders = adapter.hasOpenEntryOrders(symbol);
                 adapter.cancelAllOrders(symbol);
                 try {
-                    tradeRecordService.recordCancel(symbol);
+                    tradeRecordService.recordCancel(symbol, ctx.userId());
                 } catch (Exception e) {
                     log.warn("取消紀錄寫入失敗: {}", e.getMessage());
                 }
 
                 if (hadPendingOrders) {
                     log.info("CLOSE 訊號: {} 未成交委託已撤銷，無需平倉", symbol);
-                    if (!isBroadcastContext()) {
+                    if (!ctx.broadcastMode()) {
                         notifyGlobal(
                                 "📋 CLOSE — 未成交委託已撤銷",
                                 String.format("%s\n入場委託未成交，已撤銷所有掛單（入場/SL/TP）", symbol),
-                                NotificationService.COLOR_YELLOW);
+                                NotificationService.COLOR_YELLOW, ctx);
                     }
                     return List.of(OrderResult.builder()
                             .success(true)
@@ -534,11 +514,11 @@ public class TradingOrchestrator {
                             .build());
                 } else {
                     log.warn("CLOSE 訊號: {} 無持倉也無掛單，忽略", symbol);
-                    if (!isBroadcastContext()) {
+                    if (!ctx.broadcastMode()) {
                         notifyGlobal(
                                 "ℹ️ CLOSE — 無持倉也無掛單",
                                 String.format("%s\n訊號要求平倉，但無持倉也無未成交掛單", symbol),
-                                NotificationService.COLOR_YELLOW);
+                                NotificationService.COLOR_YELLOW, ctx);
                     }
                     return List.of(OrderResult.fail("無持倉也無掛單，CLOSE 訊號忽略"));
                 }
@@ -591,8 +571,8 @@ public class TradingOrchestrator {
         if (closeOrder.isSuccess()) {
             try {
                 if (isPartialClose) {
-                    tradeRecordService.recordPartialClose(symbol, closeOrder, closeRatio, "SIGNAL_CLOSE");
-                    Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+                    tradeRecordService.recordPartialClose(symbol, closeOrder, closeRatio, "SIGNAL_CLOSE", ctx.userId());
+                    Double entryPrice = tradeRecordService.getEntryPrice(symbol, ctx.userId());
                     if (entryPrice != null && closeOrder.getPrice() > 0) {
                         double pnl = isLong
                                 ? (closeOrder.getPrice() - entryPrice) * closeOrder.getQuantity()
@@ -600,7 +580,7 @@ public class TradingOrchestrator {
                         closeOrder.setNetProfit(pnl);
                     }
                 } else {
-                    Trade closedTrade = tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE");
+                    Trade closedTrade = tradeRecordService.recordClose(symbol, closeOrder, "SIGNAL_CLOSE", ctx.userId());
                     if (closedTrade != null) {
                         closeOrder.setNetProfit(closedTrade.getNetProfit());
                         closeOrder.setTotalCommission(closedTrade.getCommission());
@@ -610,7 +590,7 @@ public class TradingOrchestrator {
                 log.error("平倉紀錄寫入失敗（不影響交易）: {}", e.getMessage());
             }
         } else {
-            tradeRecordService.recordOrderEvent(symbol, "CLOSE_FAILED", closeOrder, null);
+            tradeRecordService.recordOrderEvent(symbol, "CLOSE_FAILED", closeOrder, null, ctx.userId());
         }
 
         List<OrderResult> results = new ArrayList<>();
@@ -627,7 +607,7 @@ public class TradingOrchestrator {
                 log.info("部分平倉: 使用訊號指定 SL={}", slToUse);
             } else if (signal.getNewStopLoss() == null && signal.getNewTakeProfit() == null
                     && oldSlPrice == 0) {
-                Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+                Double entryPrice = tradeRecordService.getEntryPrice(symbol, ctx.userId());
                 if (entryPrice != null && entryPrice > 0) {
                     slToUse = entryPrice;
                     log.info("部分平倉: 無 SL 資訊，使用開倉價做成本保護 SL={}", slToUse);
@@ -639,7 +619,7 @@ public class TradingOrchestrator {
                 slToUse = oldSlPrice;
                 log.info("部分平倉: 使用原有 SL={}", slToUse);
             } else {
-                Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+                Double entryPrice = tradeRecordService.getEntryPrice(symbol, ctx.userId());
                 if (entryPrice != null && entryPrice > 0) {
                     slToUse = entryPrice;
                     log.info("部分平倉: 成本保護，SL 移至開倉價={}", slToUse);
@@ -654,25 +634,25 @@ public class TradingOrchestrator {
                 results.add(newSl);
                 tradeRecordService.recordOrderEvent(symbol,
                         newSl.isSuccess() ? "SL_REHUNG" : "SL_REHUNG_FAILED", newSl,
-                        toJson(Map.of("sl_price", slToUse, "remaining_qty", remainingQty)));
+                        toJson(Map.of("sl_price", slToUse, "remaining_qty", remainingQty)), ctx.userId());
                 if (!newSl.isSuccess()) {
                     notifyGlobal(
                             "🚨 部分平倉後 SL 重掛 API 失敗",
                             String.format("%s SL=%.2f 重掛失敗！剩餘倉位 %.4f 無保護\n原因: %s\n請立即手動設定 SL",
                                     symbol, slToUse, remainingQty,
                                     newSl.getErrorMessage() != null ? newSl.getErrorMessage() : "unknown"),
-                            NotificationService.COLOR_RED);
+                            NotificationService.COLOR_RED, ctx);
                 }
             } else {
                 log.error("⚠️ 部分平倉後未能重掛 SL！{} 剩餘 {} 裸奔中", symbol, remainingQty);
                 tradeRecordService.recordOrderEvent(symbol, "SL_REHUNG_FAILED", null,
-                        toJson(Map.of("reason", "no_sl_price", "remaining_qty", remainingQty)));
+                        toJson(Map.of("reason", "no_sl_price", "remaining_qty", remainingQty)), ctx.userId());
                 results.add(OrderResult.fail("部分平倉後無法重掛 SL — 剩餘倉位無保護"));
                 notifyGlobal(
                         "🚨 部分平倉後 SL 重掛失敗",
                         String.format("%s 剩餘倉位 %.4f 無止損保護！\n請立即手動設定 SL",
                                 symbol, remainingQty),
-                        NotificationService.COLOR_RED);
+                        NotificationService.COLOR_RED, ctx);
             }
 
             // TP 重掛
@@ -689,7 +669,7 @@ public class TradingOrchestrator {
                 results.add(newTp);
                 tradeRecordService.recordOrderEvent(symbol,
                         newTp.isSuccess() ? "TP_REHUNG" : "TP_REHUNG_FAILED", newTp,
-                        toJson(Map.of("tp_price", tpToUse, "remaining_qty", remainingQty)));
+                        toJson(Map.of("tp_price", tpToUse, "remaining_qty", remainingQty)), ctx.userId());
             }
         }
 
@@ -698,7 +678,7 @@ public class TradingOrchestrator {
 
     // ==================== executeMoveSL 內部邏輯 ====================
 
-    private List<OrderResult> executeMoveSLInternal(TradeSignal signal, ExchangeAdapter adapter) {
+    private List<OrderResult> executeMoveSLInternal(TradeSignal signal, ExchangeAdapter adapter, TradeContext ctx) {
         String symbol = signal.getSymbol();
 
         double positionAmt;
@@ -710,7 +690,7 @@ public class TradingOrchestrator {
         }
 
         if (positionAmt == 0) {
-            String resolved = resolveSymbolFallback(symbol);
+            String resolved = resolveSymbolFallback(symbol, ctx);
             if (resolved != null) {
                 log.info("MOVE_SL symbol fallback: {} 無持倉，改用 DB OPEN trade: {}", symbol, resolved);
                 signal = TradeSignal.builder()
@@ -737,7 +717,7 @@ public class TradingOrchestrator {
 
         adapter.cancelAllOrders(symbol);
 
-        double oldSl = tradeRecordService.findOpenTrade(symbol)
+        double oldSl = tradeRecordService.findOpenTrade(symbol, ctx.userId())
                 .map(t -> t.getStopLoss() != null ? t.getStopLoss() : 0.0)
                 .orElse(0.0);
 
@@ -747,7 +727,7 @@ public class TradingOrchestrator {
         if (slValue != null && slValue > 0) {
             log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
         } else {
-            Double entryPrice = tradeRecordService.getEntryPrice(symbol);
+            Double entryPrice = tradeRecordService.getEntryPrice(symbol, ctx.userId());
             if (entryPrice != null && entryPrice > 0) {
                 slValue = entryPrice;
                 log.info("成本保護: {} 舊SL={} 用開倉價做SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
@@ -767,19 +747,19 @@ public class TradingOrchestrator {
 
             if (slOrder.isSuccess()) {
                 try {
-                    tradeRecordService.recordMoveSL(symbol, slOrder, oldSl, newSl);
+                    tradeRecordService.recordMoveSL(symbol, slOrder, oldSl, newSl, ctx.userId());
                 } catch (Exception e) {
                     log.error("移動止損紀錄寫入失敗（不影響交易）: {}", e.getMessage());
                 }
             } else {
                 tradeRecordService.recordOrderEvent(symbol, "MOVE_SL_FAILED", slOrder,
-                        toJson(Map.of("old_sl", oldSl, "new_sl", newSl)));
+                        toJson(Map.of("old_sl", oldSl, "new_sl", newSl)), ctx.userId());
                 notifyGlobal(
                         "🚨 移動止損失敗 — 倉位無 SL 保護",
                         String.format("%s 舊SL=%.2f 已被取消，新SL=%.2f 掛單失敗！\n持倉 %.4f 無止損保護\n原因: %s\n請立即手動設定 SL",
                                 symbol, oldSl, newSl, absPosition,
                                 slOrder.getErrorMessage() != null ? slOrder.getErrorMessage() : "unknown"),
-                        NotificationService.COLOR_RED);
+                        NotificationService.COLOR_RED, ctx);
             }
         }
 
@@ -797,12 +777,12 @@ public class TradingOrchestrator {
             if (!tpOrder.isSuccess()) {
                 log.warn("新止盈單失敗: {}", tpOrder.getErrorMessage());
                 tradeRecordService.recordOrderEvent(symbol, "TP_FAILED", tpOrder,
-                        toJson(Map.of("context", "MOVE_SL")));
+                        toJson(Map.of("context", "MOVE_SL")), ctx.userId());
                 notifyGlobal(
                         "⚠️ 新止盈單失敗（需手動設定）",
                         String.format("%s\n新TP設定失敗: %s\n請手動設定 TP",
                                 symbol, tpOrder.getErrorMessage()),
-                        NotificationService.COLOR_YELLOW);
+                        NotificationService.COLOR_YELLOW, ctx);
             }
         }
 
@@ -818,9 +798,9 @@ public class TradingOrchestrator {
     /**
      * Symbol fallback：當訊號指定的 symbol 無持倉時，查 DB 找其他 OPEN trade
      */
-    private String resolveSymbolFallback(String originalSymbol) {
+    private String resolveSymbolFallback(String originalSymbol, TradeContext ctx) {
         try {
-            var openTrades = tradeRecordService.findAllOpenTrades();
+            var openTrades = tradeRecordService.findAllOpenTrades(ctx.userId());
             if (openTrades.size() == 1) {
                 String dbSymbol = openTrades.get(0).getSymbol();
                 if (!dbSymbol.equals(originalSymbol)) {
@@ -829,7 +809,7 @@ public class TradingOrchestrator {
                             "🔄 Symbol 自動修正",
                             String.format("訊號幣種: %s（無持倉）\n自動修正為: %s（DB 中唯一 OPEN trade）",
                                     originalSymbol, dbSymbol),
-                            NotificationService.COLOR_BLUE);
+                            NotificationService.COLOR_BLUE, ctx);
                     return dbSymbol;
                 }
             } else if (openTrades.size() > 1) {
@@ -843,26 +823,11 @@ public class TradingOrchestrator {
     }
 
     /**
-     * 取得當前有效的 userId
-     */
-    private String getActiveUserId() {
-        return tradeRecordService.getActiveUserId();
-    }
-
-    /**
      * 三路通知（風控告警 / 系統級事件）
      */
-    private void notifyGlobal(String title, String body, int color) {
-        String displayName = null;
-        String userId = null;
-        try {
-            displayName = TradeRecordService.getCurrentUserDisplayName();
-            userId = getActiveUserId();
-            if (displayName == null || displayName.isBlank()) {
-                displayName = userId;
-            }
-        } catch (Exception ignored) {
-        }
+    private void notifyGlobal(String title, String body, int color, TradeContext ctx) {
+        String userId = ctx.userId();
+        String displayName = ctx.effectiveDisplayName();
 
         if (multiUserConfig.isEnabled() && userId != null && !userId.isBlank()) {
             notificationService.sendNotificationToUser(userId, title, body, color);

@@ -699,6 +699,156 @@ public class OrderEventHandler {
         return "SIGNAL_CLOSE";
     }
 
+    // ==================== Bitget V2 事件處理 ====================
+
+    /**
+     * 處理 Bitget orders channel 事件
+     *
+     * Bitget V2 orders 格式：
+     * - symbol, orderId, clientOid
+     * - side: "buy" / "sell"（小寫）
+     * - priceAvg: 成交均價
+     * - size: 委託數量, filledQty: 已成交數量
+     * - fee: 手續費
+     * - orderType: "limit" / "market"
+     * - status: "filled" / "partially_filled" / "cancelled" / "new"
+     * - enterPointSource: "WEB" / "API" / "SYS"（SYS = 系統/強平）
+     * - planType: "pos_loss" / "pos_profit" — TPSL 觸發時帶此欄位
+     * - tradeSide: "open" / "close"
+     */
+    public void handleBitgetOrder(JsonObject data) {
+        String symbol = getStr(data, "symbol");
+        String orderId = getStr(data, "orderId");
+        String clientOid = getStr(data, "clientOid");
+        String side = getStr(data, "side");
+        String orderType = getStr(data, "orderType");
+        String status = getStr(data, "status");
+        String planType = getStr(data, "planType");
+        String enterPointSource = getStr(data, "enterPointSource");
+        String tradeSide = getStr(data, "tradeSide");
+        double priceAvg = getDouble(data, "priceAvg");
+        double size = getDouble(data, "size");
+        double filledQty = getDouble(data, "filledQty");
+        double fee = Math.abs(getDouble(data, "fee"));
+        long uTime = getLong(data, "uTime");
+
+        log.info("{}Bitget order: {} {} {} status={} orderType={} planType={} tradeSide={} price={} qty={}",
+                logPrefix, symbol, side, orderId, status, orderType, planType, tradeSide, priceAvg, filledQty);
+
+        // 只處理已完全成交的訂單
+        if (!"filled".equalsIgnoreCase(status)) {
+            if ("partially_filled".equalsIgnoreCase(status)) {
+                log.debug("{}Bitget 部分成交: {} filled={}/{}", logPrefix, symbol, filledQty, size);
+            }
+            return;
+        }
+
+        // 強平訂單（SYS / liquidation）
+        if ("SYS".equalsIgnoreCase(enterPointSource) || "liquidation".equalsIgnoreCase(orderType)) {
+            log.error("{}🚨 Bitget 偵測到強制平倉: {} qty={}", logPrefix, symbol, filledQty);
+            try {
+                tradeRecordService.recordOrderEvent(symbol, "LIQUIDATION", null,
+                        gson.toJson(Map.of("orderId", orderId, "filledQty", filledQty,
+                                "priceAvg", priceAvg, "reason", "Bitget_SYS")));
+            } catch (Exception e) {
+                log.error("{}記錄 Bitget 強制平倉事件失敗: {}", logPrefix, e.getMessage());
+            }
+
+            try {
+                ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+                lock.lock();
+                try {
+                    tradeRecordService.markTradeClosedByLiquidation(symbol);
+                } finally {
+                    lock.unlock();
+                }
+            } catch (Exception e) {
+                log.error("{}Bitget 強制平倉標記 Trade CLOSED 失敗: {} - {}", logPrefix, symbol, e.getMessage());
+            }
+
+            String alertTitle = "🚨 強制平倉 (Bitget)";
+            String alertBody = String.format("%s\n成交價: %.2f\n數量: %.4f\n⚠️ 請立即檢查帳戶風險！",
+                    symbol, priceAvg, filledQty);
+            if (!exchangeName.isEmpty()) {
+                alertBody += "\n交易所: " + exchangeName;
+            }
+            notificationSender.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
+            if (adminNotifier != null) {
+                adminNotifier.send(alertTitle, alertBody, DiscordWebhookService.COLOR_RED);
+            }
+            return;
+        }
+
+        // 判斷平倉還是入場
+        if ("close".equalsIgnoreCase(tradeSide)) {
+            // 平倉成交
+            String exitReason = resolveBitgetExitReason(planType, orderType, clientOid);
+            double realizedProfit = 0; // Bitget WS 不直接含 realizedPnl，由 DB 計算
+
+            log.info("{}Bitget 平倉成交: {} exitReason={} price={} qty={} fee={}",
+                    logPrefix, symbol, exitReason, priceAvg, filledQty, fee);
+            processStreamClose(symbol, priceAvg, filledQty, fee,
+                    realizedProfit, orderId, exitReason, uTime);
+        } else if ("open".equalsIgnoreCase(tradeSide) && "limit".equalsIgnoreCase(orderType)) {
+            // LIMIT 入場成交
+            log.info("{}Bitget 入場成交: {} {} @ {} qty={}", logPrefix, symbol, side, priceAvg, filledQty);
+            Trade updatedTrade = tradeRecordService.recordLimitEntryFilled(
+                    symbol, orderId, priceAvg, filledQty, fee, uTime);
+
+            if (updatedTrade != null) {
+                String entryTitle = "✅ 限價入場成交";
+                String entryBody = String.format("%s %s\n成交價: %.2f\n數量: %.4f\n手續費: %.4f USDT",
+                        symbol, updatedTrade.getSide(), priceAvg, filledQty, fee);
+                if (!exchangeName.isEmpty()) {
+                    entryBody += "\n交易所: " + exchangeName;
+                }
+                notificationSender.send(entryTitle, entryBody, DiscordWebhookService.COLOR_GREEN);
+                if (adminNotifier != null) {
+                    adminNotifier.send(entryTitle,
+                            String.format("%s %s 成交 @ %.2f", symbol, updatedTrade.getSide(), priceAvg),
+                            DiscordWebhookService.COLOR_GREEN);
+                }
+            }
+        } else {
+            log.debug("{}Bitget 非關注訂單: {} tradeSide={} orderType={}", logPrefix, symbol, tradeSide, orderType);
+        }
+    }
+
+    /**
+     * 處理 Bitget positions channel 事件
+     *
+     * 目前僅做 log（同 Bybit 策略）
+     */
+    public void handleBitgetPosition(JsonObject data) {
+        String symbol = getStr(data, "symbol");
+        String holdSide = getStr(data, "holdSide");
+        double total = getDouble(data, "total");
+        String stopLossTriggerPrice = getStr(data, "stopLossTriggerPrice");
+        String stopSurplusTriggerPrice = getStr(data, "stopSurplusTriggerPrice");
+
+        log.debug("{}Bitget position: {} {} total={} SL={} TP={}",
+                logPrefix, symbol, holdSide, total, stopLossTriggerPrice, stopSurplusTriggerPrice);
+
+        if (total == 0) {
+            log.info("{}Bitget 倉位歸零: {}", logPrefix, symbol);
+        }
+    }
+
+    /**
+     * 根據 Bitget planType 推斷平倉原因
+     */
+    private String resolveBitgetExitReason(String planType, String orderType, String clientOid) {
+        if ("pos_loss".equals(planType)) return "SL_TRIGGERED";
+        if ("pos_profit".equals(planType)) return "TP_TRIGGERED";
+
+        if (clientOid != null) {
+            if (clientOid.startsWith("SL-")) return "SL_TRIGGERED";
+            if (clientOid.startsWith("TP-")) return "TP_TRIGGERED";
+        }
+
+        return "SIGNAL_CLOSE";
+    }
+
     // ==================== JSON 工具方法 ====================
 
     private static String getStr(JsonObject obj, String key) {

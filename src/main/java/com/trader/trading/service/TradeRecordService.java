@@ -377,6 +377,25 @@ public class TradeRecordService {
     }
 
     /**
+     * DCA 補倉 — 顯式 userId 版本
+     */
+    @Transactional
+    public void recordDcaEntry(String symbol, TradeSignal signal, OrderResult dcaOrder,
+                               double riskAmount, String userId) {
+        String previousUserId = CURRENT_USER_ID.get();
+        try {
+            CURRENT_USER_ID.set(userId);
+            recordDcaEntry(symbol, signal, dcaOrder, riskAmount);
+        } finally {
+            if (previousUserId != null) {
+                CURRENT_USER_ID.set(previousUserId);
+            } else {
+                CURRENT_USER_ID.remove();
+            }
+        }
+    }
+
+    /**
      * 查詢某幣種目前的 DCA 補倉次數 — 多用戶模式下按 userId 隔離
      */
     @Transactional(readOnly = true)
@@ -503,11 +522,39 @@ public class TradeRecordService {
     }
 
     /**
+     * PARTIAL CLOSE — 顯式 userId 版本
+     */
+    @Transactional
+    public void recordPartialClose(String symbol, OrderResult closeOrder, double closeRatio,
+                                    String exitReason, String userId) {
+        String previousUserId = CURRENT_USER_ID.get();
+        try {
+            CURRENT_USER_ID.set(userId);
+            recordPartialClose(symbol, closeOrder, closeRatio, exitReason);
+        } finally {
+            if (previousUserId != null) {
+                CURRENT_USER_ID.set(previousUserId);
+            } else {
+                CURRENT_USER_ID.remove();
+            }
+        }
+    }
+
+    /**
      * 查詢某交易對 OPEN 中的開倉價（用於成本保護時當作 SL）
      */
     @Transactional(readOnly = true)
     public Double getEntryPrice(String symbol) {
         Optional<Trade> openTradeOpt = resolveOpenTrade(symbol);
+        return openTradeOpt.map(Trade::getEntryPrice).orElse(null);
+    }
+
+    /**
+     * 查詢開倉價 — 顯式 userId 版本
+     */
+    @Transactional(readOnly = true)
+    public Double getEntryPrice(String symbol, String userId) {
+        Optional<Trade> openTradeOpt = resolveOpenTrade(symbol, userId);
         return openTradeOpt.map(Trade::getEntryPrice).orElse(null);
     }
 
@@ -565,6 +612,24 @@ public class TradeRecordService {
 
         log.info("止損移動紀錄: tradeId={} {} SL: {} → {}",
                 trade.getTradeId(), symbol, oldSl, newSl);
+    }
+
+    /**
+     * MOVE_SL — 顯式 userId 版本
+     */
+    @Transactional
+    public void recordMoveSL(String symbol, OrderResult slOrder, double oldSl, double newSl, String userId) {
+        String previousUserId = CURRENT_USER_ID.get();
+        try {
+            CURRENT_USER_ID.set(userId);
+            recordMoveSL(symbol, slOrder, oldSl, newSl);
+        } finally {
+            if (previousUserId != null) {
+                CURRENT_USER_ID.set(previousUserId);
+            } else {
+                CURRENT_USER_ID.remove();
+            }
+        }
     }
 
     /**
@@ -647,6 +712,24 @@ public class TradeRecordService {
         tradeEventRepository.save(event);
 
         log.warn("Fail-Safe 紀錄: tradeId={} {} detail={}", tradeId, symbol, detail);
+    }
+
+    /**
+     * FAIL_SAFE — 顯式 userId 版本
+     */
+    @Transactional
+    public void recordFailSafe(String symbol, String detail, String userId) {
+        String previousUserId = CURRENT_USER_ID.get();
+        try {
+            CURRENT_USER_ID.set(userId);
+            recordFailSafe(symbol, detail);
+        } finally {
+            if (previousUserId != null) {
+                CURRENT_USER_ID.set(previousUserId);
+            } else {
+                CURRENT_USER_ID.remove();
+            }
+        }
     }
 
     /**
@@ -771,6 +854,24 @@ public class TradeRecordService {
         }
     }
 
+    /**
+     * 通用事件紀錄 — 顯式 userId 版本
+     */
+    @Transactional
+    public void recordOrderEvent(String symbol, String eventType, OrderResult order, String detail, String userId) {
+        String previousUserId = CURRENT_USER_ID.get();
+        try {
+            CURRENT_USER_ID.set(userId);
+            recordOrderEvent(symbol, eventType, order, detail);
+        } finally {
+            if (previousUserId != null) {
+                CURRENT_USER_ID.set(previousUserId);
+            } else {
+                CURRENT_USER_ID.remove();
+            }
+        }
+    }
+
     // ==================== 查詢操作 ====================
 
     /**
@@ -779,6 +880,14 @@ public class TradeRecordService {
     @Transactional(readOnly = true)
     public Optional<Trade> findOpenTrade(String symbol) {
         return resolveOpenTrade(symbol);
+    }
+
+    /**
+     * 查找目前 OPEN 的交易 — 顯式 userId 版本
+     */
+    @Transactional(readOnly = true)
+    public Optional<Trade> findOpenTrade(String symbol, String userId) {
+        return resolveOpenTrade(symbol, userId);
     }
 
     /**

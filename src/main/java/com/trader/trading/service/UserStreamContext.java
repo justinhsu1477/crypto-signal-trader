@@ -34,6 +34,8 @@ public class UserStreamContext {
     private volatile String apiKey;
     @Getter
     private volatile String secretKey;
+    @Getter
+    private volatile String passphrase;  // Bitget 專用，其他交易所為 null
 
     // 連線狀態（可變）
     private volatile String listenKey;
@@ -49,11 +51,17 @@ public class UserStreamContext {
 
     public UserStreamContext(String userId, String displayName, String exchange,
                               String apiKey, String secretKey) {
+        this(userId, displayName, exchange, apiKey, secretKey, null);
+    }
+
+    public UserStreamContext(String userId, String displayName, String exchange,
+                              String apiKey, String secretKey, String passphrase) {
         this.userId = userId;
         this.displayName = displayName;
         this.exchange = exchange != null ? exchange : "BINANCE";
         this.apiKey = apiKey;
         this.secretKey = secretKey;
+        this.passphrase = passphrase;
         this.createdAt = Instant.now();
     }
 
@@ -63,6 +71,15 @@ public class UserStreamContext {
     public void updateApiKey(String apiKey, String secretKey) {
         this.apiKey = apiKey;
         this.secretKey = secretKey;
+    }
+
+    /**
+     * 更新 API 憑證含 passphrase（Bitget 重連時用）
+     */
+    public void updateApiKey(String apiKey, String secretKey, String passphrase) {
+        this.apiKey = apiKey;
+        this.secretKey = secretKey;
+        this.passphrase = passphrase;
     }
 
     // ==================== listenKey & WebSocket ====================

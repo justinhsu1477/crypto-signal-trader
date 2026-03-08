@@ -137,7 +137,7 @@ public class DashboardService {
             ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
             String apiKeyPrefix = keys.apiKey().substring(0, 8);
             log.debug("用戶 {} 查詢帳戶餘額（per-user key, prefix={}..., exchange={}）", userId, apiKeyPrefix, exchange);
-            adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
+            adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey(), keys.passphrase()));
             try {
                 double balance = adapter.getAvailableBalance();
                 log.debug("用戶 {} 餘額查詢成功: {} USDT", userId, balance);

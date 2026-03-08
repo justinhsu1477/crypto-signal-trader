@@ -84,7 +84,7 @@ public class LiquidationDetectionTask {
                 String exchange = primaryOpt.get().getKey();
                 ExchangeKeys keys = primaryOpt.get().getValue();
                 ExchangeAdapter adapter = exchangeAdapterFactory.getAdapter(exchange);
-                adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey()));
+                adapter.setCredentials(new ExchangeCredentials(keys.apiKey(), keys.secretKey(), keys.passphrase()));
                 TradeRecordService.setCurrentUserId(userId);
 
                 try {

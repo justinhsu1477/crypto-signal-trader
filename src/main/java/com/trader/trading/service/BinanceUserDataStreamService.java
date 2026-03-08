@@ -6,10 +6,12 @@ import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.trading.config.MultiUserConfig;
+import com.trader.user.service.UserApiKeyService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -72,18 +74,25 @@ public class BinanceUserDataStreamService {
     static final long MAX_RECONNECT_DELAY_MS = 60_000;
     static final int MAX_RECONNECT_ATTEMPTS = 20;
 
+    private final UserApiKeyService userApiKeyService;
+    private final String defaultUserId;
+
     public BinanceUserDataStreamService(OkHttpClient httpClient,
                                          BinanceConfig binanceConfig,
                                          TradeRecordService tradeRecordService,
                                          NotificationService discordWebhookService,
                                          SymbolLockRegistry symbolLockRegistry,
                                          MultiUserConfig multiUserConfig,
-                                         MultiUserDataStreamManager multiUserManager) {
+                                         MultiUserDataStreamManager multiUserManager,
+                                         UserApiKeyService userApiKeyService,
+                                         @Value("${trading.user-id:system-trader}") String defaultUserId) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.discordWebhookService = discordWebhookService;
         this.multiUserConfig = multiUserConfig;
         this.multiUserManager = multiUserManager;
+        this.userApiKeyService = userApiKeyService;
+        this.defaultUserId = defaultUserId;
 
         // 共用事件處理器（單用戶版 — 全局通知，無 Admin 通知）
         this.orderEventHandler = new OrderEventHandler(
@@ -155,6 +164,19 @@ public class BinanceUserDataStreamService {
     }
 
     /**
+     * 取得單用戶模式的 API Key（從 DB user_api_keys 表取得）
+     * 多用戶模式不會呼叫此方法（init 時已 early return）
+     */
+    private String getSingleUserApiKey() {
+        var keysOpt = userApiKeyService.getUserPrimaryExchangeKeys(defaultUserId);
+        if (keysOpt.isEmpty()) {
+            throw new IllegalStateException(
+                    "單用戶模式缺少 Binance API Key — 請在設定頁面新增 API Key（userId=" + defaultUserId + "）");
+        }
+        return keysOpt.get().getValue().apiKey();
+    }
+
+    /**
      * 建立 listenKey（只需 X-MBX-APIKEY，不需 HMAC 簽名）
      */
     private String createListenKey() {
@@ -162,7 +184,7 @@ public class BinanceUserDataStreamService {
         Request request = new Request.Builder()
                 .url(url)
                 .post(RequestBody.create("", MediaType.parse("application/json")))
-                .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                .addHeader("X-MBX-APIKEY", getSingleUserApiKey())
                 .build();
         try (Response response = httpClient.newCall(request).execute()) {
             String body = response.body() != null ? response.body().string() : "";
@@ -192,7 +214,7 @@ public class BinanceUserDataStreamService {
         Request request = new Request.Builder()
                 .url(url)
                 .put(RequestBody.create("", MediaType.parse("application/json")))
-                .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                .addHeader("X-MBX-APIKEY", getSingleUserApiKey())
                 .build();
         try (Response response = httpClient.newCall(request).execute()) {
             if (response.isSuccessful()) {
@@ -228,7 +250,7 @@ public class BinanceUserDataStreamService {
         Request request = new Request.Builder()
                 .url(url)
                 .delete()
-                .addHeader("X-MBX-APIKEY", binanceConfig.getApiKey())
+                .addHeader("X-MBX-APIKEY", getSingleUserApiKey())
                 .build();
         try (Response response = httpClient.newCall(request).execute()) {
             log.info("ListenKey 已刪除: {}", response.isSuccessful());
