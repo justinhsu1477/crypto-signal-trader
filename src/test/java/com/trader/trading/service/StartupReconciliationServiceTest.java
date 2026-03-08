@@ -205,7 +205,7 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(tradeA, tradeB));
-            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of());
 
             when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
                     .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
@@ -232,7 +232,7 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of());
             when(userApiKeyService.getUserPrimaryExchangeKeys("user-no-key"))
                     .thenReturn(Optional.empty());
 
@@ -249,7 +249,7 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of());
             when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
                     .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
             when(defaultAdapter.getCurrentPositionAmount("ETHUSDT")).thenReturn(0.0);
@@ -281,7 +281,7 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(tradeA, tradeB));
-            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of());
 
             when(userApiKeyService.getUserPrimaryExchangeKeys("user-a"))
                     .thenReturn(Optional.of(Map.entry("BINANCE", new ExchangeKeys("key-a", "secret-a"))));
@@ -303,7 +303,7 @@ class StartupReconciliationServiceTest {
         void noTradesSkipsApiKeyLookup() {
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of());
-            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of());
 
             service.reconcileOnStartup();
 
@@ -319,7 +319,7 @@ class StartupReconciliationServiceTest {
 
             when(tradeRepository.findByStatus("PENDING_CLOSE")).thenReturn(List.of());
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(userApiKeyService.getUserExchangeMap()).thenReturn(Map.of());
+            when(userApiKeyService.getUserIdExchangeMap()).thenReturn(Map.of());
 
             service.reconcileOnStartup();
 

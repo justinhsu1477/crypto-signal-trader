@@ -163,6 +163,158 @@ class UserApiKeyServiceTest {
         }
     }
 
+    // ==================== getUserPrimaryExchangeKeys ====================
+
+    @Nested
+    @DisplayName("getUserPrimaryExchangeKeys（一用戶一交易所）")
+    class GetUserPrimaryExchangeKeysTests {
+
+        @Test
+        @DisplayName("用戶未設定 API Key → empty")
+        void noApiKey_returnsEmpty() {
+            when(userApiKeyRepository.findByUserId("user1")).thenReturn(List.of());
+
+            var result = service.getUserPrimaryExchangeKeys("user1");
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("用戶有 BINANCE key → 返回 (BINANCE, keys)")
+        void hasBinanceKey_returnsBinance() {
+            UserApiKey entity = new UserApiKey();
+            entity.setUserId("user1");
+            entity.setExchange("BINANCE");
+            entity.setEncryptedApiKey("enc-api");
+            entity.setEncryptedSecretKey("enc-secret");
+
+            when(userApiKeyRepository.findByUserId("user1")).thenReturn(List.of(entity));
+            when(aesEncryptionUtil.decrypt("enc-api")).thenReturn("plain-api");
+            when(aesEncryptionUtil.decrypt("enc-secret")).thenReturn("plain-secret");
+
+            var result = service.getUserPrimaryExchangeKeys("user1");
+
+            assertThat(result).isPresent();
+            assertThat(result.get().getKey()).isEqualTo("BINANCE");
+            assertThat(result.get().getValue().apiKey()).isEqualTo("plain-api");
+        }
+
+        @Test
+        @DisplayName("用戶有 BYBIT key → 返回 (BYBIT, keys)")
+        void hasBybitKey_returnsBybit() {
+            UserApiKey entity = new UserApiKey();
+            entity.setUserId("user1");
+            entity.setExchange("BYBIT");
+            entity.setEncryptedApiKey("enc-api");
+            entity.setEncryptedSecretKey("enc-secret");
+
+            when(userApiKeyRepository.findByUserId("user1")).thenReturn(List.of(entity));
+            when(aesEncryptionUtil.decrypt("enc-api")).thenReturn("plain-api");
+            when(aesEncryptionUtil.decrypt("enc-secret")).thenReturn("plain-secret");
+
+            var result = service.getUserPrimaryExchangeKeys("user1");
+
+            assertThat(result).isPresent();
+            assertThat(result.get().getKey()).isEqualTo("BYBIT");
+        }
+
+        @Test
+        @DisplayName("API Key 不完整 → empty")
+        void incompleteKey_returnsEmpty() {
+            UserApiKey entity = new UserApiKey();
+            entity.setUserId("user1");
+            entity.setExchange("BINANCE");
+            entity.setEncryptedApiKey("enc-api");
+            entity.setEncryptedSecretKey(null);
+
+            when(userApiKeyRepository.findByUserId("user1")).thenReturn(List.of(entity));
+
+            var result = service.getUserPrimaryExchangeKeys("user1");
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("解密失敗 → empty")
+        void decryptionFailure_returnsEmpty() {
+            UserApiKey entity = new UserApiKey();
+            entity.setUserId("user1");
+            entity.setExchange("BINANCE");
+            entity.setEncryptedApiKey("bad-enc");
+            entity.setEncryptedSecretKey("enc-secret");
+
+            when(userApiKeyRepository.findByUserId("user1")).thenReturn(List.of(entity));
+            when(aesEncryptionUtil.decrypt("bad-enc"))
+                    .thenThrow(new AesDecryptionException(
+                            ErrorType.AUTH_TAG_MISMATCH, "GCM tag 不符", null));
+
+            var result = service.getUserPrimaryExchangeKeys("user1");
+            assertThat(result).isEmpty();
+        }
+    }
+
+    // ==================== getUserIdExchangeMap ====================
+
+    @Nested
+    @DisplayName("getUserIdExchangeMap（一用戶一交易所）")
+    class GetUserIdExchangeMapTests {
+
+        @Test
+        @DisplayName("多用戶不同交易所 → 正確對應")
+        void multipleUsersWithDifferentExchanges() {
+            UserApiKey key1 = new UserApiKey();
+            key1.setUserId("user-a");
+            key1.setExchange("BINANCE");
+            key1.setEncryptedApiKey("enc-a");
+            key1.setEncryptedSecretKey("sec-a");
+
+            UserApiKey key2 = new UserApiKey();
+            key2.setUserId("user-b");
+            key2.setExchange("BYBIT");
+            key2.setEncryptedApiKey("enc-b");
+            key2.setEncryptedSecretKey("sec-b");
+
+            when(userApiKeyRepository.findAll()).thenReturn(List.of(key1, key2));
+
+            Map<String, String> result = service.getUserIdExchangeMap();
+
+            assertThat(result).hasSize(2);
+            assertThat(result.get("user-a")).isEqualTo("BINANCE");
+            assertThat(result.get("user-b")).isEqualTo("BYBIT");
+        }
+
+        @Test
+        @DisplayName("不完整 Key 被跳過")
+        void incompleteKeySkipped() {
+            UserApiKey good = new UserApiKey();
+            good.setUserId("user-ok");
+            good.setExchange("BINANCE");
+            good.setEncryptedApiKey("enc");
+            good.setEncryptedSecretKey("sec");
+
+            UserApiKey incomplete = new UserApiKey();
+            incomplete.setUserId("user-bad");
+            incomplete.setExchange("BYBIT");
+            incomplete.setEncryptedApiKey("enc");
+            incomplete.setEncryptedSecretKey(null);
+
+            when(userApiKeyRepository.findAll()).thenReturn(List.of(good, incomplete));
+
+            Map<String, String> result = service.getUserIdExchangeMap();
+
+            assertThat(result).hasSize(1);
+            assertThat(result).containsKey("user-ok");
+            assertThat(result).doesNotContainKey("user-bad");
+        }
+
+        @Test
+        @DisplayName("無用戶 → 空 Map")
+        void noUsers_emptyMap() {
+            when(userApiKeyRepository.findAll()).thenReturn(List.of());
+
+            Map<String, String> result = service.getUserIdExchangeMap();
+            assertThat(result).isEmpty();
+        }
+    }
+
     // ==================== hasApiKey / getUserIdsWithApiKey ====================
 
     @Nested

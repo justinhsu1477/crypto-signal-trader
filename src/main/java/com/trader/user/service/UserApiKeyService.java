@@ -121,37 +121,56 @@ public class UserApiKeyService {
     }
 
     /**
-     * 取得用戶主要交易所的 API Key（BINANCE 優先）
+     * 取得用戶唯一交易所的 API Key（一用戶一交易所）
      *
-     * 依序嘗試 BINANCE → BYBIT，返回第一個找到的交易所及其解密後的 Key。
-     * 供排程任務決定用戶使用哪個交易所查餘額/持倉。
+     * 設計：V31 UNIQUE(user_id) 約束確保每個用戶最多一筆 API Key。
+     * 直接查 findByUserId() 取唯一記錄，不再按交易所優先順序遍歷。
      *
      * @param userId 用戶 ID
-     * @return (exchange, keys) pair，若用戶未設定任何交易所 Key 則返回 empty
+     * @return (exchange, keys) pair，若用戶未設定 Key 則返回 empty
      */
     @Transactional(readOnly = true)
     public Optional<Map.Entry<String, ExchangeKeys>> getUserPrimaryExchangeKeys(String userId) {
-        for (String exchange : List.of("BINANCE", "BYBIT")) {
-            Optional<ExchangeKeys> keys = getUserExchangeKeys(userId, exchange);
-            if (keys.isPresent()) {
-                return Optional.of(Map.entry(exchange, keys.get()));
-            }
+        List<UserApiKey> keys = userApiKeyRepository.findByUserId(userId);
+        if (keys.isEmpty()) {
+            log.debug("用戶 {} 未設定任何 API Key", userId);
+            return Optional.empty();
         }
-        return Optional.empty();
+
+        UserApiKey entity = keys.get(0); // UNIQUE(user_id) 約束確保最多一筆
+        if (entity.getEncryptedApiKey() == null || entity.getEncryptedSecretKey() == null) {
+            log.warn("用戶 {} 的 {} API Key 不完整", userId, entity.getExchange());
+            return Optional.empty();
+        }
+
+        try {
+            String apiKey = aesEncryptionUtil.decrypt(entity.getEncryptedApiKey());
+            String secretKey = aesEncryptionUtil.decrypt(entity.getEncryptedSecretKey());
+            return Optional.of(Map.entry(entity.getExchange(), new ExchangeKeys(apiKey, secretKey)));
+        } catch (AesDecryptionException e) {
+            log.error("用戶 {} API Key 解密失敗 [{}]: {}", userId, e.getErrorType(), e.getMessage());
+            return Optional.empty();
+        } catch (Exception e) {
+            log.error("用戶 {} API Key 解密失敗: {}", userId, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**
-     * 取得所有用戶的交易所配對（用於廣播跟單路由）
+     * 取得所有用戶的交易所對應（一用戶一交易所）
      *
-     * @return userId → 該用戶已設定 API Key 的交易所集合
+     * 用於廣播跟單路由和啟動對帳。
+     * V31 UNIQUE(user_id) 約束確保每個用戶最多一筆記錄。
+     *
+     * @return userId → exchange 名稱
      */
     @Transactional(readOnly = true)
-    public Map<String, Set<String>> getUserExchangeMap() {
+    public Map<String, String> getUserIdExchangeMap() {
         List<UserApiKey> allKeys = userApiKeyRepository.findAll();
-        Map<String, Set<String>> result = new HashMap<>();
+        Map<String, String> result = new HashMap<>();
         for (UserApiKey key : allKeys) {
             if (key.getEncryptedApiKey() != null && key.getEncryptedSecretKey() != null) {
-                result.computeIfAbsent(key.getUserId(), k -> new HashSet<>()).add(key.getExchange());
+                result.put(key.getUserId(), key.getExchange());
             }
         }
         return result;

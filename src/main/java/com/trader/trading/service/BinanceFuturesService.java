@@ -10,7 +10,6 @@ import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.exchange.ExchangeCredentials;
 import com.trader.trading.exchange.binance.BinanceAdapter;
 import com.trader.user.service.UserApiKeyService;
-import com.trader.user.service.UserApiKeyService.ExchangeKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -29,7 +28,6 @@ import java.util.stream.Collectors;
  * 1. Facade 方法 — 供 TradeController 和其他呼叫者使用
  * 2. executeSignalForBroadcast — 廣播跟單（credential 管理 + action 路由）
  * 3. calculatePositionSize — 供 TradeSignalValidator/TradeRecordService 呼叫
- * 4. ThreadLocal CURRENT_USER_KEYS 管理（Phase 5 完成後移除）
  *
  * 公開 API 不變，所有呼叫者行為不變。
  */
@@ -46,14 +44,6 @@ public class BinanceFuturesService {
     private final SymbolLockRegistry symbolLockRegistry;
     private final UserApiKeyService userApiKeyService;
     private final TradeConfigResolver tradeConfigResolver;
-
-    /**
-     * ThreadLocal 暫存 per-user API Key（舊版，保留向後相容）
-     * 在 executeSignalForBroadcast 開始時 set，結束時 remove。
-     * BinanceAdapter 的 getActiveApiKey() 會檢查此 ThreadLocal 作為 fallback。
-     * Phase 5 完成所有呼叫者遷移後刪除。
-     */
-    private static final ThreadLocal<ExchangeKeys> CURRENT_USER_KEYS = new ThreadLocal<>();
 
     public BinanceFuturesService(BinanceAdapter binanceAdapter,
                                   TradingOrchestrator orchestrator,
@@ -73,31 +63,6 @@ public class BinanceFuturesService {
         this.symbolLockRegistry = symbolLockRegistry;
         this.userApiKeyService = userApiKeyService;
         this.tradeConfigResolver = tradeConfigResolver;
-    }
-
-    // ==================== Per-User API Key（舊版，向後相容）====================
-
-    /**
-     * 設定當前線程的 per-user API Key
-     * 供排程任務（DailyReportService）查詢個別用戶的幣安帳戶餘額時使用。
-     * 使用完畢後務必呼叫 clearCurrentUserKeys() 清除，避免線程池復用時洩漏。
-     */
-    public static void setCurrentUserKeys(ExchangeKeys keys) {
-        CURRENT_USER_KEYS.set(keys);
-    }
-
-    /**
-     * 清除當前線程的 per-user API Key
-     */
-    public static void clearCurrentUserKeys() {
-        CURRENT_USER_KEYS.remove();
-    }
-
-    /**
-     * 取得當前線程的 per-user API Key（供 BinanceAdapter 向後相容讀取）
-     */
-    public static ExchangeKeys getCurrentUserKeys() {
-        return CURRENT_USER_KEYS.get();
     }
 
     // ==================== Facade：帳戶相關（委託 BinanceAdapter）====================
@@ -283,8 +248,7 @@ public class BinanceFuturesService {
             throw new IllegalStateException(
                     "用戶 " + userId + " 未設定 Binance API Key，無法執行廣播跟單");
         }
-        // 設入舊版 ThreadLocal（向後相容）+ 新版 adapter credentials
-        CURRENT_USER_KEYS.set(userKeysOpt.get());
+        // 設入 adapter credentials
         binanceAdapter.setCredentials(new ExchangeCredentials(
                 userKeysOpt.get().apiKey(), userKeysOpt.get().secretKey()));
         TradeRecordService.setCurrentUserId(userId);
@@ -404,7 +368,6 @@ public class BinanceFuturesService {
         return broadcastResults;
         } finally {
             // 一定要清除 ThreadLocal，避免線程池復用時 key 洩漏給其他用戶
-            CURRENT_USER_KEYS.remove();
             binanceAdapter.clearCredentials();
             TradeRecordService.clearCurrentUserId();
             TradeRecordService.clearCurrentUserDisplayName();

@@ -25,7 +25,7 @@ import static org.mockito.Mockito.*;
  * DashboardService — per-user API Key 注入測試
  *
  * 覆蓋場景：
- * 1. 單用戶模式 → 直接使用全局 API Key（不呼叫 setCurrentUserKeys）
+ * 1. 單用戶模式 → 直接使用全局 API Key
  * 2. 多用戶模式 + 有 API Key → 設定 per-user Key 並在 finally 清除
  * 3. 多用戶模式 + 無 API Key → 餘額返回 0，不呼叫 Binance
  * 4. Binance API 例外 → 餘額返回 0，不崩潰

@@ -779,35 +779,21 @@ public class BinanceAdapter implements ExchangeAdapter {
 
     /**
      * 取得當前生效的 API Key
-     * 優先順序：ExchangeCredentials ThreadLocal → BinanceFuturesService 舊版 ThreadLocal → 全局 Config
+     * 優先順序：ExchangeCredentials ThreadLocal → 全局 Config
      */
     private String getActiveApiKey() {
-        // 1. 新版 ExchangeCredentials
         ExchangeCredentials creds = CURRENT_CREDENTIALS.get();
         if (creds != null) return creds.apiKey();
-
-        // 2. 舊版 BinanceFuturesService ThreadLocal（Phase 5 前向後相容）
-        var legacyKeys = com.trader.trading.service.BinanceFuturesService.getCurrentUserKeys();
-        if (legacyKeys != null) return legacyKeys.apiKey();
-
-        // 3. 全局 Config
         return binanceConfig.getApiKey();
     }
 
     /**
      * 取得當前生效的 Secret Key
-     * 優先順序：ExchangeCredentials ThreadLocal → BinanceFuturesService 舊版 ThreadLocal → 全局 Config
+     * 優先順序：ExchangeCredentials ThreadLocal → 全局 Config
      */
     private String getActiveSecretKey() {
-        // 1. 新版 ExchangeCredentials
         ExchangeCredentials creds = CURRENT_CREDENTIALS.get();
         if (creds != null) return creds.secretKey();
-
-        // 2. 舊版 BinanceFuturesService ThreadLocal（Phase 5 前向後相容）
-        var legacyKeys = com.trader.trading.service.BinanceFuturesService.getCurrentUserKeys();
-        if (legacyKeys != null) return legacyKeys.secretKey();
-
-        // 3. 全局 Config
         return binanceConfig.getSecretKey();
     }
 }

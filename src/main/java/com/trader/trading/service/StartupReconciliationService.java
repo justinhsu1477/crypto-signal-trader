@@ -137,7 +137,7 @@ public class StartupReconciliationService {
         allUserIds.addAll(openByUser.keySet());
 
         // 隱形倉位偵測需要掃描所有有 API Key 的用戶（不只有 DB 紀錄的）
-        Map<String, Set<String>> allUserExchangeMap = userApiKeyService.getUserExchangeMap();
+        Map<String, String> allUserExchangeMap = userApiKeyService.getUserIdExchangeMap();
         allUserIds.addAll(allUserExchangeMap.keySet());
 
         if (allUserIds.isEmpty()) {
