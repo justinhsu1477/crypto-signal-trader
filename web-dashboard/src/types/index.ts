@@ -49,6 +49,7 @@ export interface SaveApiKeyRequest {
   exchange: string;
   apiKey: string;
   secretKey: string;
+  passphrase?: string;
 }
 
 export interface ApiKeyMetadata {

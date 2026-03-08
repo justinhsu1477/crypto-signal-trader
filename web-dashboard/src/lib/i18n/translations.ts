@@ -749,6 +749,79 @@ const translations = {
       "zh-TW": "點擊下方「儲存 API Key」即完成設定",
       "zh-CN": "点击下方「保存 API Key」即完成设置",
     },
+    // Bitget API Key Tutorial
+    bitgetApiKeyTutorialTitle: { en: "How to set up Bitget API Key?", "zh-TW": "如何設定 Bitget API Key？", "zh-CN": "如何设置 Bitget API Key？", ja: "Bitget APIキーの設定方法" },
+    bitgetApiKeyPrerequisite: {
+      en: "You must activate Bitget Futures trading first: Open Bitget App → Futures → Complete identity verification",
+      "zh-TW": "必須先開通合約交易：開啟 Bitget App → 合約交易 → 完成身份驗證",
+      "zh-CN": "必须先开通合约交易：打开 Bitget App → 合约交易 → 完成身份验证",
+      ja: "先にBitget先物取引を有効にする必要があります：Bitgetアプリを開く→先物取引→本人確認を完了",
+    },
+    bitgetApiKeyStep1: {
+      en: "Bitget Website → Account → API Management → Create API Key (select \"System-generated\")",
+      "zh-TW": "Bitget 官網 → 帳戶 → API 管理 → 建立 API Key（選擇「系統生成」）",
+      "zh-CN": "Bitget 官网 → 账户 → API 管理 → 创建 API Key（选择「系统生成」）",
+      ja: "Bitgetサイト→アカウント→API管理→APIキーを作成（「システム生成」を選択）",
+    },
+    bitgetApiKeyStep2Title: {
+      en: "Set Permissions",
+      "zh-TW": "設定權限",
+      "zh-CN": "设置权限",
+    },
+    bitgetApiKeyStep2Check1: { en: "Read-Write for Futures Trade", "zh-TW": "合約交易 讀寫權限", "zh-CN": "合约交易 读写权限" },
+    bitgetApiKeyStep2Check2: { en: "Read-Only for Futures Account", "zh-TW": "合約帳戶 唯讀權限", "zh-CN": "合约账户 只读权限" },
+    bitgetApiKeyStep2Warning: {
+      en: "Do NOT enable \"Transfer\" or \"Withdraw\" — our system only trades",
+      "zh-TW": "不需要啟用「劃轉」或「提領」權限 — 系統只做交易",
+      "zh-CN": "不需要启用「划转」或「提现」权限 — 系统只做交易",
+    },
+    bitgetApiKeyStep3Title: {
+      en: "Set IP Whitelist",
+      "zh-TW": "設定 IP 白名單",
+      "zh-CN": "设置 IP 白名单",
+    },
+    bitgetApiKeyStep3Desc: {
+      en: "Select \"Bind IP addresses\" → Enter the IP below:",
+      "zh-TW": "選擇「綁定 IP 地址」→ 輸入以下 IP：",
+      "zh-CN": "选择「绑定 IP 地址」→ 输入以下 IP：",
+    },
+    bitgetApiKeyStep4Title: {
+      en: "Set Passphrase",
+      "zh-TW": "設定 Passphrase（通行密語）",
+      "zh-CN": "设置 Passphrase（通行密语）",
+    },
+    bitgetApiKeyStep4Desc: {
+      en: "Enter a passphrase — this is required by Bitget for all API calls. Remember it, you'll need to enter it below.",
+      "zh-TW": "輸入一組通行密語 — Bitget API 所有請求都需要。請記住它，下方需要填入。",
+      "zh-CN": "输入一组通行密语 — Bitget API 所有请求都需要。请记住它，下方需要填入。",
+    },
+    bitgetApiKeyStep5: {
+      en: "Copy your API Key, Secret Key, and Passphrase, then paste them into the form below",
+      "zh-TW": "複製 API Key、Secret Key 和 Passphrase，貼到下方表單",
+      "zh-CN": "复制 API Key、Secret Key 和 Passphrase，粘贴到下方表单",
+    },
+    bitgetApiKeyStep5Warning: {
+      en: "Secret Key is only shown once — copy it immediately!",
+      "zh-TW": "Secret Key 只會顯示一次，請立即複製！",
+      "zh-CN": "Secret Key 只会显示一次，请立即复制！",
+    },
+    bitgetApiKeyStep6: {
+      en: "Click \"Save API Key\" below to complete setup",
+      "zh-TW": "點擊下方「儲存 API Key」即完成設定",
+      "zh-CN": "点击下方「保存 API Key」即完成设置",
+    },
+    bitgetPassphraseLabel: { en: "Passphrase", "zh-TW": "Passphrase（通行密語）", "zh-CN": "Passphrase（通行密语）" },
+    bitgetPassphrasePlaceholder: { en: "Enter your Bitget API Passphrase", "zh-TW": "輸入 Bitget API Passphrase", "zh-CN": "输入 Bitget API Passphrase" },
+    bitgetPassphraseHint: {
+      en: "The passphrase you set when creating the Bitget API Key. Required for all API calls.",
+      "zh-TW": "建立 Bitget API Key 時設定的通行密語，所有 API 請求都需要。",
+      "zh-CN": "创建 Bitget API Key 时设置的通行密语，所有 API 请求都需要。",
+    },
+    bitgetPassphraseRequired: {
+      en: "Passphrase is required for Bitget",
+      "zh-TW": "Bitget 需要填入 Passphrase",
+      "zh-CN": "Bitget 需要填入 Passphrase",
+    },
     // Auto Trade
     autoTrade: { en: "Auto Trade Settings", "zh-TW": "自動跟單設定", "zh-CN": "自动跟单设置" },
     autoTradeLabel: { en: "Auto Trade", "zh-TW": "自動跟單", "zh-CN": "自动跟单" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { UserProfile, ApiKeyMetadata, AutoTradeStatus } from "@/types";
+import type { UserProfile, ApiKeyMetadata, AutoTradeStatus, SaveApiKeyRequest } from "@/types";
 import {
   getUserProfile,
   getApiKeys,
@@ -75,9 +75,11 @@ export default function SettingsPage() {
   const [exchange, setExchange] = useState("BINANCE");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [secretKeyInput, setSecretKeyInput] = useState("");
+  const [passphraseInput, setPassphraseInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showSecretKey, setShowSecretKey] = useState(false);
+  const [showPassphrase, setShowPassphrase] = useState(false);
 
   // ─── Auto Trade state ───
   const [autoTradeStatus, setAutoTradeStatus] =
@@ -247,16 +249,26 @@ export default function SettingsPage() {
       toast.error(t("settings.fillRequired"));
       return;
     }
+    // Bitget 需要 passphrase
+    if (exchange === "BITGET" && !passphraseInput.trim()) {
+      toast.error(t("settings.bitgetPassphraseRequired"));
+      return;
+    }
     setSaving(true);
     try {
-      const result = await saveApiKey({
+      const payload: SaveApiKeyRequest = {
         exchange,
         apiKey: apiKeyInput.trim(),
         secretKey: secretKeyInput.trim(),
-      });
+        ...(exchange === "BITGET" && passphraseInput.trim()
+          ? { passphrase: passphraseInput.trim() }
+          : {}),
+      };
+      const result = await saveApiKey(payload);
       toast.success(result.message || t("common.saveSuccess"));
       setApiKeyInput("");
       setSecretKeyInput("");
+      setPassphraseInput("");
       const updatedKeys = await getApiKeys();
       setApiKeys(updatedKeys);
     } catch (err) {
@@ -381,7 +393,7 @@ export default function SettingsPage() {
             className="w-full flex items-center justify-between px-4 py-3 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors text-left"
           >
             <span className="font-medium text-sm text-amber-800 dark:text-amber-200">
-              🔑 {exchange === "BYBIT" ? t("settings.bybitApiKeyTutorialTitle") : t("settings.apiKeyTutorialTitle")}
+              🔑 {exchange === "BITGET" ? t("settings.bitgetApiKeyTutorialTitle") : exchange === "BYBIT" ? t("settings.bybitApiKeyTutorialTitle") : t("settings.apiKeyTutorialTitle")}
             </span>
             {tutorialOpen ? (
               <ChevronUp className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -399,7 +411,67 @@ export default function SettingsPage() {
           >
             <div className="overflow-hidden">
               <div className="px-4 py-4 space-y-4 text-sm text-amber-900 dark:text-amber-100">
-                {exchange === "BYBIT" ? (
+                {exchange === "BITGET" ? (
+                  <>
+                    {/* Bitget Prerequisite */}
+                    <div className="p-3 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
+                      <p className="font-medium">⚠️ {t("settings.bitgetApiKeyPrerequisite")}</p>
+                    </div>
+                    {/* Bitget Steps */}
+                    <ol className="space-y-3 list-none">
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">1</span>
+                        <p className="pt-0.5">{t("settings.bitgetApiKeyStep1")}</p>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">2</span>
+                        <div className="space-y-1.5 pt-0.5">
+                          <p className="font-medium">{t("settings.bitgetApiKeyStep2Title")}</p>
+                          <div className="space-y-1 text-xs">
+                            <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.bitgetApiKeyStep2Check1")}</p>
+                            <p className="text-emerald-600 dark:text-emerald-400">✅ {t("settings.bitgetApiKeyStep2Check2")}</p>
+                            <p className="text-red-600 dark:text-red-400">❌ {t("settings.bitgetApiKeyStep2Warning")}</p>
+                          </div>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">3</span>
+                        <div className="space-y-1.5 pt-0.5">
+                          <p className="font-medium">{t("settings.bitgetApiKeyStep3Title")}</p>
+                          <p className="text-xs">{t("settings.bitgetApiKeyStep3Desc")}</p>
+                          <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border rounded px-3 py-1.5 font-mono text-xs">
+                            <span><vm-ip></span>
+                            <button type="button" onClick={handleCopyIp} className="hover:opacity-70 transition-opacity">
+                              {ipCopied ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">4</span>
+                        <div className="space-y-1.5 pt-0.5">
+                          <p className="font-medium">{t("settings.bitgetApiKeyStep4Title")}</p>
+                          <p className="text-xs">{t("settings.bitgetApiKeyStep4Desc")}</p>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">5</span>
+                        <div className="space-y-1 pt-0.5">
+                          <p>{t("settings.bitgetApiKeyStep5")}</p>
+                          <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ {t("settings.bitgetApiKeyStep5Warning")}</p>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800 text-xs font-bold text-amber-800 dark:text-amber-200">6</span>
+                        <p className="pt-0.5">{t("settings.bitgetApiKeyStep6")}</p>
+                      </li>
+                    </ol>
+                  </>
+                ) : exchange === "BYBIT" ? (
                   <>
                     {/* Bybit Prerequisite */}
                     <div className="p-3 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
@@ -603,6 +675,7 @@ export default function SettingsPage() {
                   >
                     <option value="BINANCE">Binance</option>
                     <option value="BYBIT">Bybit</option>
+                    <option value="BITGET">Bitget</option>
                   </select>
                 </div>
 
@@ -668,6 +741,36 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Bitget Passphrase — 僅 BITGET 顯示 */}
+                {exchange === "BITGET" && (
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="passphrase"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t("settings.bitgetPassphraseLabel")} <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="passphrase"
+                        type={showPassphrase ? "text" : "password"}
+                        value={passphraseInput}
+                        onChange={(e) => setPassphraseInput(e.target.value)}
+                        placeholder={t("settings.bitgetPassphrasePlaceholder")}
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassphrase(!showPassphrase)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t("settings.bitgetPassphraseHint")}</p>
+                  </div>
+                )}
               </div>
 
               <Button onClick={handleSaveApiKey} disabled={saving}>
