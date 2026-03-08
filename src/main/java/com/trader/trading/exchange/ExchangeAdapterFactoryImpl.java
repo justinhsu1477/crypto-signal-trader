@@ -21,11 +21,15 @@ public class ExchangeAdapterFactoryImpl implements ExchangeAdapterFactory {
 
     public ExchangeAdapterFactoryImpl(
             @Qualifier("binanceAdapter") ExchangeAdapter binanceAdapter,
-            @Qualifier("bybitAdapter") @org.springframework.beans.factory.annotation.Autowired(required = false) ExchangeAdapter bybitAdapter) {
+            @Qualifier("bybitAdapter") @org.springframework.beans.factory.annotation.Autowired(required = false) ExchangeAdapter bybitAdapter,
+            @Qualifier("bitgetAdapter") @org.springframework.beans.factory.annotation.Autowired(required = false) ExchangeAdapter bitgetAdapter) {
         this.adapters = new HashMap<>();
         adapters.put(binanceAdapter.getExchangeName(), binanceAdapter);
         if (bybitAdapter != null && !bybitAdapter.getExchangeName().equals(binanceAdapter.getExchangeName())) {
             adapters.put(bybitAdapter.getExchangeName(), bybitAdapter);
+        }
+        if (bitgetAdapter != null) {
+            adapters.put(bitgetAdapter.getExchangeName(), bitgetAdapter);
         }
         log.info("ExchangeAdapterFactory 初始化完成，已註冊交易所: {}", adapters.keySet());
     }

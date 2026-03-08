@@ -36,6 +36,10 @@ public class UserApiKey {
     @Column(length = 512)
     private String encryptedSecretKey;
 
+    /** AES 加密後的 Passphrase（僅 Bitget 使用，其他交易所為 null） */
+    @Column(length = 512)
+    private String encryptedPassphrase;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

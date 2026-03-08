@@ -20,4 +20,7 @@ public class SaveApiKeyRequest {
 
     @NotBlank(message = "secretKey 不可為空")
     private String secretKey;
+
+    /** Bitget 專用的 passphrase（其他交易所可不傳） */
+    private String passphrase;
 }

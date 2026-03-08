@@ -47,12 +47,17 @@ public class UserService {
      *
      * 一用戶一交易所：UNIQUE(user_id) 約束確保每個用戶最多一筆 API Key。
      * 如果用戶切換交易所，更新現有記錄的 exchange 欄位。
+     *
+     * @param passphrase Bitget 專用，其他交易所傳 null
      */
     @Transactional
     public UserApiKey saveApiKey(String userId, String exchange,
-                                 String apiKey, String secretKey) {
+                                 String apiKey, String secretKey,
+                                 String passphrase) {
         String encryptedApiKey = aesEncryptionUtil.encrypt(apiKey);
         String encryptedSecretKey = aesEncryptionUtil.encrypt(secretKey);
+        String encryptedPassphrase = (passphrase != null && !passphrase.isBlank())
+                ? aesEncryptionUtil.encrypt(passphrase) : null;
 
         // UNIQUE(user_id)：找用戶的唯一 API Key 記錄（不分交易所）
         List<UserApiKey> existingKeys = userApiKeyRepository.findByUserId(userId);
@@ -72,6 +77,7 @@ public class UserService {
 
         entity.setEncryptedApiKey(encryptedApiKey);
         entity.setEncryptedSecretKey(encryptedSecretKey);
+        entity.setEncryptedPassphrase(encryptedPassphrase);
 
         log.info("API Key 已加密儲存: userId={}, exchange={}", userId, exchange);
         return userApiKeyRepository.save(entity);

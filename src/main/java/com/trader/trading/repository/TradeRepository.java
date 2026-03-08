@@ -185,6 +185,11 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     long countByUserIdAndStatus(String userId, String status);
 
     /**
+     * 統計用戶在多個狀態中的交易數量（交易所切換檢查：OPEN + PENDING_CLOSE 都視為未收斂）
+     */
+    long countByUserIdAndStatusIn(String userId, List<String> statuses);
+
+    /**
      * 統計全局指定狀態的交易數量
      */
     long countByStatus(String status);

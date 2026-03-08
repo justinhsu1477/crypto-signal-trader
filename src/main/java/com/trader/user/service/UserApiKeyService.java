@@ -28,8 +28,14 @@ public class UserApiKeyService {
 
     /**
      * 解密後的交易所 API Key 對（通用於所有交易所）
+     * passphrase 為 nullable，僅 Bitget 使用。
      */
-    public record ExchangeKeys(String apiKey, String secretKey) {}
+    public record ExchangeKeys(String apiKey, String secretKey, String passphrase) {
+        /** Binance / Bybit 用（向後相容，passphrase = null） */
+        public ExchangeKeys(String apiKey, String secretKey) {
+            this(apiKey, secretKey, null);
+        }
+    }
 
     /**
      * 取得用戶指定交易所的 API Key（解密後）
@@ -57,7 +63,8 @@ public class UserApiKeyService {
         try {
             String apiKey = aesEncryptionUtil.decrypt(entity.getEncryptedApiKey());
             String secretKey = aesEncryptionUtil.decrypt(entity.getEncryptedSecretKey());
-            return Optional.of(new ExchangeKeys(apiKey, secretKey));
+            String passphrase = decryptPassphraseIfPresent(entity);
+            return Optional.of(new ExchangeKeys(apiKey, secretKey, passphrase));
         } catch (AesDecryptionException e) {
             log.error("用戶 {} {} API Key 解密失敗 [{}]: {}", userId, exchange, e.getErrorType(), e.getMessage());
             return Optional.empty();
@@ -109,7 +116,8 @@ public class UserApiKeyService {
             try {
                 String apiKey = aesEncryptionUtil.decrypt(entity.getEncryptedApiKey());
                 String secretKey = aesEncryptionUtil.decrypt(entity.getEncryptedSecretKey());
-                result.put(entity.getUserId(), new ExchangeKeys(apiKey, secretKey));
+                String passphrase = decryptPassphraseIfPresent(entity);
+                result.put(entity.getUserId(), new ExchangeKeys(apiKey, secretKey, passphrase));
             } catch (AesDecryptionException e) {
                 log.error("用戶 {} API Key 解密失敗 [{}]: {}", entity.getUserId(), e.getErrorType(), e.getMessage());
             } catch (Exception e) {
@@ -146,7 +154,8 @@ public class UserApiKeyService {
         try {
             String apiKey = aesEncryptionUtil.decrypt(entity.getEncryptedApiKey());
             String secretKey = aesEncryptionUtil.decrypt(entity.getEncryptedSecretKey());
-            return Optional.of(Map.entry(entity.getExchange(), new ExchangeKeys(apiKey, secretKey)));
+            String passphrase = decryptPassphraseIfPresent(entity);
+            return Optional.of(Map.entry(entity.getExchange(), new ExchangeKeys(apiKey, secretKey, passphrase)));
         } catch (AesDecryptionException e) {
             log.error("用戶 {} API Key 解密失敗 [{}]: {}", userId, e.getErrorType(), e.getMessage());
             return Optional.empty();
@@ -174,5 +183,17 @@ public class UserApiKeyService {
             }
         }
         return result;
+    }
+
+    // ==================== Private Helper ====================
+
+    /**
+     * 解密 passphrase（若存在）。僅 Bitget 用戶會有值，其他交易所返回 null。
+     */
+    private String decryptPassphraseIfPresent(UserApiKey entity) {
+        if (entity.getEncryptedPassphrase() == null || entity.getEncryptedPassphrase().isBlank()) {
+            return null;
+        }
+        return aesEncryptionUtil.decrypt(entity.getEncryptedPassphrase());
     }
 }

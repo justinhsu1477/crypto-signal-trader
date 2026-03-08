@@ -73,17 +73,27 @@ security:
   ip-header: ${SECURITY_IP_HEADER:}                                                  # prod: CF-Connecting-IP
   trusted-proxies: ${SECURITY_TRUSTED_PROXIES:127.0.0.1,::1,0:0:0:0:0:0:0:1}       # prod: 含 Docker CIDR
 
+# ========== 交易所啟用設定 ==========
+# 逗號分隔啟用的交易所：BINANCE,BYBIT,BITGET
+# API credential 由 per-user user_api_keys 表管理，不在此設定
+exchanges:
+  enabled: ${EXCHANGES_ENABLED:BINANCE}
+
 binance:
   futures:
-    api-key: ${BINANCE_API_KEY:YOUR_API_KEY}
-    secret-key: ${BINANCE_SECRET_KEY:YOUR_SECRET_KEY}
+    base-url: ${BINANCE_FUTURES_BASE_URL:https://fapi.binance.com}
+    ws-base-url: ${BINANCE_WS_URL:wss://fstream.binance.com/ws/}
+
+# ========== Bitget V2 Mix USDT-Futures ==========
+bitget:
+  futures:
+    base-url: ${BITGET_BASE_URL:https://api.bitget.com}
+    ws-base-url: ${BITGET_WS_URL:wss://ws.bitget.com}
+    recv-window: 30000
 
 # ========== Bybit V5 Linear Perpetual ==========
-# 設定 BYBIT_API_KEY 環境變數後自動啟用 BybitAdapter（@ConditionalOnProperty）
 bybit:
   linear:
-    api-key: ${BYBIT_API_KEY:}
-    secret-key: ${BYBIT_SECRET_KEY:}
     base-url: ${BYBIT_BASE_URL:https://api-testnet.bybit.com}
     ws-base-url: ${BYBIT_WS_URL:wss://stream-testnet.bybit.com}
     recv-window: 5000

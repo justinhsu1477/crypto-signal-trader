@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -46,44 +47,73 @@ public class UserController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    /** 交易所切換時，這些狀態視為「未收斂」，必須全部結清才能切換 */
+    private static final List<String> UNSETTLED_STATUSES = List.of("OPEN", "PENDING_CLOSE");
+
+    /** 後端支援的交易所白名單（大寫） */
+    private static final Set<String> SUPPORTED_EXCHANGES = Set.of("BINANCE", "BYBIT", "BITGET");
+
     /**
      * 儲存交易所 API Key（AES 加密存儲）
      * PUT /api/user/api-keys
      * Body: {@link SaveApiKeyRequest}
      *
-     * 交易所切換驗證：一用戶一交易所，切換前必須先平倉所有持倉。
+     * 驗證：
+     * 1. exchange 白名單（只接受 SUPPORTED_EXCHANGES）
+     * 2. 交易所切換時，OPEN + PENDING_CLOSE 都視為未收斂，必須全部結清才能切換
      *
      * @return {@link SaveApiKeyResponse}
      */
     @PutMapping("/api-keys")
     public ResponseEntity<?> saveApiKeys(@Valid @RequestBody SaveApiKeyRequest request) {
         String userId = SecurityUtil.getCurrentUserId();
-        String newExchange = request.getExchange();
+        String newExchange = request.getExchange().trim().toUpperCase();
 
-        // 交易所切換檢查：如果用戶已綁定不同交易所的 API Key，檢查是否有 OPEN trade
+        // 1. 交易所白名單驗證
+        if (!SUPPORTED_EXCHANGES.contains(newExchange)) {
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder()
+                            .error("UNSUPPORTED_EXCHANGE")
+                            .message("不支援的交易所: " + request.getExchange()
+                                    + "，目前支援: " + SUPPORTED_EXCHANGES)
+                            .build());
+        }
+
+        // 2. Bitget passphrase 驗證
+        if ("BITGET".equals(newExchange)
+                && (request.getPassphrase() == null || request.getPassphrase().isBlank())) {
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder()
+                            .error("PASSPHRASE_REQUIRED")
+                            .message("Bitget 交易所需要提供 API Passphrase")
+                            .build());
+        }
+
+        // 3. 交易所切換檢查：OPEN + PENDING_CLOSE 都視為未收斂
         List<UserApiKey> existingKeys = userService.getApiKeys(userId);
         if (!existingKeys.isEmpty()) {
             UserApiKey existing = existingKeys.get(0);
             if (!existing.getExchange().equals(newExchange)) {
-                // 切換交易所 — 檢查是否有未平倉交易
-                long openTradeCount = tradeRepository.countByUserIdAndStatus(userId, "OPEN");
-                if (openTradeCount > 0) {
-                    log.warn("用戶 {} 嘗試切換交易所 {} → {}，但有 {} 筆未平倉交易",
-                            userId, existing.getExchange(), newExchange, openTradeCount);
+                long unsettledCount = tradeRepository.countByUserIdAndStatusIn(
+                        userId, UNSETTLED_STATUSES);
+                if (unsettledCount > 0) {
+                    log.warn("用戶 {} 嘗試切換交易所 {} → {}，但有 {} 筆未收斂交易",
+                            userId, existing.getExchange(), newExchange, unsettledCount);
                     return ResponseEntity.badRequest()
                             .body(ErrorResponse.builder()
                                     .error("EXCHANGE_SWITCH_BLOCKED")
-                                    .message("切換交易所前請先平倉所有持倉（目前有 " + openTradeCount + " 筆未平倉交易）")
+                                    .message("切換交易所前請先平倉所有持倉（目前有 " + unsettledCount + " 筆未收斂交易）")
                                     .build());
                 }
-                log.info("用戶 {} 切換交易所 {} → {}（無未平倉交易，允許切換）",
+                log.info("用戶 {} 切換交易所 {} → {}（無未收斂交易，允許切換）",
                         userId, existing.getExchange(), newExchange);
             }
         }
 
         UserApiKey saved = userService.saveApiKey(
-                userId, request.getExchange(),
-                request.getApiKey(), request.getSecretKey());
+                userId, newExchange,
+                request.getApiKey(), request.getSecretKey(),
+                request.getPassphrase());
 
         return ResponseEntity.ok(SaveApiKeyResponse.builder()
                 .message("API Key 儲存成功")
