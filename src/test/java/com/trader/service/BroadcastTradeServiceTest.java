@@ -73,7 +73,8 @@ class BroadcastTradeServiceTest {
 
         service = new BroadcastTradeService(
                 mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockSubscriptionRepo,
-                mockScoring, mockTradeRepo, mockBroadcastLogRepo, new ObjectMapper(), executor);
+                mockScoring, mockTradeRepo, mockBroadcastLogRepo, new ObjectMapper(), executor,
+                15, 0L);
     }
 
     @AfterEach

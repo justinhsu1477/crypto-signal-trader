@@ -71,7 +71,9 @@ class BroadcastTradeServiceTest {
                 tradeRepository,
                 broadcastLogRepository,
                 objectMapper,
-                broadcastExecutor);
+                broadcastExecutor,
+                15,   // batchSize — 測試預設
+                0L);  // batchDelayMs — 測試不需延遲
 
         // 預設 AI 評分 — 非同步，立即返回 null
         when(signalScoringService.scoreAsync(any()))
@@ -438,6 +440,118 @@ class BroadcastTradeServiceTest {
             assertThat(result.get("skippedNoApiKey")).isEqualTo(1);
             assertThat(result.get("skippedNotTargeted")).isEqualTo(0); // targetUserIds 過濾時 activeUsers 已為空
             verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+        }
+    }
+
+    // ── 分批派發 ──
+
+    @Nested
+    @DisplayName("分批派發 (Batch Dispatch)")
+    class BatchDispatchTests {
+
+        @Test
+        @DisplayName("3 用戶 + batchSize=2 → 分 2 批，所有用戶都執行")
+        void batchDispatchSplitsUsers() throws Exception {
+            // 建立 batchSize=2 的 service
+            BroadcastTradeService batchService = new BroadcastTradeService(
+                    userRepository, binanceFuturesService, discordWebhookService,
+                    userApiKeyService, subscriptionRepository, signalScoringService,
+                    tradeRepository, broadcastLogRepository, objectMapper,
+                    broadcastExecutor, 2, 0L);
+
+            User u1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User u2 = User.builder().userId("u2").email("b@test.com").name("B")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User u3 = User.builder().userId("u3").email("c@test.com").name("C")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(u1, u2, u3));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2", "u3"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2", "u3"));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), anyString()))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            Map<String, Object> result = batchService.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(3);
+            assertThat(result.get("successCount")).isEqualTo(3);
+            assertThat(result.get("failCount")).isEqualTo(0);
+
+            // 三個用戶都執行了
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u2"));
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u3"));
+        }
+
+        @Test
+        @DisplayName("用戶數 < batchSize → 單批次，行為等同原本")
+        void singleBatchWhenUsersLessThanBatchSize() throws Exception {
+            // batchSize=15（預設），只有 2 個用戶
+            User u1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User u2 = User.builder().userId("u2").email("b@test.com").name("B")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(u1, u2));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2"));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), anyString()))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("CLOSE", "ETHUSDT", null);
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(2);
+            assertThat(result.get("successCount")).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("跨批次 success/fail 計數正確聚合")
+        void crossBatchCountsAggregateCorrectly() throws Exception {
+            BroadcastTradeService batchService = new BroadcastTradeService(
+                    userRepository, binanceFuturesService, discordWebhookService,
+                    userApiKeyService, subscriptionRepository, signalScoringService,
+                    tradeRepository, broadcastLogRepository, objectMapper,
+                    broadcastExecutor, 2, 0L);
+
+            User u1 = User.builder().userId("u1").email("a@test.com").name("A")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User u2 = User.builder().userId("u2").email("b@test.com").name("B")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+            User u3 = User.builder().userId("u3").email("c@test.com").name("C")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(u1, u2, u3));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription()).thenReturn(List.of("u1", "u2", "u3"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE")).thenReturn(Set.of("u1", "u2", "u3"));
+
+            // u1 成功, u2 失敗（第一批）, u3 成功（第二批）
+            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u1")))
+                    .thenReturn(List.of());
+            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u2")))
+                    .thenThrow(new RuntimeException("Insufficient balance"));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), eq("u3")))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            Map<String, Object> result = batchService.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(3);
+            assertThat(result.get("successCount")).isEqualTo(2);
+            assertThat(result.get("failCount")).isEqualTo(1);
+
+            // BroadcastLog 也正確聚合
+            ArgumentCaptor<BroadcastLog> captor = ArgumentCaptor.forClass(BroadcastLog.class);
+            verify(broadcastLogRepository).save(captor.capture());
+            BroadcastLog saved = captor.getValue();
+            assertThat(saved.getSuccessCount()).isEqualTo(2);
+            assertThat(saved.getFailCount()).isEqualTo(1);
+            assertThat(saved.getUserResults()).contains("Insufficient balance");
         }
     }
 }
