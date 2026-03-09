@@ -13,8 +13,12 @@ import com.trader.trading.repository.TradeEventRepository;
 import com.trader.trading.repository.TradeRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static com.trader.shared.config.RedisCacheConfig.TODAY_LOSS;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -405,6 +409,7 @@ public class TradeRecordService {
      * @param closeOrder 平倉單結果
      * @param exitReason 出場原因（SIGNAL_CLOSE / STOP_LOSS / MANUAL_CLOSE / FAIL_SAFE）
      */
+    @CacheEvict(value = TODAY_LOSS, allEntries = true)
     @Transactional
     public Trade recordClose(String symbol, OrderResult closeOrder, String exitReason) {
         Optional<Trade> openTradeOpt = resolveOpenOrRecentlyCancelledTrade(symbol);
@@ -513,6 +518,7 @@ public class TradeRecordService {
     /**
      * CLOSE — 顯式 userId 版本（供廣播跟單使用）
      */
+    @CacheEvict(value = TODAY_LOSS, allEntries = true)
     @Transactional
     public Trade recordClose(String symbol, OrderResult closeOrder, String exitReason, String userId) {
         Optional<Trade> openTradeOpt = resolveOpenOrRecentlyCancelledTrade(symbol, userId);
@@ -904,6 +910,7 @@ public class TradeRecordService {
      * 查詢指定用戶的今日已實現虧損（explicit-userId 版本）
      * 供排程任務（DailyReportService）在無 ThreadLocal 時使用
      */
+    @Cacheable(value = TODAY_LOSS, key = "#userId")
     @Transactional(readOnly = true)
     public double getTodayRealizedLoss(String userId) {
         LocalDateTime startOfToday = LocalDateTime.now(AppConstants.ZONE_ID).toLocalDate().atStartOfDay();
@@ -1132,6 +1139,7 @@ public class TradeRecordService {
      * @param exitReason      出場原因: "SL_TRIGGERED" or "TP_TRIGGERED"
      * @param transactionTime 交易時間 (o.T) milliseconds
      */
+    @CacheEvict(value = TODAY_LOSS, allEntries = true)
     @Transactional
     public void recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
                                        double commission, double realizedProfit,

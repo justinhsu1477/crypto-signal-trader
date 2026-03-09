@@ -14,8 +14,11 @@ import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static com.trader.shared.config.RedisCacheConfig.ACTIVE_SUBSCRIBERS;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -140,6 +143,7 @@ public class SubscriptionService {
      * 2. 呼叫 TronService 驗證鏈上交易
      * 3. 驗證通過 → 建立/延長訂閱 + 記錄付款歷史
      */
+    @CacheEvict(value = ACTIVE_SUBSCRIBERS, allEntries = true)
     @Transactional
     public String submitPayment(String userId, String planId, String txHash) {
         // 1. 驗證方案
@@ -217,6 +221,7 @@ public class SubscriptionService {
     /**
      * 取消訂閱（立即停止）
      */
+    @CacheEvict(value = ACTIVE_SUBSCRIBERS, allEntries = true)
     @Transactional
     public void cancel(String userId) {
         Subscription sub = subscriptionRepository.findActiveByUserId(userId)
@@ -234,6 +239,7 @@ public class SubscriptionService {
     /**
      * 檢查並標記到期訂閱，同時關閉用戶的 autoTrade
      */
+    @CacheEvict(value = ACTIVE_SUBSCRIBERS, allEntries = true)
     @Transactional
     public List<Subscription> expireOverdueSubscriptions() {
         LocalDateTime now = LocalDateTime.now(ZONE);

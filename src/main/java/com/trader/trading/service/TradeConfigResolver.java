@@ -10,7 +10,10 @@ import com.trader.user.entity.UserTradeSettings;
 import com.trader.user.service.UserTradeSettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+
+import static com.trader.shared.config.RedisCacheConfig.TRADE_CONFIG;
 
 import java.util.List;
 
@@ -43,6 +46,7 @@ public class TradeConfigResolver {
      * @param userId 用戶 ID（per-user 模式會查 DB）
      * @return 已解析的 EffectiveTradeConfig（所有欄位都有值）
      */
+    @Cacheable(value = TRADE_CONFIG, key = "#userId")
     public EffectiveTradeConfig resolve(String userId) {
         if (!multiUserConfig.isEnabled()) {
             return fromGlobal();
