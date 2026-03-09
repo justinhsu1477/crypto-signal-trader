@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getDashboardOverview } from "@/lib/api";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { RiskBudgetCard } from "@/components/dashboard/risk-budget";
 import { PositionsTable } from "@/components/dashboard/positions-table";
+import { PortfolioAllocation } from "@/components/dashboard/portfolio-allocation";
 import { SystemStatus } from "@/components/dashboard/system-status";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
+import { TutorialOverlay } from "@/components/onboarding/tutorial-overlay";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useT } from "@/lib/i18n/i18n-context";
 import { useAuth } from "@/lib/auth-context";
@@ -28,19 +30,20 @@ export default function HomePage() {
     }
   }, [role, router]);
 
-  useEffect(() => {
-    async function fetchOverview() {
-      try {
-        const overview = await getDashboardOverview();
-        setData(overview);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t("common.loadFailed"));
-      } finally {
-        setLoading(false);
-      }
+  const fetchOverview = useCallback(async () => {
+    try {
+      const overview = await getDashboardOverview();
+      setData(overview);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("common.loadFailed"));
+    } finally {
+      setLoading(false);
     }
-    fetchOverview();
   }, [t]);
+
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
 
   if (loading) {
     return (
@@ -65,17 +68,23 @@ export default function HomePage() {
         <OnboardingChecklist data={data} />
       </ErrorBoundary>
       <ErrorBoundary>
-        <KpiCards data={data} />
+        <div data-tutorial-step="kpi-cards">
+          <KpiCards data={data} />
+        </div>
       </ErrorBoundary>
       <ErrorBoundary>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2" data-tutorial-step="risk-budget">
           <RiskBudgetCard data={data.riskBudget} />
           <SystemStatus circuitBreakerActive={data.riskBudget.circuitBreakerActive} />
         </div>
       </ErrorBoundary>
       <ErrorBoundary>
-        <PositionsTable positions={data.positions} />
+        <PortfolioAllocation data={data} />
       </ErrorBoundary>
+      <ErrorBoundary>
+        <PositionsTable positions={data.positions} onRefresh={fetchOverview} />
+      </ErrorBoundary>
+      <TutorialOverlay />
     </div>
   );
 }
