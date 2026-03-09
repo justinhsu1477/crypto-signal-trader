@@ -7,7 +7,6 @@ import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { RiskBudgetCard } from "@/components/dashboard/risk-budget";
 import { PositionsTable } from "@/components/dashboard/positions-table";
 import { PortfolioAllocation } from "@/components/dashboard/portfolio-allocation";
-import { TradingViewChart } from "@/components/dashboard/tradingview-chart";
 import { SystemStatus } from "@/components/dashboard/system-status";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { TutorialOverlay } from "@/components/onboarding/tutorial-overlay";
@@ -81,9 +80,6 @@ export default function HomePage() {
       </ErrorBoundary>
       <ErrorBoundary>
         <PortfolioAllocation data={data} />
-      </ErrorBoundary>
-      <ErrorBoundary>
-        <TradingViewChart positions={data.positions} />
       </ErrorBoundary>
       <ErrorBoundary>
         <PositionsTable positions={data.positions} onRefresh={fetchOverview} />

@@ -45,6 +45,7 @@ const translations = {
   nav: {
     overview: { en: "Overview", "zh-TW": "總覽", "zh-CN": "总览", ja: "概要" },
     performance: { en: "Performance", "zh-TW": "績效", "zh-CN": "绩效", ja: "パフォーマンス" },
+    chart: { en: "Chart", "zh-TW": "即時圖表", "zh-CN": "实时图表", ja: "チャート" },
     trades: { en: "Trade History", "zh-TW": "交易紀錄", "zh-CN": "交易记录", ja: "取引履歴" },
     settings: { en: "Settings", "zh-TW": "設定", "zh-CN": "设置", ja: "設定" },
     referral: { en: "Referral", "zh-TW": "推薦綁定", "zh-CN": "推荐绑定", ja: "リファーラル" },
