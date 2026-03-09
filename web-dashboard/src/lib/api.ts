@@ -355,6 +355,22 @@ export async function getTradeHistory(page: number, size: number): Promise<Trade
   return request<TradeHistoryResponse>(`/api/dashboard/trades?page=${page}&size=${size}`);
 }
 
+// ==================== Position Management ====================
+
+export async function closePosition(symbol: string, side: string): Promise<{ status: string }> {
+  return request<{ status: string }>("/api/execute-trade", {
+    method: "POST",
+    body: JSON.stringify({ action: "CLOSE", symbol, side }),
+  });
+}
+
+export async function cancelOrders(symbol: string): Promise<{ status: string }> {
+  return request<{ status: string }>("/api/execute-trade", {
+    method: "POST",
+    body: JSON.stringify({ action: "CANCEL", symbol }),
+  });
+}
+
 // ==================== Trade Export ====================
 
 export async function exportTrades(days: number = 30): Promise<void> {
