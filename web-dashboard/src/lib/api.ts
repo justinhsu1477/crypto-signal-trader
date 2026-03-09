@@ -847,3 +847,27 @@ export async function adminSendNotification(data: AdminSendNotificationRequest):
     body: JSON.stringify(data),
   });
 }
+
+// ─── Admin User API Keys ───
+
+export async function adminSetApiKey(
+  userId: string,
+  data: { exchange: string; apiKey: string; secretKey: string }
+): Promise<{ message: string; exchange: string; updatedAt: string }> {
+  return request<{ message: string; exchange: string; updatedAt: string }>(
+    `/api/admin/users/${userId}/api-keys`,
+    { method: "PUT", body: JSON.stringify(data) }
+  );
+}
+
+// ─── Admin User Trade Settings ───
+
+export async function adminUpdateTradeSettings(
+  userId: string,
+  data: UpdateTradeSettingsRequest
+): Promise<UserTradeSettings> {
+  return request<UserTradeSettings>(
+    `/api/admin/users/${userId}/trade-settings`,
+    { method: "PUT", body: JSON.stringify(data) }
+  );
+}

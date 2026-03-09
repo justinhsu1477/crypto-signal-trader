@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminUserDetail, updateAdminUser, adminSendNotification } from "@/lib/api";
+import { getAdminUserDetail, updateAdminUser, adminSendNotification, adminSetApiKey, adminUpdateTradeSettings } from "@/lib/api";
+import type { UpdateTradeSettingsRequest } from "@/types";
 import type { AdminUserDetailResponse } from "@/types";
 import {
   ArrowLeft, Check, X, Power, Shield, Mail, Key, Bell,
-  TrendingUp, MessageSquare, Link2, Send,
+  TrendingUp, MessageSquare, Link2, Send, Edit2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,6 +23,17 @@ export default function AdminUserDetailPage() {
   const [error, setError] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [notifDialogOpen, setNotifDialogOpen] = useState(false);
+
+  // API Key form state
+  const [apiKeyFormOpen, setApiKeyFormOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [secretKeyInput, setSecretKeyInput] = useState("");
+  const [savingApiKey, setSavingApiKey] = useState(false);
+
+  // Trade Settings edit state
+  const [editingTradeSettings, setEditingTradeSettings] = useState(false);
+  const [tsForm, setTsForm] = useState<UpdateTradeSettingsRequest>({});
+  const [savingTs, setSavingTs] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -60,6 +72,61 @@ export default function AdminUserDetailPage() {
       toast.error(e instanceof Error ? e.message : t("admin.updateFailed"));
     } finally {
       setUpdating(false);
+    }
+  }
+
+  async function handleSaveApiKey() {
+    if (!apiKeyInput.trim() || !secretKeyInput.trim()) return;
+    setSavingApiKey(true);
+    try {
+      await adminSetApiKey(userId, {
+        exchange: "BINANCE",
+        apiKey: apiKeyInput.trim(),
+        secretKey: secretKeyInput.trim(),
+      });
+      toast.success(t("admin.apiKeySaveSuccess"));
+      setApiKeyFormOpen(false);
+      setApiKeyInput("");
+      setSecretKeyInput("");
+      const updated = await getAdminUserDetail(userId);
+      setData(updated);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : t("admin.updateFailed"));
+    } finally {
+      setSavingApiKey(false);
+    }
+  }
+
+  function openTradeSettingsEdit() {
+    if (!data) return;
+    setTsForm({
+      riskPercent: data.tradeSettings.riskPercent,
+      maxLeverage: data.tradeSettings.maxLeverage,
+      maxDcaLayers: data.tradeSettings.maxDcaLayers,
+      maxPositionSizeUsdt: data.tradeSettings.maxPositionSizeUsdt,
+      dailyLossLimitUsdt: data.tradeSettings.dailyLossLimitUsdt ?? 0,
+      dcaRiskMultiplier: data.tradeSettings.dcaRiskMultiplier ?? 0,
+      dailyLossPercent: data.tradeSettings.dailyLossPercent ?? 0,
+      maxPositionPercent: data.tradeSettings.maxPositionPercent ?? 0,
+      autoSlEnabled: data.tradeSettings.autoSlEnabled,
+      autoTpEnabled: data.tradeSettings.autoTpEnabled,
+      allowedSymbols: data.tradeSettings.allowedSymbols,
+    });
+    setEditingTradeSettings(true);
+  }
+
+  async function handleSaveTradeSettings() {
+    setSavingTs(true);
+    try {
+      await adminUpdateTradeSettings(userId, tsForm);
+      toast.success(t("admin.tradeSettingsSaveSuccess"));
+      setEditingTradeSettings(false);
+      const updated = await getAdminUserDetail(userId);
+      setData(updated);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : t("admin.updateFailed"));
+    } finally {
+      setSavingTs(false);
     }
   }
 
@@ -232,39 +299,166 @@ export default function AdminUserDetailPage() {
       </Section>
 
       {/* API Keys */}
-      {data.apiKeys.length > 0 && (
-        <Section icon={Link2} title={t("admin.apiKeysSection")}>
+      <Section icon={Link2} title={t("admin.apiKeysSection")} action={
+        !apiKeyFormOpen && (
+          <button
+            onClick={() => setApiKeyFormOpen(true)}
+            className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            {t("admin.setApiKey")}
+          </button>
+        )
+      }>
+        {/* Status */}
+        {data.apiKeys.length > 0 ? (
           <div className="space-y-1.5">
             {data.apiKeys.map((k, i) => (
               <div key={i} className="flex items-center gap-3 text-sm">
                 <span className="font-medium">{k.exchange}</span>
-                <span className="text-muted-foreground">{t("admin.createdAt")}: {k.createdAt ? new Date(k.createdAt).toLocaleDateString() : "-"}</span>
+                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-green-500/15 text-green-400">
+                  <Check className="h-3 w-3" /> {t("admin.apiKeyConfigured")}
+                </span>
+                <span className="text-muted-foreground text-xs">
+                  {k.updatedAt ? new Date(k.updatedAt).toLocaleString() : k.createdAt ? new Date(k.createdAt).toLocaleString() : ""}
+                </span>
               </div>
             ))}
           </div>
-        </Section>
-      )}
+        ) : (
+          <span className="text-sm text-muted-foreground">{t("admin.apiKeyNotConfigured")}</span>
+        )}
 
-      {/* Trade Settings */}
-      <Section icon={TrendingUp} title={t("admin.tradeSettingsSection")}>
-        <InfoGrid items={[
-          { label: t("admin.riskPercent"), value: data.tradeSettings.riskPercent != null ? `${data.tradeSettings.riskPercent}%` : "-" },
-          { label: t("admin.maxLeverage"), value: data.tradeSettings.maxLeverage != null ? `${data.tradeSettings.maxLeverage}x` : "-" },
-          { label: t("admin.maxDcaLayers"), value: data.tradeSettings.maxDcaLayers ?? "-" },
-          { label: t("admin.maxPositionSize"), value: data.tradeSettings.maxPositionSizeUsdt != null ? `$${data.tradeSettings.maxPositionSizeUsdt}` : "-" },
-          { label: t("admin.dailyLossLimit"), value: data.tradeSettings.dailyLossLimitUsdt != null ? `$${data.tradeSettings.dailyLossLimitUsdt}` : "-" },
-          { label: t("admin.autoSl"), value: <BoolBadge value={data.tradeSettings.autoSlEnabled} t={t} /> },
-          { label: t("admin.autoTp"), value: <BoolBadge value={data.tradeSettings.autoTpEnabled} t={t} /> },
-        ]} />
-        {data.tradeSettings.allowedSymbols && data.tradeSettings.allowedSymbols.length > 0 && (
-          <div className="mt-3">
-            <span className="text-xs font-medium text-muted-foreground">{t("admin.allowedSymbols")}:</span>
-            <div className="flex gap-1.5 flex-wrap mt-1">
-              {data.tradeSettings.allowedSymbols.map((s) => (
-                <span key={s} className="inline-block px-2 py-0.5 rounded bg-accent text-xs font-medium">{s}</span>
-              ))}
+        {/* Inline Form */}
+        {apiKeyFormOpen && (
+          <div className="mt-4 p-4 rounded-lg border border-border bg-background space-y-3">
+            {data.apiKeys.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-500/10 px-3 py-2 rounded-lg">
+                {t("admin.apiKeyReplaceWarning")}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">API Key</label>
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                autoComplete="off"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Secret Key</label>
+              <input
+                type="password"
+                value={secretKeyInput}
+                onChange={(e) => setSecretKeyInput(e.target.value)}
+                autoComplete="off"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setApiKeyFormOpen(false); setApiKeyInput(""); setSecretKeyInput(""); }}
+                className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors"
+              >
+                {t("admin.cancel")}
+              </button>
+              <button
+                onClick={handleSaveApiKey}
+                disabled={!apiKeyInput.trim() || !secretKeyInput.trim() || savingApiKey}
+                className="px-4 py-2 rounded-lg bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {savingApiKey ? "..." : t("admin.save")}
+              </button>
             </div>
           </div>
+        )}
+      </Section>
+
+      {/* Trade Settings */}
+      <Section icon={TrendingUp} title={t("admin.tradeSettingsSection")} action={
+        !editingTradeSettings && (
+          <button
+            onClick={openTradeSettingsEdit}
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            <Edit2 className="h-3 w-3" /> {t("admin.editTradeSettings")}
+          </button>
+        )
+      }>
+        {editingTradeSettings ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
+              <NumberField label={t("admin.riskPercent")} value={tsForm.riskPercent} onChange={(v) => setTsForm(p => ({ ...p, riskPercent: v }))} step={0.01} />
+              <NumberField label={t("admin.maxLeverage")} value={tsForm.maxLeverage} onChange={(v) => setTsForm(p => ({ ...p, maxLeverage: v }))} step={1} />
+              <NumberField label={t("admin.maxDcaLayers")} value={tsForm.maxDcaLayers} onChange={(v) => setTsForm(p => ({ ...p, maxDcaLayers: v }))} step={1} />
+              <NumberField label={t("admin.maxPositionSize")} value={tsForm.maxPositionSizeUsdt} onChange={(v) => setTsForm(p => ({ ...p, maxPositionSizeUsdt: v }))} step={100} />
+              <NumberField label={t("admin.dailyLossLimit")} value={tsForm.dailyLossLimitUsdt} onChange={(v) => setTsForm(p => ({ ...p, dailyLossLimitUsdt: v }))} step={100} />
+              <NumberField label={t("admin.dcaRiskMultiplier")} value={tsForm.dcaRiskMultiplier} onChange={(v) => setTsForm(p => ({ ...p, dcaRiskMultiplier: v }))} step={0.1} />
+              <NumberField label={t("admin.dailyLossPercent")} value={tsForm.dailyLossPercent} onChange={(v) => setTsForm(p => ({ ...p, dailyLossPercent: v }))} step={0.01} />
+              <NumberField label={t("admin.maxPositionPercent")} value={tsForm.maxPositionPercent} onChange={(v) => setTsForm(p => ({ ...p, maxPositionPercent: v }))} step={0.01} />
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={tsForm.autoSlEnabled ?? false} onChange={(e) => setTsForm(p => ({ ...p, autoSlEnabled: e.target.checked }))} className="rounded" />
+                {t("admin.autoSl")}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={tsForm.autoTpEnabled ?? false} onChange={(e) => setTsForm(p => ({ ...p, autoTpEnabled: e.target.checked }))} className="rounded" />
+                {t("admin.autoTp")}
+              </label>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">{t("admin.allowedSymbols")}</label>
+              <input
+                type="text"
+                value={(tsForm.allowedSymbols ?? []).join(", ")}
+                onChange={(e) => setTsForm(p => ({ ...p, allowedSymbols: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="BTCUSDT, ETHUSDT"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEditingTradeSettings(false)}
+                className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors"
+              >
+                {t("admin.cancel")}
+              </button>
+              <button
+                onClick={handleSaveTradeSettings}
+                disabled={savingTs}
+                className="px-4 py-2 rounded-lg bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {savingTs ? "..." : t("admin.save")}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <InfoGrid items={[
+              { label: t("admin.riskPercent"), value: data.tradeSettings.riskPercent != null ? `${data.tradeSettings.riskPercent}%` : "-" },
+              { label: t("admin.maxLeverage"), value: data.tradeSettings.maxLeverage != null ? `${data.tradeSettings.maxLeverage}x` : "-" },
+              { label: t("admin.maxDcaLayers"), value: data.tradeSettings.maxDcaLayers ?? "-" },
+              { label: t("admin.maxPositionSize"), value: data.tradeSettings.maxPositionSizeUsdt != null ? `$${data.tradeSettings.maxPositionSizeUsdt}` : "-" },
+              { label: t("admin.dailyLossLimit"), value: data.tradeSettings.dailyLossLimitUsdt != null ? `$${data.tradeSettings.dailyLossLimitUsdt}` : "-" },
+              { label: t("admin.dcaRiskMultiplier"), value: data.tradeSettings.dcaRiskMultiplier ?? "-" },
+              { label: t("admin.dailyLossPercent"), value: data.tradeSettings.dailyLossPercent != null ? `${data.tradeSettings.dailyLossPercent}%` : "-" },
+              { label: t("admin.maxPositionPercent"), value: data.tradeSettings.maxPositionPercent != null ? `${data.tradeSettings.maxPositionPercent}%` : "-" },
+              { label: t("admin.autoSl"), value: <BoolBadge value={data.tradeSettings.autoSlEnabled} t={t} /> },
+              { label: t("admin.autoTp"), value: <BoolBadge value={data.tradeSettings.autoTpEnabled} t={t} /> },
+            ]} />
+            {data.tradeSettings.allowedSymbols && data.tradeSettings.allowedSymbols.length > 0 && (
+              <div className="mt-3">
+                <span className="text-xs font-medium text-muted-foreground">{t("admin.allowedSymbols")}:</span>
+                <div className="flex gap-1.5 flex-wrap mt-1">
+                  {data.tradeSettings.allowedSymbols.map((s) => (
+                    <span key={s} className="inline-block px-2 py-0.5 rounded bg-accent text-xs font-medium">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </Section>
 
@@ -316,14 +510,37 @@ export default function AdminUserDetailPage() {
 
 // ==================== Sub-components ====================
 
-function Section({ icon: Icon, title, children }: { icon: React.ComponentType<{ className?: string }>; title: string; children: React.ReactNode }) {
+function Section({ icon: Icon, title, action, children }: { icon: React.ComponentType<{ className?: string }>; title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold">{title}</h2>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">{title}</h2>
+        </div>
+        {action}
       </div>
       {children}
+    </div>
+  );
+}
+
+function NumberField({ label, value, onChange, step }: {
+  label: string;
+  value: number | undefined;
+  onChange: (v: number) => void;
+  step: number;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-muted-foreground mb-1">{label}</label>
+      <input
+        type="number"
+        value={value ?? ""}
+        onChange={(e) => onChange(Number(e.target.value))}
+        step={step}
+        className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+      />
     </div>
   );
 }
