@@ -23,6 +23,7 @@ import {
   Send,
   TrendingUp,
   Users2,
+  CandlestickChart,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -38,6 +39,7 @@ export function Sidebar() {
   const navItems = [
     { href: "/", label: t("nav.overview"), icon: LayoutDashboard },
     { href: "/performance", label: t("nav.performance"), icon: BarChart3 },
+    { href: "/chart", label: t("nav.chart"), icon: CandlestickChart },
     { href: "/trades", label: t("nav.trades"), icon: History },
     { href: "/referral", label: t("nav.referral"), icon: Link2 },
     { href: "/announcements", label: t("nav.announcements"), icon: Bell },
