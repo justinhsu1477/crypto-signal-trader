@@ -55,6 +55,8 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      - REDIS_HOST=redis              # Docker 內部 DNS（覆蓋 .env 的預設值）
     depends_on:
       redis:
         condition: service_healthy
