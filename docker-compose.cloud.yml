@@ -14,6 +14,20 @@
 # DB 使用 Neon 雲端，不需本地 PostgreSQL
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -54,7 +68,11 @@ services:
       - "8080"
     env_file:
       - .env.prod
+    environment:
+      - REDIS_HOST=redis              # Docker 內部 DNS（覆蓋 .env.prod 的預設值）
     depends_on:
+      redis:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     healthcheck:
@@ -79,4 +97,5 @@ services:
 
 volumes:
   caddy_data:
+  redis_data:
   rabbitmq_data:
