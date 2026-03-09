@@ -431,6 +431,8 @@ const translations = {
     lossUsed: { en: "Loss budget used", "zh-TW": "已用損失額度", "zh-CN": "已用损失额度", ja: "使用済みロス予算" },
     remainingBudget: { en: "Remaining budget", "zh-TW": "剩餘預算", "zh-CN": "剩余预算", ja: "残りの予算" },
     systemStatus: { en: "System Status", "zh-TW": "系統狀態", "zh-CN": "系统状态", ja: "システムステータス" },
+    // 即時圖表
+    liveChart: { en: "Live Chart", "zh-TW": "即時圖表", "zh-CN": "实时图表", ja: "ライブチャート" },
     // 資產配置
     portfolioAllocation: { en: "Portfolio Allocation", "zh-TW": "資產配置", "zh-CN": "资产配置", ja: "ポートフォリオ配分" },
     marginUsage: { en: "Margin Usage", "zh-TW": "保證金使用率", "zh-CN": "保证金使用率", ja: "証拠金使用率" },
