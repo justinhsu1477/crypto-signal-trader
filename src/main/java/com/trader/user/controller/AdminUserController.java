@@ -9,7 +9,9 @@ import com.trader.user.dto.AdminUserListResponse.AdminUserSummary;
 import com.trader.user.entity.*;
 import com.trader.user.event.AdminUserDetailRequestEvent;
 import com.trader.user.repository.*;
+import com.trader.user.service.UserService;
 import com.trader.user.service.UserTradeSettingsService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -50,6 +52,7 @@ public class AdminUserController {
     private final UserDiscordWebhookRepository discordWebhookRepository;
     private final UserNotificationPreferencesRepository notificationPreferencesRepository;
     private final UserTradeSettingsService tradeSettingsService;
+    private final UserService userService;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -192,6 +195,34 @@ public class AdminUserController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * 管理員為用戶設定 API Key（AES-256-GCM 加密儲存）
+     */
+    @PutMapping("/{userId}/api-keys")
+    public ResponseEntity<?> setUserApiKey(
+            @PathVariable String userId,
+            @Valid @RequestBody SaveApiKeyRequest request) {
+
+        if (!userRepository.existsById(userId)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String adminId = SecurityUtil.getCurrentUserId();
+        UserApiKey saved = userService.saveApiKey(
+                userId, request.getExchange(),
+                request.getApiKey(), request.getSecretKey());
+
+        log.info("管理員 {} 為用戶 {} 設定 {} API Key", adminId, userId, request.getExchange());
+        auditService.log(adminId, "ADMIN_SET_API_KEY",
+                "/api/admin/users/" + userId + "/api-keys",
+                "SUCCESS", "", "exchange=" + request.getExchange());
+
+        return ResponseEntity.ok(Map.of(
+                "message", "API Key 已設定",
+                "exchange", saved.getExchange(),
+                "updatedAt", saved.getUpdatedAt() != null ? saved.getUpdatedAt().toString() : ""));
     }
 
     // ==================== private helpers ====================

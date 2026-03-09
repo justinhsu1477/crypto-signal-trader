@@ -8,6 +8,7 @@ import com.trader.user.dto.AdminUserListResponse.AdminUserSummary;
 import com.trader.user.entity.*;
 import com.trader.user.event.AdminUserDetailRequestEvent;
 import com.trader.user.repository.*;
+import com.trader.user.service.UserService;
 import com.trader.user.service.UserTradeSettingsService;
 import org.junit.jupiter.api.*;
 import org.mockito.MockedStatic;
@@ -35,6 +36,7 @@ class AdminUserControllerTest {
     private UserDiscordWebhookRepository discordWebhookRepository;
     private UserNotificationPreferencesRepository notificationPreferencesRepository;
     private UserTradeSettingsService tradeSettingsService;
+    private UserService userService;
     private AuditService auditService;
     private ApplicationEventPublisher eventPublisher;
     private AdminUserController controller;
@@ -47,12 +49,13 @@ class AdminUserControllerTest {
         discordWebhookRepository = mock(UserDiscordWebhookRepository.class);
         notificationPreferencesRepository = mock(UserNotificationPreferencesRepository.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
+        userService = mock(UserService.class);
         auditService = mock(AuditService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         controller = new AdminUserController(
                 userRepository, lineBindingRepository, apiKeyRepository,
                 discordWebhookRepository, notificationPreferencesRepository,
-                tradeSettingsService, auditService, eventPublisher);
+                tradeSettingsService, userService, auditService, eventPublisher);
 
         // 預設無 LINE 綁定
         when(lineBindingRepository.findUserIdsWithEnabledBinding()).thenReturn(List.of());
@@ -538,6 +541,91 @@ class AdminUserControllerTest {
             assertThat(result).contains("...");
             assertThat(result).endsWith("56789");
             assertThat(result.length()).isEqualTo(44); // 35 + 3 + 6
+        }
+    }
+
+    // ==================== setUserApiKey ====================
+
+    @Nested
+    @DisplayName("PUT /api/admin/users/{userId}/api-keys — setUserApiKey")
+    class SetApiKeyTests {
+
+        @Test
+        @DisplayName("成功設定 API Key → 200 + audit log")
+        @SuppressWarnings("unchecked")
+        void successfulSetApiKey() {
+            when(userRepository.existsById("u1")).thenReturn(true);
+
+            UserApiKey saved = UserApiKey.builder()
+                    .userId("u1").exchange("BINANCE")
+                    .updatedAt(LocalDateTime.of(2026, 3, 1, 12, 0)).build();
+            when(userService.saveApiKey("u1", "BINANCE", "my-api-key", "my-secret"))
+                    .thenReturn(saved);
+
+            SaveApiKeyRequest request = new SaveApiKeyRequest();
+            request.setExchange("BINANCE");
+            request.setApiKey("my-api-key");
+            request.setSecretKey("my-secret");
+
+            try (MockedStatic<SecurityUtil> mocked = mockStatic(SecurityUtil.class)) {
+                mocked.when(SecurityUtil::getCurrentUserId).thenReturn("admin1");
+
+                ResponseEntity<?> response = controller.setUserApiKey("u1", request);
+
+                assertThat(response.getStatusCode().value()).isEqualTo(200);
+                Map<String, Object> body = (Map<String, Object>) response.getBody();
+                assertThat(body.get("message")).isEqualTo("API Key 已設定");
+                assertThat(body.get("exchange")).isEqualTo("BINANCE");
+
+                verify(userService).saveApiKey("u1", "BINANCE", "my-api-key", "my-secret");
+                verify(auditService).log(eq("admin1"), eq("ADMIN_SET_API_KEY"),
+                        eq("/api/admin/users/u1/api-keys"),
+                        eq("SUCCESS"), eq(""), eq("exchange=BINANCE"));
+            }
+        }
+
+        @Test
+        @DisplayName("userId 不存在 → 404")
+        void userNotFound() {
+            when(userRepository.existsById("nonexist")).thenReturn(false);
+
+            SaveApiKeyRequest request = new SaveApiKeyRequest();
+            request.setExchange("BINANCE");
+            request.setApiKey("key");
+            request.setSecretKey("secret");
+
+            ResponseEntity<?> response = controller.setUserApiKey("nonexist", request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+            verify(userService, never()).saveApiKey(anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("updatedAt 為 null 時回傳空字串")
+        @SuppressWarnings("unchecked")
+        void updatedAtNull() {
+            when(userRepository.existsById("u1")).thenReturn(true);
+
+            UserApiKey saved = UserApiKey.builder()
+                    .userId("u1").exchange("BINANCE")
+                    .updatedAt(null).build();
+            when(userService.saveApiKey(eq("u1"), eq("BINANCE"), anyString(), anyString()))
+                    .thenReturn(saved);
+
+            SaveApiKeyRequest request = new SaveApiKeyRequest();
+            request.setExchange("BINANCE");
+            request.setApiKey("key");
+            request.setSecretKey("secret");
+
+            try (MockedStatic<SecurityUtil> mocked = mockStatic(SecurityUtil.class)) {
+                mocked.when(SecurityUtil::getCurrentUserId).thenReturn("admin1");
+
+                ResponseEntity<?> response = controller.setUserApiKey("u1", request);
+
+                assertThat(response.getStatusCode().value()).isEqualTo(200);
+                Map<String, Object> body = (Map<String, Object>) response.getBody();
+                assertThat(body.get("updatedAt")).isEqualTo("");
+            }
         }
     }
 }
