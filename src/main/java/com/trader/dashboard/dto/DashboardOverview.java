@@ -50,6 +50,10 @@ public class DashboardOverview {
         private double todayPnl;
         /** 今日交易筆數 */
         private int todayTradeCount;
+        /** 已用保證金總計 (USDT) */
+        private double totalMarginUsed;
+        /** 保證金使用率 (totalMarginUsed / balance) */
+        private double marginRatio;
     }
 
     @Data
@@ -95,5 +99,23 @@ public class DashboardOverview {
         private String signalSource;
         /** 入場時間 */
         private String entryTime;
+
+        // === AI 訊號評分 ===
+        /** AI 信心度 0-100 */
+        private Integer aiConfidence;
+        /** AI 分析摘要 */
+        private String aiReasoning;
+
+        // === 即時市場數據（Binance API） ===
+        /** 標記價格 */
+        private Double markPrice;
+        /** 未實現盈虧 */
+        private Double unrealizedPnl;
+        /** 持倉價值 = entryPrice × entryQuantity */
+        private Double positionValue;
+        /** 已用保證金 */
+        private Double marginUsed;
+        /** 入場數量 */
+        private Double entryQuantity;
     }
 }
