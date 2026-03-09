@@ -1,10 +1,13 @@
 package com.trader.subscription.repository;
 
 import com.trader.subscription.entity.Subscription;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import static com.trader.shared.config.RedisCacheConfig.ACTIVE_SUBSCRIBERS;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,6 +25,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
      * Batch 查詢：取得所有有效訂閱 (ACTIVE/LIFETIME) 的 userId
      * 用於 BroadcastTradeService 避免 N+1 查詢
      */
+    @Cacheable(ACTIVE_SUBSCRIBERS)
     @Query("SELECT s.userId FROM Subscription s WHERE s.status IN ('ACTIVE', 'LIFETIME')")
     List<String> findUserIdsWithActiveSubscription();
 

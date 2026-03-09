@@ -26,6 +26,14 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
+  # ========== Redis 快取層 ==========
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cache:
+    type: redis
+
   # ========== RabbitMQ 訊息佇列 ==========
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}

@@ -39,6 +39,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
+    // Redis 快取層（分散式快取 — 廣播跟單效能優化 + 未來多實例共享）
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
     // RabbitMQ 訊息佇列（通知非同步化 + 重試 + 持久化）
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
 

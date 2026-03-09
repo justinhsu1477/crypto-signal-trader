@@ -6,8 +6,12 @@ import com.trader.user.entity.UserApiKey;
 import com.trader.user.repository.UserApiKeyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static com.trader.shared.config.RedisCacheConfig.ALL_BINANCE_KEYS;
+import static com.trader.shared.config.RedisCacheConfig.USERS_WITH_API_KEY;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -83,6 +87,7 @@ public class UserApiKeyService {
      * @param exchange 交易所名稱
      * @return 擁有 API Key 的 userId 集合
      */
+    @Cacheable(value = USERS_WITH_API_KEY, key = "#exchange")
     @Transactional(readOnly = true)
     public Set<String> getUserIdsWithApiKey(String exchange) {
         return new HashSet<>(userApiKeyRepository.findUserIdsByExchange(exchange));
@@ -95,6 +100,7 @@ public class UserApiKeyService {
      * @param exchange 交易所名稱
      * @return userId → BinanceKeys 的 Map，只包含解密成功且完整的記錄
      */
+    @Cacheable(value = ALL_BINANCE_KEYS, key = "#exchange")
     @Transactional(readOnly = true)
     public Map<String, BinanceKeys> getAllBinanceKeys(String exchange) {
         List<UserApiKey> allKeys = userApiKeyRepository.findByExchange(exchange);

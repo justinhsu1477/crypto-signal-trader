@@ -9,8 +9,11 @@ import com.trader.user.entity.UserTradeSettings;
 import com.trader.user.repository.UserTradeSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static com.trader.shared.config.RedisCacheConfig.TRADE_CONFIG;
 
 import java.util.List;
 
@@ -52,6 +55,7 @@ public class UserTradeSettingsService {
     /**
      * 更新用戶交易參數（部分更新：只改有傳入的欄位）
      */
+    @CacheEvict(value = TRADE_CONFIG, key = "#userId")
     @Transactional
     public UserTradeSettings updateSettings(String userId, UpdateTradeSettingsRequest request) {
         UserTradeSettings settings = getOrCreateSettings(userId);

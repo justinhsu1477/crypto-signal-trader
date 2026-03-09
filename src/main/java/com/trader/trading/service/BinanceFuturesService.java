@@ -25,7 +25,10 @@ import com.trader.user.service.UserApiKeyService;
 import com.trader.user.service.UserApiKeyService.BinanceKeys;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+
+import static com.trader.shared.config.RedisCacheConfig.EXCHANGE_INFO;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -198,6 +201,7 @@ public class BinanceFuturesService {
         return sendSignedGet(endpoint, Map.of());
     }
 
+    @Cacheable(EXCHANGE_INFO)
     public String getExchangeInfo() {
         String endpoint = "/fapi/v1/exchangeInfo";
         return sendPublicGet(endpoint);

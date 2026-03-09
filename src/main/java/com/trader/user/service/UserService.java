@@ -8,9 +8,13 @@ import com.trader.user.event.UserDeletedEvent;
 import com.trader.user.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static com.trader.shared.config.RedisCacheConfig.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,6 +49,10 @@ public class UserService {
     /**
      * 儲存或更新用戶的交易所 API Key（AES-256-GCM 加密後存入 DB）
      */
+    @Caching(evict = {
+            @CacheEvict(value = ALL_BINANCE_KEYS, allEntries = true),
+            @CacheEvict(value = USERS_WITH_API_KEY, allEntries = true)
+    })
     @Transactional
     public UserApiKey saveApiKey(String userId, String exchange,
                                  String apiKey, String secretKey) {
