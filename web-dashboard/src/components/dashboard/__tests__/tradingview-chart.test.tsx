@@ -36,9 +36,9 @@ function buildPosition(symbol: string): OpenPositionSummary {
 }
 
 describe("TradingViewChart", () => {
-  it("renders card title", () => {
+  it("renders widget container", () => {
     render(<TradingViewChart positions={[]} />);
-    expect(screen.getByText("Live Chart")).toBeInTheDocument();
+    expect(document.querySelector(".tradingview-widget-container")).toBeInTheDocument();
   });
 
   it("defaults to BTCUSDT when no positions", () => {
