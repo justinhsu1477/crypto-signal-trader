@@ -104,10 +104,10 @@ export default function AdminUserDetailPage() {
       maxLeverage: data.tradeSettings.maxLeverage,
       maxDcaLayers: data.tradeSettings.maxDcaLayers,
       maxPositionSizeUsdt: data.tradeSettings.maxPositionSizeUsdt,
-      dailyLossLimitUsdt: data.tradeSettings.dailyLossLimitUsdt ?? 0,
-      dcaRiskMultiplier: data.tradeSettings.dcaRiskMultiplier ?? 0,
-      dailyLossPercent: data.tradeSettings.dailyLossPercent ?? 0,
-      maxPositionPercent: data.tradeSettings.maxPositionPercent ?? 0,
+      dailyLossLimitUsdt: data.tradeSettings.dailyLossLimitUsdt,
+      dcaRiskMultiplier: data.tradeSettings.dcaRiskMultiplier,
+      dailyLossPercent: data.tradeSettings.dailyLossPercent,
+      maxPositionPercent: data.tradeSettings.maxPositionPercent,
       autoSlEnabled: data.tradeSettings.autoSlEnabled,
       autoTpEnabled: data.tradeSettings.autoTpEnabled,
       allowedSymbols: data.tradeSettings.allowedSymbols,
@@ -528,7 +528,7 @@ function Section({ icon: Icon, title, action, children }: { icon: React.Componen
 function NumberField({ label, value, onChange, step }: {
   label: string;
   value: number | undefined;
-  onChange: (v: number) => void;
+  onChange: (v: number | undefined) => void;
   step: number;
 }) {
   return (
@@ -537,7 +537,7 @@ function NumberField({ label, value, onChange, step }: {
       <input
         type="number"
         value={value ?? ""}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
         step={step}
         className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
       />
