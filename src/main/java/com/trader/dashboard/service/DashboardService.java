@@ -29,6 +29,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -93,19 +98,29 @@ public class DashboardService {
             log.error("用戶 {} 取得餘額失敗: {}", userId, e.getMessage(), e);
         }
 
+        List<DashboardOverview.OpenPositionSummary> positions = buildPositionList(userId);
+
+        // 計算保證金統計
+        double totalMarginUsed = positions.stream()
+                .filter(p -> p.getMarginUsed() != null)
+                .mapToDouble(DashboardOverview.OpenPositionSummary::getMarginUsed)
+                .sum();
+        double marginRatio = balance > 0 ? round2(totalMarginUsed / balance * 100) : 0;
+
         return DashboardOverview.builder()
-                .account(buildAccountSummary(userId, balance))
+                .account(buildAccountSummary(userId, balance, totalMarginUsed, marginRatio))
                 .riskBudget(buildRiskBudget(userId, balance))
                 .subscription(buildSubscriptionInfo(userId))
                 .autoTradeEnabled(autoTradeEnabled)
                 .discordNotificationEnabled(discordNotificationEnabled)
                 .hasBinanceApiKey(hasBinanceApiKey)
                 .hasDiscordWebhook(hasDiscordWebhook)
-                .positions(buildPositionList(userId))
+                .positions(positions)
                 .build();
     }
 
-    private DashboardOverview.AccountSummary buildAccountSummary(String userId, double cachedBalance) {
+    private DashboardOverview.AccountSummary buildAccountSummary(
+            String userId, double cachedBalance, double totalMarginUsed, double marginRatio) {
         Map<String, Object> todayStats = tradeRecordService.getTodayStats(userId);
         long todayTrades = (long) todayStats.get("trades");
         double todayPnl = (double) todayStats.get("netProfit");
@@ -116,6 +131,8 @@ public class DashboardService {
                 .openPositionCount(openTrades.size())
                 .todayPnl(round2(todayPnl))
                 .todayTradeCount((int) todayTrades)
+                .totalMarginUsed(round2(totalMarginUsed))
+                .marginRatio(marginRatio)
                 .build();
     }
 
@@ -189,18 +206,84 @@ public class DashboardService {
     }
 
     private List<DashboardOverview.OpenPositionSummary> buildPositionList(String userId) {
-        return tradeRecordService.findAllOpenTrades(userId).stream()
-                .map(t -> DashboardOverview.OpenPositionSummary.builder()
-                        .symbol(t.getSymbol())
-                        .side(t.getSide())
-                        .entryPrice(t.getEntryPrice() != null ? t.getEntryPrice() : 0)
-                        .stopLoss(t.getStopLoss())
-                        .riskAmount(t.getRiskAmount())
-                        .dcaCount(t.getDcaCount())
-                        .signalSource(t.getSourceAuthorName())
-                        .entryTime(t.getEntryTime() != null ? t.getEntryTime().toString() : null)
-                        .build())
+        List<Trade> openTrades = tradeRecordService.findAllOpenTrades(userId);
+
+        // 嘗試取得 Binance 即時持倉數據（graceful degradation）
+        Map<String, JsonObject> livePositions = fetchLivePositions(userId);
+
+        return openTrades.stream()
+                .map(t -> {
+                    var builder = DashboardOverview.OpenPositionSummary.builder()
+                            .symbol(t.getSymbol())
+                            .side(t.getSide())
+                            .entryPrice(t.getEntryPrice() != null ? t.getEntryPrice() : 0)
+                            .stopLoss(t.getStopLoss())
+                            .riskAmount(t.getRiskAmount())
+                            .dcaCount(t.getDcaCount())
+                            .signalSource(t.getSourceAuthorName())
+                            .entryTime(t.getEntryTime() != null ? t.getEntryTime().toString() : null)
+                            .aiConfidence(t.getAiConfidence())
+                            .aiReasoning(t.getAiReasoning())
+                            .entryQuantity(t.getEntryQuantity());
+
+                    // 即時數據 enrichment
+                    JsonObject pos = livePositions.get(t.getSymbol());
+                    if (pos != null) {
+                        double markPrice = pos.has("markPrice") ? pos.get("markPrice").getAsDouble() : 0;
+                        double unrealizedPnl = pos.has("unRealizedProfit") ? pos.get("unRealizedProfit").getAsDouble() : 0;
+                        double isolatedMargin = pos.has("isolatedMargin") ? pos.get("isolatedMargin").getAsDouble() : 0;
+                        builder.markPrice(round2(markPrice))
+                                .unrealizedPnl(round2(unrealizedPnl))
+                                .marginUsed(round2(isolatedMargin));
+                    }
+
+                    // 持倉價值 = 入場價 × 入場數量
+                    if (t.getEntryPrice() != null && t.getEntryQuantity() != null) {
+                        builder.positionValue(round2(t.getEntryPrice() * t.getEntryQuantity()));
+                    }
+
+                    return builder.build();
+                })
                 .toList();
+    }
+
+    /**
+     * 取得 Binance 即時持倉數據，建立 symbol → positionRisk 的映射
+     * 失敗時回傳空 Map（graceful degradation）
+     */
+    private Map<String, JsonObject> fetchLivePositions(String userId) {
+        try {
+            String positionsJson;
+            if (multiUserConfig.isEnabled()) {
+                Optional<BinanceKeys> keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+                if (keysOpt.isEmpty()) return Map.of();
+                BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+                try {
+                    positionsJson = binanceFuturesService.getPositions();
+                } finally {
+                    BinanceFuturesService.clearCurrentUserKeys();
+                }
+            } else {
+                positionsJson = binanceFuturesService.getPositions();
+            }
+
+            if (positionsJson == null || positionsJson.isBlank()) return Map.of();
+
+            JsonArray arr = JsonParser.parseString(positionsJson).getAsJsonArray();
+            Map<String, JsonObject> result = new HashMap<>();
+            for (JsonElement el : arr) {
+                JsonObject obj = el.getAsJsonObject();
+                double posAmt = obj.has("positionAmt") ? obj.get("positionAmt").getAsDouble() : 0;
+                if (posAmt != 0) {
+                    String symbol = obj.get("symbol").getAsString();
+                    result.put(symbol, obj);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("取得即時持倉數據失敗（fallback 無即時數據）: {}", e.getMessage());
+            return Map.of();
+        }
     }
 
     // ==================== Performance ====================
@@ -635,6 +718,16 @@ public class DashboardService {
                         .entryTime(t.getEntryTime() != null ? t.getEntryTime().toString() : null)
                         .exitTime(t.getExitTime() != null ? t.getExitTime().toString() : null)
                         .status(t.getStatus())
+                        // 手續費明細
+                        .grossProfit(t.getGrossProfit())
+                        .entryCommission(t.getEntryCommission())
+                        .exitCommission(t.getCommission() != null && t.getEntryCommission() != null
+                                ? round2(t.getCommission() - t.getEntryCommission()) : null)
+                        .totalCommission(t.getCommission())
+                        .leverage(t.getLeverage())
+                        // AI 訊號評分
+                        .aiConfidence(t.getAiConfidence())
+                        .aiReasoning(t.getAiReasoning())
                         .build())
                 .toList();
 

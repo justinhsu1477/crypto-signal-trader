@@ -31,6 +31,17 @@ public class TradeHistoryResponse {
         private String entryTime;
         private String exitTime;
         private String status;
+
+        // === 手續費明細 ===
+        private Double grossProfit;
+        private Double entryCommission;
+        private Double exitCommission;    // 計算值: commission - entryCommission
+        private Double totalCommission;
+        private Integer leverage;
+
+        // === AI 訊號評分 ===
+        private Integer aiConfidence;     // 0-100, nullable
+        private String aiReasoning;
     }
 
     @Data
