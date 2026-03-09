@@ -431,6 +431,86 @@ const translations = {
     lossUsed: { en: "Loss budget used", "zh-TW": "已用損失額度", "zh-CN": "已用损失额度", ja: "使用済みロス予算" },
     remainingBudget: { en: "Remaining budget", "zh-TW": "剩餘預算", "zh-CN": "剩余预算", ja: "残りの予算" },
     systemStatus: { en: "System Status", "zh-TW": "系統狀態", "zh-CN": "系统状态", ja: "システムステータス" },
+    // 資產配置
+    portfolioAllocation: { en: "Portfolio Allocation", "zh-TW": "資產配置", "zh-CN": "资产配置", ja: "ポートフォリオ配分" },
+    marginUsage: { en: "Margin Usage", "zh-TW": "保證金使用率", "zh-CN": "保证金使用率", ja: "証拠金使用率" },
+    marginUsed: { en: "Margin Used", "zh-TW": "已用保證金", "zh-CN": "已用保证金", ja: "使用中の証拠金" },
+    available: { en: "Available", "zh-TW": "可用", "zh-CN": "可用", ja: "利用可能" },
+    markPrice: { en: "Mark Price", "zh-TW": "標記價格", "zh-CN": "标记价格", ja: "マーク価格" },
+    unrealizedPnl: { en: "Unrealized P&L", "zh-TW": "未實現盈虧", "zh-CN": "未实现盈亏", ja: "未実現損益" },
+    positionValue: { en: "Value", "zh-TW": "持倉價值", "zh-CN": "持仓价值", ja: "ポジション価値" },
+    // AI 評分
+    aiScore: { en: "AI", "zh-TW": "AI", "zh-CN": "AI", ja: "AI" },
+    // 倉位管理
+    closePosition: { en: "Close Position", "zh-TW": "平倉", "zh-CN": "平仓", ja: "ポジション決済" },
+    cancelOrders: { en: "Cancel Orders", "zh-TW": "取消掛單", "zh-CN": "取消挂单", ja: "注文キャンセル" },
+    closeConfirmTitle: { en: "Confirm Close Position", "zh-TW": "確認平倉", "zh-CN": "确认平仓", ja: "ポジション決済確認" },
+    closeConfirmDesc: {
+      en: "Are you sure you want to market close {symbol} {side}?",
+      "zh-TW": "確定要以市價平倉 {symbol} {side} 嗎？",
+      "zh-CN": "确定要以市价平仓 {symbol} {side} 吗？",
+      ja: "{symbol} {side} を市場価格で決済しますか？",
+    },
+    cancelConfirmTitle: { en: "Confirm Cancel Orders", "zh-TW": "確認取消掛單", "zh-CN": "确认取消挂单", ja: "注文キャンセル確認" },
+    cancelConfirmDesc: {
+      en: "Are you sure you want to cancel all pending orders for {symbol}?",
+      "zh-TW": "確定要取消 {symbol} 所有掛單嗎？",
+      "zh-CN": "确定要取消 {symbol} 所有挂单吗？",
+      ja: "{symbol} のすべての注文をキャンセルしますか？",
+    },
+    positionClosed: { en: "Position closed", "zh-TW": "已平倉", "zh-CN": "已平仓", ja: "ポジション決済完了" },
+    ordersCancelled: { en: "Orders cancelled", "zh-TW": "已取消掛單", "zh-CN": "已取消挂单", ja: "注文キャンセル完了" },
+    actionFailed: { en: "Action failed", "zh-TW": "操作失敗", "zh-CN": "操作失败", ja: "操作に失敗しました" },
+    actions: { en: "Actions", "zh-TW": "操作", "zh-CN": "操作", ja: "操作" },
+  },
+
+  // ─── tutorial ───
+  tutorial: {
+    welcomeTitle: { en: "Welcome to HookFi!", "zh-TW": "歡迎使用 HookFi！", "zh-CN": "欢迎使用 HookFi！", ja: "HookFiへようこそ！" },
+    welcomeDesc: {
+      en: "Let us show you around the dashboard. You can skip this tutorial at any time.",
+      "zh-TW": "讓我們帶你認識 Dashboard。你可以隨時跳過本教學。",
+      "zh-CN": "让我们带你了解 Dashboard。你可以随时跳过本教学。",
+      ja: "ダッシュボードをご案内します。いつでもスキップできます。",
+    },
+    kpiTitle: { en: "Key Metrics", "zh-TW": "關鍵指標", "zh-CN": "关键指标", ja: "主要指標" },
+    kpiDesc: {
+      en: "Monitor your balance, positions, and today's P&L at a glance.",
+      "zh-TW": "一眼掌握你的餘額、持倉數量與今日盈虧。",
+      "zh-CN": "一眼掌握你的余额、持仓数量与今日盈亏。",
+      ja: "残高、ポジション数、本日の損益を一目で把握できます。",
+    },
+    riskTitle: { en: "Risk Budget", "zh-TW": "風控預算", "zh-CN": "风控预算", ja: "リスク予算" },
+    riskDesc: {
+      en: "Track your daily loss budget and circuit breaker status.",
+      "zh-TW": "追蹤你的每日虧損預算和熔斷狀態。",
+      "zh-CN": "追踪你的每日亏损预算和熔断状态。",
+      ja: "日次の損失予算とサーキットブレーカーの状態を追跡します。",
+    },
+    positionsTitle: { en: "Open Positions", "zh-TW": "當前持倉", "zh-CN": "当前持仓", ja: "オープンポジション" },
+    positionsDesc: {
+      en: "View your current positions with live market data and manage them.",
+      "zh-TW": "檢視你的持倉，包含即時市場數據，並進行管理。",
+      "zh-CN": "查看你的持仓，包含实时市场数据，并进行管理。",
+      ja: "リアルタイムの市場データとともに現在のポジションを表示・管理します。",
+    },
+    sidebarTitle: { en: "Navigation", "zh-TW": "導航功能", "zh-CN": "导航功能", ja: "ナビゲーション" },
+    sidebarDesc: {
+      en: "Access performance analytics, trade history, settings and more from the sidebar.",
+      "zh-TW": "從側邊欄存取績效分析、交易紀錄、設定等功能。",
+      "zh-CN": "从侧边栏访问绩效分析、交易记录、设置等功能。",
+      ja: "サイドバーからパフォーマンス分析、取引履歴、設定などにアクセスします。",
+    },
+    skip: { en: "Skip", "zh-TW": "跳過", "zh-CN": "跳过", ja: "スキップ" },
+    prev: { en: "Previous", "zh-TW": "上一步", "zh-CN": "上一步", ja: "前へ" },
+    nextStep: { en: "Next", "zh-TW": "下一步", "zh-CN": "下一步", ja: "次へ" },
+    finish: { en: "Finish", "zh-TW": "完成", "zh-CN": "完成", ja: "完了" },
+    stepOf: {
+      en: "{current} / {total}",
+      "zh-TW": "{current} / {total}",
+      "zh-CN": "{current} / {total}",
+      ja: "{current} / {total}",
+    },
   },
 
   // ─── onboarding checklist ───
@@ -486,6 +566,14 @@ const translations = {
     exportCsv: { en: "Export CSV", "zh-TW": "匯出 CSV", "zh-CN": "导出 CSV", ja: "CSVをエクスポート" },
     exporting: { en: "Exporting...", "zh-TW": "匯出中...", "zh-CN": "导出中...", ja: "エクスポート中..." },
     exportFailed: { en: "Export failed", "zh-TW": "匯出失敗", "zh-CN": "导出失败", ja: "エクスポート失敗" },
+    // 手續費明細
+    feeBreakdown: { en: "Fee Breakdown", "zh-TW": "手續費明細", "zh-CN": "手续费明细", ja: "手数料内訳" },
+    grossProfit: { en: "Gross Profit", "zh-TW": "毛利", "zh-CN": "毛利", ja: "粗利" },
+    entryFee: { en: "Entry Fee", "zh-TW": "入場手續費", "zh-CN": "入场手续费", ja: "エントリー手数料" },
+    exitFee: { en: "Exit Fee", "zh-TW": "出場手續費", "zh-CN": "出场手续费", ja: "エグジット手数料" },
+    totalFee: { en: "Total Fee", "zh-TW": "總手續費", "zh-CN": "总手续费", ja: "合計手数料" },
+    leverage: { en: "Leverage", "zh-TW": "槓桿", "zh-CN": "杠杆", ja: "レバレッジ" },
+    netPnl: { en: "Net P&L", "zh-TW": "淨盈虧", "zh-CN": "净盈亏", ja: "純損益" },
   },
 
   // ─── status (public) ───

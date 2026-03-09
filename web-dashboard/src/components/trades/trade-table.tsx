@@ -2,6 +2,7 @@
 
 import type { TradeRecord, Pagination } from "@/types";
 import { formatCurrency, formatDateTime, pnlColor } from "@/lib/utils";
+import { AiConfidenceBadge } from "@/components/ui/ai-confidence-badge";
 import {
   Table,
   TableHeader,
@@ -19,7 +20,7 @@ interface TradeTableProps {
   trades: TradeRecord[];
   pagination: Pagination;
   onPageChange: (page: number) => void;
-  onSelect: (tradeId: string) => void;
+  onSelect: (trade: TradeRecord) => void;
 }
 
 function sideBadge(side: string) {
@@ -80,6 +81,7 @@ export function TradeTable({
               <TableHead className="text-right">Net P&L</TableHead>
               <TableHead>Exit Reason</TableHead>
               <TableHead className="text-center">DCA</TableHead>
+              <TableHead className="text-center">{t("dashboard.aiScore")}</TableHead>
               <TableHead>Entry Time</TableHead>
               <TableHead>Exit Time</TableHead>
               <TableHead>Status</TableHead>
@@ -88,7 +90,7 @@ export function TradeTable({
           <TableBody>
             {trades.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                   {t("trades.noTrades")}
                 </TableCell>
               </TableRow>
@@ -97,7 +99,7 @@ export function TradeTable({
                 <TableRow
                   key={trade.tradeId}
                   className="cursor-pointer"
-                  onClick={() => onSelect(trade.tradeId)}
+                  onClick={() => onSelect(trade)}
                 >
                   <TableCell className="font-medium">{trade.symbol}</TableCell>
                   <TableCell>{sideBadge(trade.side)}</TableCell>
@@ -115,6 +117,9 @@ export function TradeTable({
                   </TableCell>
                   <TableCell>{trade.exitReason ?? "\u2014"}</TableCell>
                   <TableCell className="text-center">{trade.dcaCount ?? 0}</TableCell>
+                  <TableCell className="text-center">
+                    <AiConfidenceBadge confidence={trade.aiConfidence} reasoning={trade.aiReasoning} />
+                  </TableCell>
                   <TableCell>{formatDateTime(trade.entryTime)}</TableCell>
                   <TableCell>{formatDateTime(trade.exitTime)}</TableCell>
                   <TableCell>{statusBadge(trade.status)}</TableCell>

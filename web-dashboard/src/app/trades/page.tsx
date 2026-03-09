@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { TradeHistoryResponse } from "@/types";
+import type { TradeHistoryResponse, TradeRecord } from "@/types";
 import { getTradeHistory, exportTrades } from "@/lib/api";
 import { TradeTable } from "@/components/trades/trade-table";
 import { TradeDetail } from "@/components/trades/trade-detail";
@@ -16,7 +16,7 @@ export default function TradesPage() {
   const [response, setResponse] = useState<TradeHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [selectedTrade, setSelectedTrade] = useState<TradeRecord | null>(null);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -87,14 +87,15 @@ export default function TradesPage() {
           trades={response.trades}
           pagination={response.pagination}
           onPageChange={setPage}
-          onSelect={setSelectedTradeId}
+          onSelect={setSelectedTrade}
         />
       )}
 
-      {selectedTradeId && (
+      {selectedTrade && (
         <TradeDetail
-          tradeId={selectedTradeId}
-          onClose={() => setSelectedTradeId(null)}
+          tradeId={selectedTrade.tradeId}
+          trade={selectedTrade}
+          onClose={() => setSelectedTrade(null)}
         />
       )}
     </div>

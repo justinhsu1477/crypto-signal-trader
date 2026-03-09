@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { TradeEvent } from "@/types";
+import type { TradeEvent, TradeRecord } from "@/types";
 import { getTradeEvents } from "@/lib/api";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatCurrency, pnlColor } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -13,10 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { AiConfidenceBadge } from "@/components/ui/ai-confidence-badge";
 import { useT } from "@/lib/i18n/i18n-context";
 
 interface TradeDetailProps {
   tradeId: string;
+  trade?: TradeRecord;
   onClose: () => void;
 }
 
@@ -38,7 +41,18 @@ function eventTypeBadge(eventType: string) {
   return <Badge className={colorClass}>{eventType}</Badge>;
 }
 
-export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
+function FeeRow({ label, value, colorClass }: { label: string; value: number | null | undefined; colorClass?: string }) {
+  return (
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={colorClass ?? "text-muted-foreground"}>
+        {value != null ? formatCurrency(value) : "\u2014"}
+      </span>
+    </div>
+  );
+}
+
+export function TradeDetail({ tradeId, trade, onClose }: TradeDetailProps) {
   const { t } = useT();
   const [events, setEvents] = useState<TradeEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,8 +91,33 @@ export function TradeDetail({ tradeId, onClose }: TradeDetailProps) {
       <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("trades.tradeEventDetail")}</DialogTitle>
-          <DialogDescription>Trade ID: {tradeId}</DialogDescription>
+          <DialogDescription className="flex items-center gap-2">
+            Trade ID: {tradeId}
+            {trade && <AiConfidenceBadge confidence={trade.aiConfidence} reasoning={trade.aiReasoning} />}
+            {trade?.leverage != null && (
+              <Badge variant="outline" className="text-xs">{trade.leverage}x</Badge>
+            )}
+          </DialogDescription>
         </DialogHeader>
+
+        {/* Fee Breakdown */}
+        {trade && (trade.grossProfit != null || trade.totalCommission != null) && (
+          <div className="space-y-2 rounded-lg border p-4">
+            <h4 className="text-sm font-medium">{t("trades.feeBreakdown")}</h4>
+            <FeeRow label={t("trades.grossProfit")} value={trade.grossProfit} colorClass={pnlColor(trade.grossProfit)} />
+            <FeeRow label={t("trades.entryFee")} value={trade.entryCommission != null ? -trade.entryCommission : null} />
+            <FeeRow label={t("trades.exitFee")} value={trade.exitCommission != null ? -trade.exitCommission : null} />
+            <Separator />
+            <div className="flex justify-between text-sm font-medium">
+              <span>{t("trades.netPnl")}</span>
+              <span className={pnlColor(trade.netProfit)}>{formatCurrency(trade.netProfit)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{t("trades.totalFee")}</span>
+              <span>{trade.totalCommission != null ? formatCurrency(-trade.totalCommission) : "\u2014"}</span>
+            </div>
+          </div>
+        )}
 
         {loading && (
           <div className="flex items-center justify-center py-12">

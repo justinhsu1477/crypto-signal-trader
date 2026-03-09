@@ -75,6 +75,8 @@ export interface AccountSummary {
   openPositionCount: number;
   todayPnl: number;
   todayTradeCount: number;
+  totalMarginUsed: number;
+  marginRatio: number;
 }
 
 export interface RiskBudget {
@@ -99,6 +101,15 @@ export interface OpenPositionSummary {
   dcaCount: number | null;
   signalSource: string | null;
   entryTime: string | null;
+  // AI 訊號評分
+  aiConfidence: number | null;
+  aiReasoning: string | null;
+  // 即時市場數據
+  markPrice: number | null;
+  unrealizedPnl: number | null;
+  positionValue: number | null;
+  marginUsed: number | null;
+  entryQuantity: number | null;
 }
 
 // ==================== Performance ====================
@@ -229,6 +240,15 @@ export interface TradeRecord {
   entryTime: string | null;
   exitTime: string | null;
   status: string;
+  // 手續費明細
+  grossProfit: number | null;
+  entryCommission: number | null;
+  exitCommission: number | null;
+  totalCommission: number | null;
+  leverage: number | null;
+  // AI 訊號評分
+  aiConfidence: number | null;
+  aiReasoning: string | null;
 }
 
 export interface Pagination {
