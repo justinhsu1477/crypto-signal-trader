@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardAction } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/lib/i18n/i18n-context";
 import type { OpenPositionSummary } from "@/types";
@@ -57,13 +57,13 @@ function TradingViewWidget({ symbol, locale }: { symbol: string; locale: string 
     <div
       ref={containerRef}
       className="tradingview-widget-container"
-      style={{ height: 700, width: "100%" }}
+      style={{ height: "calc(100vh - 10rem)", width: "100%" }}
     />
   );
 }
 
 export function TradingViewChart({ positions }: TradingViewChartProps) {
-  const { t, locale } = useT();
+  const { locale } = useT();
 
   const uniqueSymbols = useMemo(() => {
     const seen = new Set<string>();
@@ -92,9 +92,8 @@ export function TradingViewChart({ positions }: TradingViewChartProps) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{t("dashboard.liveChart")}</CardTitle>
-        {showTabs && (
+      {showTabs && (
+        <CardHeader>
           <CardAction>
             <Tabs value={activeSymbol} onValueChange={setSelectedSymbol}>
               <TabsList>
@@ -106,8 +105,8 @@ export function TradingViewChart({ positions }: TradingViewChartProps) {
               </TabsList>
             </Tabs>
           </CardAction>
-        )}
-      </CardHeader>
+        </CardHeader>
+      )}
       <CardContent>
         <TradingViewWidget
           key={activeSymbol}
