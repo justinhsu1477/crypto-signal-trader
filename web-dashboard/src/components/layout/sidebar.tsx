@@ -75,7 +75,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto" data-tutorial-step="sidebar-nav">
         {/* Admin: only show admin items */}
         {isAdmin ? (
           adminItems.map((item) => {
