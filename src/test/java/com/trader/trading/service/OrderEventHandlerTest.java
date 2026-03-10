@@ -886,7 +886,7 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("TRIGGERED(ai 為空) → fallback 到 symbol 匹配")
+        @DisplayName("TRIGGERED(ai 為空) + rp≠0 → fallback 到 symbol + realizedProfit 匹配")
         void algoTriggeredEmptyAi_fallbackToSymbolMatch() {
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
@@ -896,7 +896,7 @@ class OrderEventHandlerTest {
                     12345L, "SL-1700000-a1b2", "");
             handler.handleAlgoUpdate(algoEvent);
 
-            // 任何同 symbol 的 MARKET FILLED 都會匹配（因為 ai 為空 → fallback）
+            // rp=-1000（非 0）→ 確認為出場單，允許 symbol fallback 匹配
             JsonObject marketEvent = buildOrderTradeUpdate(
                     "BTCUSDT", "MARKET", "FILLED", "SELL",
                     93000.0, 0.5, 18.6, "USDT", -1000.0, 999888777L, 1700000000000L);
@@ -906,6 +906,30 @@ class OrderEventHandlerTest {
                     anyString(), anyDouble(), anyDouble(),
                     anyDouble(), anyDouble(),
                     anyString(), eq("SL_TRIGGERED"), anyLong());
+        }
+
+        @Test
+        @DisplayName("TRIGGERED(ai 為空) + rp=0（入場單）→ 不匹配，不觸發平倉")
+        void algoTriggeredEmptyAi_entryWithZeroRp_doesNotMatch() {
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, gson, "");
+
+            // ai 為空
+            JsonObject algoEvent = buildAlgoUpdate("BTCUSDT", "STOP_MARKET", "TRIGGERED",
+                    12345L, "SL-1700000-a1b2", "");
+            handler.handleAlgoUpdate(algoEvent);
+
+            // rp=0（入場單）→ 不應匹配為出場
+            JsonObject marketEvent = buildOrderTradeUpdate(
+                    "BTCUSDT", "MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", 0.0, 999888777L, 1700000000000L);
+            handler.handleOrderTradeUpdate(marketEvent);
+
+            // 不應呼叫 recordCloseFromStream
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
         }
 
         @Test
@@ -1175,8 +1199,8 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("SL 觸發 — adminNotifier 收到損益摘要通知")
-        void slTriggered_notifiesAdmin() {
+        @DisplayName("SL 觸發 — adminNotifier 不收到平倉通知（只通知用戶）")
+        void slTriggered_doesNotNotifyAdmin() {
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier, gson, "");
 
@@ -1190,16 +1214,13 @@ class OrderEventHandlerTest {
             assertThat(lastTitle).contains("止損觸發");
             assertThat(lastMessage).contains("數量");
 
-            // Admin 通知包含損益摘要
-            assertThat(adminTitle).contains("止損觸發");
-            assertThat(adminMessage).contains("BTCUSDT");
-            assertThat(adminMessage).contains("-1000.00");
-            assertThat(adminColor).isEqualTo(DiscordWebhookService.COLOR_RED);
+            // Admin 不應收到平倉通知（只通知用戶自己）
+            assertThat(adminTitle).isNull();
         }
 
         @Test
-        @DisplayName("TP 觸發 — adminNotifier 收到損益摘要通知")
-        void tpTriggered_notifiesAdmin() {
+        @DisplayName("TP 觸發 — adminNotifier 不收到平倉通知（只通知用戶）")
+        void tpTriggered_doesNotNotifyAdmin() {
             OrderEventHandler handler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier, gson, "");
 
@@ -1209,9 +1230,11 @@ class OrderEventHandlerTest {
 
             handler.handleOrderTradeUpdate(event);
 
-            assertThat(adminTitle).contains("止盈觸發");
-            assertThat(adminMessage).contains("+200.00");
-            assertThat(adminColor).isEqualTo(DiscordWebhookService.COLOR_GREEN);
+            // per-user 通知正常
+            assertThat(lastTitle).contains("止盈觸發");
+
+            // Admin 不應收到平倉通知
+            assertThat(adminTitle).isNull();
         }
 
         @Test
