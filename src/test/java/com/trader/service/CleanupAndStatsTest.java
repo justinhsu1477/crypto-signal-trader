@@ -22,9 +22,10 @@ import static org.mockito.Mockito.*;
  *
  * 測試重點：
  * 1. cleanupStaleTrades：幣安無持倉 → CANCELLED、有持倉 → 跳過、查詢失敗 → 跳過
- * 2. getStatsSummary：勝率、Profit Factor、平均盈虧
- * 3. getStatsForDateRange：日期區間統計
- * 4. getEntryPrice：查詢開倉價
+ * 2. cleanupStaleTrades 冷卻期：建立未滿 30 分鐘的 Trade 不清理（避免誤殺剛廣播的交易）
+ * 3. getStatsSummary：勝率、Profit Factor、平均盈虧
+ * 4. getStatsForDateRange：日期區間統計
+ * 5. getEntryPrice：查詢開倉價
  */
 class CleanupAndStatsTest {
 
@@ -145,6 +146,101 @@ class CleanupAndStatsTest {
 
             assertThat(result.get("totalOpen")).isEqualTo(0);
             assertThat(result.get("cleaned")).isEqualTo(0);
+        }
+
+        // ===== 冷卻期保護測試 =====
+
+        @Test
+        @DisplayName("冷卻期 — 建立 5 分鐘的 Trade + 無持倉 → 跳過不清理")
+        void cooldown_recentTrade_skipped() {
+            Trade recentTrade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("SHORT")
+                    .entryPrice(95000.0).status("OPEN")
+                    .createdAt(LocalDateTime.now().minusMinutes(5))  // 5 分鐘前建立
+                    .build();
+
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(recentTrade));
+
+            // positionChecker 回傳 0 — 但因冷卻期保護，不應該被清理
+            Map<String, Object> result = service.cleanupStaleTrades(symbol -> 0.0);
+
+            assertThat(recentTrade.getStatus()).isEqualTo("OPEN");  // 仍然 OPEN
+            assertThat(result.get("totalOpen")).isEqualTo(1);
+            assertThat(result.get("cleaned")).isEqualTo(0);
+            assertThat(result.get("skipped")).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("冷卻期 — 建立 2 小時的 Trade + 無持倉 → 正常清理")
+        void cooldown_oldTrade_cleaned() {
+            Trade oldTrade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).status("OPEN")
+                    .createdAt(LocalDateTime.now().minusHours(2))  // 2 小時前建立
+                    .build();
+
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(oldTrade));
+
+            Map<String, Object> result = service.cleanupStaleTrades(symbol -> 0.0);
+
+            assertThat(oldTrade.getStatus()).isEqualTo("CANCELLED");
+            assertThat(oldTrade.getExitReason()).isEqualTo("STALE_CLEANUP");
+            assertThat(result.get("cleaned")).isEqualTo(1);
+            assertThat(result.get("skipped")).isEqualTo(0);
+        }
+
+        @Test
+        @DisplayName("冷卻期 — 混合場景：1 筆冷卻期內 + 1 筆超過冷卻期殭屍 + 1 筆有持倉")
+        void cooldown_mixedScenario() {
+            Trade recentTrade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("SHORT")
+                    .status("OPEN")
+                    .createdAt(LocalDateTime.now().minusMinutes(10))  // 10 分鐘 — 冷卻期內
+                    .build();
+            Trade oldZombie = Trade.builder()
+                    .tradeId("t2").symbol("ETHUSDT").side("LONG")
+                    .status("OPEN")
+                    .createdAt(LocalDateTime.now().minusHours(3))  // 3 小時 — 超過冷卻期
+                    .build();
+            Trade activePosition = Trade.builder()
+                    .tradeId("t3").symbol("SOLUSDT").side("LONG")
+                    .status("OPEN")
+                    .createdAt(LocalDateTime.now().minusHours(1))  // 1 小時 — 超過冷卻期但有持倉
+                    .build();
+
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(recentTrade, oldZombie, activePosition));
+
+            Function<String, Double> positionChecker = symbol -> switch (symbol) {
+                case "ETHUSDT" -> 0.0;   // 無持倉 → 殭屍
+                case "SOLUSDT" -> 1.5;   // 有持倉 → 跳過
+                default -> 0.0;
+            };
+
+            Map<String, Object> result = service.cleanupStaleTrades(positionChecker);
+
+            assertThat(result.get("totalOpen")).isEqualTo(3);
+            assertThat(result.get("cleaned")).isEqualTo(1);   // 只有 t2 被清理
+            assertThat(result.get("skipped")).isEqualTo(2);   // t1（冷卻期）+ t3（有持倉）
+            assertThat(recentTrade.getStatus()).isEqualTo("OPEN");       // 冷卻期保護
+            assertThat(oldZombie.getStatus()).isEqualTo("CANCELLED");    // 正常清理
+            assertThat(activePosition.getStatus()).isEqualTo("OPEN");    // 有持倉跳過
+        }
+
+        @Test
+        @DisplayName("冷卻期 — createdAt 為 null（舊資料）→ 不觸發冷卻期，正常走清理流程")
+        void cooldown_nullCreatedAt_normalCleanup() {
+            Trade oldDataTrade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).status("OPEN")
+                    // createdAt 未設定 → null
+                    .build();
+
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(oldDataTrade));
+
+            Map<String, Object> result = service.cleanupStaleTrades(symbol -> 0.0);
+
+            assertThat(oldDataTrade.getStatus()).isEqualTo("CANCELLED");
+            assertThat(result.get("cleaned")).isEqualTo(1);
         }
     }
 
