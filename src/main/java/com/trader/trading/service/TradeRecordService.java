@@ -369,6 +369,9 @@ public class TradeRecordService {
         double oldCommission = trade.getEntryCommission() != null ? trade.getEntryCommission() : 0;
         trade.setEntryCommission(round2(oldCommission + dcaCommission));
 
+        // 更新 entryOrderId 為 DCA 掛單 ID，確保 WebSocket LIMIT FILLED 能正確匹配
+        trade.setEntryOrderId(dcaOrder.getOrderId());
+
         tradeRepository.save(trade);
 
         // 寫入 DCA_ENTRY 事件

@@ -197,5 +197,34 @@ class TradeRecordServiceLimitEntryTest {
             assertThat(result).isNull();
             verify(tradeRepository, never()).save(any());
         }
+
+        @Test
+        @DisplayName("多用戶 DCA LIMIT 成交 → 使用更新後的 dcaOrderId 查詢成功")
+        void multiUserDcaLimitFilledMatchesCorrectly() {
+            // DCA 後 entryOrderId 已被 recordDcaEntry 更新為 DCA orderId
+            Trade openTrade = Trade.builder()
+                    .tradeId("trade-multi-dca-001")
+                    .userId("user-abc")
+                    .symbol("BTCUSDT")
+                    .side("LONG")
+                    .entryOrderId("dca-order-999")
+                    .dcaCount(1)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findByUserIdAndEntryOrderIdAndStatus("user-abc", "dca-order-999", "OPEN"))
+                    .thenReturn(Optional.of(openTrade));
+
+            Trade result = service.recordLimitEntryFilled(
+                    "BTCUSDT", "dca-order-999", 93500.0, 0.4, 7.0, 1700000000000L);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getTradeId()).isEqualTo("trade-multi-dca-001");
+            assertThat(result.getEntryPrice()).isEqualTo(93500.0);
+            assertThat(result.getEntryQuantity()).isEqualTo(0.4);
+
+            verify(tradeRepository).findByUserIdAndEntryOrderIdAndStatus("user-abc", "dca-order-999", "OPEN");
+            verify(tradeRepository).save(openTrade);
+        }
     }
 }
