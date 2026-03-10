@@ -78,7 +78,8 @@ public class BinanceUserDataStreamService {
                                          NotificationService discordWebhookService,
                                          SymbolLockRegistry symbolLockRegistry,
                                          MultiUserConfig multiUserConfig,
-                                         MultiUserDataStreamManager multiUserManager) {
+                                         MultiUserDataStreamManager multiUserManager,
+                                         BinanceFuturesService binanceFuturesService) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.discordWebhookService = discordWebhookService;
@@ -90,6 +91,7 @@ public class BinanceUserDataStreamService {
                 tradeRecordService, symbolLockRegistry,
                 discordWebhookService::sendNotification,
                 null,
+                binanceFuturesService::cancelSLTPOrders,
                 gson, "");
 
         // WebSocket 專用 client：無 read timeout + 每 20 秒 ping

@@ -59,9 +59,10 @@ class MultiUserDataStreamManagerTest {
         when(binanceConfig.getBaseUrl()).thenReturn("https://fapi.binance.com");
         when(binanceConfig.getWsBaseUrl()).thenReturn("wss://fstream.binance.com/ws/");
 
+        BinanceFuturesService binanceFuturesService = mock(BinanceFuturesService.class);
         manager = new MultiUserDataStreamManager(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
-                new SymbolLockRegistry(), userApiKeyService, userRepository);
+                new SymbolLockRegistry(), userApiKeyService, userRepository, binanceFuturesService);
     }
 
     @AfterEach

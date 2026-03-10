@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 
 /**
  * 共用的 ORDER_TRADE_UPDATE / ALGO_UPDATE 事件處理邏輯
@@ -33,6 +34,7 @@ public class OrderEventHandler {
     private final SymbolLockRegistry symbolLockRegistry;
     private final NotificationSender notificationSender;
     private final NotificationSender adminNotifier;  // nullable — 單用戶模式為 null
+    private final Consumer<String> orderCleaner;     // nullable — 全平倉後取消對向 SL/TP
     private final Gson gson;
     private final String logPrefix;  // 日誌前綴：空字串 or "用戶 {userId} "
 
@@ -69,12 +71,14 @@ public class OrderEventHandler {
                               SymbolLockRegistry symbolLockRegistry,
                               NotificationSender notificationSender,
                               NotificationSender adminNotifier,
+                              Consumer<String> orderCleaner,
                               Gson gson,
                               String logPrefix) {
         this.tradeRecordService = tradeRecordService;
         this.symbolLockRegistry = symbolLockRegistry;
         this.notificationSender = notificationSender;
         this.adminNotifier = adminNotifier;
+        this.orderCleaner = orderCleaner;
         this.gson = gson;
         this.logPrefix = logPrefix != null ? logPrefix : "";
     }
@@ -394,9 +398,23 @@ public class OrderEventHandler {
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         lock.lock();
         try {
-            tradeRecordService.recordCloseFromStream(
+            boolean fullClose = tradeRecordService.recordCloseFromStream(
                     symbol, exitPrice, exitQty, commission,
                     realizedProfit, orderId, exitReason, transactionTime);
+
+            // 全平倉後取消對向掛單（SL 觸發 → 取消 TP，TP 觸發 → 取消 SL）
+            if (fullClose && orderCleaner != null) {
+                try {
+                    orderCleaner.accept(symbol);
+                    log.info("{}已取消 {} 剩餘 SL/TP 掛單", logPrefix, symbol);
+                } catch (Exception e) {
+                    log.error("{}取消 {} 剩餘掛單失敗: {}", logPrefix, symbol, e.getMessage());
+                    notificationSender.send(
+                            "⚠️ 取消剩餘掛單失敗",
+                            String.format("%s\n%s\n請手動檢查掛單狀態", symbol, e.getMessage()),
+                            DiscordWebhookService.COLOR_YELLOW);
+                }
+            }
 
             String emoji, label;
             int closeColor;

@@ -59,13 +59,16 @@ public class MultiUserDataStreamManager {
     static final long MAX_RECONNECT_DELAY_MS = 60_000;
     static final int MAX_RECONNECT_ATTEMPTS = 20;
 
+    private final BinanceFuturesService binanceFuturesService;
+
     public MultiUserDataStreamManager(OkHttpClient httpClient,
                                        BinanceConfig binanceConfig,
                                        TradeRecordService tradeRecordService,
                                        NotificationService discordWebhookService,
                                        SymbolLockRegistry symbolLockRegistry,
                                        UserApiKeyService userApiKeyService,
-                                       UserRepository userRepository) {
+                                       UserRepository userRepository,
+                                       BinanceFuturesService binanceFuturesService) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.tradeRecordService = tradeRecordService;
@@ -73,6 +76,7 @@ public class MultiUserDataStreamManager {
         this.symbolLockRegistry = symbolLockRegistry;
         this.userApiKeyService = userApiKeyService;
         this.userRepository = userRepository;
+        this.binanceFuturesService = binanceFuturesService;
 
         this.wsClient = httpClient.newBuilder()
                 .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -432,6 +436,7 @@ public class MultiUserDataStreamManager {
                             context.getUserId(), title, msg, color),
                     (title, msg, color) -> discordWebhookService.sendNotificationToAdmins(
                             context.getDisplayName(), title, msg, color),
+                    binanceFuturesService::cancelSLTPOrders,
                     gson, "用戶 " + context.getUserId() + " ");
         }
 
