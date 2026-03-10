@@ -766,6 +766,14 @@ public class BinanceFuturesService {
             log.info("DCA 倉位計算: {}R = {} × {} = {} USDT", riskMultiplier, riskAmount, riskMultiplier, effectiveRiskAmount);
         }
 
+        // 7a-2. 倉位修飾語（輕倉/半倉 = 0.5）
+        if (signal.getPositionSizeModifier() != null && signal.getPositionSizeModifier() > 0) {
+            double modifier = signal.getPositionSizeModifier();
+            quantity *= modifier;
+            log.info("倉位修飾: ×{} ({}), 調整後數量={}", modifier,
+                    modifier == 0.5 ? "半倉" : String.format("%.0f%%", modifier * 100), quantity);
+        }
+
         // 7b. 名目價值上限 cap — 防止窄止損產生超大倉位（動態百分比 + 絕對上限）
         double notional = entry * quantity;
         double maxNotional = config.effectiveMaxPosition(balance);
@@ -1881,7 +1889,8 @@ public class BinanceFuturesService {
                         .isDca(isDca)
                         .newStopLoss(request.getNewStopLoss())
                         .newTakeProfit(request.getNewTakeProfit())
-                        .source(request.getSource());
+                        .source(request.getSource())
+                        .positionSizeModifier(request.getPositionSizeModifier());
 
                 if (request.getSide() != null) {
                     builder.side(TradeSignal.Side.valueOf(request.getSide().toUpperCase()));

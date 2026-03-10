@@ -46,4 +46,7 @@ public class TradeRequest {
 
     @JsonProperty("target_user_ids")
     private List<String> targetUserIds;  // 可選，null/空 = 全部用戶（Admin 緊急廣播指定用戶用）
+
+    @JsonProperty("position_size_modifier")
+    private Double positionSizeModifier;  // 倉位修飾（0.5=半倉/輕倉, null=預設100%）
 }

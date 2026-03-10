@@ -44,6 +44,7 @@ public class TradeSignal {
     private Double newTakeProfit;    // MOVE_SL / CLOSE / DCA 時的新止盈價
     private boolean isDca;           // 是否為補倉（DCA）
     private SignalSource source;     // 訊號來源 (可選)
+    private Double positionSizeModifier;  // 倉位修飾（0.5=半倉/輕倉, null=預設100%）
 
     public enum Side {
         LONG, SHORT
