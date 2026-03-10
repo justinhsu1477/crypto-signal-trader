@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
  * 2. SYSTEM 訊息 → 路由到 sendNotificationToAdmins()（多用戶模式：Admin per-user）
  * 3. ADMIN 訊息（有 displayName）→ 呼叫 sendNotificationToAdmins(displayName, ...)
  * 4. ADMIN 訊息（無 displayName）→ 只呼叫 sendNotificationToAdmins()（admin per-user only）
- * 5. 失敗 → exception 向上拋（交給 Spring retry → 耗盡 → DLQ）
+ * 5. 頻道隔離 → 單頻道失敗不影響另一頻道，全部失敗才進 DLQ
  */
 class NotificationConsumerTest {
 
@@ -73,24 +73,64 @@ class NotificationConsumerTest {
                 "標題", "內容", NotificationService.COLOR_BLUE);
     }
 
+    // ===== USER Queue — 頻道隔離測試 =====
+
     @Test
-    @DisplayName("USER 訊息消費失敗 → exception 向上拋（Spring retry → DLQ）")
-    void consumeUserNotification_failureThrowsForRetry() {
+    @DisplayName("Discord 失敗 + LINE 成功 → 不拋例外（LINE 已送達，不重試避免 LINE 重複）")
+    void consumeUser_discordFails_lineSucceeds_noRetry() {
         NotificationMessage msg = NotificationMessage.builder()
                 .type(NotificationType.USER)
                 .userId("user-1")
-                .title("標題")
-                .message("內容")
+                .title("標題").message("內容")
+                .color(NotificationService.COLOR_GREEN)
+                .build();
+
+        doThrow(new RuntimeException("Discord HTTP 500"))
+                .when(discordService).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+
+        // 不拋例外 → auto ACK → 不重試
+        consumer.consumeUserNotification(msg);
+
+        verify(lineService).sendNotificationToUser("user-1", "標題", "內容", NotificationService.COLOR_GREEN);
+    }
+
+    @Test
+    @DisplayName("Discord 成功 + LINE 失敗 → 不拋例外（Discord 已送達，不重試避免 Discord 重複）")
+    void consumeUser_discordSucceeds_lineFails_noRetry() {
+        NotificationMessage msg = NotificationMessage.builder()
+                .type(NotificationType.USER)
+                .userId("user-1")
+                .title("標題").message("內容")
+                .color(NotificationService.COLOR_GREEN)
+                .build();
+
+        doThrow(new RuntimeException("LINE API timeout"))
+                .when(lineService).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+
+        // 不拋例外 → auto ACK
+        consumer.consumeUserNotification(msg);
+
+        verify(discordService).sendNotificationToUser("user-1", "標題", "內容", NotificationService.COLOR_GREEN);
+    }
+
+    @Test
+    @DisplayName("Discord + LINE 全部失敗 → 拋例外（Spring retry → DLQ）")
+    void consumeUser_allFail_throwsForRetry() {
+        NotificationMessage msg = NotificationMessage.builder()
+                .type(NotificationType.USER)
+                .userId("user-1")
+                .title("標題").message("內容")
                 .color(NotificationService.COLOR_RED)
                 .build();
 
-        doThrow(new RuntimeException("HTTP 500"))
+        doThrow(new RuntimeException("Discord HTTP 500"))
                 .when(discordService).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
+        doThrow(new RuntimeException("LINE API timeout"))
+                .when(lineService).sendNotificationToUser(anyString(), anyString(), anyString(), anyInt());
 
-        // exception 必須向上拋，Spring retry interceptor 才能接住重試
         assertThatThrownBy(() -> consumer.consumeUserNotification(msg))
                 .isInstanceOf(RuntimeException.class)
-                .hasMessage("HTTP 500");
+                .hasMessageContaining("所有通知頻道發送失敗");
     }
 
     // ===== ADMIN Queue 測試 =====
@@ -110,7 +150,6 @@ class NotificationConsumerTest {
 
         verify(discordService).sendNotificationToAdmins("Alice", "⚠️ 風控觸發", "槓桿超限", NotificationService.COLOR_YELLOW);
         verify(lineService).sendNotificationToAdmins("Alice", "⚠️ 風控觸發", "槓桿超限", NotificationService.COLOR_YELLOW);
-        // 有 displayName 時不應呼叫 sendNotification()
         verify(discordService, never()).sendNotification(anyString(), anyString(), anyInt());
     }
 
@@ -126,10 +165,8 @@ class NotificationConsumerTest {
 
         consumer.consumeAdminNotification(msg);
 
-        // SYSTEM → 多用戶模式下路由到 admin per-user（全局 webhook 已停用）
         verify(discordService).sendNotificationToAdmins("📊 每日彙總報告", "今日損益: +$500", NotificationService.COLOR_BLUE);
         verify(lineService).sendNotificationToAdmins("📊 每日彙總報告", "今日損益: +$500", NotificationService.COLOR_BLUE);
-        // 不應呼叫全局 webhook
         verify(discordService, never()).sendNotification(anyString(), anyString(), anyInt());
         verify(lineService, never()).sendNotification(anyString(), anyString(), anyInt());
     }
@@ -146,48 +183,66 @@ class NotificationConsumerTest {
 
         consumer.consumeAdminNotification(msg);
 
-        // ADMIN（無 displayName）→ 只發到 admin per-user webhook
         verify(discordService).sendNotificationToAdmins("🔄 啟動對帳完成", "PENDING_CLOSE 修復: 2 筆", NotificationService.COLOR_BLUE);
         verify(lineService).sendNotificationToAdmins("🔄 啟動對帳完成", "PENDING_CLOSE 修復: 2 筆", NotificationService.COLOR_BLUE);
-        // 不應呼叫全局 webhook
         verify(discordService, never()).sendNotification(anyString(), anyString(), anyInt());
         verify(lineService, never()).sendNotification(anyString(), anyString(), anyInt());
     }
 
+    // ===== ADMIN Queue — 頻道隔離測試 =====
+
     @Test
-    @DisplayName("ADMIN 訊息消費失敗 → exception 向上拋（Spring retry → DLQ）")
-    void consumeAdminNotification_failureThrowsForRetry() {
+    @DisplayName("ADMIN — Discord 失敗 + LINE 成功 → 不拋例外")
+    void consumeAdmin_discordFails_lineSucceeds_noRetry() {
         NotificationMessage msg = NotificationMessage.builder()
                 .type(NotificationType.ADMIN)
-                .title("標題")
-                .message("內容")
+                .title("標題").message("內容")
                 .color(NotificationService.COLOR_RED)
                 .build();
 
-        doThrow(new RuntimeException("API timeout"))
+        doThrow(new RuntimeException("Discord HTTP 500"))
                 .when(discordService).sendNotificationToAdmins(anyString(), anyString(), anyInt());
 
-        // exception 必須向上拋，Spring retry interceptor 才能接住重試
-        assertThatThrownBy(() -> consumer.consumeAdminNotification(msg))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("API timeout");
+        consumer.consumeAdminNotification(msg);
+
+        verify(lineService).sendNotificationToAdmins("標題", "內容", NotificationService.COLOR_RED);
     }
 
     @Test
-    @DisplayName("SYSTEM 訊息消費失敗 → exception 向上拋（Spring retry → DLQ）")
-    void consumeAdminNotification_systemFailureThrowsForRetry() {
+    @DisplayName("ADMIN — 全部失敗 → 拋例外（Spring retry → DLQ）")
+    void consumeAdmin_allFail_throwsForRetry() {
         NotificationMessage msg = NotificationMessage.builder()
-                .type(NotificationType.SYSTEM)
-                .title("標題")
-                .message("內容")
+                .type(NotificationType.ADMIN)
+                .title("標題").message("內容")
                 .color(NotificationService.COLOR_RED)
                 .build();
 
-        doThrow(new RuntimeException("API timeout"))
+        doThrow(new RuntimeException("Discord HTTP 500"))
                 .when(discordService).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+        doThrow(new RuntimeException("LINE API timeout"))
+                .when(lineService).sendNotificationToAdmins(anyString(), anyString(), anyInt());
 
         assertThatThrownBy(() -> consumer.consumeAdminNotification(msg))
                 .isInstanceOf(RuntimeException.class)
-                .hasMessage("API timeout");
+                .hasMessageContaining("所有通知頻道發送失敗");
+    }
+
+    @Test
+    @DisplayName("SYSTEM — 全部失敗 → 拋例外（Spring retry → DLQ）")
+    void consumeAdmin_systemAllFail_throwsForRetry() {
+        NotificationMessage msg = NotificationMessage.builder()
+                .type(NotificationType.SYSTEM)
+                .title("標題").message("內容")
+                .color(NotificationService.COLOR_RED)
+                .build();
+
+        doThrow(new RuntimeException("Discord HTTP 500"))
+                .when(discordService).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+        doThrow(new RuntimeException("LINE API timeout"))
+                .when(lineService).sendNotificationToAdmins(anyString(), anyString(), anyInt());
+
+        assertThatThrownBy(() -> consumer.consumeAdminNotification(msg))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("所有通知頻道發送失敗");
     }
 }
