@@ -6,6 +6,7 @@ import com.trader.shared.config.BinanceConfig;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BinanceUserDataStreamService;
 import com.trader.trading.service.MultiUserDataStreamManager;
 import com.trader.trading.service.OrderEventHandler;
@@ -31,6 +32,7 @@ class BinanceUserDataStreamServiceTest {
     private DiscordWebhookService discordWebhookService;
     private MultiUserConfig multiUserConfig;
     private MultiUserDataStreamManager multiUserManager;
+    private BinanceFuturesService binanceFuturesService;
     private BinanceUserDataStreamService service;
     private OrderEventHandler orderEventHandler;
     private final Gson gson = new Gson();
@@ -43,6 +45,7 @@ class BinanceUserDataStreamServiceTest {
         discordWebhookService = mock(DiscordWebhookService.class);
         multiUserConfig = mock(MultiUserConfig.class);
         multiUserManager = mock(MultiUserDataStreamManager.class);
+        binanceFuturesService = mock(BinanceFuturesService.class);
 
         // 預設單用戶模式（所有舊測試不受影響）
         when(multiUserConfig.isEnabled()).thenReturn(false);
@@ -57,13 +60,14 @@ class BinanceUserDataStreamServiceTest {
 
         service = new BinanceUserDataStreamService(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
-                new SymbolLockRegistry(), multiUserConfig, multiUserManager);
+                new SymbolLockRegistry(), multiUserConfig, multiUserManager, binanceFuturesService);
 
         // 直接建立 OrderEventHandler 測試事件處理邏輯
         orderEventHandler = new OrderEventHandler(
                 tradeRecordService, new SymbolLockRegistry(),
                 discordWebhookService::sendNotification,
                 null,
+                binanceFuturesService::cancelSLTPOrders,
                 gson, "");
     }
 
