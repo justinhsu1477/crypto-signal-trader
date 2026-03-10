@@ -44,8 +44,8 @@ export default function ChartPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold tracking-tight">{t("nav.chart")}</h1>
+    <div className="space-y-4 px-6 pt-4 pb-2">
+      <h1 className="text-xl font-bold tracking-tight">{t("nav.chart")}</h1>
       <TradingViewChart positions={data.positions} />
     </div>
   );

@@ -57,7 +57,7 @@ function TradingViewWidget({ symbol, locale }: { symbol: string; locale: string 
     <div
       ref={containerRef}
       className="tradingview-widget-container"
-      style={{ height: "calc(100vh - 10rem)", width: "100%" }}
+      style={{ height: "calc(100vh - 7.5rem)", width: "100%" }}
     />
   );
 }
