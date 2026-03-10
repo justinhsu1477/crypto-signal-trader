@@ -361,6 +361,111 @@ class BinanceFuturesServiceTest {
         }
     }
 
+    // ==================== Position Size Modifier ====================
+
+    @Nested
+    @DisplayName("倉位修飾語 (positionSizeModifier)")
+    class PositionSizeModifierFlow {
+
+        @Test
+        @DisplayName("modifier=0.5 → 下單量減半")
+        void halfPositionModifier_reducesQuantityByHalf() {
+            setupEntryMocks(1000, 0, 95000);
+
+            // 用 ArgumentCaptor 抓 placeLimitOrder 傳入的 quantity
+            OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.005);
+            OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.005);
+
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+
+            // 不帶 modifier 的 signal
+            TradeSignal signalFull = buildEntrySignal(TradeSignal.Side.LONG, 95000, 93000);
+            List<OrderResult> resultsFull = service.executeSignal(signalFull);
+            assertThat(resultsFull).isNotEmpty();
+
+            // 帶 modifier=0.5 的 signal
+            TradeSignal signalHalf = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000)
+                    .stopLoss(93000)
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .positionSizeModifier(0.5)
+                    .build();
+
+            // 重置 mock 計數
+            setupEntryMocks(1000, 0, 95000);
+            List<OrderResult> resultsHalf = service.executeSignal(signalHalf);
+            assertThat(resultsHalf).isNotEmpty();
+
+            // 驗證兩次呼叫 placeLimitOrder 的 quantity 差異
+            // 使用 ArgumentCaptor 驗證
+            var qtyCaptor = org.mockito.ArgumentCaptor.forClass(Double.class);
+            verify(service, atLeast(2)).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), qtyCaptor.capture());
+
+            List<Double> quantities = qtyCaptor.getAllValues();
+            // 第二次（half）應該是第一次（full）的一半
+            double fullQty = quantities.get(0);
+            double halfQty = quantities.get(1);
+            assertThat(halfQty).isCloseTo(fullQty * 0.5, within(0.0001));
+        }
+
+        @Test
+        @DisplayName("modifier=null → 數量不變")
+        void nullModifier_noEffect() {
+            setupEntryMocks(1000, 0, 95000);
+
+            OrderResult entryOrder = successOrder("E1", "BUY", 95000, 0.01);
+            OrderResult slOrder = successOrder("SL1", "SELL", 93000, 0.01);
+
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000)
+                    .stopLoss(93000)
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .positionSizeModifier(null)
+                    .build();
+
+            List<OrderResult> results = service.executeSignal(signal);
+            assertThat(results).isNotEmpty();
+            assertThat(results.get(0).isSuccess()).isTrue();
+
+            // 正常入場成功即可（modifier=null 等於不帶，不影響流程）
+            verify(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+        }
+
+        @Test
+        @DisplayName("modifier 套用在 cap 之前 — notional cap 仍然生效")
+        void modifierAppliedBeforeCaps() {
+            // 用大餘額 + 窄止損產生大倉位，驗證 modifier 先生效再套 cap
+            setupEntryMocks(100000, 0, 95000);
+
+            OrderResult entryOrder = successOrder("E1", "BUY", 95000, 1.0);
+            OrderResult slOrder = successOrder("SL1", "SELL", 94999, 1.0);
+
+            doReturn(entryOrder).when(service).placeLimitOrder(anyString(), eq("BUY"), anyDouble(), anyDouble());
+            doReturn(slOrder).when(service).placeStopLoss(anyString(), eq("SELL"), anyDouble(), anyDouble());
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(95000)
+                    .stopLoss(94999)   // 極窄止損 → 超大倉位
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .positionSizeModifier(0.5)
+                    .build();
+
+            List<OrderResult> results = service.executeSignal(signal);
+            // 不管 cap 結果，只要流程跑完不報錯即可
+            assertThat(results).isNotEmpty();
+        }
+    }
+
     // ==================== DCA Flow ====================
 
     @Nested

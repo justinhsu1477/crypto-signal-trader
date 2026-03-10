@@ -99,6 +99,119 @@ class TestValidateEntry:
         assert AiSignalParser._validate(None, parsed) is True
 
 
+class TestValidatePositionSizeModifier:
+    """position_size_modifier 欄位驗證。"""
+
+    def test_entry_with_valid_modifier_half(self):
+        """modifier=0.5（半倉）合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 67400,
+            "position_size_modifier": 0.5,
+        }
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_entry_with_valid_modifier_small(self):
+        """modifier=0.3 合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "ETHUSDT",
+            "side": "SHORT",
+            "entry_price": 2650,
+            "stop_loss": 2700,
+            "position_size_modifier": 0.3,
+        }
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_entry_with_modifier_one_valid(self):
+        """modifier=1.0（全倉）合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 95000,
+            "position_size_modifier": 1.0,
+        }
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_entry_with_null_modifier_valid(self):
+        """modifier=None（預設 100%）合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 95000,
+            "position_size_modifier": None,
+        }
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_entry_with_modifier_over_one_invalid(self):
+        """modifier=1.5 超過上限 → 不合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 95000,
+            "position_size_modifier": 1.5,
+        }
+        assert AiSignalParser._validate(None, parsed) is False
+
+    def test_entry_with_modifier_zero_invalid(self):
+        """modifier=0 → 不合法（等於不下單）。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 95000,
+            "position_size_modifier": 0,
+        }
+        assert AiSignalParser._validate(None, parsed) is False
+
+    def test_entry_with_modifier_negative_invalid(self):
+        """modifier=-0.5 → 不合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 95000,
+            "position_size_modifier": -0.5,
+        }
+        assert AiSignalParser._validate(None, parsed) is False
+
+    def test_entry_with_modifier_string_invalid(self):
+        """modifier="half" 字串 → 不合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 95000,
+            "position_size_modifier": "half",
+        }
+        assert AiSignalParser._validate(None, parsed) is False
+
+    def test_close_with_modifier_ignored(self):
+        """CLOSE action 帶 modifier 仍合法（驗證只在 ENTRY 檢查）。"""
+        parsed = {
+            "action": "CLOSE",
+            "symbol": "BTCUSDT",
+            "position_size_modifier": 0.5,
+        }
+        assert AiSignalParser._validate(None, parsed) is True
+
+    def test_dca_with_modifier_valid(self):
+        """DCA + modifier=0.5 合法。"""
+        parsed = {
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "entry_price": 68000,
+            "is_dca": True,
+            "position_size_modifier": 0.5,
+        }
+        assert AiSignalParser._validate(None, parsed) is True
+
+
 class TestValidateCancel:
     """CANCEL action validation."""
 

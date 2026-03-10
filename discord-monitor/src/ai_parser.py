@@ -27,7 +27,8 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
   "close_ratio": null,
   "new_stop_loss": null,
   "new_take_profit": null,
-  "is_dca": false
+  "is_dca": false,
+  "position_size_modifier": null
 }
 
 ## 規則
@@ -45,7 +46,12 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 8. 「换手做多/做空」→ CLOSE（先平原倉，新開倉會是下一條獨立訊息）
 9. 📢 交易訊號發布 → ENTRY
 10. 止盈如有多個用 / 分隔（如 87400/86800），取第一個作為 take_profit
-11. 「半仓」→ 仍是 ENTRY，但在 close_ratio 填 null（半倉是倉位管理不是平倉比例）
+11. 倉位修飾語解析（position_size_modifier）：
+   - 「輕倉」「小倉位」「試探性」→ position_size_modifier = 0.5
+   - 「半倉」「半仓」→ position_size_modifier = 0.5
+   - 「重倉」「全倉」「滿倉」「重仓」→ position_size_modifier = null（null = 預設 100%）
+   - 無特別說明 → position_size_modifier = null
+   - position_size_modifier 只適用於 ENTRY，其他 action 一律不帶
 12. 「限价」或「限價單」只是下單類型說明，仍然是 ENTRY
 
 ### CLOSE（平倉）判斷規則
@@ -110,7 +116,10 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"SHORT","entry_price":88700}
 
 輸入: BTC市价67400附近，半仓做多做个反弹。
-輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":67400}
+輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":67400,"position_size_modifier":0.5}
+
+輸入: ETH轻仓做空，2650附近，止损2700
+輸出: {"action":"ENTRY","symbol":"ETHUSDT","side":"SHORT","entry_price":2650,"stop_loss":2700,"position_size_modifier":0.5}
 
 輸入: 📢 交易訊號發布: BTCUSDT\n做多 LONG 🟢 (限價單)\n入場價格 (Entry)\n95000\n止盈目標 (TP)\n98000\n止損價格 (SL)\n93000
 輸出: {"action":"ENTRY","symbol":"BTCUSDT","side":"LONG","entry_price":95000,"stop_loss":93000,"take_profit":98000}
@@ -413,6 +422,11 @@ class AiSignalParser:
             parsed["symbol"] = symbol + "USDT"
 
         if action == "ENTRY":
+            # 驗證 position_size_modifier（如果有的話）
+            modifier = parsed.get("position_size_modifier")
+            if modifier is not None:
+                if not isinstance(modifier, (int, float)) or modifier <= 0 or modifier > 1:
+                    return False
             # DCA: side 可選（系統從持倉推斷），但 entry_price 必須有
             if parsed.get("is_dca"):
                 return bool(parsed.get("entry_price"))

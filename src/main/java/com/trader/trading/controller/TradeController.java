@@ -301,7 +301,8 @@ public class TradeController {
                         .isDca(isDca)
                         .newStopLoss(request.getNewStopLoss())
                         .newTakeProfit(request.getNewTakeProfit())
-                        .source(request.getSource());
+                        .source(request.getSource())
+                        .positionSizeModifier(request.getPositionSizeModifier());
 
                 // side: DCA 可以為空（BinanceFuturesService 會從持倉推斷）
                 if (request.getSide() != null) {
