@@ -46,6 +46,13 @@ class DiscordWebhookServiceTest {
         mockCall = mock(Call.class);
         when(httpClient.newCall(any())).thenReturn(mockCall);
 
+        // 預設：execute() 回傳 200 OK（同步模式）
+        Response mockResponse = mock(Response.class);
+        when(mockResponse.isSuccessful()).thenReturn(true);
+        try {
+            when(mockCall.execute()).thenReturn(mockResponse);
+        } catch (Exception ignored) {}
+
         // 預設：用戶通知已啟用（既有測試不受影響）
         when(userRepository.findById(any())).thenReturn(
                 Optional.of(User.builder().discordNotificationEnabled(true).build()));
@@ -68,7 +75,6 @@ class DiscordWebhookServiceTest {
             service.sendNotification("Test Title", "Test Message", DiscordWebhookService.COLOR_GREEN);
 
             verify(httpClient).newCall(any());
-            verify(mockCall).enqueue(any());
         }
 
         @Test
