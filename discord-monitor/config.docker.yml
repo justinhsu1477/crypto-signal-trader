@@ -15,6 +15,7 @@ api:
   parse_endpoint: "/api/parse-signal"
   timeout: 10
   dry_run: false
+  multi_user_enabled: true
 
 ai:
   enabled: true

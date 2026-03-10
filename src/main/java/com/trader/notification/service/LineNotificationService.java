@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 透過 LINE Messaging API 推播通知到用戶的 LINE 帳號。
  *
  * 特性：
- * - 非同步發送（enqueue），不阻塞交易流程
+ * - 同步發送（execute + 15 秒超時），失敗拋例外讓 Spring retry 接手
  * - enabled=false 或無綁定時靜默跳過
  * - 純文字訊息格式（LINE 不支援 Discord Embed）
  * - 本地快取 line_user_id + 通知開關（TTL 5 分鐘 + 手動 evict）
@@ -196,27 +196,20 @@ public class LineNotificationService implements NotificationService {
                 .post(RequestBody.create(body, JSON_TYPE))
                 .build();
 
-        httpClient.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                log.warn("LINE Push 發送失敗: {}", e.getMessage());
-            }
-
-            @Override
-            public void onResponse(Call call, Response response) {
-                try (response) {
-                    if (!response.isSuccessful()) {
-                        log.warn("LINE Push 回應異常: HTTP {} - {}",
-                                response.code(),
-                                response.body() != null ? response.body().string() : "no body");
-                    } else {
-                        log.debug("LINE Push 發送成功");
-                    }
-                } catch (IOException e) {
-                    log.warn("讀取 LINE 回應失敗: {}", e.getMessage());
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                String respBody = response.body() != null ? response.body().string() : "no body";
+                log.warn("LINE Push 回應異常: HTTP {} - {}", response.code(), respBody);
+                if (response.code() >= 500 || response.code() == 429) {
+                    throw new RuntimeException("LINE Push 伺服器錯誤: HTTP " + response.code());
                 }
+            } else {
+                log.debug("LINE Push 發送成功");
             }
-        });
+        } catch (IOException e) {
+            log.warn("LINE Push 連線失敗（將重試）: {}", e.getMessage());
+            throw new RuntimeException("LINE Push 連線失敗: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -253,27 +246,20 @@ public class LineNotificationService implements NotificationService {
                 .post(RequestBody.create(body, JSON_TYPE))
                 .build();
 
-        httpClient.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                log.warn("LINE 公告推送失敗: {}", e.getMessage());
-            }
-
-            @Override
-            public void onResponse(Call call, Response response) {
-                try (response) {
-                    if (!response.isSuccessful()) {
-                        log.warn("LINE 公告推送回應異常: HTTP {} - {}",
-                                response.code(),
-                                response.body() != null ? response.body().string() : "no body");
-                    } else {
-                        log.debug("LINE 公告推送成功（含圖片={}）", imageUrl != null);
-                    }
-                } catch (IOException e) {
-                    log.warn("讀取 LINE 回應失敗: {}", e.getMessage());
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                String respBody = response.body() != null ? response.body().string() : "no body";
+                log.warn("LINE 公告推送回應異常: HTTP {} - {}", response.code(), respBody);
+                if (response.code() >= 500 || response.code() == 429) {
+                    throw new RuntimeException("LINE 公告推送伺服器錯誤: HTTP " + response.code());
                 }
+            } else {
+                log.debug("LINE 公告推送成功（含圖片={}）", imageUrl != null);
             }
-        });
+        } catch (IOException e) {
+            log.warn("LINE 公告推送連線失敗（將重試）: {}", e.getMessage());
+            throw new RuntimeException("LINE 公告推送連線失敗: " + e.getMessage(), e);
+        }
     }
 
     /**

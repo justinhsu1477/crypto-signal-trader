@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 即時推送到使用者自己的 Discord 文字頻道。
  *
  * 特性：
- * - 非同步發送（enqueue），不阻塞交易流程
+ * - 同步發送（execute + 15 秒超時），失敗拋例外讓 Spring retry 接手
  * - enabled=false 或 URL 為空時靜默跳過
  * - 使用 Discord Embed 格式（帶顏色條和時間戳記）
  * - 本地快取 webhook URL + 通知開關（TTL 5 分鐘 + 手動 evict）
@@ -107,6 +107,10 @@ public class DiscordWebhookService implements NotificationService {
 
     /**
      * 發送通知到指定的 Webhook URL（支援附圖）
+     *
+     * 同步發送：等待 Discord API 回應，失敗時拋出 RuntimeException，
+     * 讓 RabbitMQ Consumer 的 Spring retry 機制接手（1s → 2s → 4s → DLQ）。
+     * OkHttpClient 已配置 15 秒 callTimeout，不會無限阻塞。
      */
     public void sendNotificationToUrl(String webhookUrl, String title, String message, int color, String imageUrl) {
         if (webhookUrl == null || webhookUrl.isBlank()) {
@@ -121,28 +125,22 @@ public class DiscordWebhookService implements NotificationService {
                 .post(RequestBody.create(json, JSON))
                 .build();
 
-        // 非同步發送，不阻塞主流程
-        httpClient.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                log.warn("Discord Webhook 發送失敗: {}", e.getMessage());
-            }
-
-            @Override
-            public void onResponse(Call call, Response response) {
-                try (response) {
-                    if (!response.isSuccessful()) {
-                        log.warn("Discord Webhook 回應異常: HTTP {} - {}",
-                                response.code(),
-                                response.body() != null ? response.body().string() : "no body");
-                    } else {
-                        log.debug("Discord Webhook 發送成功");
-                    }
-                } catch (IOException e) {
-                    log.warn("讀取 Webhook 回應失敗: {}", e.getMessage());
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                String body = response.body() != null ? response.body().string() : "no body";
+                log.warn("Discord Webhook 回應異常: HTTP {} - {}", response.code(), body);
+                // 5xx 伺服器錯誤 + 429 Rate Limit → 拋例外讓 Spring retry 接手
+                if (response.code() >= 500 || response.code() == 429) {
+                    throw new RuntimeException("Discord Webhook 伺服器錯誤: HTTP " + response.code());
                 }
+                // 4xx 客戶端錯誤（401/404 等）→ 不重試，只 log
+            } else {
+                log.debug("Discord Webhook 發送成功");
             }
-        });
+        } catch (IOException e) {
+            log.warn("Discord Webhook 連線失敗（將重試）: {}", e.getMessage());
+            throw new RuntimeException("Discord Webhook 連線失敗: " + e.getMessage(), e);
+        }
     }
 
     /**

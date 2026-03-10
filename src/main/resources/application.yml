@@ -42,7 +42,8 @@ spring:
     password: ${RABBITMQ_PASS:guest}
     listener:
       simple:
-        prefetch: 10                     # 流量控制：一次拿 10 個訊息
+        prefetch: 3                      # 流量控制：降低堆積風險（搭配 concurrency）
+        concurrency: 2                   # 每個 queue 2 個並行 consumer 線程
         retry:
           enabled: true                  # 面試重點：Spring retry interceptor 包住 listener
           max-attempts: 3                # 最多重試 3 次（含首次）
