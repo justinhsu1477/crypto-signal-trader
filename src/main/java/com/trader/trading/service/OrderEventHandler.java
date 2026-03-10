@@ -182,8 +182,14 @@ public class OrderEventHandler {
                     AlgoTriggerHint hint = entry.getValue();
                     if (!hint.symbol().equals(symbol)) continue;
                     // 精確比對：ai 欄位 = MARKET 單的 orderId（i 欄位）
-                    // ai 為空（罕見）時 fallback 到 symbol 匹配
-                    if (hint.triggeredOrderId().isEmpty() || hint.triggeredOrderId().equals(orderId)) {
+                    if (!hint.triggeredOrderId().isEmpty() && hint.triggeredOrderId().equals(orderId)) {
+                        matchedAlgoId = entry.getKey();
+                        algoExitReason = hint.exitReason();
+                        break;
+                    }
+                    // ai 為空（罕見）時 fallback 到 symbol + realizedProfit 驗證
+                    // 入場單 rp=0，不應被匹配為出場；TP 觸發必有正損益
+                    if (hint.triggeredOrderId().isEmpty() && realizedProfit != 0) {
                         matchedAlgoId = entry.getKey();
                         algoExitReason = hint.exitReason();
                         break;
@@ -392,21 +398,18 @@ public class OrderEventHandler {
                     symbol, exitPrice, exitQty, commission,
                     realizedProfit, orderId, exitReason, transactionTime);
 
-            String emoji = "SL_TRIGGERED".equals(exitReason) ? "🛑" : "🎯";
-            String label = "SL_TRIGGERED".equals(exitReason) ? "止損觸發" : "止盈觸發";
+            String emoji, label;
+            int closeColor;
+            switch (exitReason) {
+                case "SL_TRIGGERED" -> { emoji = "🛑"; label = "止損觸發"; closeColor = DiscordWebhookService.COLOR_RED; }
+                case "TP_TRIGGERED" -> { emoji = "🎯"; label = "止盈觸發"; closeColor = DiscordWebhookService.COLOR_GREEN; }
+                case "SIGNAL_CLOSE" -> { emoji = "📤"; label = "訊號平倉"; closeColor = DiscordWebhookService.COLOR_BLUE; }
+                default -> { emoji = "📊"; label = "自動平倉"; closeColor = DiscordWebhookService.COLOR_YELLOW; }
+            }
             String closeTitle = emoji + " " + label + " (自動)";
             String closeBody = String.format("%s\n出場價: %.2f\n數量: %.4f\n手續費: %.4f USDT\n已實現損益: %.2f USDT",
                     symbol, exitPrice, exitQty, commission, realizedProfit);
-            int closeColor = "SL_TRIGGERED".equals(exitReason)
-                    ? DiscordWebhookService.COLOR_RED
-                    : DiscordWebhookService.COLOR_GREEN;
             notificationSender.send(closeTitle, closeBody, closeColor);
-            if (adminNotifier != null) {
-                adminNotifier.send(closeTitle,
-                        String.format("%s\n出場價: %.2f\n已實現損益: %+.2f USDT",
-                                symbol, exitPrice, realizedProfit),
-                        closeColor);
-            }
 
         } catch (Exception e) {
             log.error("{}WebSocket 平倉記錄失敗: {} {} - {}",
