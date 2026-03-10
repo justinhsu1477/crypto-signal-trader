@@ -43,6 +43,13 @@ class LineNotificationServiceTest {
         mockCall = mock(Call.class);
         when(httpClient.newCall(any())).thenReturn(mockCall);
 
+        // 預設：execute() 回傳 200 OK（同步模式）
+        Response mockResponse = mock(Response.class);
+        when(mockResponse.isSuccessful()).thenReturn(true);
+        try {
+            when(mockCall.execute()).thenReturn(mockResponse);
+        } catch (Exception ignored) {}
+
         when(lineConfig.isEnabled()).thenReturn(true);
         when(lineConfig.getChannelAccessToken()).thenReturn("test-access-token");
 
@@ -70,7 +77,6 @@ class LineNotificationServiceTest {
 
             ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
             verify(httpClient).newCall(captor.capture());
-            verify(mockCall).enqueue(any());
 
             Request request = captor.getValue();
             assertThat(request.url().toString()).isEqualTo("https://api.line.me/v2/bot/message/push");
@@ -132,7 +138,6 @@ class LineNotificationServiceTest {
             service.sendNotification("系統通知", "測試", NotificationService.COLOR_BLUE);
 
             verify(httpClient).newCall(any());
-            verify(mockCall).enqueue(any());
         }
 
         @Test
