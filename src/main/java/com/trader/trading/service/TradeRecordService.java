@@ -1139,16 +1139,19 @@ public class TradeRecordService {
      * @param exitReason      出場原因: "SL_TRIGGERED" or "TP_TRIGGERED"
      * @param transactionTime 交易時間 (o.T) milliseconds
      */
+    /**
+     * @return true = 全平倉（caller 應取消對向 SL/TP），false = 部分平倉或找不到交易
+     */
     @CacheEvict(value = TODAY_LOSS, allEntries = true)
     @Transactional
-    public void recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
+    public boolean recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
                                        double commission, double realizedProfit,
                                        String orderId, String exitReason, long transactionTime) {
         // 查找 OPEN 或 PENDING_CLOSE 的交易（PENDING_CLOSE = MARKET 單 exitPrice=0 等 WebSocket 更新）
         Optional<Trade> openTradeOpt = resolveOpenOrPendingCloseTrade(symbol);
         if (openTradeOpt.isEmpty()) {
             log.warn("WebSocket 平倉事件但找不到 OPEN/PENDING_CLOSE 交易: {} orderId={}", symbol, orderId);
-            return;
+            return false;
         }
 
         Trade trade = openTradeOpt.get();
@@ -1200,6 +1203,7 @@ public class TradeRecordService {
             log.info("WebSocket 部分平倉: tradeId={} {} exitPrice={} exitQty={} remaining={} reason={}",
                     trade.getTradeId(), symbol, exitPrice, exitQuantity,
                     trade.getRemainingQuantity(), exitReason);
+            return false;  // 部分平倉 → 不取消對向掛單
         } else {
             // === 全平倉：標 CLOSED，計算盈虧 ===
             trade.setExitReason(exitReason);
@@ -1227,6 +1231,7 @@ public class TradeRecordService {
             log.info("WebSocket 全平倉: tradeId={} {} exitPrice={} exitQty={} commission={} netProfit={} reason={}",
                     trade.getTradeId(), symbol, exitPrice, exitQuantity,
                     trade.getCommission(), trade.getNetProfit(), exitReason);
+            return true;  // 全平倉 → caller 應取消對向 SL/TP
         }
     }
 
@@ -1377,6 +1382,10 @@ public class TradeRecordService {
      * 比對 DB 中 status=OPEN 的 Trade 與幣安實際持倉，
      * 如果幣安上已無該幣種的持倉，將 DB 紀錄標記為 CANCELLED。
      *
+     * 安全機制：
+     * - 冷卻期保護：建立未滿 30 分鐘的 Trade 跳過，避免誤殺剛入場的倉位
+     *   （場景：07:44 廣播入場 → 07:55 排程清理 → Binance API 暫時回傳 0 → 誤殺）
+     *
      * @param positionChecker 查詢幣安持倉量的 function（symbol → positionAmt）
      * @return 清理結果：cleaned（清理筆數）、skipped（仍有持倉跳過）、details（明細）
      */
@@ -1393,8 +1402,20 @@ public class TradeRecordService {
         int skipped = 0;
         List<String> details = new ArrayList<>();
 
+        // 冷卻期：建立未滿 30 分鐘的 Trade 不清理
+        LocalDateTime cooldownThreshold = LocalDateTime.now(AppConstants.ZONE_ID).minusMinutes(30);
+
         for (Trade trade : openTrades) {
             try {
+                // 冷卻期保護：剛建立的 Trade 跳過
+                if (trade.getCreatedAt() != null && trade.getCreatedAt().isAfter(cooldownThreshold)) {
+                    skipped++;
+                    details.add(String.format("⏳ %s %s 建立未滿 30 分鐘 → 跳過（冷卻期保護）",
+                            trade.getTradeId(), trade.getSymbol()));
+                    log.debug("冷卻期保護跳過: {} {} 建立於 {}", trade.getTradeId(), trade.getSymbol(), trade.getCreatedAt());
+                    continue;
+                }
+
                 double positionAmt = positionChecker.apply(trade.getSymbol());
                 if (positionAmt == 0) {
                     // 幣安無持倉 → 殭屍紀錄，標記為 CANCELLED
