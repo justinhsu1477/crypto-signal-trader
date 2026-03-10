@@ -8,6 +8,8 @@ import com.trader.trading.service.TradeRecordService;
 import com.trader.trading.config.MultiUserConfig;
 import org.junit.jupiter.api.*;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -156,7 +158,7 @@ class CleanupAndStatsTest {
             Trade recentTrade = Trade.builder()
                     .tradeId("t1").symbol("BTCUSDT").side("SHORT")
                     .entryPrice(95000.0).status("OPEN")
-                    .createdAt(LocalDateTime.now().minusMinutes(5))  // 5 分鐘前建立
+                    .createdAt(LocalDateTime.now(AppConstants.ZONE_ID).minusMinutes(5))  // 5 分鐘前建立
                     .build();
 
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(recentTrade));
@@ -176,7 +178,7 @@ class CleanupAndStatsTest {
             Trade oldTrade = Trade.builder()
                     .tradeId("t1").symbol("BTCUSDT").side("LONG")
                     .entryPrice(95000.0).status("OPEN")
-                    .createdAt(LocalDateTime.now().minusHours(2))  // 2 小時前建立
+                    .createdAt(LocalDateTime.now(AppConstants.ZONE_ID).minusHours(2))  // 2 小時前建立
                     .build();
 
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(oldTrade));
@@ -195,17 +197,17 @@ class CleanupAndStatsTest {
             Trade recentTrade = Trade.builder()
                     .tradeId("t1").symbol("BTCUSDT").side("SHORT")
                     .status("OPEN")
-                    .createdAt(LocalDateTime.now().minusMinutes(10))  // 10 分鐘 — 冷卻期內
+                    .createdAt(LocalDateTime.now(AppConstants.ZONE_ID).minusMinutes(10))  // 10 分鐘 — 冷卻期內
                     .build();
             Trade oldZombie = Trade.builder()
                     .tradeId("t2").symbol("ETHUSDT").side("LONG")
                     .status("OPEN")
-                    .createdAt(LocalDateTime.now().minusHours(3))  // 3 小時 — 超過冷卻期
+                    .createdAt(LocalDateTime.now(AppConstants.ZONE_ID).minusHours(3))  // 3 小時 — 超過冷卻期
                     .build();
             Trade activePosition = Trade.builder()
                     .tradeId("t3").symbol("SOLUSDT").side("LONG")
                     .status("OPEN")
-                    .createdAt(LocalDateTime.now().minusHours(1))  // 1 小時 — 超過冷卻期但有持倉
+                    .createdAt(LocalDateTime.now(AppConstants.ZONE_ID).minusHours(1))  // 1 小時 — 超過冷卻期但有持倉
                     .build();
 
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(recentTrade, oldZombie, activePosition));
