@@ -21,9 +21,11 @@ import org.springframework.stereotype.Component;
  *     重試耗盡 → RepublishMessageRecoverer → 訊息帶 error headers 發到 DLQ
  *   - 每個 queue 獨立 listener → user 大量通知不會阻塞 admin 緊急告警
  *
- * 為什麼不用 manual ACK？
- *   manual ACK 的 try-catch 會把 exception 吃掉，Spring retry interceptor 收不到 exception，
- *   導致 retry 設定變成死設定。用 auto ACK 讓 exception 向上拋，retry 才能正常運作。
+ * 頻道隔離策略：
+ *   每個頻道（Discord / LINE）獨立 try-catch，一個失敗不影響另一個：
+ *   - Discord 成功 + LINE 失敗 → 用戶至少收到 Discord，不會因 retry 重複收
+ *   - 全部失敗 → 拋出例外 → Spring retry → DLQ（確保有告警可追查）
+ *   - 部分失敗 → log.error 記錄，不觸發 retry（避免已成功的頻道重複發送）
  *
  * 消費流程：
  *   notification.user  → consumeUserNotification()  → sendNotificationToUser()       (per-user webhook)
@@ -48,26 +50,23 @@ public class NotificationConsumer {
      * → user queue 量大（N 用戶 × 每次廣播），admin 量小但優先級高。
      *   分離後 admin 緊急告警不會被 100 個 user 通知擋在後面。
      *
-     * 失敗處理：exception 自動向上拋 → Spring retry 重試 → 耗盡 → RepublishMessageRecoverer → DLQ
+     * 頻道隔離：Discord / LINE 各自 try-catch
+     * → 一個成功即 ACK（用戶至少收到一個頻道）
+     * → 全部失敗才拋例外 → Spring retry → DLQ
      */
     @RabbitListener(queues = RabbitMQConfig.QUEUE_USER)
     public void consumeUserNotification(NotificationMessage msg) {
         log.debug("消費 USER 通知: userId={}, title={}", msg.getUserId(), msg.getTitle());
 
-        if (msg.getCategory() != null) {
-            discordService.sendNotificationToUser(
-                    msg.getUserId(), msg.getCategory(),
-                    msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToUser(
-                    msg.getUserId(), msg.getCategory(),
-                    msg.getTitle(), msg.getMessage(), msg.getColor());
-        } else {
-            discordService.sendNotificationToUser(
-                    msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToUser(
-                    msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor());
+        boolean discordOk = trySendDiscordUser(msg);
+        boolean lineOk = trySendLineUser(msg);
+
+        // 全部失敗 → 拋例外觸發 retry → 最終進 DLQ
+        if (!discordOk && !lineOk) {
+            throw new RuntimeException(
+                    "所有通知頻道發送失敗 userId=" + msg.getUserId() + " title=" + msg.getTitle());
         }
-        // 成功 → Spring auto ACK（不需手動呼叫 channel.basicAck）
+        // 至少一個成功 → auto ACK，不重試（避免已成功頻道重複發送）
     }
 
     /**
@@ -85,23 +84,84 @@ public class NotificationConsumer {
         log.debug("消費 ADMIN 通知: type={}, title={}, displayName={}",
                 msg.getType(), msg.getTitle(), msg.getDisplayName());
 
-        if (msg.getType() == NotificationMessage.NotificationType.SYSTEM) {
-            // 系統通知 → 多用戶模式下路由到 Admin per-user（全局 webhook 已停用）
-            // 切回單用戶模式時，改回 sendNotification() 即可
-            discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
-        } else if (msg.getDisplayName() != null && !msg.getDisplayName().isBlank()) {
-            // 帶用戶名前綴的 admin 通知（風控告警等）
-            discordService.sendNotificationToAdmins(
-                    msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToAdmins(
-                    msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
-        } else {
-            // Admin 通知 → 只發到 admin per-user webhook（不發到全局）
-            discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
-            lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+        boolean discordOk = trySendDiscordAdmin(msg);
+        boolean lineOk = trySendLineAdmin(msg);
+
+        if (!discordOk && !lineOk) {
+            throw new RuntimeException(
+                    "所有通知頻道發送失敗 type=" + msg.getType() + " title=" + msg.getTitle());
         }
-        // 成功 → Spring auto ACK
-        // 失敗 → exception 向上拋 → Spring retry (max 3 次, 指數退避) → DLQ
+    }
+
+    // ==================== Discord 發送 ====================
+
+    private boolean trySendDiscordUser(NotificationMessage msg) {
+        try {
+            if (msg.getCategory() != null) {
+                discordService.sendNotificationToUser(
+                        msg.getUserId(), msg.getCategory(),
+                        msg.getTitle(), msg.getMessage(), msg.getColor());
+            } else {
+                discordService.sendNotificationToUser(
+                        msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor());
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("Discord 用戶通知失敗 userId={}: {}", msg.getUserId(), e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean trySendDiscordAdmin(NotificationMessage msg) {
+        try {
+            if (msg.getType() == NotificationMessage.NotificationType.SYSTEM) {
+                discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+            } else if (msg.getDisplayName() != null && !msg.getDisplayName().isBlank()) {
+                discordService.sendNotificationToAdmins(
+                        msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
+            } else {
+                discordService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("Discord Admin 通知失敗: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    // ==================== LINE 發送 ====================
+
+    private boolean trySendLineUser(NotificationMessage msg) {
+        try {
+            if (msg.getCategory() != null) {
+                lineService.sendNotificationToUser(
+                        msg.getUserId(), msg.getCategory(),
+                        msg.getTitle(), msg.getMessage(), msg.getColor());
+            } else {
+                lineService.sendNotificationToUser(
+                        msg.getUserId(), msg.getTitle(), msg.getMessage(), msg.getColor());
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("LINE 用戶通知失敗 userId={}: {}", msg.getUserId(), e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean trySendLineAdmin(NotificationMessage msg) {
+        try {
+            if (msg.getType() == NotificationMessage.NotificationType.SYSTEM) {
+                lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+            } else if (msg.getDisplayName() != null && !msg.getDisplayName().isBlank()) {
+                lineService.sendNotificationToAdmins(
+                        msg.getDisplayName(), msg.getTitle(), msg.getMessage(), msg.getColor());
+            } else {
+                lineService.sendNotificationToAdmins(msg.getTitle(), msg.getMessage(), msg.getColor());
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("LINE Admin 通知失敗: {}", e.getMessage());
+            return false;
+        }
     }
 }
