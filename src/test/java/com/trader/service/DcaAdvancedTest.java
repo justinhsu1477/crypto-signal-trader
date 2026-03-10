@@ -152,6 +152,68 @@ class DcaAdvancedTest {
             assertThat(openTrade.getDcaCount()).isEqualTo(2);
             assertThat(openTrade.getStopLoss()).isEqualTo(91000.0);
         }
+
+        @Test
+        @DisplayName("DCA 後 entryOrderId 更新為 DCA 掛單 ID — WebSocket LIMIT FILLED 可匹配")
+        void dcaUpdatesEntryOrderId() {
+            Trade openTrade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(0.5)
+                    .entryOrderId("original-entry-123")
+                    .entryCommission(9.5)
+                    .dcaCount(0).riskAmount(100.0)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .isDca(true).newStopLoss(92000.0)
+                    .build();
+
+            OrderResult dca = OrderResult.builder()
+                    .success(true).orderId("dca-order-456")
+                    .symbol("BTCUSDT").side("BUY").type("LIMIT")
+                    .price(93000.0).quantity(0.3).commission(5.58)
+                    .build();
+
+            service.recordDcaEntry("BTCUSDT", signal, dca, 200);
+
+            // 核心驗證：entryOrderId 已更新為 DCA 掛單 ID
+            assertThat(openTrade.getEntryOrderId()).isEqualTo("dca-order-456");
+        }
+
+        @Test
+        @DisplayName("連續兩次 DCA — entryOrderId 追蹤最新一筆")
+        void twoDcaEntryOrderIdTracksLatest() {
+            Trade openTrade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(0.5)
+                    .entryOrderId("original-entry-100")
+                    .entryCommission(9.5)
+                    .dcaCount(0).riskAmount(100.0)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(openTrade));
+
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .isDca(true).build();
+
+            // 第一次 DCA
+            service.recordDcaEntry("BTCUSDT", signal,
+                    OrderResult.builder().success(true).orderId("dca-1st")
+                            .price(93000.0).quantity(0.3).commission(5.58).build(), 200);
+            assertThat(openTrade.getEntryOrderId()).isEqualTo("dca-1st");
+
+            // 第二次 DCA
+            service.recordDcaEntry("BTCUSDT", signal,
+                    OrderResult.builder().success(true).orderId("dca-2nd")
+                            .price(91000.0).quantity(0.2).commission(3.64).build(), 200);
+            assertThat(openTrade.getEntryOrderId()).isEqualTo("dca-2nd");
+        }
     }
 
     // ==================== 手續費累加 ====================

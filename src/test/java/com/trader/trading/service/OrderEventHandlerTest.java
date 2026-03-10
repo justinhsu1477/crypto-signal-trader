@@ -532,6 +532,48 @@ class OrderEventHandlerTest {
             // Admin 不收到 LIMIT 入場成交通知
             assertThat(adminTitle.get()).isNull();
         }
+
+        @Test
+        @DisplayName("DCA LIMIT FILLED — entryOrderId 已更新 → 匹配入場單，不觸發平倉")
+        void dcaLimitFilledMatchesEntryOrder() {
+            Trade mockTrade = Trade.builder()
+                    .tradeId("trade-dca-1")
+                    .symbol("BTCUSDT")
+                    .side("LONG")
+                    .dcaCount(1)
+                    .build();
+
+            // DCA 後 entryOrderId 已更新為 dca orderId，所以 recordLimitEntryFilled 會匹配
+            when(tradeRecordService.recordLimitEntryFilled(
+                    eq("BTCUSDT"), eq("555666777"), eq(93000.0),
+                    eq(0.3), eq(5.58), eq(1700000000000L)))
+                    .thenReturn(mockTrade);
+
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null, null, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "LIMIT", "FILLED", "BUY",
+                    93000.0, 0.3, 5.58, "USDT", 0.0, 555666777L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // 應呼叫 recordLimitEntryFilled
+            verify(tradeRecordService).recordLimitEntryFilled(
+                    eq("BTCUSDT"), eq("555666777"), eq(93000.0),
+                    eq(0.3), eq(5.58), eq(1700000000000L));
+
+            // 不應走平倉流程
+            verify(tradeRecordService, never()).recordCloseFromStream(
+                    anyString(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(),
+                    anyString(), anyString(), anyLong());
+
+            // 應發送入場通知
+            assertThat(lastTitle).isEqualTo("✅ 限價入場成交");
+            assertThat(lastMessage).contains("BTCUSDT");
+            assertThat(lastColor).isEqualTo(DiscordWebhookService.COLOR_GREEN);
+        }
     }
 
     // ==================== 非 SL/TP 類型 ====================
