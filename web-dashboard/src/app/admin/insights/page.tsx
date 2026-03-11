@@ -118,7 +118,7 @@ export default function AdminInsightsPage() {
                 type="category"
                 dataKey="label"
                 width={120}
-                stroke="hsl(var(--muted-foreground))"
+                stroke="hsl(var(--foreground))"
                 fontSize={12}
                 tickLine={false}
               />
