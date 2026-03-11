@@ -63,6 +63,13 @@ spring:
       connection-timeout: 10000     # 10 秒等不到連線就失敗
       idle-timeout: 300000          # 閒置 5 分鐘回收
       keepalive-time: 120000        # 每 2 分鐘探測，防止 Neon 斷閒置連線
+    # ========== Read Replica（Neon）==========
+    # 空 = 不啟用，所有查詢走 Primary（向下相容）
+    # 設定後 @Transactional(readOnly=true) 自動路由到 Replica
+    replica:
+      url: ${REPLICA_DB_URL:}
+      hikari:
+        maximum-pool-size: ${REPLICA_HIKARI_MAX_POOL_SIZE:10}
   jpa:
     hibernate:
       ddl-auto: validate
