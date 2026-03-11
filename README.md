@@ -14,17 +14,22 @@ graph TD
     Monitor["Python Monitor<br/>Gemini AI 解析"]
     API["Spring Boot API<br/>風控 + 下單 + 廣播跟單"]
     RMQ["RabbitMQ<br/>非同步通知"]
+    Redis["Redis<br/>Cache Aside"]
     Binance["Binance Futures API"]
     WS["Per-User WebSocket<br/>SL/TP 觸發 → PnL 通知"]
-    DB[("Neon PostgreSQL")]
+    Primary[("Neon Primary<br/>讀寫")]
+    Replica[("Neon Replica<br/>唯讀")]
     Notify["Discord + LINE<br/>per-user 通知"]
 
     Discord -->|"CDP"| Monitor
-    Monitor -->|"解析後 JSON + 心跳"| API
+    Monitor -->|"REST + 心跳"| API
+    API <-->|"gRPC Streaming"| Monitor
     API -->|"下單 / 查餘額"| Binance
     Binance -->|"即時成交回報"| WS
     WS -->|"寫入 DB + 通知"| API
-    API --> DB
+    API -->|"寫入"| Primary
+    API -->|"readOnly 查詢"| Replica
+    API --> Redis
     API --> RMQ --> Notify
 ```
 
@@ -37,17 +42,24 @@ graph LR
     Caddy["Caddy<br/>反向代理"]
     Dashboard["Next.js :3000"]
     TradingAPI["Spring Boot :8080"]
-    DB[("Neon PostgreSQL")]
+    Redis["Redis :6379"]
+    RMQ["RabbitMQ :5672"]
+    Primary[("Neon Primary")]
+    Replica[("Neon Replica")]
     Monitor["Python Monitor<br/>(本地)"]
 
     User -->|"HTTPS"| CF -->|"Origin Cert"| Caddy
     Caddy -->|"/api/*"| TradingAPI
     Caddy -->|"/*"| Dashboard
-    TradingAPI --> DB
-    Monitor -->|"HTTPS /api"| CF
+    Caddy -->|":9443 gRPC"| TradingAPI
+    TradingAPI -->|"寫入"| Primary
+    TradingAPI -->|"readOnly"| Replica
+    TradingAPI --> Redis
+    TradingAPI --> RMQ
+    Monitor -->|"REST + gRPC"| CF
 ```
 
-**基礎設施：** DigitalOcean VM + Cloudflare CDN + Neon Serverless DB + GitHub Actions CI/CD
+**基礎設施：** DigitalOcean VM + Cloudflare CDN + Neon Serverless DB（Primary + Read Replica）+ Redis + RabbitMQ + GitHub Actions CI/CD
 
 ---
 
@@ -173,13 +185,15 @@ advisor → trading, user, notification, shared
 |------|------|
 | 後端 | Java 17 + Spring Boot 3.2.5 + Gradle |
 | 前端 | Next.js 14 + React + shadcn/ui + i18n（en/zh-TW/zh-CN） |
-| 資料庫 | PostgreSQL 16（Neon Serverless）+ Flyway 遷移（V29） |
-| 訊息佇列 | RabbitMQ 3（非同步通知 + DLQ） |
+| 資料庫 | PostgreSQL 16（Neon Serverless）+ Read Replica 讀寫分離 + Flyway 遷移 |
+| 快取 | Redis 7（Cache Aside Pattern，7 區域獨立 TTL + Graceful Degradation） |
+| 訊息佇列 | RabbitMQ 3（非同步通知 + DLQ + 指數退避重試） |
+| gRPC | Server Streaming 即時推送 Monitor 設定（Proto3 + TLS via Caddy） |
 | AI | Gemini 2.0 Flash（訊號解析 + 訊號評分 + 交易顧問） |
 | 訂閱 | USDT TRC20 鏈上驗證（TronGrid API） |
 | 部署 | Docker Compose + Caddy + Cloudflare |
 | CI/CD | GitHub Actions（gitleaks → build → test → Docker → deploy） |
-| 測試 | JUnit 5 + Mockito — **1600+ tests passed** |
+| 測試 | JUnit 5 + Mockito — **1690+ tests passed** |
 
 ### 資料庫
 
@@ -241,7 +255,8 @@ curl https://your-domain.com/api/health
 | 變數 | 說明 |
 |------|------|
 | `BINANCE_API_KEY` / `SECRET_KEY` | 幣安 API |
-| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | PostgreSQL (Neon) |
+| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | PostgreSQL (Neon Primary) |
+| `REPLICA_DB_URL` | Neon Read Replica（空 = 不啟用） |
 | `RABBITMQ_HOST` | RabbitMQ |
 | `MONITOR_API_KEY` | Python Monitor 認證 |
 | `JWT_SECRET` / `AES_ENCRYPTION_KEY` | 認證 / 加密 |
@@ -258,7 +273,7 @@ curl https://your-domain.com/api/health
 | 心跳 | Python Monitor 每 30 秒回報，>90 秒告警 |
 | WebSocket | Per-user Data Stream，斷線指數退避重連（1s→60s，20 次上限） |
 | 排程任務 | 14 個自動排程（清理/報告/監控/評分） |
-| 健康檢查 | `/api/health`（輕量）+ `/api/health/deep`（DB + API 配額） |
+| 健康檢查 | `/api/health`（輕量）+ `/api/health/deep`（DB + API 配額）+ Replica 15 秒健檢 |
 | AI 顧問 | Gemini 每小時分析交易表現 + 訊號即時評分 |
 | DLQ 監控 | RabbitMQ Dead Letter Queue 定期檢查 + 告警 |
 | 廣播日誌 | 每次廣播完整記錄（用戶結果/AI 評分/執行時間） |
@@ -282,5 +297,8 @@ curl https://your-domain.com/api/health
 | ✅ | LINE 完整整合（OAuth 登入 + Push 通知 + 綁定碼 + Rich Menu） |
 | ✅ | Admin Dashboard（會員績效分析/用戶洞察/廣播日誌/針對性通知） |
 | ✅ | Web Dashboard（Next.js + i18n 三語系） |
+| ✅ | gRPC Server Streaming（Admin 即時推送 Monitor 頻道設定） |
+| ✅ | Read Replica 讀寫分離（AbstractRoutingDataSource + 健檢斷路器） |
+| ✅ | Redis Cache Aside（7 區域 + Graceful Degradation） |
 | ✅ | CI/CD（GitHub Actions → GHCR → DigitalOcean 自動部署） |
-| ✅ | 1600+ 後端測試 + 27 Python 測試 |
+| ✅ | 1690+ 後端測試 + 27 Python 測試 |
