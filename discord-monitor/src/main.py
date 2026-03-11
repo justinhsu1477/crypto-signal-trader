@@ -94,6 +94,25 @@ async def main() -> None:
     router = SignalRouter(config.discord, api_client, dry_run=dry_run, ai_parser=ai_parser, signal_queue=signal_queue)
     cdp_client = CdpClient(config.cdp)
 
+    # gRPC config watch (可選：從 Admin Dashboard 即時接收頻道設定變更)
+    grpc_client = None
+    if config.grpc.enabled and config.grpc.target:
+        from .grpc_config_client import GrpcConfigClient
+        grpc_client = GrpcConfigClient(
+            grpc_target=config.grpc.target,
+            api_key=config.api.api_key,
+            signal_router=router,
+            use_tls=config.grpc.use_tls,
+        )
+        initial_ok = await grpc_client.get_initial_config()
+        if initial_ok:
+            logger.info("gRPC 初始設定同步完成, channels: %s", router.channel_ids)
+        else:
+            logger.info("gRPC 初始同步跳過，使用 config.yml 的設定")
+        grpc_client.start()
+    else:
+        logger.info("gRPC config watch 未啟用 — 使用靜態 config.yml 設定")
+
     # Heartbeat background task
     heartbeat_task: asyncio.Task | None = None
 
@@ -169,6 +188,9 @@ async def main() -> None:
             await cdp_client.disconnect()
 
     # Cleanup
+    if grpc_client:
+        await grpc_client.stop()
+
     if heartbeat_task and not heartbeat_task.done():
         heartbeat_task.cancel()
         try:

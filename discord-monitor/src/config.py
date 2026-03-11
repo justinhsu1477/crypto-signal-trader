@@ -53,6 +53,15 @@ class LoggingConfig:
 
 
 @dataclass
+class GrpcConfig:
+    """gRPC 即時配置推送設定。連線到 Java Spring Boot gRPC Server 接收頻道設定變更。"""
+    enabled: bool = False
+    target: str = ""               # Java gRPC Server 位址，例如 "your-domain.com:9443"
+    use_tls: bool = False          # 走 Caddy TLS 代理時需設為 True
+    reconnect_interval: int = 5    # 重連間隔（秒）
+
+
+@dataclass
 class QueueConfig:
     """失敗訊號本地佇列設定。API 當機時暫存訊號，恢復後自動重播。"""
     enabled: bool = True           # 啟用失敗訊號佇列
@@ -70,6 +79,7 @@ class AppConfig:
     ai: AiConfig = field(default_factory=AiConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     queue: QueueConfig = field(default_factory=QueueConfig)
+    grpc: GrpcConfig = field(default_factory=GrpcConfig)
 
     def validate(self) -> None:
         """驗證必要的配置項目，啟動時呼叫。缺少必要設定時直接報錯退出。"""
@@ -126,6 +136,7 @@ def load_config(path: str) -> AppConfig:
     ai_raw = raw.get("ai", {})
     logging_raw = raw.get("logging", {})
     queue_raw = raw.get("queue", {})
+    grpc_raw = raw.get("grpc", {})
 
     return AppConfig(
         cdp=CdpConfig(
@@ -167,5 +178,11 @@ def load_config(path: str) -> AppConfig:
             max_size=queue_raw.get("max_size", 100),
             max_age_hours=queue_raw.get("max_age_hours", 24),
             max_replay_attempts=queue_raw.get("max_replay_attempts", 5),
+        ),
+        grpc=GrpcConfig(
+            enabled=os.environ.get("GRPC_ENABLED", str(grpc_raw.get("enabled", False))).lower() == "true",
+            target=os.environ.get("GRPC_TARGET", grpc_raw.get("target", "")),
+            use_tls=os.environ.get("GRPC_USE_TLS", str(grpc_raw.get("use_tls", False))).lower() == "true",
+            reconnect_interval=grpc_raw.get("reconnect_interval", 5),
         ),
     )

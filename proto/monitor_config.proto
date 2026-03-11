@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package monitor;
+
+option java_package = "com.trader.trading.grpc.generated";
+option java_outer_classname = "MonitorConfigProto";
+option java_multiple_files = true;
+
+// Discord Monitor 頻道過濾設定
+message MonitorConfig {
+  repeated string channel_ids = 1;
+  repeated string guild_ids = 2;
+  repeated string author_ids = 3;
+  repeated string ignore_keywords = 4;
+  int64 version = 5;  // 單調遞增版本號，衝突偵測用
+}
+
+// ─── GetConfig: 啟動時取得初始設定（Unary） ───
+
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  MonitorConfig config = 1;
+}
+
+// ─── WatchConfig: 即時推送設定變更（Server Streaming） ───
+
+message WatchConfigRequest {}
+
+message ConfigUpdate {
+  MonitorConfig config = 1;
+  string updated_by = 2;     // 執行更新的 admin email
+  string update_reason = 3;  // e.g. "admin_update", "initial_sync"
+  int64 timestamp = 4;       // epoch millis
+}
+
+// ─── Service 定義 ───
+
+service MonitorConfigService {
+  // Python 啟動時呼叫，取得當前頻道設定
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+
+  // Python 開啟長連線，Java 有設定變更時即時推送
+  rpc WatchConfig(WatchConfigRequest) returns (stream ConfigUpdate);
+}

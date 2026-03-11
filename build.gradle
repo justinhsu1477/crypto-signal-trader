@@ -3,6 +3,7 @@ plugins {
     id 'jacoco'
     id 'org.springframework.boot' version '3.2.5'
     id 'io.spring.dependency-management' version '1.1.4'
+    id 'com.google.protobuf' version '0.9.4'
 }
 
 group = 'com.trader'
@@ -61,7 +62,38 @@ dependencies {
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
+    // gRPC（Python Monitor 即時配置推送）
+    implementation 'net.devh:grpc-spring-boot-starter:3.1.0.RELEASE'
+    implementation 'io.grpc:grpc-protobuf:1.62.2'
+    implementation 'io.grpc:grpc-stub:1.62.2'
+    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+// ─── Protobuf / gRPC Code Generation ───
+sourceSets {
+    main {
+        proto {
+            srcDir "${rootDir}/proto"
+        }
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.3'
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.62.2'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
 }
 
 tasks.named('test') {
