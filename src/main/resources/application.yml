@@ -161,6 +161,14 @@ encryption:
 # Monitor API Key（Python Monitor 內部服務認證）
 monitor:
   api-key: ${MONITOR_API_KEY:}
+  default-channel-ids: ${DISCORD_CHANNEL_IDS:}
+
+# gRPC Server（Python Monitor 即時配置推送）
+grpc:
+  server:
+    port: ${GRPC_PORT:9090}
+    security:
+      enabled: false
 
 # AI 交易顧問
 advisor:
