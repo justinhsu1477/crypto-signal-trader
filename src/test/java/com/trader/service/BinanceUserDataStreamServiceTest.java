@@ -147,7 +147,7 @@ class BinanceUserDataStreamServiceTest {
         }
 
         @Test
-        @DisplayName("LIMIT FILLED 非入場單 → fallback 到 processStreamClose")
+        @DisplayName("LIMIT FILLED 非入場單 → 延遲重試後 fallback 到 processStreamClose")
         void limitFilledCloseOrderTriggersClose() {
             when(tradeRecordService.recordLimitEntryFilled(
                     anyString(), anyString(), anyDouble(),
@@ -160,7 +160,8 @@ class BinanceUserDataStreamServiceTest {
 
             orderEventHandler.handleOrderTradeUpdate(event);
 
-            verify(tradeRecordService).recordCloseFromStream(
+            // 延遲重試（3s）後才會 fallback 到 processStreamClose
+            verify(tradeRecordService, timeout(5000)).recordCloseFromStream(
                     eq("BTCUSDT"), eq(95000.0), eq(0.5),
                     eq(9.5), eq(500.0),
                     eq("111222333"), eq("SIGNAL_CLOSE"),

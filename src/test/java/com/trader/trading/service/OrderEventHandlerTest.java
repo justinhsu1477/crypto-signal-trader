@@ -475,7 +475,7 @@ class OrderEventHandlerTest {
         }
 
         @Test
-        @DisplayName("LIMIT FILLED + entryOrderId 不匹配 → processStreamClose (SIGNAL_CLOSE)")
+        @DisplayName("LIMIT FILLED + entryOrderId 不匹配 → 延遲重試後 processStreamClose (SIGNAL_CLOSE)")
         void limitFilledCloseOrder() {
             when(tradeRecordService.recordLimitEntryFilled(
                     anyString(), anyString(), anyDouble(),
@@ -491,7 +491,8 @@ class OrderEventHandlerTest {
 
             handler.handleOrderTradeUpdate(event);
 
-            verify(tradeRecordService).recordCloseFromStream(
+            // 延遲重試（3s）後才會 fallback 到 processStreamClose
+            verify(tradeRecordService, timeout(5000)).recordCloseFromStream(
                     eq("BTCUSDT"), eq(95000.0), eq(0.5),
                     eq(19.0), eq(500.0),
                     eq("999888777"), eq("SIGNAL_CLOSE"),
