@@ -86,12 +86,12 @@ export default function AdminInsightsPage() {
   };
 
   const stageColors: Record<string, string> = {
-    registered: "bg-purple-500/20 text-purple-400",
-    email_verified: "bg-indigo-500/20 text-indigo-400",
-    referral_verified: "bg-blue-500/20 text-blue-400",
-    api_key_set: "bg-cyan-500/20 text-cyan-400",
-    traded: "bg-green-500/20 text-green-400",
-    subscribed: "bg-amber-500/20 text-amber-400",
+    registered: "bg-purple-500/20 text-purple-200",
+    email_verified: "bg-indigo-500/20 text-indigo-200",
+    referral_verified: "bg-blue-500/20 text-blue-200",
+    api_key_set: "bg-cyan-500/20 text-cyan-200",
+    traded: "bg-green-500/20 text-green-200",
+    subscribed: "bg-amber-500/20 text-amber-200",
   };
 
   return (
@@ -244,7 +244,7 @@ export default function AdminInsightsPage() {
                       {user.email ? (
                         <span className="font-mono text-xs text-muted-foreground">{user.email}</span>
                       ) : (
-                        <span className="inline-block px-1.5 py-px rounded bg-green-500/15 text-green-400 text-[10px] font-medium">
+                        <span className="inline-block px-1.5 py-px rounded bg-green-500/15 text-green-200 text-[10px] font-medium">
                           LINE
                         </span>
                       )}

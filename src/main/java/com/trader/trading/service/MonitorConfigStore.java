@@ -4,6 +4,7 @@ import com.trader.trading.grpc.generated.ConfigUpdate;
 import com.trader.trading.grpc.generated.MonitorConfig;
 import io.grpc.stub.StreamObserver;
 import jakarta.annotation.PostConstruct;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MonitorConfigStore {
 
     private final List<StreamObserver<ConfigUpdate>> observers = new CopyOnWriteArrayList<>();
+    @Getter
     private volatile MonitorConfig currentConfig;
     private final AtomicLong version = new AtomicLong(0);
 
@@ -57,10 +59,6 @@ public class MonitorConfigStore {
                 log.info("Monitor 預設頻道已載入: {}", channelIds);
             }
         }
-    }
-
-    public MonitorConfig getCurrentConfig() {
-        return currentConfig;
     }
 
     /**
@@ -104,10 +102,18 @@ public class MonitorConfigStore {
         return observers.size();
     }
 
+    /**
+     * 推送設定更新到所有已連線的 Python Monitor
+     *
+     * deadObservers：收集推送失敗的連線（Python 已斷線或網路異常），
+     * 迭代結束後統一移除，避免 ConcurrentModificationException
+     */
     private void pushToObservers(ConfigUpdate update) {
         List<StreamObserver<ConfigUpdate>> deadObservers = new ArrayList<>();
         for (StreamObserver<ConfigUpdate> observer : observers) {
             try {
+                // 透過 gRPC Server Streaming 推送一筆 ConfigUpdate 給該 Python client
+                // stream 保持開啟，下次設定變更時再推下一筆
                 observer.onNext(update);
             } catch (Exception e) {
                 log.warn("推送 gRPC observer 失敗，移除: {}", e.getMessage());
