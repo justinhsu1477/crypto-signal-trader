@@ -24,6 +24,7 @@ import {
   TrendingUp,
   Users2,
   CandlestickChart,
+  Wifi,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -57,6 +58,7 @@ export function Sidebar() {
     { href: "/admin/broadcast-logs", label: t("nav.adminBroadcastLogs"), icon: Radio },
     { href: "/admin/notifications", label: t("nav.adminNotifications"), icon: Send },
     { href: "/admin/announcements", label: t("nav.adminAnnouncements"), icon: Megaphone },
+    { href: "/admin/monitor-settings", label: t("nav.adminMonitorSettings"), icon: Wifi },
     { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },
   ];
 

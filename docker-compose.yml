@@ -53,6 +53,7 @@ services:
     container_name: trading-api
     ports:
       - "8080:8080"
+      - "9090:9090"     # gRPC（本地開發直連）
     env_file:
       - .env
     environment:
