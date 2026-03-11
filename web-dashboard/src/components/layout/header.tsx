@@ -16,6 +16,12 @@ import {
   Megaphone,
   Bell,
   Zap,
+  Radio,
+  Send,
+  TrendingUp,
+  Users2,
+  CandlestickChart,
+  Wifi,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -37,6 +43,7 @@ export function Header() {
   const navItems = [
     { href: "/", label: t("nav.overview"), icon: LayoutDashboard },
     { href: "/performance", label: t("nav.performance"), icon: BarChart3 },
+    { href: "/chart", label: t("nav.chart"), icon: CandlestickChart },
     { href: "/trades", label: t("nav.trades"), icon: History },
     { href: "/referral", label: t("nav.referral"), icon: Link2 },
     { href: "/announcements", label: t("nav.announcements"), icon: Bell },
@@ -49,7 +56,12 @@ export function Header() {
     { href: "/admin/users", label: t("nav.adminUsers"), icon: Users },
     { href: "/admin/referrals", label: t("nav.adminReferrals"), icon: ClipboardCheck },
     { href: "/admin/subscriptions", label: t("nav.adminSubscriptions"), icon: CreditCard },
+    { href: "/admin/analytics", label: t("nav.adminAnalytics"), icon: TrendingUp },
+    { href: "/admin/insights", label: t("nav.adminInsights"), icon: Users2 },
+    { href: "/admin/broadcast-logs", label: t("nav.adminBroadcastLogs"), icon: Radio },
+    { href: "/admin/notifications", label: t("nav.adminNotifications"), icon: Send },
     { href: "/admin/announcements", label: t("nav.adminAnnouncements"), icon: Megaphone },
+    { href: "/admin/monitor-settings", label: t("nav.adminMonitorSettings"), icon: Wifi },
     { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },
   ];
 
@@ -70,12 +82,12 @@ export function Header() {
               <Menu className="h-5 w-5" />
             </button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0">
+          <SheetContent side="left" className="w-64 p-0 flex flex-col">
             <div className="flex items-center gap-2.5 px-6 py-5 border-b border-border">
               <Image src="/logo.jpg" alt="HookFi" width={28} height={28} className="rounded-lg" />
               <span className="text-lg font-bold">HookFi</span>
             </div>
-            <nav className="px-3 py-4 space-y-1">
+            <nav className="px-3 py-4 space-y-1 overflow-y-auto flex-1 pb-20">
               {/* Admin: only show admin items */}
               {isAdmin ? (
                 adminItems.map((item) => {
@@ -120,7 +132,7 @@ export function Header() {
                 })
               )}
             </nav>
-            <div className="absolute bottom-0 left-0 right-0 border-t border-border px-3 py-4">
+            <div className="mt-auto border-t border-border px-3 py-4">
               <div className="px-3 mb-2 text-xs text-muted-foreground truncate">
                 {email || "User"}
               </div>
