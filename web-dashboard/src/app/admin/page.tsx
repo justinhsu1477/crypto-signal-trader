@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats, getAdminMetrics } from "@/lib/api";
+import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats, getAdminMetrics, getAdminUserBalances } from "@/lib/api";
 import type { AdminSystemOverview, UserTradingSummary, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse, AdminMetricsResponse } from "@/types";
 import {
   Users,
@@ -33,7 +33,7 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />;
 }
 
-type OverviewSortField = "name" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl" | "weekPnl" | "monthPnl";
+type OverviewSortField = "name" | "balance" | "openPositionCount" | "closedTradeCount" | "totalNetProfit" | "todayPnl" | "weekPnl" | "monthPnl";
 type SortDir = "asc" | "desc";
 
 interface HealthWarning {
@@ -67,6 +67,7 @@ export default function AdminOverviewPage() {
   const [stream, setStream] = useState<StreamStatusResponse | null>(null);
   const [dbStats, setDbStats] = useState<DatabaseStatsResponse | null>(null);
   const [metrics, setMetrics] = useState<AdminMetricsResponse | null>(null);
+  const [balances, setBalances] = useState<Record<string, number | null>>({});
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [dbTablesOpen, setDbTablesOpen] = useState(false);
@@ -88,6 +89,11 @@ export default function AdminOverviewPage() {
       setMetrics(m);
       setLoading(false);
     });
+
+    // 餘額獨立載入（Binance API 較慢，不阻塞主要資料）
+    getAdminUserBalances()
+      .then(setBalances)
+      .catch(() => setBalances({}));
   }, []);
 
   function toggleOverviewSort(field: OverviewSortField) {
@@ -95,7 +101,7 @@ export default function AdminOverviewPage() {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortField(field);
-      setSortDir(["totalNetProfit", "todayPnl", "weekPnl", "monthPnl", "openPositionCount", "closedTradeCount"].includes(field) ? "desc" : "asc");
+      setSortDir(["balance", "totalNetProfit", "todayPnl", "weekPnl", "monthPnl", "openPositionCount", "closedTradeCount"].includes(field) ? "desc" : "asc");
     }
   }
 
@@ -103,6 +109,14 @@ export default function AdminOverviewPage() {
     if (!data) return [];
     return [...data.userSummaries].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
+      if (sortField === "balance") {
+        const av = balances[a.userId] ?? null;
+        const bv = balances[b.userId] ?? null;
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return (av - bv) * dir;
+      }
       const av = a[sortField];
       const bv = b[sortField];
       if (av == null && bv == null) return 0;
@@ -111,7 +125,7 @@ export default function AdminOverviewPage() {
       if (typeof av === "number") return (av - (bv as number)) * dir;
       return String(av).localeCompare(String(bv)) * dir;
     });
-  }, [data, sortField, sortDir]);
+  }, [data, sortField, sortDir, balances]);
 
   function OverviewSortIcon({ field }: { field: OverviewSortField }) {
     if (sortField !== field) return <ChevronsUpDown className="h-3 w-3 opacity-40" />;
@@ -465,6 +479,7 @@ export default function AdminOverviewPage() {
                 {([
                   { field: "name" as OverviewSortField, label: t("admin.userLabel"), align: "text-left" },
                   { field: null, label: t("admin.healthStatus"), align: "text-center" },
+                  { field: "balance" as OverviewSortField, label: t("admin.balance"), align: "text-right" },
                   { field: "openPositionCount" as OverviewSortField, label: t("admin.openPositions"), align: "text-right" },
                   { field: "closedTradeCount" as OverviewSortField, label: t("admin.closedTrades"), align: "text-right" },
                   { field: "totalNetProfit" as OverviewSortField, label: t("admin.netProfit"), align: "text-right" },
@@ -533,6 +548,11 @@ export default function AdminOverviewPage() {
                       );
                     })()}
                   </td>
+                  <td className="px-4 py-3 text-right font-mono text-xs">
+                    {balances[user.userId] != null
+                      ? `${balances[user.userId]!.toFixed(2)}`
+                      : <span className="text-muted-foreground">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-right">{user.openPositionCount}</td>
                   <td className="px-4 py-3 text-right">{user.closedTradeCount}</td>
                   <td
@@ -571,7 +591,7 @@ export default function AdminOverviewPage() {
               ))}
               {sortedSummaries.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
                     No users found
                   </td>
                 </tr>

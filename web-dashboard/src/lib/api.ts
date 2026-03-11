@@ -888,6 +888,12 @@ export async function getAdminFunnelStats(): Promise<FunnelStatsResponse> {
   return request<FunnelStatsResponse>("/api/admin/dashboard/funnel");
 }
 
+// ─── Admin User Balances ───
+
+export async function getAdminUserBalances(): Promise<Record<string, number | null>> {
+  return request<Record<string, number | null>>("/api/admin/dashboard/user-balances");
+}
+
 // ─── Admin Send Notification ───
 
 import type { AdminSendNotificationRequest, AdminSendNotificationResponse } from "@/types";
