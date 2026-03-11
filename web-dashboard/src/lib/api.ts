@@ -787,6 +787,42 @@ export async function getUnreadAnnouncementCount(): Promise<{ count: number }> {
   return request<{ count: number }>("/api/announcements/unread-count");
 }
 
+// ─── Admin Monitor Settings ───
+
+export interface MonitorChannelsResponse {
+  channelIds: string[];
+  guildIds: string[];
+  authorIds: string[];
+  ignoreKeywords: string[];
+  configVersion: number;
+  connectedMonitors: number;
+  monitorOnline: boolean;
+  lastHeartbeat: string | null;
+}
+
+export interface UpdateChannelsRequest {
+  channelIds: string[];
+  guildIds?: string[];
+  authorIds?: string[];
+  ignoreKeywords?: string[];
+}
+
+export async function getMonitorChannels(): Promise<MonitorChannelsResponse> {
+  return request<MonitorChannelsResponse>("/api/admin/monitor/channels");
+}
+
+export async function updateMonitorChannels(
+  data: UpdateChannelsRequest
+): Promise<{ message: string; channelIds: string[]; configVersion: number; connectedMonitors: number }> {
+  return request<{ message: string; channelIds: string[]; configVersion: number; connectedMonitors: number }>(
+    "/api/admin/monitor/channels",
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
 // ─── Admin Broadcast Trade (Emergency Signal) ───
 
 export interface BroadcastTradeRequest {

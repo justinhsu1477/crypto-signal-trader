@@ -14,6 +14,13 @@
     }
 }
 
+# gRPC — Python Monitor 從地端連入
+:9443 {
+    tls /etc/caddy/certs/origin-cert.pem /etc/caddy/certs/origin-key.pem
+
+    reverse_proxy h2c://trading-api:9090
+}
+
 # HTTP → HTTPS 重導向（保險用，Cloudflare 已在前端做）
 :80 {
     redir https://{host}{uri} permanent

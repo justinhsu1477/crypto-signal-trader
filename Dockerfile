@@ -13,7 +13,8 @@ COPY gradlew ./
 # Download dependencies (cached unless build.gradle changes)
 RUN ./gradlew dependencies --no-daemon || true
 
-# Copy source and build
+# Copy proto and source, then build
+COPY proto/ proto/
 COPY src/ src/
 RUN ./gradlew build -x test --no-daemon
 
@@ -31,6 +32,6 @@ RUN mkdir -p /app/data /app/logs
 
 COPY --from=builder /app/build/libs/crypto-signal-trader-1.0.0.jar app.jar
 
-EXPOSE 8080
+EXPOSE 8080 9090
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
