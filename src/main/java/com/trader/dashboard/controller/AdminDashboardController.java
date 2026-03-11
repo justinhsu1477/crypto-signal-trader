@@ -172,6 +172,17 @@ public class AdminDashboardController {
     }
 
     /**
+     * 所有用戶帳戶餘額 — 並行查詢 Binance Futures API
+     *
+     * 只回傳有 API Key 的用戶，value 為 null 表示查詢失敗。
+     * 獨立 endpoint 避免拖慢 system-overview 載入速度。
+     */
+    @GetMapping("/user-balances")
+    public ResponseEntity<Map<String, Double>> getUserBalances() {
+        return ResponseEntity.ok(dashboardService.getBatchUserBalances());
+    }
+
+    /**
      * 查看任意用戶的 Dashboard Overview
      */
     @GetMapping("/users/{userId}/overview")

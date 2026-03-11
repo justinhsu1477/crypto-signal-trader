@@ -1355,6 +1355,7 @@ const translations = {
     openPositions: { en: "Open", "zh-TW": "持倉", "zh-CN": "持仓", ja: "オープンポジション" },
     closedTrades: { en: "Closed", "zh-TW": "已平倉", "zh-CN": "已平仓" },
     netProfit: { en: "Net Profit", "zh-TW": "淨利潤", "zh-CN": "净利润", ja: "純利益" },
+    balance: { en: "Balance", "zh-TW": "餘額", "zh-CN": "余额" },
     // User management
     userManagement: { en: "User Management", "zh-TW": "用戶管理", "zh-CN": "用户管理" },
     role: { en: "Role", "zh-TW": "角色", "zh-CN": "角色", ja: "役割" },

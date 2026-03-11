@@ -39,6 +39,8 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.WeekFields;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -993,6 +995,61 @@ public class DashboardService {
         if (user.isEmailVerified()) return "email_verified";
 
         return "registered";
+    }
+
+    // ==================== Admin — 批次用戶餘額 ====================
+
+    /**
+     * 並行查詢所有有 API Key 用戶的 Binance Futures 帳戶餘額。
+     *
+     * - 只查有 API Key 的用戶（無 key 的不會出現在結果中）
+     * - 每個用戶用 CompletableFuture 並行呼叫 Binance API
+     * - 單一用戶失敗不影響其他人（回傳 null 表示查詢失敗）
+     * - 全部並行，10 秒整體超時
+     *
+     * @return Map<userId, balance>（balance 為 null 表示查詢失敗）
+     */
+    public Map<String, Double> getBatchUserBalances() {
+        Set<String> userIdsWithKey = userApiKeyService.getUserIdsWithApiKey("BINANCE");
+        if (userIdsWithKey.isEmpty()) {
+            return Map.of();
+        }
+
+        log.info("開始批次查詢 {} 位用戶的帳戶餘額", userIdsWithKey.size());
+
+        Map<String, CompletableFuture<Double>> futures = new LinkedHashMap<>();
+        for (String userId : userIdsWithKey) {
+            futures.put(userId, CompletableFuture.supplyAsync(() -> {
+                try {
+                    return fetchBalanceWithUserKeys(userId);
+                } catch (Exception e) {
+                    log.warn("用戶 {} 餘額查詢失敗: {}", userId, e.getMessage());
+                    return null;
+                }
+            }));
+        }
+
+        // 等待全部完成（10 秒超時）
+        try {
+            CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[0]))
+                    .get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("批次餘額查詢超時或中斷: {}", e.getMessage());
+        }
+
+        Map<String, Double> result = new LinkedHashMap<>();
+        for (Map.Entry<String, CompletableFuture<Double>> entry : futures.entrySet()) {
+            try {
+                Double balance = entry.getValue().getNow(null);
+                result.put(entry.getKey(), balance);
+            } catch (Exception e) {
+                result.put(entry.getKey(), null);
+            }
+        }
+
+        long successCount = result.values().stream().filter(Objects::nonNull).count();
+        log.info("批次餘額查詢完成: {}/{} 成功", successCount, userIdsWithKey.size());
+        return result;
     }
 
     private double round2(double value) {
