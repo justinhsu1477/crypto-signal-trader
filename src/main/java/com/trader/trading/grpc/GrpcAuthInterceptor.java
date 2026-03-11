@@ -6,8 +6,8 @@ import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import io.grpc.Status;
 import lombok.extern.slf4j.Slf4j;
+import net.devh.boot.grpc.server.interceptor.GrpcGlobalServerInterceptor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -19,7 +19,7 @@ import java.security.MessageDigest;
  * 使用 MessageDigest.isEqual 比對，防止時序攻擊。
  */
 @Slf4j
-@Component
+@GrpcGlobalServerInterceptor
 public class GrpcAuthInterceptor implements ServerInterceptor {
 
     private static final Metadata.Key<String> API_KEY_META =
