@@ -704,6 +704,16 @@ public class TradeRecordService {
         if (multiUserConfig.isEnabled()) {
             String userId = getActiveUserId();
             tradeOpt = tradeRepository.findByUserIdAndEntryOrderIdAndStatus(userId, entryOrderId, "OPEN");
+
+            // Fallback: userId 查不到時，用 entryOrderId 全局查（Binance orderId 全局唯一）
+            // 場景：LIMIT 掛單立即成交時，WebSocket 收到 FILLED 事件快過廣播線程的 DB commit
+            if (tradeOpt.isEmpty()) {
+                tradeOpt = tradeRepository.findByEntryOrderIdAndStatus(entryOrderId, "OPEN");
+                if (tradeOpt.isPresent()) {
+                    log.info("LIMIT 入場 userId 查無紀錄，fallback 全局查找成功: {} entryOrderId={} tradeUserId={}",
+                            symbol, entryOrderId, tradeOpt.get().getUserId());
+                }
+            }
         } else {
             tradeOpt = tradeRepository.findByEntryOrderIdAndStatus(entryOrderId, "OPEN");
         }

@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -58,6 +60,18 @@ public class OrderEventHandler {
      * 用 algoId 而非 symbol 作為 key，避免 TP TRIGGERED + SL CANCELED 的 race condition
      */
     private final ConcurrentHashMap<String, AlgoTriggerHint> pendingAlgoTriggers = new ConcurrentHashMap<>();
+
+    /**
+     * LIMIT 入場立即成交時，WebSocket 收到 FILLED 可能快過 DB commit。
+     * 延遲重試一次，避免將入場單誤判為平倉。
+     */
+    private static final ScheduledExecutorService LIMIT_RETRY_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "limit-fill-retry");
+                t.setDaemon(true);
+                return t;
+            });
+    static final int LIMIT_RETRY_DELAY_SECONDS = 3;
 
     /**
      * 通知發送介面 — 解耦全局 vs per-user webhook
@@ -170,9 +184,56 @@ public class OrderEventHandler {
                             symbol, updatedTrade.getSide(), avgPrice, filledQty, commission);
                     notificationSender.send(entryTitle, entryBody, DiscordWebhookService.COLOR_GREEN);
                 } else {
-                    // === 非入場單 = 平倉 LIMIT → 走平倉流程 ===
-                    processStreamClose(symbol, avgPrice, filledQty, commission,
-                            realizedProfit, orderId, "SIGNAL_CLOSE", transactionTime);
+                    // === 查無入場單：可能是 race condition（DB 尚未 commit）或真正的平倉 ===
+                    // LIMIT 掛單立即成交時，WebSocket FILLED 事件可能快過廣播線程的 DB commit。
+                    // 延遲重試一次，避免將入場單誤判為平倉觸發自動平倉。
+                    log.info("{}LIMIT 成交查無入場單，{}s 後重試: {} orderId={}",
+                            logPrefix, LIMIT_RETRY_DELAY_SECONDS, symbol, orderId);
+
+                    // 捕獲所有 lambda 需要的值（確保 effectively final）
+                    final String retryUserId = TradeRecordService.getCurrentUserId();
+                    final String retrySymbol = symbol;
+                    final String retryOrderId = orderId;
+                    final double retryAvgPrice = avgPrice;
+                    final double retryFilledQty = filledQty;
+                    final double retryCommission = commission;
+                    final double retryRealizedProfit = realizedProfit;
+                    final long retryTxTime = transactionTime;
+
+                    LIMIT_RETRY_SCHEDULER.schedule(() -> {
+                        // 重新設入 ThreadLocal（scheduler 線程沒有 context）
+                        if (retryUserId != null) {
+                            TradeRecordService.setCurrentUserId(retryUserId);
+                        }
+                        try {
+                            Trade retryTrade = tradeRecordService.recordLimitEntryFilled(
+                                    retrySymbol, retryOrderId, retryAvgPrice, retryFilledQty,
+                                    retryCommission, retryTxTime);
+
+                            if (retryTrade != null) {
+                                log.info("{}LIMIT 入場延遲匹配成功: {} orderId={} tradeId={}",
+                                        logPrefix, retrySymbol, retryOrderId, retryTrade.getTradeId());
+                                notificationSender.send("✅ 限價入場成交",
+                                        String.format("%s %s\n成交價: %.2f\n數量: %.4f\n手續費: %.4f USDT",
+                                                retrySymbol, retryTrade.getSide(), retryAvgPrice,
+                                                retryFilledQty, retryCommission),
+                                        DiscordWebhookService.COLOR_GREEN);
+                            } else {
+                                // 重試後仍查無 → 確定是平倉
+                                log.info("{}LIMIT 重試仍查無入場單，走平倉流程: {} orderId={}",
+                                        logPrefix, retrySymbol, retryOrderId);
+                                processStreamClose(retrySymbol, retryAvgPrice, retryFilledQty,
+                                        retryCommission, retryRealizedProfit, retryOrderId,
+                                        "SIGNAL_CLOSE", retryTxTime);
+                            }
+                        } catch (Exception e) {
+                            log.error("{}LIMIT 延遲重試失敗: {} - {}", logPrefix, retrySymbol, e.getMessage(), e);
+                        } finally {
+                            if (retryUserId != null) {
+                                TradeRecordService.clearCurrentUserId();
+                            }
+                        }
+                    }, LIMIT_RETRY_DELAY_SECONDS, TimeUnit.SECONDS);
                 }
                 break;
             }
