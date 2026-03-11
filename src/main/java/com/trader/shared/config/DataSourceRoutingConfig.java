@@ -6,9 +6,12 @@ import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.flyway.FlywayConfigurationCustomizer;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.env.Environment;
 
 import javax.sql.DataSource;
 import java.util.Map;
@@ -28,12 +31,15 @@ public class DataSourceRoutingConfig {
 
     private final String replicaUrl;
     private final int replicaMaxPoolSize;
+    private final Environment environment;
 
     public DataSourceRoutingConfig(
             @Value("${spring.datasource.replica.url:}") String replicaUrl,
-            @Value("${spring.datasource.replica.hikari.maximum-pool-size:10}") int replicaMaxPoolSize) {
+            @Value("${spring.datasource.replica.hikari.maximum-pool-size:10}") int replicaMaxPoolSize,
+            Environment environment) {
         this.replicaUrl = replicaUrl;
         this.replicaMaxPoolSize = replicaMaxPoolSize;
+        this.environment = environment;
     }
 
     /**
@@ -87,6 +93,8 @@ public class DataSourceRoutingConfig {
         HikariDataSource ds = properties.initializeDataSourceBuilder()
                 .type(HikariDataSource.class)
                 .build();
+        // 套用 spring.datasource.hikari.* 設定（pool size, keepalive, timeout 等）
+        Binder.get(environment).bind("spring.datasource.hikari", Bindable.ofInstance(ds));
         ds.setPoolName("HikariPool-Primary");
         return ds;
     }
