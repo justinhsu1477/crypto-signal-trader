@@ -59,13 +59,20 @@ public class SignalSourceService {
             throw new IllegalArgumentException("此 Channel ID + Guild ID 組合已存在");
         }
 
+        // 限制只能有一個 GLOBAL 來源
+        SignalSourceConfig.RoutingMode routingMode = parseRoutingMode(req.getRoutingMode());
+        if (routingMode == SignalSourceConfig.RoutingMode.GLOBAL
+                && sourceRepository.existsByRoutingMode(SignalSourceConfig.RoutingMode.GLOBAL)) {
+            throw new IllegalArgumentException("系統只能有一個全員廣播（GLOBAL）來源，請先將現有 GLOBAL 來源改為 ASSIGNED");
+        }
+
         SignalSourceConfig source = SignalSourceConfig.builder()
                 .name(req.getName())
                 .displayName(req.getDisplayName())
                 .channelId(req.getChannelId())
                 .guildId(req.getGuildId())
                 .description(req.getDescription())
-                .routingMode(parseRoutingMode(req.getRoutingMode()))
+                .routingMode(routingMode)
                 .enabled(true)
                 .build();
 
@@ -84,7 +91,16 @@ public class SignalSourceService {
         if (req.getDisplayName() != null) source.setDisplayName(req.getDisplayName());
         if (req.getDescription() != null) source.setDescription(req.getDescription());
         if (req.getEnabled() != null) source.setEnabled(req.getEnabled());
-        if (req.getRoutingMode() != null) source.setRoutingMode(parseRoutingMode(req.getRoutingMode()));
+        if (req.getRoutingMode() != null) {
+            SignalSourceConfig.RoutingMode newMode = parseRoutingMode(req.getRoutingMode());
+            // 限制只能有一個 GLOBAL（排除自己）
+            if (newMode == SignalSourceConfig.RoutingMode.GLOBAL
+                    && source.getRoutingMode() != SignalSourceConfig.RoutingMode.GLOBAL
+                    && sourceRepository.existsByRoutingModeAndIdNot(SignalSourceConfig.RoutingMode.GLOBAL, id)) {
+                throw new IllegalArgumentException("系統只能有一個全員廣播（GLOBAL）來源，請先將現有 GLOBAL 來源改為 ASSIGNED");
+            }
+            source.setRoutingMode(newMode);
+        }
 
         SignalSourceConfig saved = sourceRepository.save(source);
         log.info("更新訊號來源: id={} name={} routingMode={}", saved.getId(), saved.getName(), saved.getRoutingMode());
@@ -338,16 +354,34 @@ public class SignalSourceService {
 
     /**
      * 從 DB 啟用來源同步到 MonitorConfigStore → gRPC 推送給 Python
-     * 保留既有的全局設定（authorIds、ignoreKeywords）
+     *
+     * 合併策略：
+     * - DB 有 GLOBAL 來源 → 只用 DB 頻道（GLOBAL 取代 env var 預設）
+     * - DB 無 GLOBAL 來源 → DB 頻道 + env var 預設頻道（預設頻道服務未綁定用戶）
+     * - 保留既有的全局設定（authorIds、ignoreKeywords 不由 source 管理）
      */
     private void syncMonitorConfig(String updatedBy, String reason) {
         List<SignalSourceConfig> enabledSources = sourceRepository.findByEnabledTrue();
 
-        List<String> channelIds = enabledSources.stream()
+        boolean hasGlobal = enabledSources.stream()
+                .anyMatch(s -> s.getRoutingMode() == SignalSourceConfig.RoutingMode.GLOBAL);
+
+        List<String> dbChannelIds = enabledSources.stream()
                 .map(SignalSourceConfig::getChannelId)
                 .filter(Objects::nonNull)
                 .distinct()
-                .toList();
+                .collect(Collectors.toList());
+
+        // 無 GLOBAL → 保留 env var 預設頻道（服務未綁定用戶）
+        if (!hasGlobal) {
+            List<String> defaults = monitorConfigStore.getDefaultChannelIdList();
+            for (String defaultId : defaults) {
+                if (!dbChannelIds.contains(defaultId)) {
+                    dbChannelIds.add(defaultId);
+                }
+            }
+            log.info("無 GLOBAL 來源，合併 env var 預設頻道: DB={} + defaults={}", dbChannelIds.size() - defaults.size(), defaults.size());
+        }
 
         List<String> guildIds = enabledSources.stream()
                 .map(SignalSourceConfig::getGuildId)
@@ -355,11 +389,10 @@ public class SignalSourceService {
                 .distinct()
                 .toList();
 
-        // 保留既有的全局設定（authorIds、ignoreKeywords 不由 source 管理）
         MonitorConfig current = monitorConfigStore.getCurrentConfig();
 
         monitorConfigStore.updateConfig(
-                channelIds,
+                dbChannelIds,
                 guildIds,
                 current.getAuthorIdsList(),
                 current.getIgnoreKeywordsList(),
@@ -367,7 +400,8 @@ public class SignalSourceService {
                 reason
         );
 
-        log.info("Monitor config 已從 DB 同步: {} channels, {} guilds", channelIds.size(), guildIds.size());
+        log.info("Monitor config 已從 DB 同步: {} channels (hasGlobal={}), {} guilds",
+                dbChannelIds.size(), hasGlobal, guildIds.size());
     }
 
     private SignalSourceConfig.RoutingMode parseRoutingMode(String mode) {

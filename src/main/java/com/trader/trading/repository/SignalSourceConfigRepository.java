@@ -19,4 +19,8 @@ public interface SignalSourceConfigRepository extends JpaRepository<SignalSource
     List<SignalSourceConfig> findAllByOrderByCreatedAtDesc();
 
     boolean existsByChannelIdAndGuildId(String channelId, String guildId);
+
+    boolean existsByRoutingMode(SignalSourceConfig.RoutingMode routingMode);
+
+    boolean existsByRoutingModeAndIdNot(SignalSourceConfig.RoutingMode routingMode, Long id);
 }

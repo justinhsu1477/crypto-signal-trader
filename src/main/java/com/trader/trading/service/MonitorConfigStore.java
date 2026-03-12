@@ -33,6 +33,8 @@ public class MonitorConfigStore {
     private final AtomicLong version = new AtomicLong(0);
 
     private final String defaultChannelIds;
+    @Getter
+    private List<String> defaultChannelIdList = List.of();
 
     public MonitorConfigStore(
             @Value("${monitor.default-channel-ids:}") String defaultChannelIds) {
@@ -52,6 +54,7 @@ public class MonitorConfigStore {
                     .toList();
 
             if (!channelIds.isEmpty()) {
+                this.defaultChannelIdList = channelIds;
                 this.currentConfig = MonitorConfig.newBuilder()
                         .addAllChannelIds(channelIds)
                         .setVersion(version.incrementAndGet())
