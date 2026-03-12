@@ -374,7 +374,7 @@ class SignalSourceServiceTest {
         }
 
         @Test
-        @DisplayName("GLOBAL 模式 — 回傳 Optional.empty()（全員廣播）")
+        @DisplayName("GLOBAL 模式 — 回傳 Optional.empty()（由呼叫端判斷排除邏輯）")
         void resolve_globalMode_returnsEmpty() {
             SignalSourceConfig globalSource = SignalSourceConfig.builder()
                     .id(4L).channelId("ch-global").guildId("g-global").enabled(true)
@@ -385,7 +385,7 @@ class SignalSourceServiceTest {
 
             Optional<Set<String>> result = service.resolveTargetUserIds("ch-global", "g-global");
 
-            assertThat(result).isEmpty(); // GLOBAL → 全員廣播
+            assertThat(result).isEmpty(); // GLOBAL → empty，呼叫端用 resolvedSourceId 區分
             verify(userSourceRepository, never()).findEnabledUserIdsBySourceId(any());
         }
 
@@ -405,6 +405,47 @@ class SignalSourceServiceTest {
 
             assertThat(result).isPresent();
             assertThat(result.get()).containsExactlyInAnyOrder("u1", "u2");
+        }
+    }
+
+    // ==================== GLOBAL 排除查詢 ====================
+
+    @Nested
+    @DisplayName("getUserIdsBoundToAssignedSources")
+    class BoundToAssignedSourcesTests {
+
+        @Test
+        @DisplayName("有綁定到 ASSIGNED 來源的用戶 — 回傳 userId 集合")
+        void returnsUserIdsBoundToAssignedSources() {
+            when(userSourceRepository.findUserIdsBoundToEnabledAssignedSources())
+                    .thenReturn(List.of("u1", "u2"));
+
+            Set<String> result = service.getUserIdsBoundToAssignedSources();
+
+            assertThat(result).containsExactlyInAnyOrder("u1", "u2");
+        }
+
+        @Test
+        @DisplayName("無綁定用戶 — 回傳空集合")
+        void returnsEmptyWhenNoBoundUsers() {
+            when(userSourceRepository.findUserIdsBoundToEnabledAssignedSources())
+                    .thenReturn(List.of());
+
+            Set<String> result = service.getUserIdsBoundToAssignedSources();
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("重複 userId 自動去重")
+        void deduplicatesUserIds() {
+            when(userSourceRepository.findUserIdsBoundToEnabledAssignedSources())
+                    .thenReturn(List.of("u1", "u1", "u2"));
+
+            Set<String> result = service.getUserIdsBoundToAssignedSources();
+
+            assertThat(result).hasSize(2);
+            assertThat(result).containsExactlyInAnyOrder("u1", "u2");
         }
     }
 

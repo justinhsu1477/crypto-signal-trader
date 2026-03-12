@@ -214,15 +214,17 @@ class BroadcastTradeServiceSourceRoutingTest {
     class GlobalRoutingTests {
 
         @Test
-        @DisplayName("GLOBAL 來源 → resolveTargetUserIds 回傳 empty → 全量廣播給所有人")
-        void globalSource_broadcastsToAllUsers() {
+        @DisplayName("GLOBAL 來源 + 無人綁定 ASSIGNED → 全量廣播給所有人")
+        void globalSource_noBoundUsers_broadcastsToAll() {
             setupAllUsersPassPreFilter(user1, user2, user3);
 
-            // GLOBAL mode 回傳 Optional.empty() — 與「無匹配來源」相同語意
             when(signalSourceService.resolveTargetUserIds("ch-global", "g-global"))
                     .thenReturn(Optional.empty());
             when(signalSourceService.resolveSourceId("ch-global", "g-global"))
                     .thenReturn(Optional.of(10L));
+            // 無人綁定 ASSIGNED 來源
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setSource(SignalSource.builder()
@@ -238,6 +240,61 @@ class BroadcastTradeServiceSourceRoutingTest {
             verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
             verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u2"));
             verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u3"));
+        }
+
+        @Test
+        @DisplayName("GLOBAL 來源 + u2 已綁定 ASSIGNED → 排除 u2，只廣播給 u1, u3")
+        void globalSource_excludesBoundUsers() {
+            setupAllUsersPassPreFilter(user1, user2, user3);
+
+            when(signalSourceService.resolveTargetUserIds("ch-global", "g-global"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-global", "g-global"))
+                    .thenReturn(Optional.of(10L));
+            // u2 已綁定到某個 ASSIGNED 來源
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of("u2"));
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-global").guildId("g-global").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(2); // u1, u3
+            assertThat(result.get("successCount")).isEqualTo(2);
+            assertThat(result.get("skippedNotAssigned")).isEqualTo(1); // u2 被排除
+
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), eq("u2"));
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u3"));
+        }
+
+        @Test
+        @DisplayName("GLOBAL 來源 + 所有人都綁定 ASSIGNED → 無人收到 GLOBAL")
+        void globalSource_allBound_noOneReceives() {
+            setupAllUsersPassPreFilter(user1, user2, user3);
+
+            when(signalSourceService.resolveTargetUserIds("ch-global", "g-global"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-global", "g-global"))
+                    .thenReturn(Optional.of(10L));
+            // 所有人都綁定了 ASSIGNED 來源
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of("u1", "u2", "u3"));
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-global").guildId("g-global").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(0);
+            assertThat(result.get("skippedNotAssigned")).isEqualTo(3);
+
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
         }
     }
 
