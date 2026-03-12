@@ -860,6 +860,7 @@ export interface SignalSourceResponse {
   channelId: string | null;
   guildId: string | null;
   description: string | null;
+  routingMode: "GLOBAL" | "ASSIGNED";
   enabled: boolean;
   assignedUserCount: number;
   createdAt: string;
@@ -872,6 +873,7 @@ export interface CreateSignalSourceRequest {
   channelId?: string;
   guildId?: string;
   description?: string;
+  routingMode?: "GLOBAL" | "ASSIGNED";
 }
 
 export interface UpdateSignalSourceRequest {
@@ -879,6 +881,18 @@ export interface UpdateSignalSourceRequest {
   displayName?: string;
   description?: string;
   enabled?: boolean;
+  routingMode?: "GLOBAL" | "ASSIGNED";
+}
+
+export interface MonitorStatusResponse {
+  channelIds: string[];
+  guildIds: string[];
+  authorIds: string[];
+  ignoreKeywords: string[];
+  configVersion: number;
+  connectedMonitors: number;
+  monitorOnline: boolean;
+  lastHeartbeat: string | null;
 }
 
 export interface UserAssignmentResponse {

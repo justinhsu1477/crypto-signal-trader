@@ -15,4 +15,7 @@ public class UpdateSignalSourceRequest {
     private String displayName;
     private String description;
     private Boolean enabled;
+
+    /** 路由模式：GLOBAL（全員廣播）或 ASSIGNED（僅綁定用戶） */
+    private String routingMode;
 }

@@ -207,6 +207,40 @@ class BroadcastTradeServiceSourceRoutingTest {
         }
     }
 
+    // ======================== GLOBAL 路由模式 ========================
+
+    @Nested
+    @DisplayName("GLOBAL 路由模式 (Global Routing)")
+    class GlobalRoutingTests {
+
+        @Test
+        @DisplayName("GLOBAL 來源 → resolveTargetUserIds 回傳 empty → 全量廣播給所有人")
+        void globalSource_broadcastsToAllUsers() {
+            setupAllUsersPassPreFilter(user1, user2, user3);
+
+            // GLOBAL mode 回傳 Optional.empty() — 與「無匹配來源」相同語意
+            when(signalSourceService.resolveTargetUserIds("ch-global", "g-global"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-global", "g-global"))
+                    .thenReturn(Optional.of(10L));
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-global").guildId("g-global").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(3);
+            assertThat(result.get("successCount")).isEqualTo(3);
+            assertThat(result.get("skippedNotAssigned")).isEqualTo(0);
+
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u2"));
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u3"));
+        }
+    }
+
     // ======================== targetUserIds 優先 ========================
 
     @Nested

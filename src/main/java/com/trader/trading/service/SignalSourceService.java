@@ -3,11 +3,13 @@ package com.trader.trading.service;
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.entity.UserSignalSource;
+import com.trader.trading.grpc.generated.MonitorConfig;
 import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.repository.UserSignalSourceRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,25 @@ public class SignalSourceService {
     private final UserSignalSourceRepository userSourceRepository;
     private final TradeRepository tradeRepository;
     private final UserRepository userRepository;
+    private final MonitorConfigStore monitorConfigStore;
+
+    // ======================== 啟動同步 ========================
+
+    /**
+     * 啟動時從 DB 同步啟用來源到 MonitorConfigStore
+     * 排序保證：MonitorConfigStore 是本 Service 的依賴 → Spring 先初始化它（env var 預設已載入）
+     * 若 DB 有啟用 source → 用 DB 資料覆蓋；若 DB 無 source → 維持 env var 預設（向下相容）
+     */
+    @PostConstruct
+    void syncOnStartup() {
+        List<SignalSourceConfig> sources = sourceRepository.findByEnabledTrue();
+        if (!sources.isEmpty()) {
+            syncMonitorConfig("system", "startup_sync");
+            log.info("啟動同步: 從 DB 載入 {} 個啟用來源到 MonitorConfigStore", sources.size());
+        } else {
+            log.info("啟動同步: DB 無啟用來源，維持環境變數預設頻道");
+        }
+    }
 
     // ======================== 來源 CRUD ========================
 
@@ -44,11 +65,14 @@ public class SignalSourceService {
                 .channelId(req.getChannelId())
                 .guildId(req.getGuildId())
                 .description(req.getDescription())
+                .routingMode(parseRoutingMode(req.getRoutingMode()))
                 .enabled(true)
                 .build();
 
         SignalSourceConfig saved = sourceRepository.save(source);
-        log.info("建立訊號來源: id={} name={} channelId={}", saved.getId(), saved.getName(), saved.getChannelId());
+        log.info("建立訊號來源: id={} name={} channelId={} routingMode={}",
+                saved.getId(), saved.getName(), saved.getChannelId(), saved.getRoutingMode());
+        syncMonitorConfig("admin", "source_created:" + saved.getName());
         return saved;
     }
 
@@ -60,9 +84,11 @@ public class SignalSourceService {
         if (req.getDisplayName() != null) source.setDisplayName(req.getDisplayName());
         if (req.getDescription() != null) source.setDescription(req.getDescription());
         if (req.getEnabled() != null) source.setEnabled(req.getEnabled());
+        if (req.getRoutingMode() != null) source.setRoutingMode(parseRoutingMode(req.getRoutingMode()));
 
         SignalSourceConfig saved = sourceRepository.save(source);
-        log.info("更新訊號來源: id={} name={}", saved.getId(), saved.getName());
+        log.info("更新訊號來源: id={} name={} routingMode={}", saved.getId(), saved.getName(), saved.getRoutingMode());
+        syncMonitorConfig("admin", "source_updated:" + saved.getName());
         return saved;
     }
 
@@ -73,6 +99,7 @@ public class SignalSourceService {
         }
         sourceRepository.deleteById(id);
         log.info("刪除訊號來源: id={}", id);
+        syncMonitorConfig("admin", "source_deleted:" + id);
     }
 
     public List<SignalSourceResponse> getAllSources() {
@@ -179,8 +206,8 @@ public class SignalSourceService {
     /**
      * 解析訊號來源對應的綁定用戶 — BroadcastTradeService 呼叫
      *
-     * @return Optional.empty() = 無匹配來源 → 觸發 fallback 全量廣播
-     *         Optional.of(Set) = 有匹配來源 → 只廣播給綁定用戶
+     * @return Optional.empty() = 無匹配來源 或 GLOBAL 模式 → 觸發 fallback 全量廣播
+     *         Optional.of(Set) = ASSIGNED 模式 → 只廣播給綁定用戶
      */
     public Optional<Set<String>> resolveTargetUserIds(String channelId, String guildId) {
         // 優先用 channelId + guildId 精確匹配
@@ -195,6 +222,12 @@ public class SignalSourceService {
             return Optional.empty();
         }
 
+        // GLOBAL 模式 → 全員廣播（與「找不到 source」一樣的語意）
+        if (source.get().getRoutingMode() == SignalSourceConfig.RoutingMode.GLOBAL) {
+            return Optional.empty();
+        }
+
+        // ASSIGNED 模式 → 只回傳綁定用戶
         List<String> userIds = userSourceRepository.findEnabledUserIdsBySourceId(source.get().getId());
         return Optional.of(new HashSet<>(userIds));
     }
@@ -274,11 +307,55 @@ public class SignalSourceService {
                 .channelId(source.getChannelId())
                 .guildId(source.getGuildId())
                 .description(source.getDescription())
+                .routingMode(source.getRoutingMode().name())
                 .enabled(source.isEnabled())
                 .assignedUserCount(assignedCount)
                 .createdAt(source.getCreatedAt())
                 .updatedAt(source.getUpdatedAt())
                 .build();
+    }
+
+    /**
+     * 從 DB 啟用來源同步到 MonitorConfigStore → gRPC 推送給 Python
+     * 保留既有的全局設定（authorIds、ignoreKeywords）
+     */
+    private void syncMonitorConfig(String updatedBy, String reason) {
+        List<SignalSourceConfig> enabledSources = sourceRepository.findByEnabledTrue();
+
+        List<String> channelIds = enabledSources.stream()
+                .map(SignalSourceConfig::getChannelId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        List<String> guildIds = enabledSources.stream()
+                .map(SignalSourceConfig::getGuildId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        // 保留既有的全局設定（authorIds、ignoreKeywords 不由 source 管理）
+        MonitorConfig current = monitorConfigStore.getCurrentConfig();
+
+        monitorConfigStore.updateConfig(
+                channelIds,
+                guildIds,
+                current.getAuthorIdsList(),
+                current.getIgnoreKeywordsList(),
+                updatedBy,
+                reason
+        );
+
+        log.info("Monitor config 已從 DB 同步: {} channels, {} guilds", channelIds.size(), guildIds.size());
+    }
+
+    private SignalSourceConfig.RoutingMode parseRoutingMode(String mode) {
+        if (mode == null) return SignalSourceConfig.RoutingMode.ASSIGNED;
+        try {
+            return SignalSourceConfig.RoutingMode.valueOf(mode.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return SignalSourceConfig.RoutingMode.ASSIGNED;
+        }
     }
 
     private UserAssignmentResponse toAssignmentResponse(UserSignalSource assignment, User user) {

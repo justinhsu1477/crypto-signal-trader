@@ -13,6 +13,8 @@ import {
   toggleAdminSignalSourceUser,
   getAdminSignalSourcePerformances,
   getAdminUsers,
+  getSignalSourceMonitorStatus,
+  updateGlobalMonitorSettings,
 } from "@/lib/api";
 import type {
   SignalSourceResponse,
@@ -21,6 +23,7 @@ import type {
   UserAssignmentResponse,
   SignalSourcePerformanceDto,
   AdminUserListResponse,
+  MonitorStatusResponse,
 } from "@/types";
 import {
   Target,
@@ -35,6 +38,11 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Activity,
+  Settings2,
+  Globe,
+  UserCheck,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,6 +50,7 @@ export default function AdminSignalSourcesPage() {
   const { t } = useT();
   const [sources, setSources] = useState<SignalSourceResponse[]>([]);
   const [performances, setPerformances] = useState<SignalSourcePerformanceDto[]>([]);
+  const [monitorStatus, setMonitorStatus] = useState<MonitorStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingSource, setEditingSource] = useState<SignalSourceResponse | null>(null);
@@ -53,16 +62,19 @@ export default function AdminSignalSourcesPage() {
   const [assignSourceId, setAssignSourceId] = useState<number | null>(null);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [assigning, setAssigning] = useState(false);
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, p] = await Promise.all([
+      const [s, p, m] = await Promise.all([
         getAdminSignalSources(),
         getAdminSignalSourcePerformances(),
+        getSignalSourceMonitorStatus(),
       ]);
       setSources(s);
       setPerformances(p);
+      setMonitorStatus(m);
     } catch {
       toast.error(t("common.loadFailed"));
     } finally {
@@ -201,6 +213,59 @@ export default function AdminSignalSourcesPage() {
         </button>
       </div>
 
+      {/* Monitor Status Card */}
+      {monitorStatus && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <Activity className="h-4 w-4 text-purple-400" />
+              {t("signalSources.monitorStatus")}
+            </h2>
+            <button
+              onClick={() => setShowGlobalSettings(!showGlobalSettings)}
+              className="flex items-center gap-1 text-xs px-3 py-1.5 border border-border rounded-md hover:bg-accent transition-colors"
+            >
+              <Settings2 className="h-3 w-3" />
+              {t("signalSources.globalSettings")}
+              {showGlobalSettings ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <div className={`w-2.5 h-2.5 rounded-full ${monitorStatus.monitorOnline ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+              <span className={monitorStatus.monitorOnline ? "text-green-400" : "text-red-400"}>
+                {monitorStatus.monitorOnline ? t("signalSources.monitorOnline") : t("signalSources.monitorOffline")}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground text-xs">{t("signalSources.lastHeartbeat")}</span>
+              <div className="font-mono text-xs">
+                {monitorStatus.lastHeartbeat
+                  ? new Date(monitorStatus.lastHeartbeat).toLocaleTimeString()
+                  : "—"}
+              </div>
+            </div>
+            <div>
+              <span className="text-muted-foreground text-xs">{t("signalSources.connectedMonitors")}</span>
+              <div className="font-mono text-xs">{monitorStatus.connectedMonitors}</div>
+            </div>
+            <div>
+              <span className="text-muted-foreground text-xs">{t("signalSources.configVersion")}</span>
+              <div className="font-mono text-xs">v{monitorStatus.configVersion}</div>
+            </div>
+          </div>
+
+          {/* Global Settings (collapsible) */}
+          {showGlobalSettings && (
+            <GlobalSettingsPanel
+              monitorStatus={monitorStatus}
+              t={t}
+              onSaved={fetchData}
+            />
+          )}
+        </div>
+      )}
+
       {/* Source list */}
       {sources.length === 0 ? (
         <div className="text-center py-20 text-muted-foreground">
@@ -212,6 +277,7 @@ export default function AdminSignalSourcesPage() {
           {sources.map((source) => {
             const perf = getPerformance(source.id);
             const isExpanded = expandedId === source.id;
+            const isGlobal = source.routingMode === "GLOBAL";
 
             return (
               <div key={source.id} className="bg-card border border-border rounded-xl overflow-hidden">
@@ -225,6 +291,15 @@ export default function AdminSignalSourcesPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-semibold truncate">{source.displayName}</span>
                       <span className="text-xs text-muted-foreground">({source.name})</span>
+                      {/* Routing mode badge */}
+                      <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full ${
+                        isGlobal
+                          ? "bg-blue-500/15 text-blue-400"
+                          : "bg-purple-500/15 text-purple-400"
+                      }`}>
+                        {isGlobal ? <Globe className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                        {isGlobal ? t("signalSources.routingGlobal") : t("signalSources.routingAssigned")}
+                      </span>
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5 space-x-3">
                       {source.channelId && <span>CH: {source.channelId}</span>}
@@ -254,11 +329,13 @@ export default function AdminSignalSourcesPage() {
                     </div>
                   )}
 
-                  {/* Assigned count badge */}
-                  <div className="flex items-center gap-1 px-2 py-1 bg-accent rounded-md text-xs">
-                    <Users className="h-3 w-3" />
-                    <span>{source.assignedUserCount}</span>
-                  </div>
+                  {/* Assigned count badge (hide for GLOBAL) */}
+                  {!isGlobal && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-accent rounded-md text-xs">
+                      <Users className="h-3 w-3" />
+                      <span>{source.assignedUserCount}</span>
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex items-center gap-1">
@@ -281,17 +358,20 @@ export default function AdminSignalSourcesPage() {
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
-                    <button
-                      onClick={() => handleExpandUsers(source.id)}
-                      className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-colors"
-                    >
-                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </button>
+                    {/* Only show expand for ASSIGNED mode */}
+                    {!isGlobal && (
+                      <button
+                        onClick={() => handleExpandUsers(source.id)}
+                        className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-colors"
+                      >
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Expanded: assigned users */}
-                {isExpanded && (
+                {/* Expanded: assigned users (only for ASSIGNED mode) */}
+                {isExpanded && !isGlobal && (
                   <div className="border-t border-border bg-accent/30 p-4">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold flex items-center gap-1.5">
@@ -445,6 +525,133 @@ export default function AdminSignalSourcesPage() {
   );
 }
 
+// ─── Global Settings Panel ───
+
+function GlobalSettingsPanel({
+  monitorStatus,
+  t,
+  onSaved,
+}: {
+  monitorStatus: MonitorStatusResponse;
+  t: (key: string) => string;
+  onSaved: () => void;
+}) {
+  const [authorIds, setAuthorIds] = useState<string[]>(monitorStatus.authorIds || []);
+  const [ignoreKeywords, setIgnoreKeywords] = useState<string[]>(monitorStatus.ignoreKeywords || []);
+  const [newAuthorId, setNewAuthorId] = useState("");
+  const [newKeyword, setNewKeyword] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await updateGlobalMonitorSettings({ authorIds, ignoreKeywords });
+      toast.success(t("signalSources.globalSettingsUpdated"));
+      onSaved();
+    } catch {
+      toast.error(t("common.saveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-border space-y-4">
+      {/* Author IDs */}
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">{t("signalSources.authorIds")}</label>
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {authorIds.map((id) => (
+            <span key={id} className="inline-flex items-center gap-1 text-xs bg-accent px-2 py-1 rounded-md font-mono">
+              {id}
+              <button onClick={() => setAuthorIds(authorIds.filter((a) => a !== id))} className="text-muted-foreground hover:text-red-400">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={newAuthorId}
+              onChange={(e) => setNewAuthorId(e.target.value)}
+              placeholder="ID"
+              className="w-32 bg-background border border-border rounded px-2 py-1 text-xs font-mono"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newAuthorId.trim()) {
+                  setAuthorIds([...authorIds, newAuthorId.trim()]);
+                  setNewAuthorId("");
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (newAuthorId.trim()) {
+                  setAuthorIds([...authorIds, newAuthorId.trim()]);
+                  setNewAuthorId("");
+                }
+              }}
+              className="text-xs px-2 py-1 bg-accent rounded hover:bg-accent/80 transition-colors"
+            >
+              {t("signalSources.addItem")}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Ignore Keywords */}
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">{t("signalSources.ignoreKeywords")}</label>
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {ignoreKeywords.map((kw) => (
+            <span key={kw} className="inline-flex items-center gap-1 text-xs bg-accent px-2 py-1 rounded-md">
+              {kw}
+              <button onClick={() => setIgnoreKeywords(ignoreKeywords.filter((k) => k !== kw))} className="text-muted-foreground hover:text-red-400">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={newKeyword}
+              onChange={(e) => setNewKeyword(e.target.value)}
+              placeholder="keyword"
+              className="w-32 bg-background border border-border rounded px-2 py-1 text-xs"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newKeyword.trim()) {
+                  setIgnoreKeywords([...ignoreKeywords, newKeyword.trim()]);
+                  setNewKeyword("");
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (newKeyword.trim()) {
+                  setIgnoreKeywords([...ignoreKeywords, newKeyword.trim()]);
+                  setNewKeyword("");
+                }
+              }}
+              className="text-xs px-2 py-1 bg-accent rounded hover:bg-accent/80 transition-colors"
+            >
+              {t("signalSources.addItem")}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-1.5 text-xs rounded-lg bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 transition-colors"
+        >
+          {saving ? t("common.saving") : t("signalSources.saveSettings")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Create / Edit Modal ───
 
 function CreateEditModal({
@@ -464,6 +671,7 @@ function CreateEditModal({
   const [channelId, setChannelId] = useState(source?.channelId || "");
   const [guildId, setGuildId] = useState(source?.guildId || "");
   const [description, setDescription] = useState(source?.description || "");
+  const [routingMode, setRoutingMode] = useState<"GLOBAL" | "ASSIGNED">(source?.routingMode || "ASSIGNED");
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -471,7 +679,7 @@ function CreateEditModal({
     setSaving(true);
     try {
       if (isEdit && source) {
-        const req: UpdateSignalSourceRequest = { name, displayName, description };
+        const req: UpdateSignalSourceRequest = { name, displayName, description, routingMode };
         await updateAdminSignalSource(source.id, req);
         toast.success(t("signalSources.updateSuccess"));
       } else {
@@ -481,6 +689,7 @@ function CreateEditModal({
           channelId: channelId || undefined,
           guildId: guildId || undefined,
           description: description || undefined,
+          routingMode,
         };
         await createAdminSignalSource(req);
         toast.success(t("signalSources.createSuccess"));
@@ -545,6 +754,23 @@ function CreateEditModal({
               </div>
             </>
           )}
+          {/* Routing Mode */}
+          <div>
+            <label className="block text-sm text-muted-foreground mb-1">{t("signalSources.routingMode")}</label>
+            <select
+              value={routingMode}
+              onChange={(e) => setRoutingMode(e.target.value as "GLOBAL" | "ASSIGNED")}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="GLOBAL">{t("signalSources.routingGlobal")}</option>
+              <option value="ASSIGNED">{t("signalSources.routingAssigned")}</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              {routingMode === "GLOBAL"
+                ? t("signalSources.routingGlobalHint")
+                : t("signalSources.routingAssignedHint")}
+            </p>
+          </div>
           <div>
             <label className="block text-sm text-muted-foreground mb-1">{t("signalSources.description")}</label>
             <textarea

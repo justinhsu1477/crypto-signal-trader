@@ -24,6 +24,15 @@ import java.time.LocalDateTime;
 })
 public class SignalSourceConfig {
 
+    /**
+     * 路由模式：
+     * - GLOBAL：全員廣播（所有用戶都收到此來源的訊號）
+     * - ASSIGNED：僅綁定用戶收到（需透過 user_signal_sources 綁定）
+     */
+    public enum RoutingMode {
+        GLOBAL, ASSIGNED
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -43,6 +52,12 @@ public class SignalSourceConfig {
     /** Admin 備註 */
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    /** 路由模式 */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "routing_mode", nullable = false)
+    @Builder.Default
+    private RoutingMode routingMode = RoutingMode.ASSIGNED;
 
     /** 啟用狀態 */
     @Builder.Default

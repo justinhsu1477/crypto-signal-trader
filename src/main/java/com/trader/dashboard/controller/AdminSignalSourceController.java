@@ -2,6 +2,9 @@ package com.trader.dashboard.controller;
 
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
+import com.trader.trading.grpc.generated.MonitorConfig;
+import com.trader.trading.service.MonitorConfigStore;
+import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalSourceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -9,11 +12,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 管理員訊號來源管理 API
+ * 管理員訊號來源管理 API（含監聽設定合併功能）
  *
  * 路徑 /api/admin/** 已被 AuthConfig hasRole("ADMIN") 保護
  */
@@ -24,6 +28,8 @@ import java.util.Map;
 public class AdminSignalSourceController {
 
     private final SignalSourceService signalSourceService;
+    private final MonitorConfigStore monitorConfigStore;
+    private final MonitorHeartbeatService monitorHeartbeatService;
 
     // ======================== 來源 CRUD ========================
 
@@ -142,5 +148,57 @@ public class AdminSignalSourceController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    // ======================== Monitor 狀態 + 全局設定（合併自監聽設定） ========================
+
+    /**
+     * 查詢 Monitor 連線狀態 + 當前設定
+     */
+    @GetMapping("/monitor-status")
+    public ResponseEntity<Map<String, Object>> getMonitorStatus() {
+        MonitorConfig config = monitorConfigStore.getCurrentConfig();
+        Map<String, Object> heartbeatStatus = monitorHeartbeatService.getStatus();
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("channelIds", config.getChannelIdsList());
+        response.put("guildIds", config.getGuildIdsList());
+        response.put("authorIds", config.getAuthorIdsList());
+        response.put("ignoreKeywords", config.getIgnoreKeywordsList());
+        response.put("configVersion", config.getVersion());
+        response.put("connectedMonitors", monitorConfigStore.getConnectedObservers());
+        response.put("monitorOnline", heartbeatStatus.get("monitorConnected"));
+        response.put("lastHeartbeat", heartbeatStatus.get("lastHeartbeat"));
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 更新全局監聽設定（authorIds、ignoreKeywords）
+     * channelIds / guildIds 由 SignalSourceConfig CRUD 自動管理
+     */
+    @PutMapping("/monitor-settings")
+    public ResponseEntity<Map<String, Object>> updateGlobalSettings(
+            @RequestBody UpdateGlobalSettingsRequest request) {
+
+        MonitorConfig current = monitorConfigStore.getCurrentConfig();
+
+        monitorConfigStore.updateConfig(
+                current.getChannelIdsList(),      // 保留（由 source CRUD 管理）
+                current.getGuildIdsList(),         // 保留（由 source CRUD 管理）
+                request.getAuthorIds(),
+                request.getIgnoreKeywords(),
+                "admin",
+                "global_settings_update"
+        );
+
+        log.info("Admin 更新全局設定: authorIds={}, ignoreKeywords={}",
+                request.getAuthorIds(), request.getIgnoreKeywords());
+
+        return ResponseEntity.ok(Map.of(
+                "message", "全局設定已更新",
+                "configVersion", monitorConfigStore.getCurrentConfig().getVersion(),
+                "connectedMonitors", monitorConfigStore.getConnectedObservers()
+        ));
     }
 }
