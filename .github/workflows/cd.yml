@@ -135,9 +135,9 @@ jobs:
 
     steps:
       - name: 發送 Discord 通知
-        if: ${{ secrets.CD_DISCORD_WEBHOOK != '' }}
         env:
           WEBHOOK_URL: ${{ secrets.CD_DISCORD_WEBHOOK }}
+        if: env.WEBHOOK_URL != ''
         run: |
           curl -sf -H "Content-Type: application/json" \
             -d "{
