@@ -206,7 +206,9 @@ public class SignalSourceService {
     /**
      * 解析訊號來源對應的綁定用戶 — BroadcastTradeService 呼叫
      *
-     * @return Optional.empty() = 無匹配來源 或 GLOBAL 模式 → 觸發 fallback 全量廣播
+     * @return Optional.empty() = 無匹配來源 或 GLOBAL 模式
+     *         → 呼叫端需區分：resolvedSourceId 有值 = GLOBAL（排除已綁定 ASSIGNED 用戶），
+     *           resolvedSourceId 無值 = 無匹配來源（全量廣播，向下相容）
      *         Optional.of(Set) = ASSIGNED 模式 → 只廣播給綁定用戶
      */
     public Optional<Set<String>> resolveTargetUserIds(String channelId, String guildId) {
@@ -230,6 +232,14 @@ public class SignalSourceService {
         // ASSIGNED 模式 → 只回傳綁定用戶
         List<String> userIds = userSourceRepository.findEnabledUserIdsBySourceId(source.get().getId());
         return Optional.of(new HashSet<>(userIds));
+    }
+
+    /**
+     * 取得所有綁定到啟用 ASSIGNED 來源的用戶 ID
+     * GLOBAL 來源廣播時用於排除已有專屬來源的用戶（一人一源原則）
+     */
+    public Set<String> getUserIdsBoundToAssignedSources() {
+        return new HashSet<>(userSourceRepository.findUserIdsBoundToEnabledAssignedSources());
     }
 
     /**
@@ -280,10 +290,21 @@ public class SignalSourceService {
                     .build();
         }
 
-        long tradeCount = ((Number) stats[0]).longValue();
-        long winCount = ((Number) stats[1]).longValue();
-        double totalPnl = ((Number) stats[2]).doubleValue();
-        double avgPnl = ((Number) stats[3]).doubleValue();
+        // Native query 聚合結果可能被 JPA 包裝為 Object[][]（外層陣列 = rows）
+        Object[] row = (stats[0] instanceof Object[]) ? (Object[]) stats[0] : stats;
+
+        if (row[0] == null) {
+            return SignalSourcePerformanceDto.builder()
+                    .sourceId(source.getId())
+                    .name(source.getName())
+                    .displayName(source.getDisplayName())
+                    .build();
+        }
+
+        long tradeCount = ((Number) row[0]).longValue();
+        long winCount = ((Number) row[1]).longValue();
+        double totalPnl = ((Number) row[2]).doubleValue();
+        double avgPnl = ((Number) row[3]).doubleValue();
         double winRate = tradeCount > 0 ? winCount * 100.0 / tradeCount : 0;
 
         return SignalSourcePerformanceDto.builder()

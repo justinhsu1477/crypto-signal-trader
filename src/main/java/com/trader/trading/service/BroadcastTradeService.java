@@ -154,6 +154,7 @@ public class BroadcastTradeService {
             resolvedSourceId = signalSourceService.resolveSourceId(channelId, guildId).orElse(null);
 
             if (sourceUserIds.isPresent()) {
+                // ASSIGNED 模式 → 只保留綁定用戶
                 Set<String> assigned = sourceUserIds.get();
                 int beforeSize = activeUsers.size();
                 activeUsers = activeUsers.stream()
@@ -161,11 +162,25 @@ public class BroadcastTradeService {
                         .toList();
                 skippedNotAssigned = beforeSize - activeUsers.size();
                 if (skippedNotAssigned > 0) {
-                    log.info("訊號來源路由: channelId={} 符合 {} 人, 排除 {} 人",
+                    log.info("ASSIGNED 來源路由: channelId={} 符合 {} 人, 排除 {} 人",
                             channelId, activeUsers.size(), skippedNotAssigned);
                 }
+            } else if (resolvedSourceId != null) {
+                // GLOBAL 模式 → 排除已綁定 ASSIGNED 來源的用戶（一人一源原則）
+                Set<String> boundUserIds = signalSourceService.getUserIdsBoundToAssignedSources();
+                if (!boundUserIds.isEmpty()) {
+                    int beforeSize = activeUsers.size();
+                    activeUsers = activeUsers.stream()
+                            .filter(u -> !boundUserIds.contains(u.getUserId()))
+                            .toList();
+                    skippedNotAssigned = beforeSize - activeUsers.size();
+                    if (skippedNotAssigned > 0) {
+                        log.info("GLOBAL 來源路由: 排除 {} 個已綁定 ASSIGNED 來源的用戶, 剩餘 {} 人",
+                                skippedNotAssigned, activeUsers.size());
+                    }
+                }
             }
-            // Optional.empty() = 無匹配 SignalSourceConfig → 全量廣播（向下相容）
+            // resolvedSourceId == null → 無匹配來源 → 全量廣播（向下相容）
         }
 
         // 指定用戶模式：從已通過篩選的 activeUsers 中，再過濾出目標用戶

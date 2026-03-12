@@ -36,4 +36,11 @@ public interface UserSignalSourceRepository extends JpaRepository<UserSignalSour
     List<Long> findEnabledSourceIdsByUserId(@Param("userId") String userId);
 
     void deleteByUserIdAndSourceId(String userId, Long sourceId);
+
+    /** 取得所有綁定到啟用 ASSIGNED 來源的 userId（GLOBAL 路由排除用） */
+    @Query(value = "SELECT DISTINCT uss.user_id FROM user_signal_sources uss " +
+            "JOIN signal_sources ss ON uss.source_id = ss.id " +
+            "WHERE ss.routing_mode = 'ASSIGNED' AND uss.enabled = true AND ss.enabled = true",
+            nativeQuery = true)
+    List<String> findUserIdsBoundToEnabledAssignedSources();
 }
