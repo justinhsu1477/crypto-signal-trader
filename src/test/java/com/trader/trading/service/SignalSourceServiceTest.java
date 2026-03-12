@@ -49,6 +49,8 @@ class SignalSourceServiceTest {
         // 預設 getCurrentConfig 回傳空 config（syncMonitorConfig 呼叫時需要）
         when(monitorConfigStore.getCurrentConfig()).thenReturn(
                 MonitorConfig.newBuilder().build());
+        // 預設 env var 預設頻道為空（測試可個別覆蓋）
+        when(monitorConfigStore.getDefaultChannelIdList()).thenReturn(List.of());
 
         service = new SignalSourceService(sourceRepository, userSourceRepository,
                 tradeRepository, userRepository, monitorConfigStore);
@@ -185,6 +187,79 @@ class SignalSourceServiceTest {
             assertThat(results).hasSize(2);
             assertThat(results.get(0).getAssignedUserCount()).isEqualTo(1);
             assertThat(results.get(1).getAssignedUserCount()).isEqualTo(0);
+        }
+
+        @Test
+        @DisplayName("建立 GLOBAL 來源 — 已存在 GLOBAL 時拋出例外")
+        void createSource_duplicateGlobalThrows() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("新GLOBAL").displayName("X").channelId("ch-2").guildId("g-2")
+                    .routingMode("GLOBAL").build();
+
+            when(sourceRepository.existsByChannelIdAndGuildId("ch-2", "g-2")).thenReturn(false);
+            when(sourceRepository.existsByRoutingMode(SignalSourceConfig.RoutingMode.GLOBAL)).thenReturn(true);
+
+            assertThatThrownBy(() -> service.createSource(req))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("只能有一個");
+
+            verify(sourceRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("建立 GLOBAL 來源 — 無既有 GLOBAL 時成功")
+        void createSource_firstGlobalSucceeds() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("陳哥").displayName("陳哥VIP").channelId("ch-1").guildId("g-1")
+                    .routingMode("GLOBAL").build();
+
+            when(sourceRepository.existsByChannelIdAndGuildId("ch-1", "g-1")).thenReturn(false);
+            when(sourceRepository.existsByRoutingMode(SignalSourceConfig.RoutingMode.GLOBAL)).thenReturn(false);
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(1L);
+                return s;
+            });
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getRoutingMode()).isEqualTo(SignalSourceConfig.RoutingMode.GLOBAL);
+            verify(sourceRepository).save(any());
+        }
+
+        @Test
+        @DisplayName("更新來源為 GLOBAL — 已存在其他 GLOBAL 時拋出例外")
+        void updateSource_switchToGlobalWhenAnotherExistsThrows() {
+            SignalSourceConfig existing = SignalSourceConfig.builder()
+                    .id(2L).name("B源").routingMode(SignalSourceConfig.RoutingMode.ASSIGNED).enabled(true).build();
+            UpdateSignalSourceRequest req = UpdateSignalSourceRequest.builder()
+                    .routingMode("GLOBAL").build();
+
+            when(sourceRepository.findById(2L)).thenReturn(Optional.of(existing));
+            when(sourceRepository.existsByRoutingModeAndIdNot(SignalSourceConfig.RoutingMode.GLOBAL, 2L)).thenReturn(true);
+
+            assertThatThrownBy(() -> service.updateSource(2L, req))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("只能有一個");
+
+            verify(sourceRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("更新來源 — GLOBAL 改自己的其他欄位不觸發限制")
+        void updateSource_globalUpdatesOwnFieldsSucceeds() {
+            SignalSourceConfig existing = SignalSourceConfig.builder()
+                    .id(1L).name("陳哥").routingMode(SignalSourceConfig.RoutingMode.GLOBAL).enabled(true).build();
+            UpdateSignalSourceRequest req = UpdateSignalSourceRequest.builder()
+                    .displayName("新顯示名").build();  // 不改 routingMode
+
+            when(sourceRepository.findById(1L)).thenReturn(Optional.of(existing));
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            SignalSourceConfig result = service.updateSource(1L, req);
+
+            assertThat(result.getDisplayName()).isEqualTo("新顯示名");
+            assertThat(result.getRoutingMode()).isEqualTo(SignalSourceConfig.RoutingMode.GLOBAL);
         }
     }
 
@@ -597,6 +672,68 @@ class SignalSourceServiceTest {
             service.syncOnStartup();
 
             verify(monitorConfigStore, never()).updateConfig(anyList(), anyList(), anyList(), anyList(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("sync — 無 GLOBAL 來源時合併 env var 預設頻道")
+        @SuppressWarnings("unchecked")
+        void sync_noGlobal_mergesEnvVarDefaults() {
+            // DB 只有 ASSIGNED 來源
+            SignalSourceConfig assigned = SignalSourceConfig.builder()
+                    .id(1L).channelId("ch-assigned").guildId("g-1")
+                    .routingMode(SignalSourceConfig.RoutingMode.ASSIGNED).enabled(true).build();
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(assigned));
+            when(monitorConfigStore.getDefaultChannelIdList()).thenReturn(List.of("ch-env-default"));
+
+            service.syncOnStartup();
+
+            // 驗證 channelIds 包含 DB + env var 預設
+            var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+            List<String> channelIds = captor.getValue();
+            assertThat(channelIds).containsExactlyInAnyOrder("ch-assigned", "ch-env-default");
+        }
+
+        @Test
+        @DisplayName("sync — 有 GLOBAL 來源時不合併 env var 預設（GLOBAL 取代）")
+        @SuppressWarnings("unchecked")
+        void sync_withGlobal_doesNotMergeEnvVarDefaults() {
+            SignalSourceConfig global = SignalSourceConfig.builder()
+                    .id(1L).channelId("ch-global").guildId("g-1")
+                    .routingMode(SignalSourceConfig.RoutingMode.GLOBAL).enabled(true).build();
+            SignalSourceConfig assigned = SignalSourceConfig.builder()
+                    .id(2L).channelId("ch-assigned").guildId("g-2")
+                    .routingMode(SignalSourceConfig.RoutingMode.ASSIGNED).enabled(true).build();
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(global, assigned));
+            when(monitorConfigStore.getDefaultChannelIdList()).thenReturn(List.of("ch-env-default"));
+
+            service.syncOnStartup();
+
+            var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+            List<String> channelIds = captor.getValue();
+            // 只有 DB 頻道，不含 env var 預設
+            assertThat(channelIds).containsExactlyInAnyOrder("ch-global", "ch-assigned");
+            assertThat(channelIds).doesNotContain("ch-env-default");
+        }
+
+        @Test
+        @DisplayName("sync — 無 GLOBAL 時 env var 預設頻道不重複加入")
+        @SuppressWarnings("unchecked")
+        void sync_noGlobal_noDuplicateDefaults() {
+            // DB 的 channelId 和 env var 預設重疊
+            SignalSourceConfig assigned = SignalSourceConfig.builder()
+                    .id(1L).channelId("ch-same").guildId("g-1")
+                    .routingMode(SignalSourceConfig.RoutingMode.ASSIGNED).enabled(true).build();
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(assigned));
+            when(monitorConfigStore.getDefaultChannelIdList()).thenReturn(List.of("ch-same", "ch-extra"));
+
+            service.syncOnStartup();
+
+            var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+            List<String> channelIds = captor.getValue();
+            assertThat(channelIds).containsExactlyInAnyOrder("ch-same", "ch-extra");
         }
     }
 
