@@ -6,6 +6,7 @@ import { Header } from "../header";
 const translations: Record<string, string> = {
   "nav.overview": "Overview",
   "nav.performance": "Performance",
+  "nav.chart": "Chart",
   "nav.trades": "Trades",
   "nav.referral": "Referral",
   "nav.announcements": "Announcements",
@@ -16,7 +17,12 @@ const translations: Record<string, string> = {
   "nav.adminUsers": "User Management",
   "nav.adminReferrals": "Referral Management",
   "nav.adminSubscriptions": "Subscription Management",
+  "nav.adminAnalytics": "Analytics",
+  "nav.adminInsights": "Insights",
+  "nav.adminBroadcastLogs": "Broadcast Logs",
+  "nav.adminNotifications": "Notifications",
   "nav.adminAnnouncements": "Announcement Management",
+  "nav.adminMonitorSettings": "Monitor Settings",
   "nav.adminSettings": "Admin Settings",
   "nav.logoutConfirmTitle": "Confirm Logout",
   "nav.logoutConfirmDesc": "Are you sure?",
@@ -67,12 +73,13 @@ describe("Header", () => {
   });
 
   describe("User Navigation", () => {
-    it("renders all 6 user nav items when role is USER", () => {
+    it("renders all 7 user nav items when role is USER", () => {
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
 
       expect(within(nav).getByText("Overview")).toBeInTheDocument();
       expect(within(nav).getByText("Performance")).toBeInTheDocument();
+      expect(within(nav).getByText("Chart")).toBeInTheDocument();
       expect(within(nav).getByText("Trades")).toBeInTheDocument();
       expect(within(nav).getByText("Referral")).toBeInTheDocument();
       expect(within(nav).getByText("Announcements")).toBeInTheDocument();
@@ -80,7 +87,7 @@ describe("Header", () => {
 
       // Count all nav links (a tags) in the mobile nav
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(6);
+      expect(links).toHaveLength(7);
     });
 
     it("includes announcements link for users", () => {
@@ -106,7 +113,7 @@ describe("Header", () => {
       mockAuth.email = "admin@test.com";
     });
 
-    it("renders all 7 admin nav items when role is ADMIN", () => {
+    it("renders all 12 admin nav items when role is ADMIN", () => {
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
 
@@ -115,11 +122,16 @@ describe("Header", () => {
       expect(within(nav).getByText("User Management")).toBeInTheDocument();
       expect(within(nav).getByText("Referral Management")).toBeInTheDocument();
       expect(within(nav).getByText("Subscription Management")).toBeInTheDocument();
+      expect(within(nav).getByText("Analytics")).toBeInTheDocument();
+      expect(within(nav).getByText("Insights")).toBeInTheDocument();
+      expect(within(nav).getByText("Broadcast Logs")).toBeInTheDocument();
+      expect(within(nav).getByText("Notifications")).toBeInTheDocument();
       expect(within(nav).getByText("Announcement Management")).toBeInTheDocument();
+      expect(within(nav).getByText("Monitor Settings")).toBeInTheDocument();
       expect(within(nav).getByText("Admin Settings")).toBeInTheDocument();
 
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(7);
+      expect(links).toHaveLength(12);
     });
 
     it("includes signal link for admin", () => {
@@ -162,20 +174,20 @@ describe("Header", () => {
   });
 
   describe("Navigation sync with Sidebar", () => {
-    it("user nav items count matches sidebar (6 items)", () => {
+    it("user nav items count matches sidebar (7 items)", () => {
       mockAuth.role = "USER";
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(6);
+      expect(links).toHaveLength(7);
     });
 
-    it("admin nav items count matches sidebar (7 items)", () => {
+    it("admin nav items count matches sidebar (12 items)", () => {
       mockAuth.role = "ADMIN";
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(7);
+      expect(links).toHaveLength(12);
     });
   });
 
