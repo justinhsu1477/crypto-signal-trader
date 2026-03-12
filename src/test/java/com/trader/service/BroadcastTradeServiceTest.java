@@ -3,9 +3,10 @@ package com.trader.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.advisor.service.SignalScoringService;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
+import com.trader.trading.service.SignalSourceService;
 import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
@@ -34,10 +35,11 @@ class BroadcastTradeServiceTest {
 
     private UserRepository mockUserRepo;
     private BinanceFuturesService mockBinance;
-    private DiscordWebhookService mockWebhook;
+    private NotificationService mockWebhook;
     private UserApiKeyService mockApiKey;
     private SubscriptionRepository mockSubscriptionRepo;
     private SignalScoringService mockScoring;
+    private SignalSourceService mockSignalSource;
     private TradeRepository mockTradeRepo;
     private BroadcastLogRepository mockBroadcastLogRepo;
     private ExecutorService executor;
@@ -47,10 +49,11 @@ class BroadcastTradeServiceTest {
     void setUp() {
         mockUserRepo = mock(UserRepository.class);
         mockBinance = mock(BinanceFuturesService.class);
-        mockWebhook = mock(DiscordWebhookService.class);
+        mockWebhook = mock(NotificationService.class);
         mockApiKey = mock(UserApiKeyService.class);
         mockSubscriptionRepo = mock(SubscriptionRepository.class);
         mockScoring = mock(SignalScoringService.class);
+        mockSignalSource = mock(SignalSourceService.class);
         mockTradeRepo = mock(TradeRepository.class);
         mockBroadcastLogRepo = mock(BroadcastLogRepository.class);
 
@@ -73,7 +76,7 @@ class BroadcastTradeServiceTest {
 
         service = new BroadcastTradeService(
                 mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockSubscriptionRepo,
-                mockScoring, mockTradeRepo, mockBroadcastLogRepo, new ObjectMapper(), executor,
+                mockScoring, mockSignalSource, mockTradeRepo, mockBroadcastLogRepo, new ObjectMapper(), executor,
                 15, 0L);
     }
 
@@ -328,7 +331,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     contains("已執行"),
                     anyString(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
         }
 
         @Test
@@ -347,7 +350,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     contains("失敗"),
                     contains("Insufficient margin"),
-                    eq(DiscordWebhookService.COLOR_RED));
+                    eq(NotificationService.COLOR_RED));
         }
     }
 
@@ -415,7 +418,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     eq("✅ 廣播跟單已執行"),
                     bodyCaptor.capture(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
 
             String body = bodyCaptor.getValue();
             assertThat(body).contains("成交: 94950.5");
@@ -437,7 +440,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     eq("✅ 廣播跟單已執行"),
                     bodyCaptor.capture(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
 
             assertThat(bodyCaptor.getValue()).contains("入場: 95000.0");
         }
@@ -468,7 +471,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     eq("✅ 全部平倉已執行"),
                     bodyCaptor.capture(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
 
             String body = bodyCaptor.getValue();
             assertThat(body).contains("類型: 全部平倉");
@@ -624,7 +627,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     eq("✅ 廣播跟單已執行"),
                     bodyCaptor.capture(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
 
             String body = bodyCaptor.getValue();
             assertThat(body).contains("AI: 78/100");
@@ -679,7 +682,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     eq("✅ 全部平倉已執行"),
                     bodyCaptor.capture(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
             assertThat(bodyCaptor.getValue()).doesNotContain("AI:");
         }
 
@@ -774,9 +777,9 @@ class BroadcastTradeServiceTest {
 
             // 兩位 Admin 都收到廣播前通知
             verify(mockWebhook, timeout(5000)).sendNotificationToUser(
-                    eq("admin1"), eq("📡 廣播訊號已發送"), anyString(), eq(DiscordWebhookService.COLOR_BLUE));
+                    eq("admin1"), eq("📡 廣播訊號已發送"), anyString(), eq(NotificationService.COLOR_BLUE));
             verify(mockWebhook, timeout(5000)).sendNotificationToUser(
-                    eq("admin2"), eq("📡 廣播訊號已發送"), anyString(), eq(DiscordWebhookService.COLOR_BLUE));
+                    eq("admin2"), eq("📡 廣播訊號已發送"), anyString(), eq(NotificationService.COLOR_BLUE));
         }
 
         @Test
@@ -875,7 +878,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     contains("部分平倉"),
                     contains("50%"),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
         }
 
         @Test
@@ -914,7 +917,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     eq("✅ 移動止損已執行"),
                     bodyCaptor.capture(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
 
             String body = bodyCaptor.getValue();
             assertThat(body).contains("動作: 移動止損");
@@ -952,7 +955,7 @@ class BroadcastTradeServiceTest {
                     eq("u1"),
                     eq("✅ 取消掛單已執行"),
                     anyString(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
         }
 
         @Test
@@ -1007,7 +1010,7 @@ class BroadcastTradeServiceTest {
                     eq("admin1"),
                     eq("📊 廣播跟單報告"),
                     anyString(),
-                    eq(DiscordWebhookService.COLOR_GREEN));
+                    eq(NotificationService.COLOR_GREEN));
         }
 
         @Test
@@ -1028,7 +1031,7 @@ class BroadcastTradeServiceTest {
                     eq("admin1"),
                     eq("📊 廣播跟單報告"),
                     anyString(),
-                    eq(DiscordWebhookService.COLOR_YELLOW));
+                    eq(NotificationService.COLOR_YELLOW));
         }
     }
 
@@ -1060,7 +1063,7 @@ class BroadcastTradeServiceTest {
             ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
             verify(mockWebhook, timeout(5000)).sendNotificationToUser(
                     eq("admin1"), eq("📡 廣播訊號已發送"),
-                    bodyCaptor.capture(), eq(DiscordWebhookService.COLOR_BLUE));
+                    bodyCaptor.capture(), eq(NotificationService.COLOR_BLUE));
 
             String body = bodyCaptor.getValue();
             assertThat(body).contains("BTCUSDT");

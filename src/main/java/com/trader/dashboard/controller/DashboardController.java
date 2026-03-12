@@ -55,6 +55,7 @@ public class DashboardController {
     private final LineLinkingService lineLinkingService;
     private final SubscriptionService subscriptionService;
     private final PlanRepository planRepository;
+    private final com.trader.trading.service.SignalSourceService signalSourceService;
 
     /**
      * 首頁總覽
@@ -518,5 +519,16 @@ public class DashboardController {
                 "userId", userId,
                 "lineNotificationEnabled", enabled,
                 "message", enabled ? "已啟用 LINE 通知" : "已關閉 LINE 通知"));
+    }
+
+    // ── 訊號來源（用戶視角：只回傳 displayName） ──
+
+    /**
+     * 用戶的訊號來源列表 — 只回傳 displayName（隱私保護）
+     */
+    @GetMapping("/signal-sources")
+    public ResponseEntity<java.util.List<com.trader.trading.dto.signalsource.SignalSourceUserResponse>> getMySignalSources() {
+        String userId = SecurityUtil.getCurrentUserId();
+        return ResponseEntity.ok(signalSourceService.getSourcesForUser(userId));
     }
 }

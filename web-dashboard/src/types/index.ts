@@ -850,3 +850,60 @@ export interface BroadcastLogDetail extends BroadcastLogSummary {
   aiReasoning: string | null;
   userResults: BroadcastUserResult[];
 }
+
+// ─── Signal Source Management ───
+
+export interface SignalSourceResponse {
+  id: number;
+  name: string;
+  displayName: string;
+  channelId: string | null;
+  guildId: string | null;
+  description: string | null;
+  enabled: boolean;
+  assignedUserCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSignalSourceRequest {
+  name: string;
+  displayName: string;
+  channelId?: string;
+  guildId?: string;
+  description?: string;
+}
+
+export interface UpdateSignalSourceRequest {
+  name?: string;
+  displayName?: string;
+  description?: string;
+  enabled?: boolean;
+}
+
+export interface UserAssignmentResponse {
+  id: number;
+  userId: string;
+  email: string | null;
+  name: string | null;
+  enabled: boolean;
+  assignedAt: string;
+}
+
+export interface SignalSourcePerformanceDto {
+  sourceId: number;
+  name: string;
+  displayName: string;
+  tradeCount: number;
+  winCount: number;
+  winRate: number;
+  totalPnl: number;
+  avgPnl: number;
+}
+
+export interface SignalSourceUserResponse {
+  id: number;
+  displayName: string;
+  description: string | null;
+  enabled: boolean;
+}

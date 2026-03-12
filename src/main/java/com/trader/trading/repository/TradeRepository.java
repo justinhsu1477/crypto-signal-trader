@@ -348,6 +348,29 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
 
     // ========== 用戶健康度查詢 ==========
 
+    // ========== 訊號來源績效查詢 ==========
+
+    /**
+     * 按訊號來源聚合績效 — 從 trades 表計算勝率/PnL
+     *
+     * 回傳 Object[]：
+     *   [0] tradeCount(Long), [1] winCount(Long),
+     *   [2] totalPnl(Double), [3] avgPnl(Double)
+     */
+    @Query(value = """
+            SELECT
+                COUNT(*) AS trade_count,
+                COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
+                COALESCE(SUM(net_profit), 0) AS total_pnl,
+                COALESCE(AVG(net_profit), 0) AS avg_pnl
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND source_channel_id = :channelId
+              AND (:guildId IS NULL OR source_guild_id = :guildId)
+            """, nativeQuery = true)
+    Object[] getSourcePerformanceStats(@Param("channelId") String channelId,
+                                       @Param("guildId") String guildId);
+
     /**
      * 批次取得所有用戶已平倉交易（依 exitTime DESC 排序）
      * 用於 Java 層計算 lastTradeAt 和 consecutiveLosses

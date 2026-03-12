@@ -41,6 +41,7 @@ class BroadcastTradeServiceTest {
     private UserApiKeyService userApiKeyService;
     private SubscriptionRepository subscriptionRepository;
     private SignalScoringService signalScoringService;
+    private SignalSourceService signalSourceService;
     private TradeRepository tradeRepository;
     private BroadcastLogRepository broadcastLogRepository;
     private ObjectMapper objectMapper;
@@ -56,6 +57,7 @@ class BroadcastTradeServiceTest {
         userApiKeyService = mock(UserApiKeyService.class);
         subscriptionRepository = mock(SubscriptionRepository.class);
         signalScoringService = mock(SignalScoringService.class);
+        signalSourceService = mock(SignalSourceService.class);
         tradeRepository = mock(TradeRepository.class);
         broadcastLogRepository = mock(BroadcastLogRepository.class);
         objectMapper = new ObjectMapper(); // real ObjectMapper for JSON serialization
@@ -68,6 +70,7 @@ class BroadcastTradeServiceTest {
                 userApiKeyService,
                 subscriptionRepository,
                 signalScoringService,
+                signalSourceService,
                 tradeRepository,
                 broadcastLogRepository,
                 objectMapper,
@@ -456,7 +459,7 @@ class BroadcastTradeServiceTest {
             BroadcastTradeService batchService = new BroadcastTradeService(
                     userRepository, binanceFuturesService, discordWebhookService,
                     userApiKeyService, subscriptionRepository, signalScoringService,
-                    tradeRepository, broadcastLogRepository, objectMapper,
+                    signalSourceService, tradeRepository, broadcastLogRepository, objectMapper,
                     broadcastExecutor, 2, 0L);
 
             User u1 = User.builder().userId("u1").email("a@test.com").name("A")
@@ -515,7 +518,7 @@ class BroadcastTradeServiceTest {
             BroadcastTradeService batchService = new BroadcastTradeService(
                     userRepository, binanceFuturesService, discordWebhookService,
                     userApiKeyService, subscriptionRepository, signalScoringService,
-                    tradeRepository, broadcastLogRepository, objectMapper,
+                    signalSourceService, tradeRepository, broadcastLogRepository, objectMapper,
                     broadcastExecutor, 2, 0L);
 
             User u1 = User.builder().userId("u1").email("a@test.com").name("A")
