@@ -131,7 +131,7 @@ describe("Header", () => {
       expect(within(nav).getByText("Admin Settings")).toBeInTheDocument();
 
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(12);
+      expect(links).toHaveLength(13);
     });
 
     it("includes signal link for admin", () => {
@@ -187,7 +187,7 @@ describe("Header", () => {
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(12);
+      expect(links).toHaveLength(13);
     });
   });
 

@@ -43,6 +43,8 @@ public class BroadcastLog {
     private int failCount;
     private int skippedNoSub;        // 跳過：無訂閱
     private int skippedNoKey;        // 跳過：無 API Key
+    private int skippedNotAssigned;  // 跳過：未綁定此來源
+    private Long sourceId;           // 訊號來源 ID（nullable）
 
     private String status;           // COMPLETED, INTERRUPTED
 

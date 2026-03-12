@@ -929,3 +929,80 @@ export async function adminUpdateTradeSettings(
     { method: "PUT", body: JSON.stringify(data) }
   );
 }
+
+// ─── Admin Signal Source Management ───
+
+import type {
+  SignalSourceResponse,
+  CreateSignalSourceRequest,
+  UpdateSignalSourceRequest,
+  UserAssignmentResponse,
+  SignalSourcePerformanceDto,
+  SignalSourceUserResponse,
+} from "@/types";
+
+export async function getAdminSignalSources(): Promise<SignalSourceResponse[]> {
+  return request<SignalSourceResponse[]>("/api/admin/signal-sources");
+}
+
+export async function createAdminSignalSource(data: CreateSignalSourceRequest): Promise<SignalSourceResponse> {
+  return request<SignalSourceResponse>("/api/admin/signal-sources", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getAdminSignalSource(id: number): Promise<SignalSourceResponse> {
+  return request<SignalSourceResponse>(`/api/admin/signal-sources/${id}`);
+}
+
+export async function updateAdminSignalSource(id: number, data: UpdateSignalSourceRequest): Promise<SignalSourceResponse> {
+  return request<SignalSourceResponse>(`/api/admin/signal-sources/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminSignalSource(id: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/signal-sources/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getAdminSignalSourceUsers(id: number): Promise<UserAssignmentResponse[]> {
+  return request<UserAssignmentResponse[]>(`/api/admin/signal-sources/${id}/users`);
+}
+
+export async function assignAdminSignalSourceUsers(id: number, userIds: string[]): Promise<UserAssignmentResponse[]> {
+  return request<UserAssignmentResponse[]>(`/api/admin/signal-sources/${id}/users`, {
+    method: "POST",
+    body: JSON.stringify({ userIds }),
+  });
+}
+
+export async function unassignAdminSignalSourceUser(sourceId: number, userId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/signal-sources/${sourceId}/users/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function toggleAdminSignalSourceUser(sourceId: number, userId: string, enabled: boolean): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/signal-sources/${sourceId}/users/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function getAdminSignalSourcePerformances(): Promise<SignalSourcePerformanceDto[]> {
+  return request<SignalSourcePerformanceDto[]>("/api/admin/signal-sources/performance");
+}
+
+export async function getAdminSignalSourcePerformance(id: number): Promise<SignalSourcePerformanceDto> {
+  return request<SignalSourcePerformanceDto>(`/api/admin/signal-sources/${id}/performance`);
+}
+
+// ─── User Signal Sources ───
+
+export async function getUserSignalSources(): Promise<SignalSourceUserResponse[]> {
+  return request<SignalSourceUserResponse[]>("/api/dashboard/signal-sources");
+}

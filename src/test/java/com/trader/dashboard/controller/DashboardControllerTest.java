@@ -12,7 +12,7 @@ import com.trader.user.dto.UpdateTradeSettingsRequest;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserDiscordWebhook;
 import com.trader.user.entity.UserTradeSettings;
-import com.trader.notification.service.DiscordWebhookService;
+import com.trader.notification.service.NotificationService;
 import com.trader.notification.service.LineLinkingService;
 import com.trader.subscription.entity.Plan;
 import com.trader.subscription.repository.PlanRepository;
@@ -42,10 +42,11 @@ class DashboardControllerTest {
     private UserRepository userRepository;
     private UserDiscordWebhookService webhookService;
     private UserTradeSettingsService tradeSettingsService;
-    private DiscordWebhookService discordWebhookService;
+    private NotificationService discordWebhookService;
     private LineLinkingService lineLinkingService;
     private SubscriptionService subscriptionService;
     private PlanRepository planRepository;
+    private com.trader.trading.service.SignalSourceService signalSourceService;
     private DashboardController controller;
     private MockedStatic<SecurityUtil> securityUtil;
 
@@ -56,12 +57,13 @@ class DashboardControllerTest {
         userRepository = mock(UserRepository.class);
         webhookService = mock(UserDiscordWebhookService.class);
         tradeSettingsService = mock(UserTradeSettingsService.class);
-        discordWebhookService = mock(DiscordWebhookService.class);
+        discordWebhookService = mock(NotificationService.class);
         lineLinkingService = mock(LineLinkingService.class);
         subscriptionService = mock(SubscriptionService.class);
         planRepository = mock(PlanRepository.class);
+        signalSourceService = mock(com.trader.trading.service.SignalSourceService.class);
         controller = new DashboardController(dashboardService, tradeExportService, userRepository, webhookService,
-                tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository);
+                tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository, signalSourceService);
         securityUtil = mockStatic(SecurityUtil.class);
         securityUtil.when(SecurityUtil::getCurrentUserId).thenReturn("user-123");
 

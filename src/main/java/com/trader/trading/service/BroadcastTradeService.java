@@ -45,6 +45,7 @@ public class BroadcastTradeService {
     private final UserApiKeyService userApiKeyService;
     private final SubscriptionRepository subscriptionRepository;
     private final SignalScoringService signalScoringService;
+    private final SignalSourceService signalSourceService;
     private final TradeRepository tradeRepository;
     private final BroadcastLogRepository broadcastLogRepository;
     private final ObjectMapper objectMapper;
@@ -64,6 +65,7 @@ public class BroadcastTradeService {
             UserApiKeyService userApiKeyService,
             SubscriptionRepository subscriptionRepository,
             SignalScoringService signalScoringService,
+            SignalSourceService signalSourceService,
             TradeRepository tradeRepository,
             BroadcastLogRepository broadcastLogRepository,
             ObjectMapper objectMapper,
@@ -76,6 +78,7 @@ public class BroadcastTradeService {
         this.userApiKeyService = userApiKeyService;
         this.subscriptionRepository = subscriptionRepository;
         this.signalScoringService = signalScoringService;
+        this.signalSourceService = signalSourceService;
         this.tradeRepository = tradeRepository;
         this.broadcastLogRepository = broadcastLogRepository;
         this.objectMapper = objectMapper;
@@ -137,6 +140,34 @@ public class BroadcastTradeService {
             log.warn("廣播跟單: 跳過 {} 個用戶 (無 API Key)", skippedNoApiKey);
         }
 
+        // 訊號來源路由：按來源綁定過濾用戶
+        // 防禦性設計：如果有 targetUserIds（緊急廣播），跳過來源路由（targetUserIds 優先）
+        int skippedNotAssigned = 0;
+        Long resolvedSourceId = null;
+        boolean hasTargetUsers = request.getTargetUserIds() != null && !request.getTargetUserIds().isEmpty();
+
+        if (!hasTargetUsers && request.getSource() != null && request.getSource().getChannelId() != null) {
+            String channelId = request.getSource().getChannelId();
+            String guildId = request.getSource().getGuildId();
+
+            Optional<Set<String>> sourceUserIds = signalSourceService.resolveTargetUserIds(channelId, guildId);
+            resolvedSourceId = signalSourceService.resolveSourceId(channelId, guildId).orElse(null);
+
+            if (sourceUserIds.isPresent()) {
+                Set<String> assigned = sourceUserIds.get();
+                int beforeSize = activeUsers.size();
+                activeUsers = activeUsers.stream()
+                        .filter(u -> assigned.contains(u.getUserId()))
+                        .toList();
+                skippedNotAssigned = beforeSize - activeUsers.size();
+                if (skippedNotAssigned > 0) {
+                    log.info("訊號來源路由: channelId={} 符合 {} 人, 排除 {} 人",
+                            channelId, activeUsers.size(), skippedNotAssigned);
+                }
+            }
+            // Optional.empty() = 無匹配 SignalSourceConfig → 全量廣播（向下相容）
+        }
+
         // 指定用戶模式：從已通過篩選的 activeUsers 中，再過濾出目標用戶
         int skippedNotTargeted = 0;
         if (request.getTargetUserIds() != null && !request.getTargetUserIds().isEmpty()) {
@@ -150,8 +181,8 @@ public class BroadcastTradeService {
                     targets.size(), activeUsers.size(), skippedNotTargeted);
         }
 
-        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過無訂閱={}, 跳過無API Key={}, 非指定用戶={}), action={} symbol={}",
-                activeUsers.size(), skippedNoSubscription, skippedNoApiKey, skippedNotTargeted, request.getAction(), request.getSymbol());
+        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過無訂閱={}, 跳過無API Key={}, 未綁定來源={}, 非指定用戶={}), action={} symbol={}",
+                activeUsers.size(), skippedNoSubscription, skippedNoApiKey, skippedNotAssigned, skippedNotTargeted, request.getAction(), request.getSymbol());
 
         // 廣播前 — 發訊號詳情通知給每位 Admin（per-user webhook）
         String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size(), skippedNoSubscription, skippedNoApiKey);
@@ -175,7 +206,8 @@ public class BroadcastTradeService {
                 message = "所有用戶均未符合條件 (訂閱/API Key)";
             }
             saveBroadcastLog(request, 0, 0, 0,
-                    skippedNoSubscription, skippedNoApiKey, "COMPLETED", null,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "COMPLETED", null,
                     new ConcurrentLinkedQueue<>(), broadcastStartTime);
             Map<String, Object> emptyResult = new HashMap<>();
             emptyResult.put("status", "COMPLETED");
@@ -184,6 +216,7 @@ public class BroadcastTradeService {
             emptyResult.put("failCount", 0);
             emptyResult.put("skippedNoSubscription", skippedNoSubscription);
             emptyResult.put("skippedNoApiKey", skippedNoApiKey);
+            emptyResult.put("skippedNotAssigned", skippedNotAssigned);
             emptyResult.put("skippedNotTargeted", skippedNotTargeted);
             emptyResult.put("message", message);
             return emptyResult;
@@ -349,6 +382,9 @@ public class BroadcastTradeService {
                     request.getSymbol(), request.getAction(),
                     successCount.get(), failCount.get(), totalCancelledCount,
                     skippedNoSubscription, skippedNoApiKey, activeUsers.size()));
+            if (skippedNotAssigned > 0) {
+                summaryBuilder.append(String.format("\n未綁定來源: %d 人", skippedNotAssigned));
+            }
             if (skippedNotTargeted > 0) {
                 summaryBuilder.append(String.format("\n非指定用戶: %d 人", skippedNotTargeted));
             }
@@ -409,7 +445,8 @@ public class BroadcastTradeService {
 
             // 持久化廣播紀錄（save 失敗不影響交易主流程）
             saveBroadcastLog(request, activeUsers.size(), successCount.get(), failCount.get(),
-                    skippedNoSubscription, skippedNoApiKey, "COMPLETED", finalScore,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "COMPLETED", finalScore,
                     userResultsLog, broadcastStartTime);
 
             Map<String, Object> resultMap = new HashMap<>();
@@ -419,6 +456,7 @@ public class BroadcastTradeService {
             resultMap.put("failCount", failCount.get());
             resultMap.put("skippedNoSubscription", skippedNoSubscription);
             resultMap.put("skippedNoApiKey", skippedNoApiKey);
+            resultMap.put("skippedNotAssigned", skippedNotAssigned);
             resultMap.put("skippedNotTargeted", skippedNotTargeted);
             return resultMap;
         } catch (InterruptedException e) {
@@ -536,7 +574,8 @@ public class BroadcastTradeService {
      * 持久化廣播紀錄 — save 失敗只 log warning，不影響交易主流程
      */
     private void saveBroadcastLog(TradeRequest request, int totalUsers, int successCount, int failCount,
-                                   int skippedNoSub, int skippedNoKey, String status, SignalScore score,
+                                   int skippedNoSub, int skippedNoKey, int skippedNotAssigned,
+                                   Long sourceId, String status, SignalScore score,
                                    ConcurrentLinkedQueue<UserResultData> userResults, LocalDateTime startTime) {
         try {
             String userResultsJson = null;
@@ -563,6 +602,8 @@ public class BroadcastTradeService {
                     .failCount(failCount)
                     .skippedNoSub(skippedNoSub)
                     .skippedNoKey(skippedNoKey)
+                    .skippedNotAssigned(skippedNotAssigned)
+                    .sourceId(sourceId)
                     .status(status)
                     .userResults(userResultsJson)
                     .aiConfidence(score != null ? score.getConfidence() : null)

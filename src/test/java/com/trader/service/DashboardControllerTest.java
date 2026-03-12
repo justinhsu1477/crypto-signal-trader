@@ -47,6 +47,7 @@ class DashboardControllerTest {
     private LineLinkingService lineLinkingService;
     private SubscriptionService subscriptionService;
     private PlanRepository planRepository;
+    private com.trader.trading.service.SignalSourceService signalSourceService;
     private DashboardController controller;
 
     @BeforeEach
@@ -60,7 +61,8 @@ class DashboardControllerTest {
         lineLinkingService = mock(LineLinkingService.class);
         subscriptionService = mock(SubscriptionService.class);
         planRepository = mock(PlanRepository.class);
-        controller = new DashboardController(dashboardService, tradeExportService, userRepository, webhookService, tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository);
+        signalSourceService = mock(com.trader.trading.service.SignalSourceService.class);
+        controller = new DashboardController(dashboardService, tradeExportService, userRepository, webhookService, tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository, signalSourceService);
     }
 
     // ==================== /overview ====================
