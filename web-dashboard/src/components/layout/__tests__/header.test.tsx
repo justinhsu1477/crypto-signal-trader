@@ -22,7 +22,7 @@ const translations: Record<string, string> = {
   "nav.adminBroadcastLogs": "Broadcast Logs",
   "nav.adminNotifications": "Notifications",
   "nav.adminAnnouncements": "Announcement Management",
-  "nav.adminMonitorSettings": "Monitor Settings",
+  "nav.adminSignalSources": "Signal Sources",
   "nav.adminSettings": "Admin Settings",
   "nav.logoutConfirmTitle": "Confirm Logout",
   "nav.logoutConfirmDesc": "Are you sure?",
@@ -124,14 +124,14 @@ describe("Header", () => {
       expect(within(nav).getByText("Subscription Management")).toBeInTheDocument();
       expect(within(nav).getByText("Analytics")).toBeInTheDocument();
       expect(within(nav).getByText("Insights")).toBeInTheDocument();
+      expect(within(nav).getByText("Signal Sources")).toBeInTheDocument();
       expect(within(nav).getByText("Broadcast Logs")).toBeInTheDocument();
       expect(within(nav).getByText("Notifications")).toBeInTheDocument();
       expect(within(nav).getByText("Announcement Management")).toBeInTheDocument();
-      expect(within(nav).getByText("Monitor Settings")).toBeInTheDocument();
       expect(within(nav).getByText("Admin Settings")).toBeInTheDocument();
 
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(13);
+      expect(links).toHaveLength(12);
     });
 
     it("includes signal link for admin", () => {
@@ -187,7 +187,7 @@ describe("Header", () => {
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(13);
+      expect(links).toHaveLength(12);
     });
   });
 

@@ -22,6 +22,7 @@ public class SignalSourceResponse {
     private String channelId;
     private String guildId;
     private String description;
+    private String routingMode;
     private boolean enabled;
     private int assignedUserCount;
     private LocalDateTime createdAt;

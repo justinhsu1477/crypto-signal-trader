@@ -2,6 +2,9 @@ package com.trader.dashboard.controller;
 
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
+import com.trader.trading.grpc.generated.MonitorConfig;
+import com.trader.trading.service.MonitorConfigStore;
+import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalSourceService;
 import org.junit.jupiter.api.*;
 import org.springframework.http.ResponseEntity;
@@ -23,10 +26,14 @@ import static org.mockito.Mockito.*;
  * - 用戶綁定（getSourceUsers / assignUsers / unassignUser / toggleUserAssignment）
  * - 績效查詢（getAllPerformance / getSourcePerformance）
  * - 各種異常路徑（404 / 400）
+ * - Monitor 狀態查詢（monitor-status）
+ * - 全局監聽設定（monitor-settings）
  */
 class AdminSignalSourceControllerTest {
 
     private SignalSourceService signalSourceService;
+    private MonitorConfigStore monitorConfigStore;
+    private MonitorHeartbeatService monitorHeartbeatService;
     private AdminSignalSourceController controller;
 
     private static final Long SOURCE_ID = 1L;
@@ -35,7 +42,9 @@ class AdminSignalSourceControllerTest {
     @BeforeEach
     void setUp() {
         signalSourceService = mock(SignalSourceService.class);
-        controller = new AdminSignalSourceController(signalSourceService);
+        monitorConfigStore = mock(MonitorConfigStore.class);
+        monitorHeartbeatService = mock(MonitorHeartbeatService.class);
+        controller = new AdminSignalSourceController(signalSourceService, monitorConfigStore, monitorHeartbeatService);
     }
 
     // ==================== Helper ====================
@@ -550,6 +559,149 @@ class AdminSignalSourceControllerTest {
 
             assertThat(response.getStatusCode().value()).isEqualTo(404);
             assertThat(response.getBody()).isNull();
+        }
+    }
+
+    // ==================== Monitor 狀態 + 全局設定 ====================
+
+    @Nested
+    @DisplayName("getMonitorStatus - 查詢 Monitor 連線狀態")
+    class GetMonitorStatus {
+
+        @Test
+        @DisplayName("回傳完整的 Monitor 狀態")
+        void returnsMonitorStatus() {
+            MonitorConfig config = MonitorConfig.newBuilder()
+                    .addChannelIds("ch-1").addChannelIds("ch-2")
+                    .addGuildIds("g-1")
+                    .addAuthorIds("author-1")
+                    .addIgnoreKeywords("ignore-1")
+                    .setVersion(5)
+                    .build();
+
+            Map<String, Object> heartbeatStatus = Map.of(
+                    "monitorConnected", true,
+                    "lastHeartbeat", "2026-03-12T10:00:00Z"
+            );
+
+            when(monitorConfigStore.getCurrentConfig()).thenReturn(config);
+            when(monitorHeartbeatService.getStatus()).thenReturn(heartbeatStatus);
+            when(monitorConfigStore.getConnectedObservers()).thenReturn(1);
+
+            ResponseEntity<Map<String, Object>> response = controller.getMonitorStatus();
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).isNotNull();
+            assertThat((List<?>) response.getBody().get("channelIds")).hasSize(2);
+            assertThat((List<?>) response.getBody().get("guildIds")).hasSize(1);
+            assertThat((List<?>) response.getBody().get("authorIds")).hasSize(1);
+            assertThat(response.getBody().get("configVersion")).isEqualTo(5L);
+            assertThat(response.getBody().get("connectedMonitors")).isEqualTo(1);
+            assertThat(response.getBody().get("monitorOnline")).isEqualTo(true);
+            assertThat(response.getBody().get("lastHeartbeat")).isEqualTo("2026-03-12T10:00:00Z");
+        }
+
+        @Test
+        @DisplayName("Monitor 離線時正確反映狀態")
+        void returnsOfflineStatus() {
+            MonitorConfig config = MonitorConfig.newBuilder().setVersion(0).build();
+            Map<String, Object> heartbeatStatus = Map.of(
+                    "monitorConnected", false,
+                    "lastHeartbeat", "null"
+            );
+
+            when(monitorConfigStore.getCurrentConfig()).thenReturn(config);
+            when(monitorHeartbeatService.getStatus()).thenReturn(heartbeatStatus);
+            when(monitorConfigStore.getConnectedObservers()).thenReturn(0);
+
+            ResponseEntity<Map<String, Object>> response = controller.getMonitorStatus();
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody().get("monitorOnline")).isEqualTo(false);
+            assertThat(response.getBody().get("connectedMonitors")).isEqualTo(0);
+        }
+    }
+
+    @Nested
+    @DisplayName("updateGlobalSettings - 更新全局監聽設定")
+    class UpdateGlobalSettings {
+
+        @Test
+        @DisplayName("更新 authorIds + ignoreKeywords 成功")
+        void updateSuccess() {
+            MonitorConfig currentConfig = MonitorConfig.newBuilder()
+                    .addChannelIds("ch-1")
+                    .addGuildIds("g-1")
+                    .setVersion(3)
+                    .build();
+
+            MonitorConfig updatedConfig = MonitorConfig.newBuilder()
+                    .addChannelIds("ch-1")
+                    .addGuildIds("g-1")
+                    .addAuthorIds("new-author")
+                    .addIgnoreKeywords("spam")
+                    .setVersion(4)
+                    .build();
+
+            when(monitorConfigStore.getCurrentConfig())
+                    .thenReturn(currentConfig)   // 第一次：取得 current
+                    .thenReturn(updatedConfig);  // 第二次：取得更新後版本
+            when(monitorConfigStore.getConnectedObservers()).thenReturn(1);
+
+            UpdateGlobalSettingsRequest request = new UpdateGlobalSettingsRequest(
+                    List.of("new-author"), List.of("spam"));
+
+            ResponseEntity<Map<String, Object>> response = controller.updateGlobalSettings(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("message")).isEqualTo("全局設定已更新");
+
+            // 驗證 updateConfig 被呼叫，channelIds/guildIds 被保留
+            verify(monitorConfigStore).updateConfig(
+                    eq(List.of("ch-1")),       // 保留 channelIds
+                    eq(List.of("g-1")),        // 保留 guildIds
+                    eq(List.of("new-author")), // 新 authorIds
+                    eq(List.of("spam")),       // 新 ignoreKeywords
+                    eq("admin"),
+                    eq("global_settings_update")
+            );
+        }
+
+        @Test
+        @DisplayName("清空 authorIds + ignoreKeywords")
+        void clearSettings() {
+            MonitorConfig currentConfig = MonitorConfig.newBuilder()
+                    .addChannelIds("ch-1")
+                    .addAuthorIds("old-author")
+                    .setVersion(5)
+                    .build();
+
+            MonitorConfig updatedConfig = MonitorConfig.newBuilder()
+                    .addChannelIds("ch-1")
+                    .setVersion(6)
+                    .build();
+
+            when(monitorConfigStore.getCurrentConfig())
+                    .thenReturn(currentConfig)
+                    .thenReturn(updatedConfig);
+            when(monitorConfigStore.getConnectedObservers()).thenReturn(0);
+
+            UpdateGlobalSettingsRequest request = new UpdateGlobalSettingsRequest(
+                    List.of(), List.of());
+
+            ResponseEntity<Map<String, Object>> response = controller.updateGlobalSettings(request);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+
+            verify(monitorConfigStore).updateConfig(
+                    eq(List.of("ch-1")),  // channelIds 保留
+                    eq(List.of()),        // guildIds 保留（空）
+                    eq(List.of()),        // authorIds 清空
+                    eq(List.of()),        // ignoreKeywords 清空
+                    eq("admin"),
+                    eq("global_settings_update")
+            );
         }
     }
 }

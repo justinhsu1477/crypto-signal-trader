@@ -3,6 +3,7 @@ package com.trader.trading.service;
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.entity.UserSignalSource;
+import com.trader.trading.grpc.generated.MonitorConfig;
 import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.repository.UserSignalSourceRepository;
@@ -23,8 +24,10 @@ import static org.mockito.Mockito.*;
  * 覆蓋：
  * - 來源 CRUD（建立/更新/刪除/查詢）
  * - 用戶綁定（綁定/解綁/切換/MVP 一對一限制）
- * - 廣播路由（resolveTargetUserIds）
+ * - 廣播路由（resolveTargetUserIds）— 含 GLOBAL / ASSIGNED 路由模式
  * - 績效查詢（buildPerformance）
+ * - 啟動同步（@PostConstruct syncOnStartup）
+ * - CRUD 自動同步 MonitorConfigStore
  */
 class SignalSourceServiceTest {
 
@@ -32,6 +35,7 @@ class SignalSourceServiceTest {
     private UserSignalSourceRepository userSourceRepository;
     private TradeRepository tradeRepository;
     private UserRepository userRepository;
+    private MonitorConfigStore monitorConfigStore;
     private SignalSourceService service;
 
     @BeforeEach
@@ -40,7 +44,14 @@ class SignalSourceServiceTest {
         userSourceRepository = mock(UserSignalSourceRepository.class);
         tradeRepository = mock(TradeRepository.class);
         userRepository = mock(UserRepository.class);
-        service = new SignalSourceService(sourceRepository, userSourceRepository, tradeRepository, userRepository);
+        monitorConfigStore = mock(MonitorConfigStore.class);
+
+        // 預設 getCurrentConfig 回傳空 config（syncMonitorConfig 呼叫時需要）
+        when(monitorConfigStore.getCurrentConfig()).thenReturn(
+                MonitorConfig.newBuilder().build());
+
+        service = new SignalSourceService(sourceRepository, userSourceRepository,
+                tradeRepository, userRepository, monitorConfigStore);
     }
 
     // ==================== 來源 CRUD ====================
@@ -361,6 +372,40 @@ class SignalSourceServiceTest {
             assertThat(result).isEmpty();
             verify(userSourceRepository, never()).findEnabledUserIdsBySourceId(any());
         }
+
+        @Test
+        @DisplayName("GLOBAL 模式 — 回傳 Optional.empty()（全員廣播）")
+        void resolve_globalMode_returnsEmpty() {
+            SignalSourceConfig globalSource = SignalSourceConfig.builder()
+                    .id(4L).channelId("ch-global").guildId("g-global").enabled(true)
+                    .routingMode(SignalSourceConfig.RoutingMode.GLOBAL).build();
+
+            when(sourceRepository.findByChannelIdAndGuildId("ch-global", "g-global"))
+                    .thenReturn(Optional.of(globalSource));
+
+            Optional<Set<String>> result = service.resolveTargetUserIds("ch-global", "g-global");
+
+            assertThat(result).isEmpty(); // GLOBAL → 全員廣播
+            verify(userSourceRepository, never()).findEnabledUserIdsBySourceId(any());
+        }
+
+        @Test
+        @DisplayName("ASSIGNED 模式 — 回傳綁定用戶（與預設行為一致）")
+        void resolve_assignedMode_returnsBoundUsers() {
+            SignalSourceConfig assignedSource = SignalSourceConfig.builder()
+                    .id(5L).channelId("ch-assigned").guildId("g-assigned").enabled(true)
+                    .routingMode(SignalSourceConfig.RoutingMode.ASSIGNED).build();
+
+            when(sourceRepository.findByChannelIdAndGuildId("ch-assigned", "g-assigned"))
+                    .thenReturn(Optional.of(assignedSource));
+            when(userSourceRepository.findEnabledUserIdsBySourceId(5L))
+                    .thenReturn(List.of("u1", "u2"));
+
+            Optional<Set<String>> result = service.resolveTargetUserIds("ch-assigned", "g-assigned");
+
+            assertThat(result).isPresent();
+            assertThat(result.get()).containsExactlyInAnyOrder("u1", "u2");
+        }
     }
 
     // ==================== 績效查詢 ====================
@@ -430,6 +475,170 @@ class SignalSourceServiceTest {
             assertThatThrownBy(() -> service.getSourcePerformance(99L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("不存在");
+        }
+    }
+
+    // ==================== MonitorConfig 同步 ====================
+
+    @Nested
+    @DisplayName("MonitorConfig 同步")
+    class MonitorConfigSyncTests {
+
+        @Test
+        @DisplayName("建立來源後觸發 syncMonitorConfig")
+        void createSource_triggersSync() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("新來源").displayName("顯示名")
+                    .channelId("ch-new").guildId("g-new").build();
+
+            when(sourceRepository.existsByChannelIdAndGuildId("ch-new", "g-new")).thenReturn(false);
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(10L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(
+                    SignalSourceConfig.builder().id(10L).channelId("ch-new").guildId("g-new").enabled(true).build()
+            ));
+
+            service.createSource(req);
+
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_created"));
+        }
+
+        @Test
+        @DisplayName("更新來源後觸發 syncMonitorConfig")
+        void updateSource_triggersSync() {
+            SignalSourceConfig existing = SignalSourceConfig.builder()
+                    .id(1L).name("舊名").displayName("舊").enabled(true).build();
+            UpdateSignalSourceRequest req = UpdateSignalSourceRequest.builder().name("新名").build();
+
+            when(sourceRepository.findById(1L)).thenReturn(Optional.of(existing));
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(existing));
+
+            service.updateSource(1L, req);
+
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_updated"));
+        }
+
+        @Test
+        @DisplayName("刪除來源後觸發 syncMonitorConfig")
+        void deleteSource_triggersSync() {
+            when(sourceRepository.existsById(1L)).thenReturn(true);
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            service.deleteSource(1L);
+
+            verify(sourceRepository).deleteById(1L);
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_deleted"));
+        }
+
+        @Test
+        @DisplayName("syncOnStartup — DB 有啟用 source 時觸發同步")
+        void syncOnStartup_withSources() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .id(1L).channelId("ch-1").guildId("g-1").enabled(true).build();
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(source));
+
+            service.syncOnStartup();
+
+            // findByEnabledTrue 被呼叫：syncOnStartup 1次 + syncMonitorConfig 內部 1次
+            verify(sourceRepository, atLeast(1)).findByEnabledTrue();
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+        }
+
+        @Test
+        @DisplayName("syncOnStartup — DB 無啟用 source 時不觸發同步")
+        void syncOnStartup_noSources() {
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            service.syncOnStartup();
+
+            verify(monitorConfigStore, never()).updateConfig(anyList(), anyList(), anyList(), anyList(), anyString(), anyString());
+        }
+    }
+
+    // ==================== RoutingMode 解析 ====================
+
+    @Nested
+    @DisplayName("RoutingMode 解析與建立")
+    class RoutingModeTests {
+
+        @Test
+        @DisplayName("建立來源時指定 GLOBAL — 正確設定 routingMode")
+        void createSource_withGlobalRoutingMode() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("全域來源").displayName("全域")
+                    .channelId("ch-g").guildId("g-g")
+                    .routingMode("GLOBAL").build();
+
+            when(sourceRepository.existsByChannelIdAndGuildId("ch-g", "g-g")).thenReturn(false);
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(20L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getRoutingMode()).isEqualTo(SignalSourceConfig.RoutingMode.GLOBAL);
+        }
+
+        @Test
+        @DisplayName("建立來源時不指定 routingMode — 預設 ASSIGNED")
+        void createSource_defaultAssigned() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("預設來源").displayName("預設").build();
+
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(21L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getRoutingMode()).isEqualTo(SignalSourceConfig.RoutingMode.ASSIGNED);
+        }
+
+        @Test
+        @DisplayName("更新 routingMode — ASSIGNED → GLOBAL")
+        void updateSource_changeRoutingMode() {
+            SignalSourceConfig existing = SignalSourceConfig.builder()
+                    .id(1L).name("來源").displayName("來源").enabled(true)
+                    .routingMode(SignalSourceConfig.RoutingMode.ASSIGNED).build();
+            UpdateSignalSourceRequest req = UpdateSignalSourceRequest.builder()
+                    .routingMode("GLOBAL").build();
+
+            when(sourceRepository.findById(1L)).thenReturn(Optional.of(existing));
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(existing));
+
+            SignalSourceConfig result = service.updateSource(1L, req);
+
+            assertThat(result.getRoutingMode()).isEqualTo(SignalSourceConfig.RoutingMode.GLOBAL);
+        }
+
+        @Test
+        @DisplayName("routingMode 無效值 — fallback 為 ASSIGNED")
+        void createSource_invalidRoutingModeFallback() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("無效模式").displayName("X")
+                    .routingMode("INVALID_MODE").build();
+
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(22L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getRoutingMode()).isEqualTo(SignalSourceConfig.RoutingMode.ASSIGNED);
         }
     }
 }

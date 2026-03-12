@@ -939,6 +939,7 @@ import type {
   UserAssignmentResponse,
   SignalSourcePerformanceDto,
   SignalSourceUserResponse,
+  MonitorStatusResponse,
 } from "@/types";
 
 export async function getAdminSignalSources(): Promise<SignalSourceResponse[]> {
@@ -1005,4 +1006,22 @@ export async function getAdminSignalSourcePerformance(id: number): Promise<Signa
 
 export async function getUserSignalSources(): Promise<SignalSourceUserResponse[]> {
   return request<SignalSourceUserResponse[]>("/api/dashboard/signal-sources");
+}
+
+// ─── Signal Source Monitor Status ───
+
+export async function getSignalSourceMonitorStatus(): Promise<MonitorStatusResponse> {
+  return request<MonitorStatusResponse>("/api/admin/signal-sources/monitor-status");
+}
+
+export async function updateGlobalMonitorSettings(
+  data: { authorIds?: string[]; ignoreKeywords?: string[] }
+): Promise<{ message: string; configVersion: number; connectedMonitors: number }> {
+  return request<{ message: string; configVersion: number; connectedMonitors: number }>(
+    "/api/admin/signal-sources/monitor-settings",
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
+  );
 }

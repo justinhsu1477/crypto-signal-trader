@@ -28,4 +28,7 @@ public class CreateSignalSourceRequest {
 
     /** Admin 備註 */
     private String description;
+
+    /** 路由模式：GLOBAL（全員廣播）或 ASSIGNED（僅綁定用戶），預設 ASSIGNED */
+    private String routingMode;
 }
