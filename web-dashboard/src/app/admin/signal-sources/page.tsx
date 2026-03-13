@@ -44,6 +44,7 @@ import {
   Globe,
   UserCheck,
   X,
+  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -64,6 +65,7 @@ export default function AdminSignalSourcesPage() {
   const [selectedUserId, setSelectedUserId] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
+  const [showChannelActivity, setShowChannelActivity] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -222,14 +224,24 @@ export default function AdminSignalSourcesPage() {
               <Activity className="h-4 w-4 text-purple-400" />
               {t("signalSources.monitorStatus")}
             </h2>
-            <button
-              onClick={() => setShowGlobalSettings(!showGlobalSettings)}
-              className="flex items-center gap-1 text-xs px-3 py-1.5 border border-border rounded-md hover:bg-accent transition-colors"
-            >
-              <Settings2 className="h-3 w-3" />
-              {t("signalSources.globalSettings")}
-              {showGlobalSettings ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowChannelActivity(!showChannelActivity)}
+                className="flex items-center gap-1 text-xs px-3 py-1.5 border border-border rounded-md hover:bg-accent transition-colors"
+              >
+                <Radio className="h-3 w-3" />
+                {t("signalSources.channelActivity")}
+                {showChannelActivity ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+              <button
+                onClick={() => setShowGlobalSettings(!showGlobalSettings)}
+                className="flex items-center gap-1 text-xs px-3 py-1.5 border border-border rounded-md hover:bg-accent transition-colors"
+              >
+                <Settings2 className="h-3 w-3" />
+                {t("signalSources.globalSettings")}
+                {showGlobalSettings ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div className="flex items-center gap-2">
@@ -255,6 +267,15 @@ export default function AdminSignalSourcesPage() {
               <div className="font-mono text-xs">v{monitorStatus.configVersion}</div>
             </div>
           </div>
+
+          {/* Channel Activity (collapsible) */}
+          {showChannelActivity && (
+            <ChannelActivityPanel
+              channelLastSeen={monitorStatus.channelLastSeen}
+              sources={sources}
+              t={t}
+            />
+          )}
 
           {/* Global Settings (collapsible) */}
           {showGlobalSettings && (
@@ -530,6 +551,99 @@ export default function AdminSignalSourcesPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Channel Activity Panel ───
+
+function getChannelStatus(lastSeenMs: number | undefined): {
+  color: string;
+  dotColor: string;
+  label: string;
+  labelKey: string;
+  relativeTime: string;
+} {
+  if (lastSeenMs === undefined) {
+    return {
+      color: "text-gray-500",
+      dotColor: "bg-gray-500",
+      label: "未收到",
+      labelKey: "channelNever",
+      relativeTime: "—",
+    };
+  }
+
+  const now = Date.now();
+  const diffMs = now - lastSeenMs;
+  const diffMin = Math.floor(diffMs / 60_000);
+  const diffHr = Math.floor(diffMs / 3_600_000);
+  const diffDay = Math.floor(diffMs / 86_400_000);
+
+  let relativeTime: string;
+  if (diffMin < 1) relativeTime = "<1m";
+  else if (diffMin < 60) relativeTime = `${diffMin}m`;
+  else if (diffHr < 24) relativeTime = `${diffHr}h`;
+  else relativeTime = `${diffDay}d`;
+
+  if (diffMs < 3_600_000) {
+    // < 1 hour → active (green)
+    return { color: "text-green-400", dotColor: "bg-green-500", label: "活躍", labelKey: "channelActive", relativeTime };
+  } else if (diffMs < 21_600_000) {
+    // 1-6 hours → idle (yellow)
+    return { color: "text-yellow-400", dotColor: "bg-yellow-500", label: "閒置", labelKey: "channelIdle", relativeTime };
+  } else {
+    // > 6 hours → silent (red)
+    return { color: "text-red-400", dotColor: "bg-red-500", label: "靜默", labelKey: "channelSilent", relativeTime };
+  }
+}
+
+function ChannelActivityPanel({
+  channelLastSeen,
+  sources,
+  t,
+}: {
+  channelLastSeen: Record<string, number> | null;
+  sources: SignalSourceResponse[];
+  t: (key: string) => string;
+}) {
+  // Only show enabled sources that have a channelId
+  const channelSources = sources.filter((s) => s.channelId);
+
+  if (channelSources.length === 0) {
+    return (
+      <div className="mt-3 pt-3 border-t border-border text-center text-xs text-muted-foreground py-4">
+        {t("signalSources.noSources")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border">
+      {!channelLastSeen || Object.keys(channelLastSeen).length === 0 ? (
+        <div className="text-center text-xs text-muted-foreground py-4">
+          {t("signalSources.noChannelData")}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {channelSources.map((source) => {
+            const lastSeen = source.channelId ? channelLastSeen[source.channelId] : undefined;
+            const status = getChannelStatus(lastSeen);
+            return (
+              <div
+                key={source.id}
+                className="flex items-center gap-2 px-3 py-2 bg-accent/30 rounded-lg text-xs"
+              >
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status.dotColor}`} />
+                <span className="truncate font-medium">{source.displayName || source.name}</span>
+                <span className={`ml-auto flex-shrink-0 font-mono ${status.color}`}>
+                  {status.relativeTime}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

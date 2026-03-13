@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.trader.shared.config.RiskConfig;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -463,7 +464,20 @@ public class TradeController {
         String aiStatus = (body != null && body.containsKey("aiStatus")) ? String.valueOf(body.get("aiStatus")) : null;
         Map<String, Object> aiTokenStats = (body != null && body.get("aiTokenStats") instanceof Map)
                 ? (Map<String, Object>) body.get("aiTokenStats") : null;
-        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus, aiTokenStats));
+
+        // 解析每頻道最後活動時間
+        Map<String, Long> channelLastSeenData = null;
+        if (body != null && body.get("channelLastSeen") instanceof Map) {
+            Map<String, Object> raw = (Map<String, Object>) body.get("channelLastSeen");
+            channelLastSeenData = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : raw.entrySet()) {
+                if (entry.getValue() instanceof Number) {
+                    channelLastSeenData.put(entry.getKey(), ((Number) entry.getValue()).longValue());
+                }
+            }
+        }
+
+        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus, aiTokenStats, channelLastSeenData));
     }
 
     /**
