@@ -66,6 +66,8 @@ export default function AdminSignalSourcesPage() {
   const [assigning, setAssigning] = useState(false);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showChannelActivity, setShowChannelActivity] = useState(false);
+  const [perfSortField, setPerfSortField] = useState<keyof SignalSourcePerformanceDto | null>(null);
+  const [perfSortDir, setPerfSortDir] = useState<"asc" | "desc">("desc");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -185,6 +187,24 @@ export default function AdminSignalSourcesPage() {
   function getPerformance(sourceId: number) {
     return performances.find((p) => p.sourceId === sourceId);
   }
+
+  function handlePerfSort(field: keyof SignalSourcePerformanceDto) {
+    if (perfSortField === field) {
+      setPerfSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setPerfSortField(field);
+      setPerfSortDir(field === "displayName" ? "asc" : "desc");
+    }
+  }
+
+  const sortedPerformances = perfSortField
+    ? [...performances].sort((a, b) => {
+        const av = a[perfSortField];
+        const bv = b[perfSortField];
+        const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+        return perfSortDir === "asc" ? cmp : -cmp;
+      })
+    : performances;
 
   if (loading) {
     return (
@@ -478,15 +498,20 @@ export default function AdminSignalSourcesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted-foreground border-b border-border">
-                  <th className="pb-2 pr-4">{t("signalSources.displayName")}</th>
-                  <th className="pb-2 pr-4 text-right">{t("signalSources.trades")}</th>
-                  <th className="pb-2 pr-4 text-right">{t("signalSources.winRate")}</th>
-                  <th className="pb-2 pr-4 text-right">{t("signalSources.totalPnl")}</th>
-                  <th className="pb-2 text-right">{t("signalSources.avgPnl")}</th>
+                  <SortableTh field="displayName" label={t("signalSources.displayName")} align="left"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <SortableTh field="tradeCount" label={t("signalSources.trades")} align="right"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <SortableTh field="winRate" label={t("signalSources.winRate")} align="right"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <SortableTh field="totalPnl" label={t("signalSources.totalPnl")} align="right"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <SortableTh field="avgPnl" label={t("signalSources.avgPnl")} align="right"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} last />
                 </tr>
               </thead>
               <tbody>
-                {performances.map((p) => (
+                {sortedPerformances.map((p) => (
                   <tr key={p.sourceId} className="border-b border-border/50">
                     <td className="py-2 pr-4 font-medium">{p.displayName}</td>
                     <td className="py-2 pr-4 text-right font-mono">{p.tradeCount}</td>
@@ -598,6 +623,42 @@ function getChannelStatus(lastSeenMs: number | undefined): {
     // > 6 hours → silent (red)
     return { color: "text-red-400", dotColor: "bg-red-500", label: "靜默", labelKey: "channelSilent", relativeTime };
   }
+}
+
+function SortableTh({
+  field,
+  label,
+  align,
+  sortField,
+  sortDir,
+  onSort,
+  last,
+}: {
+  field: keyof SignalSourcePerformanceDto;
+  label: string;
+  align: "left" | "right";
+  sortField: keyof SignalSourcePerformanceDto | null;
+  sortDir: "asc" | "desc";
+  onSort: (f: keyof SignalSourcePerformanceDto) => void;
+  last?: boolean;
+}) {
+  const active = sortField === field;
+  return (
+    <th
+      className={`pb-2 ${last ? "" : "pr-4"} ${align === "right" ? "text-right" : ""} cursor-pointer select-none hover:text-foreground transition-colors`}
+      onClick={() => onSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {align === "right" && active && (
+          sortDir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />
+        )}
+        {label}
+        {align === "left" && active && (
+          sortDir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />
+        )}
+      </span>
+    </th>
+  );
 }
 
 function ChannelActivityPanel({
