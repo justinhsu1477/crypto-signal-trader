@@ -106,6 +106,7 @@ public class SignalSourceService {
         }
         if (req.getTradeMode() != null) source.setTradeMode(parseTradeMode(req.getTradeMode()));
         if (req.getRiskMultiplier() != null) source.setRiskMultiplier(req.getRiskMultiplier());
+        if (req.getPaperTradingEnabled() != null) source.setPaperTradingEnabled(req.getPaperTradingEnabled());
 
         SignalSourceConfig saved = sourceRepository.save(source);
         log.info("更新訊號來源: id={} name={} routingMode={}", saved.getId(), saved.getName(), saved.getRoutingMode());
@@ -360,6 +361,7 @@ public class SignalSourceService {
                 .routingMode(source.getRoutingMode().name())
                 .tradeMode(source.getTradeMode().name())
                 .riskMultiplier(source.getRiskMultiplier())
+                .paperTradingEnabled(source.isPaperTradingEnabled())
                 .enabled(source.isEnabled())
                 .assignedUserCount(assignedCount)
                 .createdAt(source.getCreatedAt())

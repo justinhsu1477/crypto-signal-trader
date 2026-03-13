@@ -1906,6 +1906,12 @@ const translations = {
       "zh-CN": "只有绑定的用户会收到此来源的信号",
       ja: "割り当てられたユーザーのみがシグナルを受信します",
     },
+    globalExistsHint: {
+      en: "A GLOBAL source already exists. Change or disable it before setting another.",
+      "zh-TW": "系統已有全員廣播來源，需先將其改為 ASSIGNED 或停用",
+      "zh-CN": "系统已有全员广播来源，需先将其改为 ASSIGNED 或停用",
+      ja: "既にGLOBALソースが存在します。先に変更または無効化してください",
+    },
     monitorStatus: { en: "Monitor Status", "zh-TW": "Monitor 狀態", "zh-CN": "Monitor 状态", ja: "モニターステータス" },
     monitorOnline: { en: "Online", "zh-TW": "在線", "zh-CN": "在线", ja: "オンライン" },
     monitorOffline: { en: "Offline", "zh-TW": "離線", "zh-CN": "离线", ja: "オフライン" },
@@ -1946,6 +1952,7 @@ const translations = {
       "zh-CN": "跳过广播，仅发送通知给绑定用户",
       ja: "配信をスキップし、割当ユーザーにのみ通知を送信",
     },
+    paperTrading: { en: "Paper Trading", "zh-TW": "模擬交易", "zh-CN": "模拟交易", ja: "ペーパートレード" },
     riskMultiplier: { en: "Risk Multiplier", "zh-TW": "風險倍率", "zh-CN": "风险倍率", ja: "リスク倍率" },
     riskMultiplierHint: {
       en: "Range 0.1 ~ 3.0, default 1.0 (Phase 3 will apply to trade sizing)",

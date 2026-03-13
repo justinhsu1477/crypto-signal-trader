@@ -14,6 +14,8 @@ import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BroadcastTradeService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import com.trader.papertrade.service.BinancePriceClient;
+import com.trader.papertrade.service.PaperTradeService;
 import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
@@ -77,6 +79,7 @@ class BroadcastTradeServiceTest {
         service = new BroadcastTradeService(
                 mockUserRepo, mockBinance, mockWebhook, mockApiKey, mockSubscriptionRepo,
                 mockScoring, mockSignalSource, mockTradeRepo, mockBroadcastLogRepo, new ObjectMapper(), executor,
+                mock(PaperTradeService.class), mock(BinancePriceClient.class),
                 15, 0L);
     }
 

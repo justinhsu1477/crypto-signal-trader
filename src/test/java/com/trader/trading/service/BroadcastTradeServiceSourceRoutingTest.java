@@ -1,10 +1,12 @@
 package com.trader.trading.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trader.advisor.dto.SignalScore;
 import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeRequest;
+import com.trader.trading.entity.BroadcastLog;
 import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.service.SignalSourceService;
 import com.trader.trading.repository.BroadcastLogRepository;
@@ -12,6 +14,8 @@ import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
+import com.trader.papertrade.service.BinancePriceClient;
+import com.trader.papertrade.service.PaperTradeService;
 import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.*;
 
@@ -77,6 +81,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                 broadcastLogRepository,
                 objectMapper,
                 broadcastExecutor,
+                mock(PaperTradeService.class),
+                mock(BinancePriceClient.class),
                 15,
                 0L);
 
@@ -435,6 +441,45 @@ class BroadcastTradeServiceSourceRoutingTest {
 
             // Binance 不應被呼叫
             verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("SHADOW 模式 → AI 評分結果存入 BroadcastLog")
+        void shadowMode_savesAiScoreToBroadcastLog() {
+            setupAllUsersPassPreFilter(user1);
+
+            SignalScore score = SignalScore.builder()
+                    .confidence(72).riskLevel("MEDIUM").reasoning("R:R 尚可").latencyMs(1500L).build();
+            when(signalScoringService.scoreAsync(any()))
+                    .thenReturn(CompletableFuture.completedFuture(score));
+
+            SignalSourceConfig shadowSource = SignalSourceConfig.builder()
+                    .id(20L).name("shadow-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.SHADOW)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.of(shadowSource));
+            when(signalSourceService.resolveTargetUserIds("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.of(20L));
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-shadow").guildId("g-shadow").platform("DISCORD").build());
+
+            service.broadcastTrade(request);
+
+            // 驗證 BroadcastLog 包含 AI 評分
+            var captor = org.mockito.ArgumentCaptor.forClass(BroadcastLog.class);
+            verify(broadcastLogRepository).save(captor.capture());
+            BroadcastLog savedLog = captor.getValue();
+            assertThat(savedLog.getAiConfidence()).isEqualTo(72);
+            assertThat(savedLog.getAiReasoning()).isEqualTo("R:R 尚可");
+            assertThat(savedLog.getStatus()).isEqualTo("SHADOW_RECORDED");
         }
 
         @Test
