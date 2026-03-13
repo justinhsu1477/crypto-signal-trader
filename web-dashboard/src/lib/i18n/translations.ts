@@ -1899,6 +1899,35 @@ const translations = {
     globalSettingsUpdated: { en: "Global settings updated", "zh-TW": "全局設定已更新", "zh-CN": "全局设置已更新", ja: "グローバル設定更新成功" },
     addItem: { en: "Add", "zh-TW": "新增", "zh-CN": "添加", ja: "追加" },
     saveSettings: { en: "Save Settings", "zh-TW": "儲存設定", "zh-CN": "保存设置", ja: "設定を保存" },
+    tradeMode: { en: "Trade Mode", "zh-TW": "交易模式", "zh-CN": "交易模式", ja: "取引モード" },
+    tradeAuto: { en: "Auto", "zh-TW": "自動跟單", "zh-CN": "自动跟单", ja: "自動" },
+    tradeShadow: { en: "Shadow", "zh-TW": "影子模式", "zh-CN": "影子模式", ja: "シャドウ" },
+    tradeManual: { en: "Manual", "zh-TW": "手動模式", "zh-CN": "手动模式", ja: "手動" },
+    tradeAutoHint: {
+      en: "Automatically execute trades for all eligible users",
+      "zh-TW": "自動為所有符合條件的用戶執行交易",
+      "zh-CN": "自动为所有符合条件的用户执行交易",
+      ja: "対象ユーザー全員に自動的に取引を実行します",
+    },
+    tradeShadowHint: {
+      en: "Record signals without executing trades (for accuracy verification)",
+      "zh-TW": "僅記錄訊號但不執行交易（用於驗證準確率）",
+      "zh-CN": "仅记录信号但不执行交易（用于验证准确率）",
+      ja: "取引を実行せずにシグナルを記録（精度検証用）",
+    },
+    tradeManualHint: {
+      en: "Skip broadcast, only send notifications to assigned users",
+      "zh-TW": "跳過廣播，僅發送通知給綁定用戶",
+      "zh-CN": "跳过广播，仅发送通知给绑定用户",
+      ja: "配信をスキップし、割当ユーザーにのみ通知を送信",
+    },
+    riskMultiplier: { en: "Risk Multiplier", "zh-TW": "風險倍率", "zh-CN": "风险倍率", ja: "リスク倍率" },
+    riskMultiplierHint: {
+      en: "Range 0.1 ~ 3.0, default 1.0 (Phase 3 will apply to trade sizing)",
+      "zh-TW": "範圍 0.1 ~ 3.0，預設 1.0（Phase 3 套用到交易倉位）",
+      "zh-CN": "范围 0.1 ~ 3.0，默认 1.0（Phase 3 应用到交易仓位）",
+      ja: "範囲 0.1 ~ 3.0、デフォルト 1.0（Phase 3 で取引サイズに適用）",
+    },
   },
 } as const;
 

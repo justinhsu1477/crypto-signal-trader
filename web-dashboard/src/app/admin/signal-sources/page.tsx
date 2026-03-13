@@ -24,6 +24,7 @@ import type {
   SignalSourcePerformanceDto,
   AdminUserListResponse,
   MonitorStatusResponse,
+  TradeMode,
 } from "@/types";
 import {
   Target,
@@ -300,6 +301,16 @@ export default function AdminSignalSourcesPage() {
                         {isGlobal ? <Globe className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
                         {isGlobal ? t("signalSources.routingGlobal") : t("signalSources.routingAssigned")}
                       </span>
+                      {/* Trade mode badge */}
+                      {source.tradeMode && source.tradeMode !== "AUTO" && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                          source.tradeMode === "SHADOW"
+                            ? "bg-yellow-500/15 text-yellow-400"
+                            : "bg-orange-500/15 text-orange-400"
+                        }`}>
+                          {source.tradeMode === "SHADOW" ? t("signalSources.tradeShadow") : t("signalSources.tradeManual")}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5 space-x-3">
                       {source.channelId && <span>CH: {source.channelId}</span>}
@@ -672,6 +683,8 @@ function CreateEditModal({
   const [guildId, setGuildId] = useState(source?.guildId || "");
   const [description, setDescription] = useState(source?.description || "");
   const [routingMode, setRoutingMode] = useState<"GLOBAL" | "ASSIGNED">(source?.routingMode || "ASSIGNED");
+  const [tradeMode, setTradeMode] = useState<TradeMode>(source?.tradeMode || "AUTO");
+  const [riskMultiplier, setRiskMultiplier] = useState(source?.riskMultiplier ?? 1.0);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -679,7 +692,7 @@ function CreateEditModal({
     setSaving(true);
     try {
       if (isEdit && source) {
-        const req: UpdateSignalSourceRequest = { name, displayName, description, routingMode };
+        const req: UpdateSignalSourceRequest = { name, displayName, description, routingMode, tradeMode, riskMultiplier };
         await updateAdminSignalSource(source.id, req);
         toast.success(t("signalSources.updateSuccess"));
       } else {
@@ -690,6 +703,8 @@ function CreateEditModal({
           guildId: guildId || undefined,
           description: description || undefined,
           routingMode,
+          tradeMode,
+          riskMultiplier,
         };
         await createAdminSignalSource(req);
         toast.success(t("signalSources.createSuccess"));
@@ -770,6 +785,40 @@ function CreateEditModal({
                 ? t("signalSources.routingGlobalHint")
                 : t("signalSources.routingAssignedHint")}
             </p>
+          </div>
+          {/* Trade Mode */}
+          <div>
+            <label className="block text-sm text-muted-foreground mb-1">{t("signalSources.tradeMode")}</label>
+            <select
+              value={tradeMode}
+              onChange={(e) => setTradeMode(e.target.value as TradeMode)}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="AUTO">{t("signalSources.tradeAuto")}</option>
+              <option value="SHADOW">{t("signalSources.tradeShadow")}</option>
+              <option value="MANUAL">{t("signalSources.tradeManual")}</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              {tradeMode === "AUTO"
+                ? t("signalSources.tradeAutoHint")
+                : tradeMode === "SHADOW"
+                  ? t("signalSources.tradeShadowHint")
+                  : t("signalSources.tradeManualHint")}
+            </p>
+          </div>
+          {/* Risk Multiplier */}
+          <div>
+            <label className="block text-sm text-muted-foreground mb-1">{t("signalSources.riskMultiplier")}</label>
+            <input
+              type="number"
+              value={riskMultiplier}
+              onChange={(e) => setRiskMultiplier(parseFloat(e.target.value) || 1.0)}
+              min={0.1}
+              max={3.0}
+              step={0.1}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm font-mono"
+            />
+            <p className="text-xs text-muted-foreground mt-1">{t("signalSources.riskMultiplierHint")}</p>
           </div>
           <div>
             <label className="block text-sm text-muted-foreground mb-1">{t("signalSources.description")}</label>
