@@ -371,6 +371,7 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                 COALESCE(AVG(net_profit), 0) AS avg_pnl
             FROM trades
             WHERE status = 'CLOSED'
+              AND simulated = false
               AND source_channel_id = :channelId
               AND (:guildId IS NULL OR source_guild_id = :guildId)
             """, nativeQuery = true)
