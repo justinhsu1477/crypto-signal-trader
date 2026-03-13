@@ -1957,14 +1957,30 @@ public class BinanceFuturesService {
                     log.warn("廣播跟單: 重複取消跳過 userId={} symbol={}", userId, symbol);
                     return List.of();  // 靜默跳過，不拋異常
                 }
+                // 檢查 Binance 是否有持倉：有持倉 → 只取消掛單，不改 DB 狀態
+                // CANCEL 語義 = 取消未成交掛單，不等於平倉
+                double cancelPositionAmt;
+                try {
+                    cancelPositionAmt = getCurrentPositionAmount(symbol);
+                } catch (Exception e) {
+                    log.error("CANCEL 查詢持倉失敗，安全起見跳過: userId={} {}", userId, e.getMessage());
+                    throw new RuntimeException("CANCEL 查詢持倉失敗: " + symbol);
+                }
                 ReentrantLock cancelLock = symbolLockRegistry.getLock(symbol);
                 cancelLock.lock();
                 try {
-                    cancelAllOrders(symbol);  // 失敗會拋出，讓 BroadcastTradeService 計為失敗
-                    try {
-                        tradeRecordService.recordCancel(symbol, userId);
-                    } catch (Exception e) {
-                        log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                    cancelAllOrders(symbol);  // 取消所有掛單（含 SL/TP）
+                    if (cancelPositionAmt == 0) {
+                        // 無持倉 → 純掛單取消，DB 標記 CANCELLED
+                        try {
+                            tradeRecordService.recordCancel(symbol, userId);
+                        } catch (Exception e) {
+                            log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                        }
+                    } else {
+                        // 有持倉 → 只取消掛單（SL/TP），DB 保持 OPEN（持倉仍在）
+                        log.warn("CANCEL: userId={} {} 有持倉 ({})，僅取消掛單，DB 保持 OPEN",
+                                userId, symbol, cancelPositionAmt);
                     }
                 } finally {
                     cancelLock.unlock();
