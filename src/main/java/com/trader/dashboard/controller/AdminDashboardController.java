@@ -306,8 +306,11 @@ public class AdminDashboardController {
     @GetMapping("/broadcast-logs")
     public ResponseEntity<BroadcastLogResponse> getBroadcastLogs(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        Page<BroadcastLog> logs = broadcastLogRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String sourceAuthor) {
+        Page<BroadcastLog> logs = (sourceAuthor != null && !sourceAuthor.isBlank())
+                ? broadcastLogRepository.findBySourceAuthorOrderByCreatedAtDesc(sourceAuthor, PageRequest.of(page, size))
+                : broadcastLogRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));
 
         List<BroadcastLogSummary> summaries = logs.getContent().stream()
                 .map(l -> BroadcastLogSummary.builder()
@@ -315,6 +318,7 @@ public class AdminDashboardController {
                         .signalAction(l.getSignalAction())
                         .symbol(l.getSymbol())
                         .side(l.getSide())
+                        .sourceAuthor(l.getSourceAuthor())
                         .totalUsers(l.getTotalUsers())
                         .successCount(l.getSuccessCount())
                         .failCount(l.getFailCount())
@@ -334,6 +338,14 @@ public class AdminDashboardController {
                 .totalPages(logs.getTotalPages())
                 .totalElements(logs.getTotalElements())
                 .build());
+    }
+
+    /**
+     * 廣播紀錄來源清單（供篩選下拉選單用）
+     */
+    @GetMapping("/broadcast-logs/sources")
+    public ResponseEntity<List<String>> getBroadcastLogSources() {
+        return ResponseEntity.ok(broadcastLogRepository.findDistinctSourceAuthors());
     }
 
     /**
