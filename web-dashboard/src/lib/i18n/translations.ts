@@ -1869,6 +1869,8 @@ const translations = {
     winRate: { en: "Win Rate", "zh-TW": "勝率", "zh-CN": "胜率", ja: "勝率" },
     totalPnl: { en: "Total PnL", "zh-TW": "總損益", "zh-CN": "总损益", ja: "総損益" },
     avgPnl: { en: "Avg PnL", "zh-TW": "平均損益", "zh-CN": "平均损益", ja: "平均損益" },
+    mode: { en: "Mode", "zh-TW": "模式", "zh-CN": "模式", ja: "モード" },
+    paperTrades: { en: "Paper", "zh-TW": "模擬", "zh-CN": "模拟", ja: "ペーパー" },
     assignUser: { en: "Assign User", "zh-TW": "綁定用戶", "zh-CN": "绑定用户", ja: "ユーザー割り当て" },
     unassign: { en: "Unassign", "zh-TW": "解除綁定", "zh-CN": "解除绑定", ja: "割り当て解除" },
     createSuccess: { en: "Source created", "zh-TW": "來源建立成功", "zh-CN": "来源创建成功", ja: "ソース作成成功" },

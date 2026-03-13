@@ -308,35 +308,32 @@ public class SignalSourceService {
     // ======================== 內部方法 ========================
 
     private SignalSourcePerformanceDto buildPerformance(SignalSourceConfig source) {
+        SignalSourcePerformanceDto.SignalSourcePerformanceDtoBuilder builder =
+                SignalSourcePerformanceDto.builder()
+                        .sourceId(source.getId())
+                        .name(source.getName())
+                        .displayName(source.getDisplayName())
+                        .tradeMode(source.getTradeMode().name());
+
         if (source.getChannelId() == null) {
-            return SignalSourcePerformanceDto.builder()
-                    .sourceId(source.getId())
-                    .name(source.getName())
-                    .displayName(source.getDisplayName())
-                    .build();
+            return builder.build();
         }
 
+        // 真實交易績效
+        parseRealTradeStats(builder, source);
+
+        // 模擬交易績效（SHADOW 頻道）
+        parsePaperTradeStats(builder, source);
+
+        return builder.build();
+    }
+
+    private void parseRealTradeStats(SignalSourcePerformanceDto.SignalSourcePerformanceDtoBuilder builder,
+                                     SignalSourceConfig source) {
         Object[] stats = tradeRepository.getSourcePerformanceStats(
                 source.getChannelId(), source.getGuildId());
-
-        if (stats == null || stats.length == 0 || stats[0] == null) {
-            return SignalSourcePerformanceDto.builder()
-                    .sourceId(source.getId())
-                    .name(source.getName())
-                    .displayName(source.getDisplayName())
-                    .build();
-        }
-
-        // Native query 聚合結果可能被 JPA 包裝為 Object[][]（外層陣列 = rows）
-        Object[] row = (stats[0] instanceof Object[]) ? (Object[]) stats[0] : stats;
-
-        if (row[0] == null) {
-            return SignalSourcePerformanceDto.builder()
-                    .sourceId(source.getId())
-                    .name(source.getName())
-                    .displayName(source.getDisplayName())
-                    .build();
-        }
+        Object[] row = extractRow(stats);
+        if (row == null) return;
 
         long tradeCount = ((Number) row[0]).longValue();
         long winCount = ((Number) row[1]).longValue();
@@ -344,16 +341,45 @@ public class SignalSourceService {
         double avgPnl = ((Number) row[3]).doubleValue();
         double winRate = tradeCount > 0 ? winCount * 100.0 / tradeCount : 0;
 
-        return SignalSourcePerformanceDto.builder()
-                .sourceId(source.getId())
-                .name(source.getName())
-                .displayName(source.getDisplayName())
-                .tradeCount(tradeCount)
+        builder.tradeCount(tradeCount)
                 .winCount(winCount)
                 .winRate(Math.round(winRate * 10.0) / 10.0)
-                .totalPnl(totalPnl)
-                .avgPnl(avgPnl)
-                .build();
+                .totalPnl(Math.round(totalPnl * 100.0) / 100.0)
+                .avgPnl(Math.round(avgPnl * 100.0) / 100.0);
+    }
+
+    private void parsePaperTradeStats(SignalSourcePerformanceDto.SignalSourcePerformanceDtoBuilder builder,
+                                      SignalSourceConfig source) {
+        Object[] stats = tradeRepository.getSourcePaperTradeStats(
+                source.getChannelId(), source.getGuildId());
+        Object[] row = extractRow(stats);
+        if (row == null) return;
+
+        long tradeCount = ((Number) row[0]).longValue();
+        long winCount = ((Number) row[1]).longValue();
+        double totalPnl = ((Number) row[2]).doubleValue();
+        double avgPnl = ((Number) row[3]).doubleValue();
+        double maxWin = ((Number) row[4]).doubleValue();
+        double maxLoss = ((Number) row[5]).doubleValue();
+        double winRate = tradeCount > 0 ? winCount * 100.0 / tradeCount : 0;
+
+        builder.paperTradeCount(tradeCount)
+                .paperWinCount(winCount)
+                .paperWinRate(Math.round(winRate * 10.0) / 10.0)
+                .paperTotalPnl(Math.round(totalPnl * 100.0) / 100.0)
+                .paperAvgPnl(Math.round(avgPnl * 100.0) / 100.0)
+                .paperMaxWin(Math.round(maxWin * 100.0) / 100.0)
+                .paperMaxLoss(Math.round(maxLoss * 100.0) / 100.0);
+    }
+
+    /**
+     * 從 native query 結果提取資料列（處理 JPA 包裝的 Object[][] 情況）
+     */
+    private Object[] extractRow(Object[] stats) {
+        if (stats == null || stats.length == 0 || stats[0] == null) return null;
+        Object[] row = (stats[0] instanceof Object[]) ? (Object[]) stats[0] : stats;
+        if (row[0] == null || ((Number) row[0]).longValue() == 0) return null;
+        return row;
     }
 
     private SignalSourceResponse toResponse(SignalSourceConfig source) {
