@@ -14,8 +14,8 @@
     }
 }
 
-# gRPC — Python Monitor 從地端連入
-:9443 {
+# gRPC — Python Monitor 從地端連入（獨立子網域，Cloudflare DNS Only 灰雲）
+grpc.hook-fi.com:443 {
     tls /etc/caddy/certs/origin-cert.pem /etc/caddy/certs/origin-key.pem
 
     reverse_proxy h2c://trading-api:9090
