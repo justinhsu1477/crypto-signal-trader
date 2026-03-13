@@ -29,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -307,10 +308,29 @@ public class AdminDashboardController {
     public ResponseEntity<BroadcastLogResponse> getBroadcastLogs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String sourceAuthor) {
-        Page<BroadcastLog> logs = (sourceAuthor != null && !sourceAuthor.isBlank())
-                ? broadcastLogRepository.findBySourceAuthorOrderByCreatedAtDesc(sourceAuthor, PageRequest.of(page, size))
-                : broadcastLogRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));
+            @RequestParam(required = false) String sourceAuthor,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+
+        boolean hasSource = sourceAuthor != null && !sourceAuthor.isBlank();
+        boolean hasDateRange = startDate != null && endDate != null;
+        LocalDateTime startDateTime = hasDateRange ? startDate.atStartOfDay() : null;
+        LocalDateTime endDateTime = hasDateRange ? endDate.plusDays(1).atStartOfDay() : null;
+        Pageable pageable = PageRequest.of(page, size);
+
+        Page<BroadcastLog> logs;
+        if (hasSource && hasDateRange) {
+            logs = broadcastLogRepository.findBySourceAuthorContainingIgnoreCaseAndCreatedAtBetweenOrderByCreatedAtDesc(
+                    sourceAuthor, startDateTime, endDateTime, pageable);
+        } else if (hasSource) {
+            logs = broadcastLogRepository.findBySourceAuthorContainingIgnoreCaseOrderByCreatedAtDesc(
+                    sourceAuthor, pageable);
+        } else if (hasDateRange) {
+            logs = broadcastLogRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(
+                    startDateTime, endDateTime, pageable);
+        } else {
+            logs = broadcastLogRepository.findAllByOrderByCreatedAtDesc(pageable);
+        }
 
         List<BroadcastLogSummary> summaries = logs.getContent().stream()
                 .map(l -> BroadcastLogSummary.builder()

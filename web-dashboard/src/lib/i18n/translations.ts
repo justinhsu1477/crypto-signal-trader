@@ -1497,6 +1497,7 @@ const translations = {
     broadcastNoKey: { en: "No API Key", "zh-TW": "無 API Key", "zh-CN": "无 API Key", ja: "APIキーなし" },
     broadcastSource: { en: "Source", "zh-TW": "來源", "zh-CN": "来源", ja: "ソース" },
     broadcastAllSources: { en: "All Sources", "zh-TW": "所有來源", "zh-CN": "所有来源", ja: "すべてのソース" },
+    broadcastClearFilters: { en: "Clear", "zh-TW": "清除", "zh-CN": "清除", ja: "クリア" },
     // Daily Signal Report
     dailyReportTitle: { en: "Daily Signal Report", "zh-TW": "每日訊號日報", "zh-CN": "每日信号日报", ja: "デイリーシグナルレポート" },
     dailyReportDate: { en: "Date", "zh-TW": "日期", "zh-CN": "日期", ja: "日付" },

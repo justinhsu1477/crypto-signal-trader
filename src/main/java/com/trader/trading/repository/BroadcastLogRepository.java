@@ -25,6 +25,30 @@ public interface BroadcastLogRepository extends JpaRepository<BroadcastLog, Long
     Page<BroadcastLog> findBySourceAuthorOrderByCreatedAtDesc(String sourceAuthor, Pageable pageable);
 
     /**
+     * 依日期範圍篩選廣播紀錄（分頁，依建立時間倒序）
+     */
+    Page<BroadcastLog> findByCreatedAtBetweenOrderByCreatedAtDesc(
+            LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    /**
+     * 依來源 + 日期範圍篩選廣播紀錄（分頁，依建立時間倒序）
+     */
+    Page<BroadcastLog> findBySourceAuthorAndCreatedAtBetweenOrderByCreatedAtDesc(
+            String sourceAuthor, LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    /**
+     * 依來源（模糊搜尋）篩選廣播紀錄（分頁，依建立時間倒序）
+     */
+    Page<BroadcastLog> findBySourceAuthorContainingIgnoreCaseOrderByCreatedAtDesc(
+            String sourceAuthor, Pageable pageable);
+
+    /**
+     * 依來源（模糊搜尋）+ 日期範圍篩選（分頁，依建立時間倒序）
+     */
+    Page<BroadcastLog> findBySourceAuthorContainingIgnoreCaseAndCreatedAtBetweenOrderByCreatedAtDesc(
+            String sourceAuthor, LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    /**
      * 查詢所有不重複的來源名稱（供篩選下拉選單用）
      */
     @Query("SELECT DISTINCT b.sourceAuthor FROM BroadcastLog b WHERE b.sourceAuthor IS NOT NULL ORDER BY b.sourceAuthor")

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
 import { getAdminBroadcastLogs, getAdminBroadcastLogDetail, getAdminBroadcastLogSources } from "@/lib/api";
 import type { BroadcastLogSummary, BroadcastLogDetail } from "@/types";
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Filter } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Filter, Calendar, X } from "lucide-react";
 
 export default function BroadcastLogsPage() {
   const { t } = useT();
@@ -18,6 +18,8 @@ export default function BroadcastLogsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [sources, setSources] = useState<string[]>([]);
   const [filterSource, setFilterSource] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   // 載入來源清單（僅一次）
   useEffect(() => {
@@ -26,7 +28,12 @@ export default function BroadcastLogsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getAdminBroadcastLogs(page, 20, filterSource || undefined)
+    getAdminBroadcastLogs(
+      page, 20,
+      filterSource || undefined,
+      startDate || undefined,
+      endDate || undefined,
+    )
       .then((res) => {
         if (!cancelled) {
           setLogs(res.content);
@@ -41,7 +48,14 @@ export default function BroadcastLogsPage() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [page, filterSource]);
+  }, [page, filterSource, startDate, endDate]);
+
+  function clearFilters() {
+    setFilterSource("");
+    setStartDate("");
+    setEndDate("");
+    setPage(0);
+  }
 
   function toggleExpand(id: number) {
     if (expandedId === id) {
@@ -91,9 +105,17 @@ export default function BroadcastLogsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t("admin.broadcastLogs")}</h1>
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">{t("admin.broadcastLogs")}</h1>
+          <span className="text-sm text-muted-foreground">
+            {totalElements} {t("admin.rows")}
+          </span>
+        </div>
+
+        {/* 篩選列 */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* 來源篩選 */}
           {sources.length > 0 && (
             <div className="flex items-center gap-1.5">
               <Filter className="h-4 w-4 text-muted-foreground" />
@@ -109,9 +131,35 @@ export default function BroadcastLogsPage() {
               </select>
             </div>
           )}
-          <span className="text-sm text-muted-foreground">
-            {totalElements} {t("admin.rows")}
-          </span>
+
+          {/* 日期篩選 */}
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setPage(0); }}
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-muted-foreground text-sm">~</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setPage(0); }}
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          {/* 清除篩選 */}
+          {(filterSource || startDate || endDate) && (
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+              {t("admin.broadcastClearFilters")}
+            </button>
+          )}
         </div>
       </div>
 
