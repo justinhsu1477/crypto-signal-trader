@@ -56,8 +56,8 @@ class LoggingConfig:
 class GrpcConfig:
     """gRPC 即時配置推送設定。連線到 Java Spring Boot gRPC Server 接收頻道設定變更。"""
     enabled: bool = False
-    target: str = ""               # Java gRPC Server 位址，例如 "your-domain.com:9443"
-    use_tls: bool = False          # 走 Caddy TLS 代理時需設為 True
+    target: str = ""               # Java gRPC Server 位址，例如 "grpc.hook-fi.com:443"
+    use_tls: bool = False          # 走 Caddy TLS 代理時需設為 True（生產環境設 True）
     reconnect_interval: int = 5    # 重連間隔（秒）
 
 

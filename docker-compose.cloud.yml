@@ -52,7 +52,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "9443:9443"    # gRPC（Python Monitor 從地端連入）
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - ./certs:/etc/caddy/certs:ro
