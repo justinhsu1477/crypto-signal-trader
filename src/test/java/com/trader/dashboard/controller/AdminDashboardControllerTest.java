@@ -18,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 
 import com.trader.shared.service.MetricsService;
+import com.trader.trading.service.DailySignalReportService;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -56,7 +57,8 @@ class AdminDashboardControllerTest {
         objectMapper = new ObjectMapper();
         controller = new AdminDashboardController(
                 dashboardService, userRepository, dataSource,
-                mock(MetricsService.class), broadcastLogRepository, objectMapper);
+                mock(MetricsService.class), broadcastLogRepository, objectMapper,
+                mock(DailySignalReportService.class));
     }
 
     // ── system-overview ──

@@ -1014,6 +1014,27 @@ export async function getSignalSourceMonitorStatus(): Promise<MonitorStatusRespo
   return request<MonitorStatusResponse>("/api/admin/signal-sources/monitor-status");
 }
 
+// ─── Admin Daily Signal Report ───
+
+import type {
+  DailySignalReportListResponse,
+  DailySignalReportDetail,
+} from "@/types";
+
+export async function getAdminDailyReports(page = 0, size = 20): Promise<DailySignalReportListResponse> {
+  return request<DailySignalReportListResponse>(`/api/admin/dashboard/daily-reports?page=${page}&size=${size}`);
+}
+
+export async function getAdminDailyReportDetail(id: number): Promise<DailySignalReportDetail> {
+  return request<DailySignalReportDetail>(`/api/admin/dashboard/daily-reports/${id}`);
+}
+
+export async function generateAdminDailyReport(date: string): Promise<DailySignalReportDetail> {
+  return request<DailySignalReportDetail>(`/api/admin/dashboard/daily-reports/generate?date=${date}`, {
+    method: "POST",
+  });
+}
+
 export async function updateGlobalMonitorSettings(
   data: { authorIds?: string[]; ignoreKeywords?: string[] }
 ): Promise<{ message: string; configVersion: number; connectedMonitors: number }> {

@@ -929,3 +929,39 @@ export interface SignalSourceUserResponse {
   description: string | null;
   enabled: boolean;
 }
+
+// ─── Daily Signal Report ───
+
+export interface DailySignalReportSummary {
+  id: number;
+  reportDate: string;
+  totalSignals: number;
+  totalSources: number;
+  longCount: number;
+  shortCount: number;
+  avgConfidence: number | null;
+  hasAiAnalysis: boolean;
+  createdAt: string;
+}
+
+export interface DailySignalReportListResponse {
+  content: DailySignalReportSummary[];
+  page: number;
+  size: number;
+  totalPages: number;
+  totalElements: number;
+}
+
+export interface DailySignalReportDetail {
+  id: number;
+  reportDate: string;
+  totalSignals: number;
+  totalSources: number;
+  longCount: number;
+  shortCount: number;
+  avgConfidence: number | null;
+  reportData: string;     // JSON string
+  aiAnalysis: string | null;
+  aiTokensUsed: number | null;
+  createdAt: string;
+}
