@@ -114,7 +114,7 @@ describe("Header", () => {
       mockAuth.email = "admin@test.com";
     });
 
-    it("renders all 12 admin nav items when role is ADMIN", () => {
+    it("renders all 13 admin nav items when role is ADMIN", () => {
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
 
