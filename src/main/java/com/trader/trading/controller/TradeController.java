@@ -808,14 +808,14 @@ public class TradeController {
             }
         }
 
-        // 執行廣播
-        Map<String, Object> result = broadcastTradeService.broadcastTrade(request);
-
-        // 訊號記錄（廣播層級記一次，非 per-user）
+        // 訊號記錄（廣播前寫入，確保 message_id 去重能攔截後續重複請求）
         signalRecordService.recordFromRequest(
                 request.getAction(), symbol, request.getSide(),
                 request.getEntryPrice(), request.getStopLoss(),
                 "EXECUTED", null, null, request.getSource());
+
+        // 執行廣播
+        Map<String, Object> result = broadcastTradeService.broadcastTrade(request);
 
         return ResponseEntity.ok(result);
     }
