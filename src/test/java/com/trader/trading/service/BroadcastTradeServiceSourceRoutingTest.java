@@ -5,6 +5,7 @@ import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeRequest;
+import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.service.SignalSourceService;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
@@ -108,6 +109,12 @@ class BroadcastTradeServiceSourceRoutingTest {
         return req;
     }
 
+    private SignalSourceConfig buildSourceConfig(Long id) {
+        return SignalSourceConfig.builder()
+                .id(id).name("test-source").tradeMode(SignalSourceConfig.TradeMode.AUTO)
+                .riskMultiplier(1.0).build();
+    }
+
     /**
      * 設定所有用戶都通過前置篩選（訂閱 + API Key）
      */
@@ -139,6 +146,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.of(Set.of("u1", "u2")));
             when(signalSourceService.resolveSourceId("ch-123", "g-456"))
                     .thenReturn(Optional.of(1L));
+            when(signalSourceService.resolveSource("ch-123", "g-456"))
+                    .thenReturn(Optional.of(buildSourceConfig(1L)));
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setSource(SignalSource.builder()
@@ -166,6 +175,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.empty());
             when(signalSourceService.resolveSourceId("unknown-ch", "unknown-g"))
                     .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSource("unknown-ch", "unknown-g"))
+                    .thenReturn(Optional.empty());
 
             TradeRequest request = createRequest("ENTRY", "ETHUSDT", "SHORT");
             request.setSource(SignalSource.builder()
@@ -192,6 +203,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.of(Set.of())); // 空 Set
             when(signalSourceService.resolveSourceId("ch-empty", "g-empty"))
                     .thenReturn(Optional.of(2L));
+            when(signalSourceService.resolveSource("ch-empty", "g-empty"))
+                    .thenReturn(Optional.of(buildSourceConfig(2L)));
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setSource(SignalSource.builder()
@@ -222,6 +235,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.empty());
             when(signalSourceService.resolveSourceId("ch-global", "g-global"))
                     .thenReturn(Optional.of(10L));
+            when(signalSourceService.resolveSource("ch-global", "g-global"))
+                    .thenReturn(Optional.of(buildSourceConfig(10L)));
             // 無人綁定 ASSIGNED 來源
             when(signalSourceService.getUserIdsBoundToAssignedSources())
                     .thenReturn(Set.of());
@@ -251,6 +266,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.empty());
             when(signalSourceService.resolveSourceId("ch-global", "g-global"))
                     .thenReturn(Optional.of(10L));
+            when(signalSourceService.resolveSource("ch-global", "g-global"))
+                    .thenReturn(Optional.of(buildSourceConfig(10L)));
             // u2 已綁定到某個 ASSIGNED 來源
             when(signalSourceService.getUserIdsBoundToAssignedSources())
                     .thenReturn(Set.of("u2"));
@@ -280,6 +297,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.empty());
             when(signalSourceService.resolveSourceId("ch-global", "g-global"))
                     .thenReturn(Optional.of(10L));
+            when(signalSourceService.resolveSource("ch-global", "g-global"))
+                    .thenReturn(Optional.of(buildSourceConfig(10L)));
             // 所有人都綁定了 ASSIGNED 來源
             when(signalSourceService.getUserIdsBoundToAssignedSources())
                     .thenReturn(Set.of("u1", "u2", "u3"));
@@ -378,6 +397,135 @@ class BroadcastTradeServiceSourceRoutingTest {
         }
     }
 
+    // ======================== TradeMode 控制 ========================
+
+    @Nested
+    @DisplayName("TradeMode 控制 (SHADOW / MANUAL)")
+    class TradeModeTests {
+
+        @Test
+        @DisplayName("SHADOW 模式 → 記錄但不執行 Binance 交易")
+        void shadowMode_recordsButDoesNotExecute() {
+            setupAllUsersPassPreFilter(user1, user2);
+
+            SignalSourceConfig shadowSource = SignalSourceConfig.builder()
+                    .id(20L).name("shadow-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.SHADOW)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.of(shadowSource));
+            when(signalSourceService.resolveTargetUserIds("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.of(20L));
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-shadow").guildId("g-shadow").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("SHADOW_RECORDED");
+            assertThat(result.get("tradeMode")).isEqualTo("SHADOW");
+            assertThat(result.get("sourceId")).isEqualTo(20L);
+            assertThat(result.get("totalEligibleUsers")).isEqualTo(2);
+
+            // Binance 不應被呼叫
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("MANUAL 模式 → 跳過廣播，僅記錄")
+        void manualMode_skipsBroadcast() {
+            setupAllUsersPassPreFilter(user1, user2);
+
+            SignalSourceConfig manualSource = SignalSourceConfig.builder()
+                    .id(21L).name("manual-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.MANUAL)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-manual", "g-manual"))
+                    .thenReturn(Optional.of(manualSource));
+            when(signalSourceService.resolveTargetUserIds("ch-manual", "g-manual"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-manual", "g-manual"))
+                    .thenReturn(Optional.of(21L));
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
+
+            TradeRequest request = createRequest("ENTRY", "ETHUSDT", "SHORT");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-manual").guildId("g-manual").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("MANUAL_SKIPPED");
+            assertThat(result.get("tradeMode")).isEqualTo("MANUAL");
+            assertThat(result.get("sourceId")).isEqualTo(21L);
+
+            // Binance 不應被呼叫（MANUAL 模式跳過廣播）
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("AUTO 模式 → 正常執行交易（既有行為）")
+        void autoMode_executesNormally() {
+            setupAllUsersPassPreFilter(user1);
+
+            SignalSourceConfig autoSource = SignalSourceConfig.builder()
+                    .id(22L).name("auto-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-auto", "g-auto"))
+                    .thenReturn(Optional.of(autoSource));
+            when(signalSourceService.resolveTargetUserIds("ch-auto", "g-auto"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-auto", "g-auto"))
+                    .thenReturn(Optional.of(22L));
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-auto").guildId("g-auto").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(1);
+
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+        }
+
+        @Test
+        @DisplayName("無 resolvedSource → tradeMode 為 null → 正常執行（向下相容）")
+        void noResolvedSource_executesNormally() {
+            setupAllUsersPassPreFilter(user1);
+
+            when(signalSourceService.resolveSource("ch-unknown", "g-unknown"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveTargetUserIds("ch-unknown", "g-unknown"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-unknown", "g-unknown"))
+                    .thenReturn(Optional.empty());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-unknown").guildId("g-unknown").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            assertThat(result.get("totalUsers")).isEqualTo(1);
+
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+        }
+    }
+
     // ======================== skippedNotAssigned 計數 ========================
 
     @Nested
@@ -394,6 +542,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.of(Set.of("u1")));
             when(signalSourceService.resolveSourceId("ch-one", "g-one"))
                     .thenReturn(Optional.of(3L));
+            when(signalSourceService.resolveSource("ch-one", "g-one"))
+                    .thenReturn(Optional.of(buildSourceConfig(3L)));
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
             request.setSource(SignalSource.builder()
@@ -419,6 +569,8 @@ class BroadcastTradeServiceSourceRoutingTest {
                     .thenReturn(Optional.of(Set.of("u1", "u2")));
             when(signalSourceService.resolveSourceId("ch-all", "g-all"))
                     .thenReturn(Optional.of(4L));
+            when(signalSourceService.resolveSource("ch-all", "g-all"))
+                    .thenReturn(Optional.of(buildSourceConfig(4L)));
 
             TradeRequest request = createRequest("CLOSE", "ETHUSDT", null);
             request.setSource(SignalSource.builder()
@@ -439,6 +591,8 @@ class BroadcastTradeServiceSourceRoutingTest {
             when(signalSourceService.resolveTargetUserIds("ch-miss", "g-miss"))
                     .thenReturn(Optional.empty());
             when(signalSourceService.resolveSourceId("ch-miss", "g-miss"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSource("ch-miss", "g-miss"))
                     .thenReturn(Optional.empty());
 
             TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");

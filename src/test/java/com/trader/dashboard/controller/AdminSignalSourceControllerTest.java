@@ -663,6 +663,7 @@ class AdminSignalSourceControllerTest {
                     eq(List.of("g-1")),        // 保留 guildIds
                     eq(List.of("new-author")), // 新 authorIds
                     eq(List.of("spam")),       // 新 ignoreKeywords
+                    anyList(),                 // 保留 sources
                     eq("admin"),
                     eq("global_settings_update")
             );
@@ -699,6 +700,7 @@ class AdminSignalSourceControllerTest {
                     eq(List.of()),        // guildIds 保留（空）
                     eq(List.of()),        // authorIds 清空
                     eq(List.of()),        // ignoreKeywords 清空
+                    anyList(),            // 保留 sources
                     eq("admin"),
                     eq("global_settings_update")
             );
