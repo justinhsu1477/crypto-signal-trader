@@ -1111,6 +1111,33 @@ class TradeControllerTest {
             ResponseEntity<?> response = controller.broadcastTrade(request);
             assertThat(response.getStatusCode().value()).isEqualTo(400);
         }
+
+        // ====== 訊號記錄時序（防重複下單） ======
+
+        @Test
+        @DisplayName("ENTRY 廣播 → signalRecord 在 broadcastTrade 之前寫入（防 race condition）")
+        void broadcastEntry_signalRecordBeforeBroadcast() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED", "totalUsers", 3, "successCount", 3));
+
+            controller.broadcastTrade(request);
+
+            // 用 InOrder 驗證 recordFromRequest 在 broadcastTrade 之前被呼叫
+            var inOrder = inOrder(signalRecordService, broadcastTradeService);
+            inOrder.verify(signalRecordService).recordFromRequest(
+                    eq("ENTRY"), eq("BTCUSDT"), eq("LONG"),
+                    eq(95000.0), eq(94000.0),
+                    eq("EXECUTED"), isNull(), isNull(), any());
+            inOrder.verify(broadcastTradeService).broadcastTrade(any());
+        }
     }
 
     // ==================== 其他端點 ====================
