@@ -174,6 +174,7 @@ class ApiClient:
         status: str = "connected",
         ai_status: str = "active",
         ai_token_stats: dict | None = None,
+        channel_last_seen: dict[str, float] | None = None,
     ) -> bool:
         """Send heartbeat to Spring Boot API.
 
@@ -181,6 +182,7 @@ class ApiClient:
             status: Current monitor status (connected / reconnecting).
             ai_status: AI parser status (active / disabled).
             ai_token_stats: Optional AI token usage stats from AiSignalParser.
+            channel_last_seen: Optional per-channel last activity timestamps (epoch seconds).
 
         Returns:
             True if heartbeat was acknowledged, False otherwise.
@@ -190,6 +192,11 @@ class ApiClient:
             payload: dict = {"status": status, "aiStatus": ai_status}
             if ai_token_stats:
                 payload["aiTokenStats"] = ai_token_stats
+            if channel_last_seen:
+                # 轉為 epoch millis（Java 端用 Long 存）
+                payload["channelLastSeen"] = {
+                    ch_id: int(ts * 1000) for ch_id, ts in channel_last_seen.items()
+                }
             async with self._session.post(
                 url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
             ) as resp:

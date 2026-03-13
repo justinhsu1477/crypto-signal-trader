@@ -38,7 +38,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("正常心跳 — 更新時間和狀態")
         void normalHeartbeat() {
-            Map<String, Object> result = service.receiveHeartbeat("connected", "active", null);
+            Map<String, Object> result = service.receiveHeartbeat("connected", "active", null, null);
 
             assertThat(result.get("received")).isEqualTo(true);
             assertThat(result.get("status")).isEqualTo("ok");
@@ -48,7 +48,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("reconnecting 狀態 — 發送斷線告警")
         void reconnectingSendsAlert() {
-            service.receiveHeartbeat("reconnecting", "active", null);
+            service.receiveHeartbeat("reconnecting", "active", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("中斷"),
@@ -59,8 +59,8 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("reconnecting 重複 — 不重複發送告警")
         void reconnectingDedup() {
-            service.receiveHeartbeat("reconnecting", "active", null);
-            service.receiveHeartbeat("reconnecting", "active", null);
+            service.receiveHeartbeat("reconnecting", "active", null, null);
+            service.receiveHeartbeat("reconnecting", "active", null, null);
 
             verify(webhookService, times(1)).sendNotificationToAdmins(
                     contains("中斷"), anyString(), eq(DiscordWebhookService.COLOR_RED));
@@ -69,8 +69,8 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("reconnecting → connected — 發送恢復通知")
         void recoveryNotification() {
-            service.receiveHeartbeat("reconnecting", "active", null);
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("reconnecting", "active", null, null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("恢復"),
@@ -81,7 +81,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("connected 但未曾斷線 — 不發送恢復通知")
         void connectedWithoutPriorAlertNoRecovery() {
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
@@ -94,7 +94,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("AI disabled — 發送 AI 離線告警")
         void aiDisabledAlert() {
-            service.receiveHeartbeat("connected", "disabled", null);
+            service.receiveHeartbeat("connected", "disabled", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("AI"),
@@ -105,8 +105,8 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("AI disabled 重複 — 不重複告警")
         void aiDisabledDedup() {
-            service.receiveHeartbeat("connected", "disabled", null);
-            service.receiveHeartbeat("connected", "disabled", null);
+            service.receiveHeartbeat("connected", "disabled", null, null);
+            service.receiveHeartbeat("connected", "disabled", null, null);
 
             verify(webhookService, times(1)).sendNotificationToAdmins(
                     contains("AI"), anyString(), eq(DiscordWebhookService.COLOR_YELLOW));
@@ -115,8 +115,8 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("AI disabled → active — 發送 AI 恢復通知")
         void aiRecoveryNotification() {
-            service.receiveHeartbeat("connected", "disabled", null);
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("connected", "disabled", null, null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("AI Agent 已啟用"),
@@ -127,7 +127,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("aiStatus 為 null — 不更新 AI 狀態")
         void nullAiStatusIgnored() {
-            service.receiveHeartbeat("connected", null, null);
+            service.receiveHeartbeat("connected", null, null, null);
 
             verify(webhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
@@ -150,7 +150,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("最近收到心跳 — 不告警")
         void recentHeartbeatNoAlert() {
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             service.checkHeartbeat();
 
@@ -201,7 +201,7 @@ class MonitorHeartbeatServiceTest {
             service.checkHeartbeat();
 
             // 恢復心跳（alertSent=true → connected → 發恢復通知）
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("恢復"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
@@ -231,7 +231,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("剛收到 connected 心跳 — online=true")
         void justReceivedConnected() {
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             Map<String, Object> status = service.getStatus();
 
@@ -246,7 +246,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("reconnecting 狀態 — online=false")
         void reconnectingNotOnline() {
-            service.receiveHeartbeat("reconnecting", "active", null);
+            service.receiveHeartbeat("reconnecting", "active", null, null);
 
             Map<String, Object> status = service.getStatus();
 
@@ -280,7 +280,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("Discord 斷線 — 發送 admin 告警")
         void disconnectNotifiesAdmin() {
-            service.receiveHeartbeat("reconnecting", "active", null);
+            service.receiveHeartbeat("reconnecting", "active", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("中斷"), anyString(), eq(DiscordWebhookService.COLOR_RED));
@@ -289,8 +289,8 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("Discord 恢復 — 發送 admin 通知")
         void recoveryNotifiesAdmin() {
-            service.receiveHeartbeat("reconnecting", "active", null);
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("reconnecting", "active", null, null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("恢復"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
@@ -299,7 +299,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("AI 未啟用 — 發送 admin 告警")
         void aiDisabledNotifiesAdmin() {
-            service.receiveHeartbeat("connected", "disabled", null);
+            service.receiveHeartbeat("connected", "disabled", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("AI"), anyString(), eq(DiscordWebhookService.COLOR_YELLOW));
@@ -308,8 +308,8 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("AI 恢復 — 發送 admin 通知")
         void aiRecoveryNotifiesAdmin() {
-            service.receiveHeartbeat("connected", "disabled", null);
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("connected", "disabled", null, null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("AI Agent 已啟用"), anyString(), eq(DiscordWebhookService.COLOR_GREEN));
@@ -327,6 +327,65 @@ class MonitorHeartbeatServiceTest {
 
             verify(webhookService).sendNotificationToAdmins(
                     contains("離線"), anyString(), eq(DiscordWebhookService.COLOR_RED));
+        }
+    }
+
+    // ==================== Channel Last Seen ====================
+
+    @Nested
+    @DisplayName("channelLastSeen — 每頻道最後活動時間")
+    class ChannelLastSeenTests {
+
+        @Test
+        @DisplayName("初始狀態 — 空 map")
+        @SuppressWarnings("unchecked")
+        void initialEmpty() {
+            Map<String, Object> status = service.getStatus();
+            Map<String, Long> lastSeen = (Map<String, Long>) status.get("channelLastSeen");
+            assertThat(lastSeen).isEmpty();
+        }
+
+        @Test
+        @DisplayName("heartbeat 帶 channelLastSeen — getStatus 回傳正確")
+        @SuppressWarnings("unchecked")
+        void storesChannelLastSeen() {
+            Map<String, Long> data = Map.of("ch-001", 1710000000000L, "ch-002", 1710000060000L);
+            service.receiveHeartbeat("connected", "active", null, data);
+
+            Map<String, Object> status = service.getStatus();
+            Map<String, Long> lastSeen = (Map<String, Long>) status.get("channelLastSeen");
+            assertThat(lastSeen).containsEntry("ch-001", 1710000000000L);
+            assertThat(lastSeen).containsEntry("ch-002", 1710000060000L);
+        }
+
+        @Test
+        @DisplayName("channelLastSeen 為 null — 不崩潰，保留舊值")
+        @SuppressWarnings("unchecked")
+        void nullDoesNotCrash() {
+            Map<String, Long> data = Map.of("ch-001", 1710000000000L);
+            service.receiveHeartbeat("connected", "active", null, data);
+            service.receiveHeartbeat("connected", "active", null, null);
+
+            Map<String, Object> status = service.getStatus();
+            Map<String, Long> lastSeen = (Map<String, Long>) status.get("channelLastSeen");
+            assertThat(lastSeen).containsEntry("ch-001", 1710000000000L);
+        }
+
+        @Test
+        @DisplayName("更新 channelLastSeen — 覆蓋舊值")
+        @SuppressWarnings("unchecked")
+        void updatesOverwriteOld() {
+            Map<String, Long> data1 = Map.of("ch-001", 1710000000000L);
+            service.receiveHeartbeat("connected", "active", null, data1);
+
+            Map<String, Long> data2 = Map.of("ch-001", 1710000099000L, "ch-003", 1710000050000L);
+            service.receiveHeartbeat("connected", "active", null, data2);
+
+            Map<String, Object> status = service.getStatus();
+            Map<String, Long> lastSeen = (Map<String, Long>) status.get("channelLastSeen");
+            assertThat(lastSeen).containsEntry("ch-001", 1710000099000L);
+            assertThat(lastSeen).containsEntry("ch-003", 1710000050000L);
+            assertThat(lastSeen).doesNotContainKey("ch-002");
         }
     }
 
@@ -351,7 +410,7 @@ class MonitorHeartbeatServiceTest {
             // 第一次 heartbeat: session 累計 call=5, prompt=10000, response=2000
             Map<String, Object> stats1 = Map.of(
                     "call_count", 5, "total_prompt_tokens", 10000, "total_response_tokens", 2000);
-            service.receiveHeartbeat("connected", "active", stats1);
+            service.receiveHeartbeat("connected", "active", stats1, null);
 
             Map<String, Long> daily = service.getDailyTokenStats();
             assertThat(daily.get("callCount")).isEqualTo(5L);
@@ -361,7 +420,7 @@ class MonitorHeartbeatServiceTest {
             // 第二次 heartbeat: session 累計增加到 call=8, prompt=16000, response=3200
             Map<String, Object> stats2 = Map.of(
                     "call_count", 8, "total_prompt_tokens", 16000, "total_response_tokens", 3200);
-            service.receiveHeartbeat("connected", "active", stats2);
+            service.receiveHeartbeat("connected", "active", stats2, null);
 
             daily = service.getDailyTokenStats();
             assertThat(daily.get("callCount")).isEqualTo(8L);    // 5 + (8-5) = 8
@@ -375,12 +434,12 @@ class MonitorHeartbeatServiceTest {
             // 第一次: session 累計 call=10
             Map<String, Object> stats1 = Map.of(
                     "call_count", 10, "total_prompt_tokens", 20000, "total_response_tokens", 4000);
-            service.receiveHeartbeat("connected", "active", stats1);
+            service.receiveHeartbeat("connected", "active", stats1, null);
 
             // Python 重啟: session 累計歸零，回到 call=2
             Map<String, Object> stats2 = Map.of(
                     "call_count", 2, "total_prompt_tokens", 4000, "total_response_tokens", 800);
-            service.receiveHeartbeat("connected", "active", stats2);
+            service.receiveHeartbeat("connected", "active", stats2, null);
 
             Map<String, Long> daily = service.getDailyTokenStats();
             assertThat(daily.get("callCount")).isEqualTo(12L);   // 10 + 2 (重啟後增量 = 新值)
@@ -392,7 +451,7 @@ class MonitorHeartbeatServiceTest {
         void reset() {
             Map<String, Object> stats = Map.of(
                     "call_count", 5, "total_prompt_tokens", 10000, "total_response_tokens", 2000);
-            service.receiveHeartbeat("connected", "active", stats);
+            service.receiveHeartbeat("connected", "active", stats, null);
 
             service.resetDailyTokenStats();
 
@@ -405,7 +464,7 @@ class MonitorHeartbeatServiceTest {
         @Test
         @DisplayName("null aiTokenStats — 不影響計數")
         void nullTokenStatsIgnored() {
-            service.receiveHeartbeat("connected", "active", null);
+            service.receiveHeartbeat("connected", "active", null, null);
 
             Map<String, Long> daily = service.getDailyTokenStats();
             assertThat(daily.get("callCount")).isEqualTo(0L);
@@ -416,9 +475,9 @@ class MonitorHeartbeatServiceTest {
         void noDeltaNoAccumulation() {
             Map<String, Object> stats = Map.of(
                     "call_count", 5, "total_prompt_tokens", 10000, "total_response_tokens", 2000);
-            service.receiveHeartbeat("connected", "active", stats);
+            service.receiveHeartbeat("connected", "active", stats, null);
             // 同樣的值再送一次（Python session 累計沒變）
-            service.receiveHeartbeat("connected", "active", stats);
+            service.receiveHeartbeat("connected", "active", stats, null);
 
             Map<String, Long> daily = service.getDailyTokenStats();
             assertThat(daily.get("callCount")).isEqualTo(5L); // 沒有重複累加

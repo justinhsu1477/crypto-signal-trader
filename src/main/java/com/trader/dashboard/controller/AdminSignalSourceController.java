@@ -169,6 +169,7 @@ public class AdminSignalSourceController {
         response.put("connectedMonitors", monitorConfigStore.getConnectedObservers());
         response.put("monitorOnline", heartbeatStatus.get("monitorConnected"));
         response.put("lastHeartbeat", heartbeatStatus.get("lastHeartbeat"));
+        response.put("channelLastSeen", heartbeatStatus.get("channelLastSeen"));
 
         return ResponseEntity.ok(response);
     }

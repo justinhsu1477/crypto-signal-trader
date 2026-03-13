@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import time
 
 from .api_client import ApiClient
 from .config import DiscordConfig
@@ -57,6 +58,7 @@ class SignalRouter:
         self.signal_queue = signal_queue
         self.ignore_keywords = discord_config.ignore_keywords or []
         self.source_metadata_map: dict[str, dict] = {}  # channel_id → source metadata (gRPC 推送)
+        self.channel_last_seen: dict[str, float] = {}  # channel_id → epoch seconds（每頻道最後活動時間）
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
         # Content-hash dedup: prevent re-processing old signal content that appears in embeds
@@ -78,6 +80,9 @@ class SignalRouter:
         # Channel whitelist filter
         if self.channel_ids and channel_id not in self.channel_ids:
             return
+
+        # 記錄頻道活動時間（通過 channel filter 就算活躍，不管後續是否被過濾）
+        self.channel_last_seen[channel_id] = time.time()
 
         # Guild filter
         if self.guild_ids and guild_id not in self.guild_ids:

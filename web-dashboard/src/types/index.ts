@@ -901,6 +901,7 @@ export interface MonitorStatusResponse {
   connectedMonitors: number;
   monitorOnline: boolean;
   lastHeartbeat: string | null;
+  channelLastSeen: Record<string, number> | null;
 }
 
 export interface UserAssignmentResponse {
