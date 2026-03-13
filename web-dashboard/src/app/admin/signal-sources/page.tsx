@@ -372,25 +372,48 @@ export default function AdminSignalSourcesPage() {
                     </div>
                   </div>
 
-                  {/* Performance stats */}
-                  {perf && perf.tradeCount > 0 && (
+                  {/* Performance stats — 真實交易 or 模擬交易 */}
+                  {perf && (perf.tradeCount > 0 || perf.paperTradeCount > 0) && (
                     <div className="hidden sm:flex items-center gap-4 text-xs">
-                      <div className="text-center">
-                        <div className="text-muted-foreground">{t("signalSources.trades")}</div>
-                        <div className="font-mono font-semibold">{perf.tradeCount}</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-muted-foreground">{t("signalSources.winRate")}</div>
-                        <div className={`font-mono font-semibold ${perf.winRate >= 50 ? "text-green-400" : "text-red-400"}`}>
-                          {perf.winRate}%
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-muted-foreground">{t("signalSources.totalPnl")}</div>
-                        <div className={`font-mono font-semibold ${perf.totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          ${perf.totalPnl.toFixed(2)}
-                        </div>
-                      </div>
+                      {perf.tradeCount > 0 ? (
+                        <>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">{t("signalSources.trades")}</div>
+                            <div className="font-mono font-semibold">{perf.tradeCount}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">{t("signalSources.winRate")}</div>
+                            <div className={`font-mono font-semibold ${perf.winRate >= 50 ? "text-green-400" : "text-red-400"}`}>
+                              {perf.winRate}%
+                            </div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">{t("signalSources.totalPnl")}</div>
+                            <div className={`font-mono font-semibold ${perf.totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                              ${perf.totalPnl.toFixed(2)}
+                            </div>
+                          </div>
+                        </>
+                      ) : perf.paperTradeCount > 0 && (
+                        <>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">{t("signalSources.paperTrades")}</div>
+                            <div className="font-mono font-semibold">{perf.paperTradeCount}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">{t("signalSources.winRate")}</div>
+                            <div className={`font-mono font-semibold ${perf.paperWinRate >= 50 ? "text-green-400" : "text-red-400"}`}>
+                              {perf.paperWinRate}%
+                            </div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-muted-foreground">{t("signalSources.totalPnl")}</div>
+                            <div className={`font-mono font-semibold ${perf.paperTotalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                              ${perf.paperTotalPnl.toFixed(2)}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -522,6 +545,7 @@ export default function AdminSignalSourcesPage() {
                 <tr className="text-left text-muted-foreground border-b border-border">
                   <SortableTh field="displayName" label={t("signalSources.displayName")} align="left"
                     sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <th className="py-2 pr-4 text-right text-xs font-medium">{t("signalSources.mode")}</th>
                   <SortableTh field="tradeCount" label={t("signalSources.trades")} align="right"
                     sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
                   <SortableTh field="winRate" label={t("signalSources.winRate")} align="right"
@@ -533,21 +557,39 @@ export default function AdminSignalSourcesPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedPerformances.map((p) => (
-                  <tr key={p.sourceId} className="border-b border-border/50">
-                    <td className="py-2 pr-4 font-medium">{p.displayName}</td>
-                    <td className="py-2 pr-4 text-right font-mono">{p.tradeCount}</td>
-                    <td className={`py-2 pr-4 text-right font-mono ${p.winRate >= 50 ? "text-green-400" : "text-red-400"}`}>
-                      {p.winRate}%
-                    </td>
-                    <td className={`py-2 pr-4 text-right font-mono ${p.totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      ${p.totalPnl.toFixed(2)}
-                    </td>
-                    <td className={`py-2 text-right font-mono ${p.avgPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      ${p.avgPnl.toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
+                {sortedPerformances.map((p) => {
+                  // SHADOW 頻道優先顯示模擬交易績效
+                  const isPaper = p.tradeCount === 0 && p.paperTradeCount > 0;
+                  const count = isPaper ? p.paperTradeCount : p.tradeCount;
+                  const rate = isPaper ? p.paperWinRate : p.winRate;
+                  const pnl = isPaper ? p.paperTotalPnl : p.totalPnl;
+                  const avg = isPaper ? p.paperAvgPnl : p.avgPnl;
+
+                  return (
+                    <tr key={p.sourceId} className="border-b border-border/50">
+                      <td className="py-2 pr-4 font-medium">{p.displayName}</td>
+                      <td className="py-2 pr-4 text-right">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                          p.tradeMode === "AUTO" ? "bg-green-500/20 text-green-400" :
+                          p.tradeMode === "SHADOW" ? "bg-purple-500/20 text-purple-400" :
+                          "bg-gray-500/20 text-gray-400"
+                        }`}>
+                          {isPaper ? "📋 " : ""}{p.tradeMode}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-right font-mono">{count}</td>
+                      <td className={`py-2 pr-4 text-right font-mono ${rate >= 50 ? "text-green-400" : "text-red-400"}`}>
+                        {rate}%
+                      </td>
+                      <td className={`py-2 pr-4 text-right font-mono ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        ${pnl.toFixed(2)}
+                      </td>
+                      <td className={`py-2 text-right font-mono ${avg >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        ${avg.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

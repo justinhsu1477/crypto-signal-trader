@@ -379,6 +379,27 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                                        @Param("guildId") String guildId);
 
     /**
+     * 按訊號來源聚合模擬交易績效（simulated = true）
+     * 用於 SHADOW 模式頻道的績效追蹤
+     */
+    @Query(value = """
+            SELECT
+                COUNT(*) AS trade_count,
+                COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
+                COALESCE(SUM(net_profit), 0) AS total_pnl,
+                COALESCE(AVG(net_profit), 0) AS avg_pnl,
+                COALESCE(MAX(net_profit), 0) AS max_win,
+                COALESCE(MIN(net_profit), 0) AS max_loss
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND simulated = true
+              AND source_channel_id = :channelId
+              AND (:guildId IS NULL OR source_guild_id = :guildId)
+            """, nativeQuery = true)
+    Object[] getSourcePaperTradeStats(@Param("channelId") String channelId,
+                                      @Param("guildId") String guildId);
+
+    /**
      * 批次取得所有用戶已平倉交易（依 exitTime DESC 排序）
      * 用於 Java 層計算 lastTradeAt 和 consecutiveLosses
      *

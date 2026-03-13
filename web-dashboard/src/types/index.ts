@@ -920,11 +920,19 @@ export interface SignalSourcePerformanceDto {
   sourceId: number;
   name: string;
   displayName: string;
+  tradeMode: string;
   tradeCount: number;
   winCount: number;
   winRate: number;
   totalPnl: number;
   avgPnl: number;
+  paperTradeCount: number;
+  paperWinCount: number;
+  paperWinRate: number;
+  paperTotalPnl: number;
+  paperAvgPnl: number;
+  paperMaxWin: number;
+  paperMaxLoss: number;
 }
 
 export interface SignalSourceUserResponse {
