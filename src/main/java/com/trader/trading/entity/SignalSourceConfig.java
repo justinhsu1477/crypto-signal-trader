@@ -33,6 +33,16 @@ public class SignalSourceConfig {
         GLOBAL, ASSIGNED
     }
 
+    /**
+     * 交易模式：
+     * - AUTO：自動執行交易（預設）
+     * - SHADOW：影子模式（只記錄不交易，用於觀察新來源準確率）
+     * - MANUAL：手動模式（僅送通知，不廣播跟單）
+     */
+    public enum TradeMode {
+        AUTO, SHADOW, MANUAL
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -58,6 +68,22 @@ public class SignalSourceConfig {
     @Column(name = "routing_mode", nullable = false)
     @Builder.Default
     private RoutingMode routingMode = RoutingMode.ASSIGNED;
+
+    /** 交易模式 */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trade_mode", nullable = false)
+    @Builder.Default
+    private TradeMode tradeMode = TradeMode.AUTO;
+
+    /** 風險倍率（預設 1.0，範圍 0.1 ~ 3.0） */
+    @Column(name = "risk_multiplier", nullable = false)
+    @Builder.Default
+    private double riskMultiplier = 1.0;
+
+    /** AI 補充指令（Phase 2 用，目前預留） */
+    @Column(name = "custom_prompt", columnDefinition = "TEXT", nullable = false)
+    @Builder.Default
+    private String customPrompt = "";
 
     /** 啟用狀態 */
     @Builder.Default

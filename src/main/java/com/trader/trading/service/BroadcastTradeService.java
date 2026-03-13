@@ -8,6 +8,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.model.TradeContext;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
@@ -146,12 +147,17 @@ public class BroadcastTradeService {
         Long resolvedSourceId = null;
         boolean hasTargetUsers = request.getTargetUserIds() != null && !request.getTargetUserIds().isEmpty();
 
+        SignalSourceConfig.TradeMode resolvedTradeMode = null;
+
         if (!hasTargetUsers && request.getSource() != null && request.getSource().getChannelId() != null) {
             String channelId = request.getSource().getChannelId();
             String guildId = request.getSource().getGuildId();
 
+            Optional<SignalSourceConfig> resolvedSource = signalSourceService.resolveSource(channelId, guildId);
+            resolvedSourceId = resolvedSource.map(SignalSourceConfig::getId).orElse(null);
+            resolvedTradeMode = resolvedSource.map(SignalSourceConfig::getTradeMode).orElse(null);
+
             Optional<Set<String>> sourceUserIds = signalSourceService.resolveTargetUserIds(channelId, guildId);
-            resolvedSourceId = signalSourceService.resolveSourceId(channelId, guildId).orElse(null);
 
             if (sourceUserIds.isPresent()) {
                 // ASSIGNED 模式 → 只保留綁定用戶
@@ -181,6 +187,21 @@ public class BroadcastTradeService {
                 }
             }
             // resolvedSourceId == null → 無匹配來源 → 全量廣播（向下相容）
+        }
+
+        // trade_mode 控制：MANUAL → 跳過廣播（僅通知）；SHADOW → 記錄但不交易
+        if (resolvedTradeMode == SignalSourceConfig.TradeMode.MANUAL) {
+            log.info("MANUAL 模式: 來源 sourceId={} 跳過廣播，僅記錄", resolvedSourceId);
+            saveBroadcastLog(request, 0, 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "MANUAL_SKIPPED", null,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
+            Map<String, Object> manualResult = new HashMap<>();
+            manualResult.put("status", "MANUAL_SKIPPED");
+            manualResult.put("tradeMode", "MANUAL");
+            manualResult.put("sourceId", resolvedSourceId);
+            manualResult.put("message", "此訊號來源為手動模式，已記錄但未執行廣播");
+            return manualResult;
         }
 
         // 指定用戶模式：從已通過篩選的 activeUsers 中，再過濾出目標用戶
@@ -235,6 +256,31 @@ public class BroadcastTradeService {
             emptyResult.put("skippedNotTargeted", skippedNotTargeted);
             emptyResult.put("message", message);
             return emptyResult;
+        }
+
+        // SHADOW 模式 → 記錄廣播日誌但不執行 Binance 交易
+        if (resolvedTradeMode == SignalSourceConfig.TradeMode.SHADOW) {
+            log.info("SHADOW 模式: 來源 sourceId={} 記錄訊號但不執行交易, 符合用戶={}", resolvedSourceId, activeUsers.size());
+            saveBroadcastLog(request, activeUsers.size(), 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "SHADOW_RECORDED", null,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
+            // 通知 Admin 影子模式記錄
+            for (User admin : adminUsers) {
+                discordWebhookService.sendNotificationToUser(
+                        admin.getUserId(),
+                        "👻 影子模式訊號已記錄",
+                        String.format("來源 sourceId=%d | %s %s | 符合 %d 人（未實際交易）",
+                                resolvedSourceId, request.getAction(), request.getSymbol(), activeUsers.size()),
+                        DiscordWebhookService.COLOR_YELLOW);
+            }
+            Map<String, Object> shadowResult = new HashMap<>();
+            shadowResult.put("status", "SHADOW_RECORDED");
+            shadowResult.put("tradeMode", "SHADOW");
+            shadowResult.put("sourceId", resolvedSourceId);
+            shadowResult.put("totalEligibleUsers", activeUsers.size());
+            shadowResult.put("message", "影子模式：訊號已記錄但未執行交易");
+            return shadowResult;
         }
 
         // 用共享線程池並行執行（不排隊，全員同時下單）

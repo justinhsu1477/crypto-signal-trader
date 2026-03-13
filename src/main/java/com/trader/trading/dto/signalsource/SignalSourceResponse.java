@@ -23,6 +23,8 @@ public class SignalSourceResponse {
     private String guildId;
     private String description;
     private String routingMode;
+    private String tradeMode;
+    private double riskMultiplier;
     private boolean enabled;
     private int assignedUserCount;
     private LocalDateTime createdAt;

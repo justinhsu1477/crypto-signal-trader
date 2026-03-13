@@ -4,6 +4,7 @@ import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.entity.UserSignalSource;
 import com.trader.trading.grpc.generated.MonitorConfig;
+import com.trader.trading.grpc.generated.SourceConfig;
 import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.repository.UserSignalSourceRepository;
@@ -73,6 +74,8 @@ public class SignalSourceService {
                 .guildId(req.getGuildId())
                 .description(req.getDescription())
                 .routingMode(routingMode)
+                .tradeMode(parseTradeMode(req.getTradeMode()))
+                .riskMultiplier(req.getRiskMultiplier() != null ? req.getRiskMultiplier() : 1.0)
                 .enabled(true)
                 .build();
 
@@ -101,6 +104,8 @@ public class SignalSourceService {
             }
             source.setRoutingMode(newMode);
         }
+        if (req.getTradeMode() != null) source.setTradeMode(parseTradeMode(req.getTradeMode()));
+        if (req.getRiskMultiplier() != null) source.setRiskMultiplier(req.getRiskMultiplier());
 
         SignalSourceConfig saved = sourceRepository.save(source);
         log.info("更新訊號來源: id={} name={} routingMode={}", saved.getId(), saved.getName(), saved.getRoutingMode());
@@ -262,11 +267,19 @@ public class SignalSourceService {
      * 根據 channelId 查找對應的 SignalSourceConfig ID（供 BroadcastLog 記錄用）
      */
     public Optional<Long> resolveSourceId(String channelId, String guildId) {
+        return resolveSource(channelId, guildId).map(SignalSourceConfig::getId);
+    }
+
+    /**
+     * 根據 channelId + guildId 查找完整 SignalSourceConfig entity
+     * BroadcastTradeService 用此方法取得 tradeMode 等設定
+     */
+    public Optional<SignalSourceConfig> resolveSource(String channelId, String guildId) {
         Optional<SignalSourceConfig> source = sourceRepository.findByChannelIdAndGuildId(channelId, guildId);
         if (source.isEmpty()) {
             source = sourceRepository.findByChannelId(channelId);
         }
-        return source.map(SignalSourceConfig::getId);
+        return source;
     }
 
     // ======================== 績效查詢 ========================
@@ -345,6 +358,8 @@ public class SignalSourceService {
                 .guildId(source.getGuildId())
                 .description(source.getDescription())
                 .routingMode(source.getRoutingMode().name())
+                .tradeMode(source.getTradeMode().name())
+                .riskMultiplier(source.getRiskMultiplier())
                 .enabled(source.isEnabled())
                 .assignedUserCount(assignedCount)
                 .createdAt(source.getCreatedAt())
@@ -389,6 +404,11 @@ public class SignalSourceService {
                 .distinct()
                 .toList();
 
+        // 建構 proto SourceConfig 清單（per-source metadata 供 Python 使用）
+        List<SourceConfig> protoSources = enabledSources.stream()
+                .map(this::toProtoSource)
+                .toList();
+
         MonitorConfig current = monitorConfigStore.getCurrentConfig();
 
         monitorConfigStore.updateConfig(
@@ -396,12 +416,30 @@ public class SignalSourceService {
                 guildIds,
                 current.getAuthorIdsList(),
                 current.getIgnoreKeywordsList(),
+                protoSources,
                 updatedBy,
                 reason
         );
 
-        log.info("Monitor config 已從 DB 同步: {} channels (hasGlobal={}), {} guilds",
-                dbChannelIds.size(), hasGlobal, guildIds.size());
+        log.info("Monitor config 已從 DB 同步: {} channels (hasGlobal={}), {} guilds, {} sources",
+                dbChannelIds.size(), hasGlobal, guildIds.size(), protoSources.size());
+    }
+
+    /**
+     * Entity → proto SourceConfig 轉換（gRPC 推送給 Python）
+     */
+    private SourceConfig toProtoSource(SignalSourceConfig entity) {
+        return SourceConfig.newBuilder()
+                .setId(entity.getId())
+                .setChannelId(entity.getChannelId() != null ? entity.getChannelId() : "")
+                .setGuildId(entity.getGuildId() != null ? entity.getGuildId() : "")
+                .setName(entity.getName() != null ? entity.getName() : "")
+                .setDisplayName(entity.getDisplayName() != null ? entity.getDisplayName() : "")
+                .setRoutingMode(entity.getRoutingMode().name())
+                .setTradeMode(entity.getTradeMode().name())
+                .setRiskMultiplier(entity.getRiskMultiplier())
+                .setCustomPrompt(entity.getCustomPrompt() != null ? entity.getCustomPrompt() : "")
+                .build();
     }
 
     private SignalSourceConfig.RoutingMode parseRoutingMode(String mode) {
@@ -410,6 +448,15 @@ public class SignalSourceService {
             return SignalSourceConfig.RoutingMode.valueOf(mode.toUpperCase());
         } catch (IllegalArgumentException e) {
             return SignalSourceConfig.RoutingMode.ASSIGNED;
+        }
+    }
+
+    private SignalSourceConfig.TradeMode parseTradeMode(String mode) {
+        if (mode == null) return SignalSourceConfig.TradeMode.AUTO;
+        try {
+            return SignalSourceConfig.TradeMode.valueOf(mode.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return SignalSourceConfig.TradeMode.AUTO;
         }
     }
 
