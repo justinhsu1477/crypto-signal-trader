@@ -199,6 +199,20 @@ public class BroadcastTradeService {
             // resolvedSourceId == null → 無匹配來源 → 全量廣播（向下相容）
         }
 
+        // enabled 控制：來源停用時跳過所有廣播（僅記錄）
+        if (resolvedSourceConfig != null && !resolvedSourceConfig.isEnabled()) {
+            log.info("來源已停用: sourceId={} 跳過廣播", resolvedSourceId);
+            saveBroadcastLog(request, 0, 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "SOURCE_DISABLED", null,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
+            Map<String, Object> disabledResult = new HashMap<>();
+            disabledResult.put("status", "SOURCE_DISABLED");
+            disabledResult.put("sourceId", resolvedSourceId);
+            disabledResult.put("message", "此訊號來源已停用，跳過廣播");
+            return disabledResult;
+        }
+
         // trade_mode 控制：MANUAL → 跳過廣播（僅通知）；SHADOW → 記錄但不交易
         if (resolvedTradeMode == SignalSourceConfig.TradeMode.MANUAL) {
             log.info("MANUAL 模式: 來源 sourceId={} 跳過廣播，僅記錄", resolvedSourceId);
@@ -313,15 +327,6 @@ public class BroadcastTradeService {
                 }
             }
 
-            // 通知 Admin 影子模式記錄
-            for (User admin : adminUsers) {
-                discordWebhookService.sendNotificationToUser(
-                        admin.getUserId(),
-                        "👻 影子模式訊號已記錄",
-                        String.format("來源 sourceId=%d | %s %s | 符合 %d 人（未實際交易）",
-                                resolvedSourceId, request.getAction(), request.getSymbol(), activeUsers.size()),
-                        DiscordWebhookService.COLOR_YELLOW);
-            }
             Map<String, Object> shadowResult = new HashMap<>();
             shadowResult.put("status", "SHADOW_RECORDED");
             shadowResult.put("tradeMode", "SHADOW");

@@ -569,6 +569,133 @@ class BroadcastTradeServiceSourceRoutingTest {
 
             verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
         }
+
+        @Test
+        @DisplayName("SHADOW 模式 → 不發 Admin 即時通知（靠每日報表）")
+        void shadowMode_noAdminNotification() {
+            User admin = User.builder().userId("admin-1").email("admin@test.com").name("Admin")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.ADMIN).build();
+
+            when(userRepository.findAll()).thenReturn(List.of(user1, admin));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of("u1"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(new HashSet<>(List.of("u1")));
+
+            SignalSourceConfig shadowSource = SignalSourceConfig.builder()
+                    .id(20L).name("shadow-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.SHADOW)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.of(shadowSource));
+            when(signalSourceService.resolveTargetUserIds("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-shadow", "g-shadow"))
+                    .thenReturn(Optional.of(20L));
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-shadow").guildId("g-shadow").platform("DISCORD").build());
+
+            service.broadcastTrade(request);
+
+            // SHADOW 模式不應發送 Admin 即時通知
+            verify(discordWebhookService, never()).sendNotificationToUser(
+                    eq("admin-1"), anyString(), anyString(), anyInt());
+        }
+    }
+
+    // ======================== enabled 開關控制 ========================
+
+    @Nested
+    @DisplayName("來源 enabled 開關")
+    class SourceEnabledTests {
+
+        @Test
+        @DisplayName("來源 enabled=false → 跳過廣播，回傳 SOURCE_DISABLED")
+        void disabledSource_skipsBroadcast() {
+            setupAllUsersPassPreFilter(user1, user2);
+
+            SignalSourceConfig disabledSource = SignalSourceConfig.builder()
+                    .id(40L).name("disabled-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO)
+                    .enabled(false)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-disabled", "g-disabled"))
+                    .thenReturn(Optional.of(disabledSource));
+            when(signalSourceService.resolveTargetUserIds("ch-disabled", "g-disabled"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-disabled", "g-disabled"))
+                    .thenReturn(Optional.of(40L));
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-disabled").guildId("g-disabled").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("SOURCE_DISABLED");
+            assertThat(result.get("sourceId")).isEqualTo(40L);
+
+            // 不應執行任何交易
+            verify(binanceFuturesService, never()).executeSignalForBroadcast(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("來源 enabled=true → 正常廣播")
+        void enabledSource_broadcastsNormally() {
+            setupAllUsersPassPreFilter(user1);
+
+            SignalSourceConfig enabledSource = SignalSourceConfig.builder()
+                    .id(41L).name("enabled-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO)
+                    .enabled(true)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-enabled", "g-enabled"))
+                    .thenReturn(Optional.of(enabledSource));
+            when(signalSourceService.resolveTargetUserIds("ch-enabled", "g-enabled"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-enabled", "g-enabled"))
+                    .thenReturn(Optional.of(41L));
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-enabled").guildId("g-enabled").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+        }
+
+        @Test
+        @DisplayName("無匹配來源（resolvedSource=null）→ 不受 enabled 影響，正常廣播")
+        void unknownSource_notAffectedByEnabled() {
+            setupAllUsersPassPreFilter(user1);
+
+            when(signalSourceService.resolveSource("ch-new", "g-new"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveTargetUserIds("ch-new", "g-new"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-new", "g-new"))
+                    .thenReturn(Optional.empty());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-new").guildId("g-new").platform("DISCORD").build());
+
+            Map<String, Object> result = service.broadcastTrade(request);
+
+            assertThat(result.get("status")).isEqualTo("COMPLETED");
+            verify(binanceFuturesService).executeSignalForBroadcast(any(), eq("u1"));
+        }
     }
 
     // ======================== skippedNotAssigned 計數 ========================
