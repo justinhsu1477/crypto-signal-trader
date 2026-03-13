@@ -1924,6 +1924,7 @@ public class BinanceFuturesService {
                         .closeRatio(request.getCloseRatio())
                         .newStopLoss(request.getNewStopLoss())
                         .newTakeProfit(request.getNewTakeProfit())
+                        .source(request.getSource())
                         .build();
 
                 List<OrderResult> results = executeClose(signal);
@@ -1941,6 +1942,7 @@ public class BinanceFuturesService {
                         .signalType(TradeSignal.SignalType.MOVE_SL)
                         .newStopLoss(request.getNewStopLoss())
                         .newTakeProfit(request.getNewTakeProfit())
+                        .source(request.getSource())
                         .build();
 
                 List<OrderResult> results = executeMoveSL(signal);
