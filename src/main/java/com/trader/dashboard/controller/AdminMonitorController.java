@@ -69,6 +69,7 @@ public class AdminMonitorController {
                 request.getGuildIds(),
                 request.getAuthorIds(),
                 request.getIgnoreKeywords(),
+                null, // sources: 手動頻道設定不帶 source metadata
                 "admin",
                 "admin_update"
         );

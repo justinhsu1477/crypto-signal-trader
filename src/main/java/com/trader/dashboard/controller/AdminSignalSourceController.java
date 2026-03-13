@@ -188,6 +188,7 @@ public class AdminSignalSourceController {
                 current.getGuildIdsList(),         // 保留（由 source CRUD 管理）
                 request.getAuthorIds(),
                 request.getIgnoreKeywords(),
+                current.getSourcesList(),          // 保留既有 sources
                 "admin",
                 "global_settings_update"
         );

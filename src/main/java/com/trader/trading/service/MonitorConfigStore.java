@@ -2,6 +2,7 @@ package com.trader.trading.service;
 
 import com.trader.trading.grpc.generated.ConfigUpdate;
 import com.trader.trading.grpc.generated.MonitorConfig;
+import com.trader.trading.grpc.generated.SourceConfig;
 import io.grpc.stub.StreamObserver;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
@@ -69,6 +70,7 @@ public class MonitorConfigStore {
      */
     public void updateConfig(List<String> channelIds, List<String> guildIds,
                              List<String> authorIds, List<String> ignoreKeywords,
+                             List<SourceConfig> sources,
                              String updatedBy, String reason) {
         long newVersion = version.incrementAndGet();
 
@@ -77,6 +79,7 @@ public class MonitorConfigStore {
                 .addAllGuildIds(guildIds != null ? guildIds : List.of())
                 .addAllAuthorIds(authorIds != null ? authorIds : List.of())
                 .addAllIgnoreKeywords(ignoreKeywords != null ? ignoreKeywords : List.of())
+                .addAllSources(sources != null ? sources : List.of())
                 .setVersion(newVersion)
                 .build();
 

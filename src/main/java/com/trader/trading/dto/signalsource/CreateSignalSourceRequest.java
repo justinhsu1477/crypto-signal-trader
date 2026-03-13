@@ -31,4 +31,10 @@ public class CreateSignalSourceRequest {
 
     /** 路由模式：GLOBAL（全員廣播）或 ASSIGNED（僅綁定用戶），預設 ASSIGNED */
     private String routingMode;
+
+    /** 交易模式：AUTO（自動跟單）、SHADOW（影子模式）、MANUAL（手動），預設 AUTO */
+    private String tradeMode;
+
+    /** 風險倍率（0.1 ~ 3.0，預設 1.0） */
+    private Double riskMultiplier;
 }
