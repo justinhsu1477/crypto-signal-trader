@@ -45,6 +45,7 @@ import {
   UserCheck,
   X,
   Radio,
+  ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -665,19 +666,18 @@ function SortableTh({
   last?: boolean;
 }) {
   const active = sortField === field;
+  const icon = active
+    ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)
+    : <ChevronsUpDown className="h-3 w-3 opacity-40" />;
   return (
     <th
       className={`pb-2 ${last ? "" : "pr-4"} ${align === "right" ? "text-right" : ""} cursor-pointer select-none hover:text-foreground transition-colors`}
       onClick={() => onSort(field)}
     >
       <span className="inline-flex items-center gap-1">
-        {align === "right" && active && (
-          sortDir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />
-        )}
+        {align === "right" && icon}
         {label}
-        {align === "left" && active && (
-          sortDir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />
-        )}
+        {align === "left" && icon}
       </span>
     </th>
   );
