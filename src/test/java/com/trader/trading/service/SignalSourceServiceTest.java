@@ -619,7 +619,7 @@ class SignalSourceServiceTest {
 
             service.createSource(req);
 
-            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_created"));
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_created"));
         }
 
         @Test
@@ -635,7 +635,7 @@ class SignalSourceServiceTest {
 
             service.updateSource(1L, req);
 
-            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_updated"));
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_updated"));
         }
 
         @Test
@@ -647,7 +647,7 @@ class SignalSourceServiceTest {
             service.deleteSource(1L);
 
             verify(sourceRepository).deleteById(1L);
-            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_deleted"));
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), anyList(), eq("admin"), contains("source_deleted"));
         }
 
         @Test
@@ -661,7 +661,7 @@ class SignalSourceServiceTest {
 
             // findByEnabledTrue 被呼叫：syncOnStartup 1次 + syncMonitorConfig 內部 1次
             verify(sourceRepository, atLeast(1)).findByEnabledTrue();
-            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+            verify(monitorConfigStore).updateConfig(anyList(), anyList(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
         }
 
         @Test
@@ -671,7 +671,7 @@ class SignalSourceServiceTest {
 
             service.syncOnStartup();
 
-            verify(monitorConfigStore, never()).updateConfig(anyList(), anyList(), anyList(), anyList(), anyString(), anyString());
+            verify(monitorConfigStore, never()).updateConfig(anyList(), anyList(), anyList(), anyList(), anyList(), anyString(), anyString());
         }
 
         @Test
@@ -689,7 +689,7 @@ class SignalSourceServiceTest {
 
             // 驗證 channelIds 包含 DB + env var 預設
             var captor = org.mockito.ArgumentCaptor.forClass(List.class);
-            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
             List<String> channelIds = captor.getValue();
             assertThat(channelIds).containsExactlyInAnyOrder("ch-assigned", "ch-env-default");
         }
@@ -710,7 +710,7 @@ class SignalSourceServiceTest {
             service.syncOnStartup();
 
             var captor = org.mockito.ArgumentCaptor.forClass(List.class);
-            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
             List<String> channelIds = captor.getValue();
             // 只有 DB 頻道，不含 env var 預設
             assertThat(channelIds).containsExactlyInAnyOrder("ch-global", "ch-assigned");
@@ -731,7 +731,7 @@ class SignalSourceServiceTest {
             service.syncOnStartup();
 
             var captor = org.mockito.ArgumentCaptor.forClass(List.class);
-            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
+            verify(monitorConfigStore).updateConfig(captor.capture(), anyList(), anyList(), anyList(), anyList(), eq("system"), eq("startup_sync"));
             List<String> channelIds = captor.getValue();
             assertThat(channelIds).containsExactlyInAnyOrder("ch-same", "ch-extra");
         }
@@ -817,6 +817,237 @@ class SignalSourceServiceTest {
             SignalSourceConfig result = service.createSource(req);
 
             assertThat(result.getRoutingMode()).isEqualTo(SignalSourceConfig.RoutingMode.ASSIGNED);
+        }
+    }
+
+    // ==================== TradeMode + RiskMultiplier ====================
+
+    @Nested
+    @DisplayName("TradeMode / RiskMultiplier")
+    class TradeModeTests {
+
+        @Test
+        @DisplayName("建立來源 — 指定 tradeMode=SHADOW")
+        void createSource_withShadowMode() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("影子源").displayName("Shadow").tradeMode("SHADOW").build();
+
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(30L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getTradeMode()).isEqualTo(SignalSourceConfig.TradeMode.SHADOW);
+        }
+
+        @Test
+        @DisplayName("建立來源 — tradeMode 為 null 時預設 AUTO")
+        void createSource_defaultTradeMode() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("預設源").displayName("Default").build();
+
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(31L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getTradeMode()).isEqualTo(SignalSourceConfig.TradeMode.AUTO);
+        }
+
+        @Test
+        @DisplayName("建立來源 — 指定 riskMultiplier=0.5")
+        void createSource_withRiskMultiplier() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("低風險").displayName("Low Risk").riskMultiplier(0.5).build();
+
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(32L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getRiskMultiplier()).isEqualTo(0.5);
+        }
+
+        @Test
+        @DisplayName("建立來源 — riskMultiplier 為 null 時預設 1.0")
+        void createSource_defaultRiskMultiplier() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("預設源").displayName("Default").build();
+
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(33L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getRiskMultiplier()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("更新 tradeMode — AUTO → SHADOW")
+        void updateSource_changeTradeMode() {
+            SignalSourceConfig existing = SignalSourceConfig.builder()
+                    .id(1L).name("來源").displayName("來源").enabled(true)
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).riskMultiplier(1.0).build();
+            UpdateSignalSourceRequest req = UpdateSignalSourceRequest.builder()
+                    .tradeMode("SHADOW").build();
+
+            when(sourceRepository.findById(1L)).thenReturn(Optional.of(existing));
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(existing));
+
+            SignalSourceConfig result = service.updateSource(1L, req);
+
+            assertThat(result.getTradeMode()).isEqualTo(SignalSourceConfig.TradeMode.SHADOW);
+        }
+
+        @Test
+        @DisplayName("更新 riskMultiplier — 1.0 → 2.0")
+        void updateSource_changeRiskMultiplier() {
+            SignalSourceConfig existing = SignalSourceConfig.builder()
+                    .id(1L).name("來源").displayName("來源").enabled(true)
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).riskMultiplier(1.0).build();
+            UpdateSignalSourceRequest req = UpdateSignalSourceRequest.builder()
+                    .riskMultiplier(2.0).build();
+
+            when(sourceRepository.findById(1L)).thenReturn(Optional.of(existing));
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(existing));
+
+            SignalSourceConfig result = service.updateSource(1L, req);
+
+            assertThat(result.getRiskMultiplier()).isEqualTo(2.0);
+        }
+
+        @Test
+        @DisplayName("tradeMode 無效值 — fallback 為 AUTO")
+        void createSource_invalidTradeModeFallback() {
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("無效").displayName("X").tradeMode("INVALID").build();
+
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(34L);
+                return s;
+            });
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of());
+
+            SignalSourceConfig result = service.createSource(req);
+
+            assertThat(result.getTradeMode()).isEqualTo(SignalSourceConfig.TradeMode.AUTO);
+        }
+    }
+
+    // ==================== resolveSource ====================
+
+    @Nested
+    @DisplayName("resolveSource — 完整 entity 查找")
+    class ResolveSourceTests {
+
+        @Test
+        @DisplayName("channelId + guildId 精確匹配")
+        void resolveSource_exactMatch() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .id(1L).channelId("ch-1").guildId("g-1")
+                    .tradeMode(SignalSourceConfig.TradeMode.SHADOW).riskMultiplier(0.5).build();
+            when(sourceRepository.findByChannelIdAndGuildId("ch-1", "g-1"))
+                    .thenReturn(Optional.of(source));
+
+            Optional<SignalSourceConfig> result = service.resolveSource("ch-1", "g-1");
+
+            assertThat(result).isPresent();
+            assertThat(result.get().getTradeMode()).isEqualTo(SignalSourceConfig.TradeMode.SHADOW);
+            assertThat(result.get().getRiskMultiplier()).isEqualTo(0.5);
+        }
+
+        @Test
+        @DisplayName("精確匹配失敗 → fallback channelId")
+        void resolveSource_fallbackChannelId() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .id(2L).channelId("ch-2").tradeMode(SignalSourceConfig.TradeMode.MANUAL).build();
+            when(sourceRepository.findByChannelIdAndGuildId("ch-2", "g-x"))
+                    .thenReturn(Optional.empty());
+            when(sourceRepository.findByChannelId("ch-2"))
+                    .thenReturn(Optional.of(source));
+
+            Optional<SignalSourceConfig> result = service.resolveSource("ch-2", "g-x");
+
+            assertThat(result).isPresent();
+            assertThat(result.get().getTradeMode()).isEqualTo(SignalSourceConfig.TradeMode.MANUAL);
+        }
+
+        @Test
+        @DisplayName("完全無匹配 → empty")
+        void resolveSource_noMatch() {
+            when(sourceRepository.findByChannelIdAndGuildId("ch-x", "g-x"))
+                    .thenReturn(Optional.empty());
+            when(sourceRepository.findByChannelId("ch-x"))
+                    .thenReturn(Optional.empty());
+
+            Optional<SignalSourceConfig> result = service.resolveSource("ch-x", "g-x");
+
+            assertThat(result).isEmpty();
+        }
+    }
+
+    // ==================== syncMonitorConfig 帶 sources ====================
+
+    @Nested
+    @DisplayName("syncMonitorConfig — proto sources 傳遞")
+    class SyncWithSourcesTests {
+
+        @Test
+        @DisplayName("syncMonitorConfig 傳送 proto SourceConfig 清單")
+        void syncPassesProtoSources() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .id(1L).name("s1").displayName("Source 1")
+                    .channelId("ch-1").guildId("g-1").enabled(true)
+                    .routingMode(SignalSourceConfig.RoutingMode.GLOBAL)
+                    .tradeMode(SignalSourceConfig.TradeMode.SHADOW)
+                    .riskMultiplier(1.5).customPrompt("custom").build();
+
+            when(sourceRepository.findByEnabledTrue()).thenReturn(List.of(source));
+
+            // 觸發 syncMonitorConfig（透過 createSource）
+            CreateSignalSourceRequest req = CreateSignalSourceRequest.builder()
+                    .name("trigger").displayName("T").build();
+            when(sourceRepository.save(any(SignalSourceConfig.class))).thenAnswer(inv -> {
+                SignalSourceConfig s = inv.getArgument(0);
+                s.setId(99L);
+                return s;
+            });
+            service.createSource(req);
+
+            // 驗證 updateConfig 被呼叫時帶有 sources 清單
+            @SuppressWarnings("unchecked")
+            var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(monitorConfigStore).updateConfig(
+                    anyList(), anyList(), anyList(), anyList(),
+                    captor.capture(), eq("admin"), anyString());
+
+            @SuppressWarnings("unchecked")
+            List<com.trader.trading.grpc.generated.SourceConfig> sources =
+                    (List<com.trader.trading.grpc.generated.SourceConfig>) captor.getValue();
+            assertThat(sources).hasSize(1);
+            assertThat(sources.get(0).getName()).isEqualTo("s1");
+            assertThat(sources.get(0).getTradeMode()).isEqualTo("SHADOW");
+            assertThat(sources.get(0).getRiskMultiplier()).isEqualTo(1.5);
+            assertThat(sources.get(0).getCustomPrompt()).isEqualTo("custom");
         }
     }
 }

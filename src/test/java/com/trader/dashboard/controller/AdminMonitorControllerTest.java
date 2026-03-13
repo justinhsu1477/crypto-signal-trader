@@ -92,6 +92,7 @@ class AdminMonitorControllerTest {
                     List.of("g1"),
                     null,
                     null,
+                    null,
                     "admin",
                     "admin_update"
             );
@@ -107,7 +108,7 @@ class AdminMonitorControllerTest {
 
             assertThat(response.getStatusCode().value()).isEqualTo(400);
             assertThat(response.getBody()).containsKey("error");
-            verify(configStore, never()).updateConfig(any(), any(), any(), any(), any(), any());
+            verify(configStore, never()).updateConfig(any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -119,7 +120,7 @@ class AdminMonitorControllerTest {
             ResponseEntity<Map<String, Object>> response = controller.updateChannels(request);
 
             assertThat(response.getStatusCode().value()).isEqualTo(400);
-            verify(configStore, never()).updateConfig(any(), any(), any(), any(), any(), any());
+            verify(configStore, never()).updateConfig(any(), any(), any(), any(), any(), any(), any());
         }
     }
 }
