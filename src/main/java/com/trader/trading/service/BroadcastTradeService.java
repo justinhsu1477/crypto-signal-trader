@@ -231,13 +231,18 @@ public class BroadcastTradeService {
                 activeUsers.size(), skippedNoSubscription, skippedNoApiKey, skippedNotAssigned, skippedNotTargeted, request.getAction(), request.getSymbol());
 
         // 廣播前 — 發訊號詳情通知給每位 Admin（per-user webhook）
-        String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size(), skippedNoSubscription, skippedNoApiKey);
-        for (User admin : adminUsers) {
-            discordWebhookService.sendNotificationToUser(
-                    admin.getUserId(),
-                    "📡 廣播訊號已發送",
-                    signalDetail,
-                    DiscordWebhookService.COLOR_BLUE);
+        // 非 GLOBAL 頻道不發 admin 通知，避免訊息過多
+        boolean isGlobalBroadcast = resolvedSourceConfig == null
+                || resolvedSourceConfig.getRoutingMode() == SignalSourceConfig.RoutingMode.GLOBAL;
+        if (isGlobalBroadcast) {
+            String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size(), skippedNoSubscription, skippedNoApiKey);
+            for (User admin : adminUsers) {
+                discordWebhookService.sendNotificationToUser(
+                        admin.getUserId(),
+                        "📡 廣播訊號已發送",
+                        signalDetail,
+                        DiscordWebhookService.COLOR_BLUE);
+            }
         }
 
         if (activeUsers.isEmpty()) {
@@ -539,12 +544,14 @@ public class BroadcastTradeService {
             int summaryColor = failCount.get() > 0 || totalCancelledCount > 0
                     ? DiscordWebhookService.COLOR_YELLOW
                     : DiscordWebhookService.COLOR_GREEN;
-            for (User admin : adminUsers) {
-                discordWebhookService.sendNotificationToUser(
-                        admin.getUserId(),
-                        summaryTitle,
-                        summary,
-                        summaryColor);
+            if (isGlobalBroadcast) {
+                for (User admin : adminUsers) {
+                    discordWebhookService.sendNotificationToUser(
+                            admin.getUserId(),
+                            summaryTitle,
+                            summary,
+                            summaryColor);
+                }
             }
 
             // 持久化廣播紀錄（save 失敗不影響交易主流程）
