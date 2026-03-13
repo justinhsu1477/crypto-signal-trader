@@ -650,4 +650,123 @@ class BroadcastTradeServiceSourceRoutingTest {
             assertThat(result.get("skippedNotAssigned")).isEqualTo(0);
         }
     }
+
+    // ======================== Admin 通知過濾（GLOBAL vs ASSIGNED） ========================
+
+    @Nested
+    @DisplayName("Admin 通知過濾 (isGlobalBroadcast)")
+    class AdminNotificationFilterTests {
+
+        private User admin;
+
+        @BeforeEach
+        void setUpAdmin() {
+            admin = User.builder().userId("admin-1").email("admin@test.com").name("Admin")
+                    .enabled(true).autoTradeEnabled(true).role(User.Role.ADMIN).build();
+        }
+
+        @Test
+        @DisplayName("ASSIGNED 來源 → 不發 Admin 通知（避免訊息過多）")
+        void assignedSource_noAdminNotification() {
+            setupAllUsersPassPreFilter(user1);
+
+            SignalSourceConfig assignedSource = SignalSourceConfig.builder()
+                    .id(30L).name("assigned-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO)
+                    .routingMode(SignalSourceConfig.RoutingMode.ASSIGNED)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-assigned", "g-assigned"))
+                    .thenReturn(Optional.of(assignedSource));
+            when(signalSourceService.resolveTargetUserIds("ch-assigned", "g-assigned"))
+                    .thenReturn(Optional.of(Set.of("u1")));
+            when(signalSourceService.resolveSourceId("ch-assigned", "g-assigned"))
+                    .thenReturn(Optional.of(30L));
+            when(userRepository.findAll()).thenReturn(List.of(user1, admin));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of("u1"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(new HashSet<>(List.of("u1")));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), anyString()))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-assigned").guildId("g-assigned").platform("DISCORD").build());
+
+            service.broadcastTrade(request);
+
+            // ASSIGNED 來源 → 不應對 Admin 發送 per-user 通知
+            verify(discordWebhookService, never()).sendNotificationToUser(
+                    eq("admin-1"), anyString(), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("GLOBAL 來源 → 發送 Admin 通知")
+        void globalSource_sendsAdminNotification() {
+            setupAllUsersPassPreFilter(user1);
+
+            SignalSourceConfig globalSource = SignalSourceConfig.builder()
+                    .id(31L).name("global-src")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO)
+                    .routingMode(SignalSourceConfig.RoutingMode.GLOBAL)
+                    .riskMultiplier(1.0).build();
+
+            when(signalSourceService.resolveSource("ch-global2", "g-global2"))
+                    .thenReturn(Optional.of(globalSource));
+            when(signalSourceService.resolveTargetUserIds("ch-global2", "g-global2"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-global2", "g-global2"))
+                    .thenReturn(Optional.of(31L));
+            when(signalSourceService.getUserIdsBoundToAssignedSources())
+                    .thenReturn(Set.of());
+            when(userRepository.findAll()).thenReturn(List.of(user1, admin));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of("u1"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(new HashSet<>(List.of("u1")));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), anyString()))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-global2").guildId("g-global2").platform("DISCORD").build());
+
+            service.broadcastTrade(request);
+
+            // GLOBAL 來源 → 應對 Admin 發送 per-user 通知（至少一次：訊號詳情 或 彙總報告）
+            verify(discordWebhookService, atLeastOnce()).sendNotificationToUser(
+                    eq("admin-1"), anyString(), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("resolvedSource 為 null → 視為 GLOBAL，發送 Admin 通知")
+        void nullSource_treatedAsGlobal_sendsAdminNotification() {
+            setupAllUsersPassPreFilter(user1);
+
+            when(signalSourceService.resolveSource("ch-unknown2", "g-unknown2"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveTargetUserIds("ch-unknown2", "g-unknown2"))
+                    .thenReturn(Optional.empty());
+            when(signalSourceService.resolveSourceId("ch-unknown2", "g-unknown2"))
+                    .thenReturn(Optional.empty());
+            when(userRepository.findAll()).thenReturn(List.of(user1, admin));
+            when(subscriptionRepository.findUserIdsWithActiveSubscription())
+                    .thenReturn(List.of("u1"));
+            when(userApiKeyService.getUserIdsWithApiKey("BINANCE"))
+                    .thenReturn(new HashSet<>(List.of("u1")));
+            when(binanceFuturesService.executeSignalForBroadcast(any(), anyString()))
+                    .thenReturn(List.of());
+
+            TradeRequest request = createRequest("ENTRY", "BTCUSDT", "LONG");
+            request.setSource(SignalSource.builder()
+                    .channelId("ch-unknown2").guildId("g-unknown2").platform("DISCORD").build());
+
+            service.broadcastTrade(request);
+
+            // null source → isGlobalBroadcast=true → 應對 Admin 發送通知
+            verify(discordWebhookService, atLeastOnce()).sendNotificationToUser(
+                    eq("admin-1"), anyString(), anyString(), anyInt());
+        }
+    }
 }
