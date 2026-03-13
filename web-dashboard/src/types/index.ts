@@ -853,6 +853,8 @@ export interface BroadcastLogDetail extends BroadcastLogSummary {
 
 // ─── Signal Source Management ───
 
+export type TradeMode = "AUTO" | "SHADOW" | "MANUAL";
+
 export interface SignalSourceResponse {
   id: number;
   name: string;
@@ -861,6 +863,8 @@ export interface SignalSourceResponse {
   guildId: string | null;
   description: string | null;
   routingMode: "GLOBAL" | "ASSIGNED";
+  tradeMode: TradeMode;
+  riskMultiplier: number;
   enabled: boolean;
   assignedUserCount: number;
   createdAt: string;
@@ -874,6 +878,8 @@ export interface CreateSignalSourceRequest {
   guildId?: string;
   description?: string;
   routingMode?: "GLOBAL" | "ASSIGNED";
+  tradeMode?: TradeMode;
+  riskMultiplier?: number;
 }
 
 export interface UpdateSignalSourceRequest {
@@ -882,6 +888,8 @@ export interface UpdateSignalSourceRequest {
   description?: string;
   enabled?: boolean;
   routingMode?: "GLOBAL" | "ASSIGNED";
+  tradeMode?: TradeMode;
+  riskMultiplier?: number;
 }
 
 export interface MonitorStatusResponse {

@@ -56,6 +56,7 @@ class SignalRouter:
         self.ai_parser = ai_parser
         self.signal_queue = signal_queue
         self.ignore_keywords = discord_config.ignore_keywords or []
+        self.source_metadata_map: dict[str, dict] = {}  # channel_id → source metadata (gRPC 推送)
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
         # Content-hash dedup: prevent re-processing old signal content that appears in embeds
@@ -161,6 +162,14 @@ class SignalRouter:
             "author_name": author_name,
             "message_id": message_id,
         }
+
+        # 豐富 source：從 gRPC 推送的 per-source metadata 補充資訊
+        metadata = self.source_metadata_map.get(channel_id)
+        if metadata:
+            source["source_name"] = metadata.get("name", "")
+            source["display_name"] = metadata.get("display_name", "")
+            source["trade_mode"] = metadata.get("trade_mode", "AUTO")
+            source["risk_multiplier"] = metadata.get("risk_multiplier", 1.0)
 
         if self.ai_parser:
             # AI 模式：所有訊息都丟 AI 判斷，由 AI 決定 action
