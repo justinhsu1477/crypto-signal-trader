@@ -15,9 +15,8 @@
 }
 
 # gRPC — Python Monitor 從地端連入（獨立子網域，Cloudflare DNS Only 灰雲）
+# TLS 由 Caddy 自動簽發 Let's Encrypt 公共憑證（不用 Origin Certificate）
 grpc.hook-fi.com:443 {
-    tls /etc/caddy/certs/origin-cert.pem /etc/caddy/certs/origin-key.pem
-
     reverse_proxy h2c://trading-api:9090
 }
 
