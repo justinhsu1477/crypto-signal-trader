@@ -296,7 +296,8 @@ public class BroadcastTradeService {
             try {
                 shadowScore = scoreFuture.get(6_000, TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {
-                log.debug("SHADOW AI 評分未及時完成，跳過");
+                log.warn("SHADOW AI 評分超時（6s），取消背景任務: {} {}", request.getSymbol(), request.getAction());
+                scoreFuture.cancel(true);
             } catch (ExecutionException e) {
                 log.warn("SHADOW AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             } catch (InterruptedException e) {
@@ -323,7 +324,7 @@ public class BroadcastTradeService {
                                 request.getNewStopLoss(), request.getNewTakeProfit());
                     }
                 } catch (Exception e) {
-                    log.warn("SHADOW 模擬交易處理失敗（不影響主流程）: {}", e.getMessage());
+                    log.error("SHADOW 模擬交易處理失敗: {} {} — {}", request.getSymbol(), request.getAction(), e.getMessage(), e);
                 }
             }
 
@@ -471,7 +472,8 @@ public class BroadcastTradeService {
                 log.debug("AI 評分取得成功，總耗時 {}ms（等待 {}ms）", elapsedMs + remainingMs, remainingMs);
             } catch (TimeoutException e) {
                 long totalMs = Duration.between(broadcastStartTime, LocalDateTime.now(AppConstants.ZONE_ID)).toMillis();
-                log.debug("AI 評分未及時完成（已等 {}ms），跳過", totalMs);
+                log.warn("AI 評分超時（已等 {}ms），取消背景任務: {} {}", totalMs, request.getSymbol(), request.getAction());
+                scoreFuture.cancel(true);
             } catch (ExecutionException e) {
                 log.warn("AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             }
@@ -545,6 +547,10 @@ public class BroadcastTradeService {
             }
 
             String summary = summaryBuilder.toString();
+            // Discord embed description 上限 4096 字元，保守截斷於 1800 避免超限
+            if (summary.length() > 1800) {
+                summary = summary.substring(0, 1800) + "\n...（內容過長已截斷）";
+            }
             String summaryTitle = isCloseAction ? "📊 廣播平倉報告" : "📊 廣播跟單報告";
             int summaryColor = failCount.get() > 0 || totalCancelledCount > 0
                     ? DiscordWebhookService.COLOR_YELLOW

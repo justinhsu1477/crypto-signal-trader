@@ -108,6 +108,13 @@ public class SignalSourceService {
         if (req.getRiskMultiplier() != null) source.setRiskMultiplier(req.getRiskMultiplier());
         if (req.getPaperTradingEnabled() != null) source.setPaperTradingEnabled(req.getPaperTradingEnabled());
 
+        // 模擬交易僅 SHADOW 模式有效 — 非 SHADOW 時自動關閉（防止設定矛盾）
+        if (source.isPaperTradingEnabled() && source.getTradeMode() != SignalSourceConfig.TradeMode.SHADOW) {
+            log.warn("paperTradingEnabled 僅 SHADOW 模式有效，自動關閉: sourceId={} tradeMode={}",
+                    source.getId(), source.getTradeMode());
+            source.setPaperTradingEnabled(false);
+        }
+
         SignalSourceConfig saved = sourceRepository.save(source);
         log.info("更新訊號來源: id={} name={} routingMode={}", saved.getId(), saved.getName(), saved.getRoutingMode());
         syncMonitorConfig("admin", "source_updated:" + saved.getName());
