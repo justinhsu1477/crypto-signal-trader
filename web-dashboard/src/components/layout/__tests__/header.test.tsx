@@ -20,6 +20,7 @@ const translations: Record<string, string> = {
   "nav.adminAnalytics": "Analytics",
   "nav.adminInsights": "Insights",
   "nav.adminBroadcastLogs": "Broadcast Logs",
+  "nav.adminDailyReports": "Daily Signal Report",
   "nav.adminNotifications": "Notifications",
   "nav.adminAnnouncements": "Announcement Management",
   "nav.adminSignalSources": "Signal Sources",
@@ -126,12 +127,13 @@ describe("Header", () => {
       expect(within(nav).getByText("Insights")).toBeInTheDocument();
       expect(within(nav).getByText("Signal Sources")).toBeInTheDocument();
       expect(within(nav).getByText("Broadcast Logs")).toBeInTheDocument();
+      expect(within(nav).getByText("Daily Signal Report")).toBeInTheDocument();
       expect(within(nav).getByText("Notifications")).toBeInTheDocument();
       expect(within(nav).getByText("Announcement Management")).toBeInTheDocument();
       expect(within(nav).getByText("Admin Settings")).toBeInTheDocument();
 
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(12);
+      expect(links).toHaveLength(13);
     });
 
     it("includes signal link for admin", () => {
@@ -182,12 +184,12 @@ describe("Header", () => {
       expect(links).toHaveLength(7);
     });
 
-    it("admin nav items count matches sidebar (12 items)", () => {
+    it("admin nav items count matches sidebar (13 items)", () => {
       mockAuth.role = "ADMIN";
       render(<Header />);
       const nav = screen.getByTestId("mobile-nav");
       const links = within(nav).getAllByRole("link");
-      expect(links).toHaveLength(12);
+      expect(links).toHaveLength(13);
     });
   });
 
