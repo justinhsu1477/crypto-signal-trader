@@ -24,4 +24,7 @@ public class UpdateSignalSourceRequest {
 
     /** 風險倍率（0.1 ~ 3.0） */
     private Double riskMultiplier;
+
+    /** 模擬交易開關 */
+    private Boolean paperTradingEnabled;
 }

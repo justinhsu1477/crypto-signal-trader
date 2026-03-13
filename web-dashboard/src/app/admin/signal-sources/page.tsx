@@ -89,6 +89,8 @@ export default function AdminSignalSourcesPage() {
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(fetchData, 15_000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   async function handleExpandUsers(sourceId: number) {
@@ -123,6 +125,16 @@ export default function AdminSignalSourcesPage() {
   async function handleToggleEnabled(source: SignalSourceResponse) {
     try {
       await updateAdminSignalSource(source.id, { enabled: !source.enabled });
+      toast.success(t("signalSources.updateSuccess"));
+      fetchData();
+    } catch {
+      toast.error(t("common.saveFailed"));
+    }
+  }
+
+  async function handleTogglePaperTrading(source: SignalSourceResponse) {
+    try {
+      await updateAdminSignalSource(source.id, { paperTradingEnabled: !source.paperTradingEnabled });
       toast.success(t("signalSources.updateSuccess"));
       fetchData();
     } catch {
@@ -398,6 +410,15 @@ export default function AdminSignalSourcesPage() {
                     >
                       <Power className="h-4 w-4" />
                     </button>
+                    {source.tradeMode === "SHADOW" && (
+                      <button
+                        onClick={() => handleTogglePaperTrading(source)}
+                        className={`p-1.5 rounded-md hover:bg-accent transition-colors ${source.paperTradingEnabled ? "text-blue-400" : "text-gray-400"}`}
+                        title={t("signalSources.paperTrading")}
+                      >
+                        <BarChart3 className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => { setEditingSource(source); setShowCreateModal(true); }}
                       className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-colors"
@@ -537,6 +558,7 @@ export default function AdminSignalSourcesPage() {
         <CreateEditModal
           source={editingSource}
           t={t}
+          hasGlobal={sources.some((s) => s.routingMode === "GLOBAL")}
           onClose={() => { setShowCreateModal(false); setEditingSource(null); }}
           onSaved={() => { setShowCreateModal(false); setEditingSource(null); fetchData(); }}
         />
@@ -870,11 +892,13 @@ function GlobalSettingsPanel({
 function CreateEditModal({
   source,
   t,
+  hasGlobal,
   onClose,
   onSaved,
 }: {
   source: SignalSourceResponse | null;
   t: (key: string) => string;
+  hasGlobal: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -979,13 +1003,20 @@ function CreateEditModal({
               onChange={(e) => setRoutingMode(e.target.value as "GLOBAL" | "ASSIGNED")}
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
             >
-              <option value="GLOBAL">{t("signalSources.routingGlobal")}</option>
+              <option
+                value="GLOBAL"
+                disabled={hasGlobal && source?.routingMode !== "GLOBAL"}
+              >
+                {t("signalSources.routingGlobal")}
+              </option>
               <option value="ASSIGNED">{t("signalSources.routingAssigned")}</option>
             </select>
             <p className="text-xs text-muted-foreground mt-1">
-              {routingMode === "GLOBAL"
-                ? t("signalSources.routingGlobalHint")
-                : t("signalSources.routingAssignedHint")}
+              {hasGlobal && source?.routingMode !== "GLOBAL" && routingMode !== "GLOBAL"
+                ? t("signalSources.globalExistsHint")
+                : routingMode === "GLOBAL"
+                  ? t("signalSources.routingGlobalHint")
+                  : t("signalSources.routingAssignedHint")}
             </p>
           </div>
           {/* Trade Mode */}

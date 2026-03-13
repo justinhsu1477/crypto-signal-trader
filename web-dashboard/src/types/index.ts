@@ -866,6 +866,7 @@ export interface SignalSourceResponse {
   routingMode: "GLOBAL" | "ASSIGNED";
   tradeMode: TradeMode;
   riskMultiplier: number;
+  paperTradingEnabled: boolean;
   enabled: boolean;
   assignedUserCount: number;
   createdAt: string;
@@ -891,6 +892,7 @@ export interface UpdateSignalSourceRequest {
   routingMode?: "GLOBAL" | "ASSIGNED";
   tradeMode?: TradeMode;
   riskMultiplier?: number;
+  paperTradingEnabled?: boolean;
 }
 
 export interface MonitorStatusResponse {

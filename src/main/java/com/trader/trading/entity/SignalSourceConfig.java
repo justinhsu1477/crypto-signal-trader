@@ -85,6 +85,11 @@ public class SignalSourceConfig {
     @Builder.Default
     private String customPrompt = "";
 
+    /** 模擬交易開關（僅 SHADOW 模式有效） */
+    @Column(name = "paper_trading_enabled", nullable = false)
+    @Builder.Default
+    private boolean paperTradingEnabled = false;
+
     /** 啟用狀態 */
     @Builder.Default
     private boolean enabled = true;

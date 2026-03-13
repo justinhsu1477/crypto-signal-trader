@@ -25,6 +25,7 @@ public class SignalSourceResponse {
     private String routingMode;
     private String tradeMode;
     private double riskMultiplier;
+    private boolean paperTradingEnabled;
     private boolean enabled;
     private int assignedUserCount;
     private LocalDateTime createdAt;

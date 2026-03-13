@@ -21,6 +21,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.trader.papertrade.service.BinancePriceClient;
+import com.trader.papertrade.service.PaperTradeService;
 import com.trader.shared.config.AppConstants;
 
 import java.time.Duration;
@@ -51,6 +53,8 @@ public class BroadcastTradeService {
     private final BroadcastLogRepository broadcastLogRepository;
     private final ObjectMapper objectMapper;
     private final ExecutorService broadcastExecutor;
+    private final PaperTradeService paperTradeService;
+    private final BinancePriceClient binancePriceClient;
     private final int batchSize;
     private final long batchDelayMs;
 
@@ -71,6 +75,8 @@ public class BroadcastTradeService {
             BroadcastLogRepository broadcastLogRepository,
             ObjectMapper objectMapper,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor,
+            PaperTradeService paperTradeService,
+            BinancePriceClient binancePriceClient,
             @Value("${broadcast.executor.batch-size:15}") int batchSize,
             @Value("${broadcast.executor.batch-delay-ms:200}") long batchDelayMs) {
         this.userRepository = userRepository;
@@ -84,6 +90,8 @@ public class BroadcastTradeService {
         this.broadcastLogRepository = broadcastLogRepository;
         this.objectMapper = objectMapper;
         this.broadcastExecutor = broadcastExecutor;
+        this.paperTradeService = paperTradeService;
+        this.binancePriceClient = binancePriceClient;
         this.batchSize = batchSize;
         this.batchDelayMs = batchDelayMs;
     }
@@ -148,12 +156,14 @@ public class BroadcastTradeService {
         boolean hasTargetUsers = request.getTargetUserIds() != null && !request.getTargetUserIds().isEmpty();
 
         SignalSourceConfig.TradeMode resolvedTradeMode = null;
+        SignalSourceConfig resolvedSourceConfig = null;
 
         if (!hasTargetUsers && request.getSource() != null && request.getSource().getChannelId() != null) {
             String channelId = request.getSource().getChannelId();
             String guildId = request.getSource().getGuildId();
 
             Optional<SignalSourceConfig> resolvedSource = signalSourceService.resolveSource(channelId, guildId);
+            resolvedSourceConfig = resolvedSource.orElse(null);
             resolvedSourceId = resolvedSource.map(SignalSourceConfig::getId).orElse(null);
             resolvedTradeMode = resolvedSource.map(SignalSourceConfig::getTradeMode).orElse(null);
 
@@ -261,10 +271,43 @@ public class BroadcastTradeService {
         // SHADOW 模式 → 記錄廣播日誌但不執行 Binance 交易
         if (resolvedTradeMode == SignalSourceConfig.TradeMode.SHADOW) {
             log.info("SHADOW 模式: 來源 sourceId={} 記錄訊號但不執行交易, 符合用戶={}", resolvedSourceId, activeUsers.size());
+
+            // 等待 AI 評分結果（SHADOW 不執行交易，可等較久）
+            SignalScore shadowScore = null;
+            try {
+                shadowScore = scoreFuture.get(6_000, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                log.debug("SHADOW AI 評分未及時完成，跳過");
+            } catch (ExecutionException e) {
+                log.warn("SHADOW AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
             saveBroadcastLog(request, activeUsers.size(), 0, 0,
                     skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
-                    resolvedSourceId, "SHADOW_RECORDED", null,
+                    resolvedSourceId, "SHADOW_RECORDED", shadowScore,
                     new ConcurrentLinkedQueue<>(), broadcastStartTime);
+
+            // 模擬交易（Paper Trading）— 若該來源啟用了模擬交易
+            if (resolvedSourceConfig != null && resolvedSourceConfig.isPaperTradingEnabled()) {
+                try {
+                    String action = request.getAction();
+                    String srcChannelId = request.getSource() != null ? request.getSource().getChannelId() : null;
+                    if ("ENTRY".equalsIgnoreCase(action)) {
+                        paperTradeService.createPaperTrade(request, shadowScore);
+                    } else if ("CLOSE".equalsIgnoreCase(action) && srcChannelId != null) {
+                        double markPrice = binancePriceClient.getMarkPrice(request.getSymbol());
+                        paperTradeService.closePaperTrade(request.getSymbol(), srcChannelId, markPrice, "SIGNAL_CLOSE");
+                    } else if ("MOVE_SL".equalsIgnoreCase(action) && srcChannelId != null) {
+                        paperTradeService.movePaperStopLoss(request.getSymbol(), srcChannelId,
+                                request.getNewStopLoss(), request.getNewTakeProfit());
+                    }
+                } catch (Exception e) {
+                    log.warn("SHADOW 模擬交易處理失敗（不影響主流程）: {}", e.getMessage());
+                }
+            }
+
             // 通知 Admin 影子模式記錄
             for (User admin : adminUsers) {
                 discordWebhookService.sendNotificationToUser(
