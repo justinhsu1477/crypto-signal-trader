@@ -786,6 +786,7 @@ export interface BroadcastLogSummary {
   signalAction: string;
   symbol: string;
   side: string | null;
+  sourceAuthor: string | null;
   totalUsers: number;
   successCount: number;
   failCount: number;

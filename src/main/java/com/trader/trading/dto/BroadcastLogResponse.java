@@ -32,6 +32,7 @@ public class BroadcastLogResponse {
         private String signalAction;
         private String symbol;
         private String side;
+        private String sourceAuthor;
         private int totalUsers;
         private int successCount;
         private int failCount;

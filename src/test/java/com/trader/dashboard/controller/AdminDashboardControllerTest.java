@@ -449,7 +449,7 @@ class AdminDashboardControllerTest {
             Page<BroadcastLog> page = new PageImpl<>(List.of(log1), PageRequest.of(0, 20), 1);
             when(broadcastLogRepository.findAllByOrderByCreatedAtDesc(any())).thenReturn(page);
 
-            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20);
+            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20, null);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             BroadcastLogResponse body = response.getBody();
@@ -477,7 +477,7 @@ class AdminDashboardControllerTest {
             Page<BroadcastLog> page = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
             when(broadcastLogRepository.findAllByOrderByCreatedAtDesc(any())).thenReturn(page);
 
-            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20);
+            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20, null);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody().getContent()).isEmpty();

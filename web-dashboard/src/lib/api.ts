@@ -866,8 +866,14 @@ export async function adminBroadcastTrade(
 
 import type { BroadcastLogListResponse, BroadcastLogDetail } from "@/types";
 
-export async function getAdminBroadcastLogs(page = 0, size = 20): Promise<BroadcastLogListResponse> {
-  return request<BroadcastLogListResponse>(`/api/admin/dashboard/broadcast-logs?page=${page}&size=${size}`);
+export async function getAdminBroadcastLogs(page = 0, size = 20, sourceAuthor?: string): Promise<BroadcastLogListResponse> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (sourceAuthor) params.set("sourceAuthor", sourceAuthor);
+  return request<BroadcastLogListResponse>(`/api/admin/dashboard/broadcast-logs?${params}`);
+}
+
+export async function getAdminBroadcastLogSources(): Promise<string[]> {
+  return request<string[]>("/api/admin/dashboard/broadcast-logs/sources");
 }
 
 export async function getAdminBroadcastLogDetail(id: number): Promise<BroadcastLogDetail> {
