@@ -609,10 +609,17 @@ function ChannelActivityPanel({
   sources: SignalSourceResponse[];
   t: (key: string) => string;
 }) {
-  // Only show enabled sources that have a channelId
+  // Sources that have a channelId configured
   const channelSources = sources.filter((s) => s.channelId);
+  // Channel IDs from channelLastSeen that don't have a matching SignalSource
+  const knownChannelIds = new Set(channelSources.map((s) => s.channelId));
+  const unmappedChannelIds = channelLastSeen
+    ? Object.keys(channelLastSeen).filter((id) => !knownChannelIds.has(id))
+    : [];
 
-  if (channelSources.length === 0) {
+  const hasAnyChannel = channelSources.length > 0 || unmappedChannelIds.length > 0;
+
+  if (!hasAnyChannel) {
     return (
       <div className="mt-3 pt-3 border-t border-border text-center text-xs text-muted-foreground py-4">
         {t("signalSources.noSources")}
@@ -628,6 +635,7 @@ function ChannelActivityPanel({
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {/* Mapped sources (have SignalSource record) */}
           {channelSources.map((source) => {
             const lastSeen = source.channelId ? channelLastSeen[source.channelId] : undefined;
             const status = getChannelStatus(lastSeen);
@@ -638,6 +646,25 @@ function ChannelActivityPanel({
               >
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status.dotColor}`} />
                 <span className="truncate font-medium">{source.displayName || source.name}</span>
+                <span className={`ml-auto flex-shrink-0 font-mono ${status.color}`}>
+                  {status.relativeTime}
+                </span>
+              </div>
+            );
+          })}
+          {/* Unmapped channels (have activity but no SignalSource record) */}
+          {unmappedChannelIds.map((channelId) => {
+            const lastSeen = channelLastSeen[channelId];
+            const status = getChannelStatus(lastSeen);
+            return (
+              <div
+                key={channelId}
+                className="flex items-center gap-2 px-3 py-2 bg-accent/30 rounded-lg text-xs border border-dashed border-yellow-500/30"
+              >
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status.dotColor}`} />
+                <span className="truncate font-medium font-mono text-yellow-400" title={channelId}>
+                  {channelId.slice(0, 6)}…{channelId.slice(-4)}
+                </span>
                 <span className={`ml-auto flex-shrink-0 font-mono ${status.color}`}>
                   {status.relativeTime}
                 </span>
