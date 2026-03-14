@@ -52,6 +52,10 @@ public class RabbitMQConfig {
     public static final String QUEUE_ANNOUNCEMENT_DISCORD = "announcement.discord";
     public static final String QUEUE_ANNOUNCEMENT_LINE = "announcement.line";
 
+    // ===== Chatbot AI 客服 =====
+    public static final String QUEUE_CHATBOT = "chatbot.request";
+    public static final String ROUTING_KEY_CHATBOT = "chatbot";
+
     // DLQ 相關
     private static final String DLX_EXCHANGE = "notification.dlx";
     public static final String DLQ_QUEUE = "notification.dlq";
@@ -112,6 +116,21 @@ public class RabbitMQConfig {
     @Bean
     public Binding dlqBinding(Queue deadLetterQueue, DirectExchange deadLetterExchange) {
         return BindingBuilder.bind(deadLetterQueue).to(deadLetterExchange).with(DLQ_ROUTING_KEY);
+    }
+
+    // ===== Chatbot Queue =====
+
+    @Bean
+    public Queue chatbotQueue() {
+        return QueueBuilder.durable(QUEUE_CHATBOT)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY)
+                .build();
+    }
+
+    @Bean
+    public Binding chatbotBinding(Queue chatbotQueue, DirectExchange notificationExchange) {
+        return BindingBuilder.bind(chatbotQueue).to(notificationExchange).with(ROUTING_KEY_CHATBOT);
     }
 
     // ===== Announcement Fanout Exchange =====

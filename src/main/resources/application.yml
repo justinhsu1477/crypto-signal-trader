@@ -184,6 +184,17 @@ grpc:
     security:
       enabled: false
 
+# ========== AI 客服 Agent ==========
+chatbot:
+  enabled: ${CHATBOT_ENABLED:false}
+  max-response-tokens: 512
+  temperature: 0.3
+  gemini-model: ${CHATBOT_GEMINI_MODEL:gemini-3.0-pro}
+  max-conversation-turns: 10
+  conversation-ttl-minutes: 30
+  rate-limit-per-minute: 5
+  rate-limit-per-day: 50
+
 # AI 交易顧問
 advisor:
   enabled: ${ADVISOR_ENABLED:false}

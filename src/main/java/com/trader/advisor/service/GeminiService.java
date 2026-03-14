@@ -8,7 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
 
+import com.trader.chatbot.dto.ChatTurn;
+
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -75,6 +78,113 @@ public class GeminiService {
             log.warn("Gemini API 呼叫失敗: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * 呼叫 Gemini API（多輪對話版本）
+     *
+     * 支援 conversation history，用於客服場景。
+     * contents 中包含多個 turn（role: user/model）。
+     *
+     * @param systemPrompt 系統指令
+     * @param history      對話歷史（可為空）
+     * @param userMessage  當前使用者訊息
+     * @param maxTokens    最大回覆 token 數
+     * @param temperature  溫度（0.0-1.0）
+     * @return AI 回覆文字，失敗時回傳 empty
+     */
+    public Optional<String> generateContentWithHistory(String systemPrompt,
+                                                        List<ChatTurn> history,
+                                                        String userMessage,
+                                                        int maxTokens,
+                                                        double temperature,
+                                                        String model) {
+        String apiKey = advisorConfig.getGeminiApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Gemini API Key 未設定，跳過 AI 客服回覆");
+            return Optional.empty();
+        }
+
+        String effectiveModel = (model != null && !model.isBlank()) ? model : advisorConfig.getGeminiModel();
+        String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
+
+        String requestBody = buildMultiTurnRequestBody(systemPrompt, history, userMessage, maxTokens, temperature);
+
+        Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(requestBody, JSON_MEDIA))
+                .build();
+
+        try (Response response = aiHttpClient.newCall(request).execute()) {
+            String body = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                log.warn("Gemini API（客服）回應異常: HTTP {} - {}", response.code(), body);
+                return Optional.empty();
+            }
+
+            return parseResponseText(body);
+        } catch (IOException e) {
+            log.warn("Gemini API（客服）呼叫失敗: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 建構多輪對話 request body
+     */
+    private String buildMultiTurnRequestBody(String systemPrompt,
+                                              List<ChatTurn> history,
+                                              String userMessage,
+                                              int maxTokens,
+                                              double temperature) {
+        // system_instruction
+        JsonObject systemPart = new JsonObject();
+        systemPart.addProperty("text", systemPrompt);
+        JsonArray systemParts = new JsonArray();
+        systemParts.add(systemPart);
+        JsonObject systemInstruction = new JsonObject();
+        systemInstruction.add("parts", systemParts);
+
+        // contents: history turns + current user message
+        JsonArray contents = new JsonArray();
+
+        // 加入歷史對話
+        if (history != null) {
+            for (ChatTurn turn : history) {
+                JsonObject part = new JsonObject();
+                part.addProperty("text", turn.getContent());
+                JsonArray parts = new JsonArray();
+                parts.add(part);
+                JsonObject content = new JsonObject();
+                content.addProperty("role", turn.getRole()); // "user" or "model"
+                content.add("parts", parts);
+                contents.add(content);
+            }
+        }
+
+        // 當前使用者訊息
+        JsonObject userPart = new JsonObject();
+        userPart.addProperty("text", userMessage);
+        JsonArray userParts = new JsonArray();
+        userParts.add(userPart);
+        JsonObject userContent = new JsonObject();
+        userContent.addProperty("role", "user");
+        userContent.add("parts", userParts);
+        contents.add(userContent);
+
+        // generationConfig
+        JsonObject generationConfig = new JsonObject();
+        generationConfig.addProperty("maxOutputTokens", maxTokens);
+        generationConfig.addProperty("temperature", temperature);
+
+        // 組裝
+        JsonObject body = new JsonObject();
+        body.add("system_instruction", systemInstruction);
+        body.add("contents", contents);
+        body.add("generationConfig", generationConfig);
+
+        return gson.toJson(body);
     }
 
     /**
