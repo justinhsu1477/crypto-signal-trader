@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -38,6 +39,7 @@ public class AuditService {
      * @param details  詳細信息
      */
     @Async
+    @Transactional
     public void log(String userId, String action, String resource,
                    String status, String ipAddress, String details) {
         try {
