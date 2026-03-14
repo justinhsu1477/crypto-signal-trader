@@ -22,13 +22,13 @@ public class DiscordBotConfig {
     public DiscordBotConfig(
             @DefaultValue("false") boolean enabled,
             @DefaultValue("") String token,
-            @DefaultValue("") List<String> adminIds) {
+            List<String> adminIds) {
         this.enabled = enabled;
         this.token = token;
-        this.adminIds = adminIds;
+        this.adminIds = adminIds != null ? adminIds : List.of();
     }
 
     public boolean isAdmin(String discordUserId) {
-        return adminIds != null && adminIds.contains(discordUserId);
+        return adminIds.contains(discordUserId);
     }
 }
