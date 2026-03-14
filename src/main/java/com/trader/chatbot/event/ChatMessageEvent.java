@@ -14,9 +14,10 @@ import org.springframework.context.ApplicationEvent;
 public class ChatMessageEvent extends ApplicationEvent {
 
     private final String userId;
-    private final String channel;       // "LINE" / "DISCORD"
-    private final String channelUserId; // LINE userId 或 Discord userId
+    private final String channel;        // "LINE" / "DISCORD"
+    private final String channelUserId;  // LINE userId 或 Discord userId
     private final String text;
+    private final String replyChannelId; // Discord 頻道回覆用（null = DM / LINE）
 
     /**
      * @deprecated 使用 {@link #ChatMessageEvent(Object, String, String, String, String)} 取代
@@ -25,11 +26,20 @@ public class ChatMessageEvent extends ApplicationEvent {
     private final String lineUserId;
 
     public ChatMessageEvent(Object source, String userId, String channel, String channelUserId, String text) {
+        this(source, userId, channel, channelUserId, text, null);
+    }
+
+    /**
+     * Discord 頻道 @mention 用（帶 replyChannelId）
+     */
+    public ChatMessageEvent(Object source, String userId, String channel, String channelUserId,
+                            String text, String replyChannelId) {
         super(source);
         this.userId = userId;
         this.channel = channel;
         this.channelUserId = channelUserId;
         this.text = text;
+        this.replyChannelId = replyChannelId;
         this.lineUserId = "LINE".equals(channel) ? channelUserId : null;
     }
 

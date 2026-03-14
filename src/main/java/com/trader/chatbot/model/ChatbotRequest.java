@@ -20,6 +20,7 @@ public class ChatbotRequest implements Serializable {
     private String channel;        // "LINE" / "DISCORD"
     private String channelUserId;  // LINE userId 或 Discord userId
     private String message;
+    private String replyChannelId; // Discord 頻道回覆用（null = DM / LINE）
 
     /**
      * @deprecated 使用 {@link #getChannelUserId()} 取代

@@ -112,7 +112,7 @@ class ChatbotConsumerTest {
         }
 
         @Test
-        @DisplayName("Service 拋異常 → Discord 回覆錯誤訊息")
+        @DisplayName("Service 拋異常 → Discord DM 回覆錯誤訊息")
         void serviceError() {
             ChatbotRequest request = ChatbotRequest.builder()
                     .userId("u1").channel("DISCORD").channelUserId("discord123")
@@ -123,6 +123,36 @@ class ChatbotConsumerTest {
             consumer.consume(request);
 
             verify(discordBotService).sendDmReply(eq("discord123"), anyString());
+        }
+
+        @Test
+        @DisplayName("有 replyChannelId → 頻道回覆（非 DM）")
+        void channelMentionReply() {
+            ChatbotRequest request = ChatbotRequest.builder()
+                    .userId("u1").channel("DISCORD").channelUserId("discord123")
+                    .replyChannelId("channel456").message("用戶狀況").build();
+            when(chatbotService.handleUserMessage("u1", "DISCORD", "discord123", "用戶狀況"))
+                    .thenReturn("頻道回覆內容");
+
+            consumer.consume(request);
+
+            verify(discordBotService).sendChannelReply("channel456", "頻道回覆內容");
+            verify(discordBotService, never()).sendDmReply(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("有 replyChannelId + Service 拋異常 → 頻道回覆錯誤訊息")
+        void channelMentionServiceError() {
+            ChatbotRequest request = ChatbotRequest.builder()
+                    .userId("u1").channel("DISCORD").channelUserId("discord123")
+                    .replyChannelId("channel456").message("你好").build();
+            when(chatbotService.handleUserMessage("u1", "DISCORD", "discord123", "你好"))
+                    .thenThrow(new RuntimeException("DB error"));
+
+            consumer.consume(request);
+
+            verify(discordBotService).sendChannelReply(eq("channel456"), anyString());
+            verify(discordBotService, never()).sendDmReply(anyString(), anyString());
         }
     }
 }
