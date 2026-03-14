@@ -137,14 +137,17 @@ public class AdminSignalSourceController {
     // ======================== 績效查詢 ========================
 
     @GetMapping("/performance")
-    public ResponseEntity<List<SignalSourcePerformanceDto>> getAllPerformance() {
-        return ResponseEntity.ok(signalSourceService.getAllSourcePerformances());
+    public ResponseEntity<List<SignalSourcePerformanceDto>> getAllPerformance(
+            @RequestParam(defaultValue = "all") String period) {
+        return ResponseEntity.ok(signalSourceService.getAllSourcePerformances(period));
     }
 
     @GetMapping("/{id}/performance")
-    public ResponseEntity<SignalSourcePerformanceDto> getSourcePerformance(@PathVariable Long id) {
+    public ResponseEntity<SignalSourcePerformanceDto> getSourcePerformance(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "all") String period) {
         try {
-            return ResponseEntity.ok(signalSourceService.getSourcePerformance(id));
+            return ResponseEntity.ok(signalSourceService.getSourcePerformance(id, period));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }

@@ -501,24 +501,24 @@ class AdminSignalSourceControllerTest {
                     buildPerformance(1L, "來源A", "訊號源 A"),
                     buildPerformance(2L, "來源B", "訊號源 B")
             );
-            when(signalSourceService.getAllSourcePerformances()).thenReturn(performances);
+            when(signalSourceService.getAllSourcePerformances("all")).thenReturn(performances);
 
-            ResponseEntity<List<SignalSourcePerformanceDto>> response = controller.getAllPerformance();
+            ResponseEntity<List<SignalSourcePerformanceDto>> response = controller.getAllPerformance("all");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody()).hasSize(2);
             assertThat(response.getBody().get(0).getTradeCount()).isEqualTo(100);
             assertThat(response.getBody().get(0).getWinRate()).isEqualTo(65.0);
             assertThat(response.getBody().get(1).getTotalPnl()).isEqualTo(1500.50);
-            verify(signalSourceService).getAllSourcePerformances();
+            verify(signalSourceService).getAllSourcePerformances("all");
         }
 
         @Test
         @DisplayName("無績效資料 → 回傳空列表")
         void returnsEmptyList() {
-            when(signalSourceService.getAllSourcePerformances()).thenReturn(List.of());
+            when(signalSourceService.getAllSourcePerformances("all")).thenReturn(List.of());
 
-            ResponseEntity<List<SignalSourcePerformanceDto>> response = controller.getAllPerformance();
+            ResponseEntity<List<SignalSourcePerformanceDto>> response = controller.getAllPerformance("all");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody()).isEmpty();
@@ -533,9 +533,9 @@ class AdminSignalSourceControllerTest {
         @DisplayName("來源存在 → 200 + 績效資料")
         void performanceExists() {
             SignalSourcePerformanceDto performance = buildPerformance(SOURCE_ID, "來源A", "訊號源 A");
-            when(signalSourceService.getSourcePerformance(SOURCE_ID)).thenReturn(performance);
+            when(signalSourceService.getSourcePerformance(SOURCE_ID, "all")).thenReturn(performance);
 
-            ResponseEntity<SignalSourcePerformanceDto> response = controller.getSourcePerformance(SOURCE_ID);
+            ResponseEntity<SignalSourcePerformanceDto> response = controller.getSourcePerformance(SOURCE_ID, "all");
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody()).isNotNull();
@@ -546,16 +546,16 @@ class AdminSignalSourceControllerTest {
             assertThat(response.getBody().getWinRate()).isEqualTo(65.0);
             assertThat(response.getBody().getTotalPnl()).isEqualTo(1500.50);
             assertThat(response.getBody().getAvgPnl()).isEqualTo(15.005);
-            verify(signalSourceService).getSourcePerformance(SOURCE_ID);
+            verify(signalSourceService).getSourcePerformance(SOURCE_ID, "all");
         }
 
         @Test
         @DisplayName("來源不存在 → 404")
         void performanceNotFound() {
-            when(signalSourceService.getSourcePerformance(999L))
+            when(signalSourceService.getSourcePerformance(999L, "all"))
                     .thenThrow(new IllegalArgumentException("訊號來源不存在: id=999"));
 
-            ResponseEntity<SignalSourcePerformanceDto> response = controller.getSourcePerformance(999L);
+            ResponseEntity<SignalSourcePerformanceDto> response = controller.getSourcePerformance(999L, "all");
 
             assertThat(response.getStatusCode().value()).isEqualTo(404);
             assertThat(response.getBody()).isNull();

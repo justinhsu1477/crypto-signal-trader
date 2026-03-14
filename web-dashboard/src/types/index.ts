@@ -926,6 +926,11 @@ export interface SignalSourcePerformanceDto {
   winRate: number;
   totalPnl: number;
   avgPnl: number;
+  maxWin: number;
+  maxLoss: number;
+  profitFactor: number;
+  maxConsecutiveWins: number;
+  maxConsecutiveLosses: number;
   paperTradeCount: number;
   paperWinCount: number;
   paperWinRate: number;
@@ -933,6 +938,9 @@ export interface SignalSourcePerformanceDto {
   paperAvgPnl: number;
   paperMaxWin: number;
   paperMaxLoss: number;
+  paperProfitFactor: number;
+  paperMaxConsecutiveWins: number;
+  paperMaxConsecutiveLosses: number;
 }
 
 export interface SignalSourceUserResponse {

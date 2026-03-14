@@ -357,30 +357,13 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     // ========== 訊號來源績效查詢 ==========
 
     /**
-     * 按訊號來源聚合績效 — 從 trades 表計算勝率/PnL
+     * 按訊號來源聚合績效 — 從 trades 表計算勝率/PnL（支援日期篩選）
      *
      * 回傳 Object[]：
      *   [0] tradeCount(Long), [1] winCount(Long),
-     *   [2] totalPnl(Double), [3] avgPnl(Double)
-     */
-    @Query(value = """
-            SELECT
-                COUNT(*) AS trade_count,
-                COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
-                COALESCE(SUM(net_profit), 0) AS total_pnl,
-                COALESCE(AVG(net_profit), 0) AS avg_pnl
-            FROM trades
-            WHERE status = 'CLOSED'
-              AND simulated = false
-              AND source_channel_id = :channelId
-              AND (:guildId IS NULL OR source_guild_id = :guildId)
-            """, nativeQuery = true)
-    Object[] getSourcePerformanceStats(@Param("channelId") String channelId,
-                                       @Param("guildId") String guildId);
-
-    /**
-     * 按訊號來源聚合模擬交易績效（simulated = true）
-     * 用於 SHADOW 模式頻道的績效追蹤
+     *   [2] totalPnl(Double), [3] avgPnl(Double),
+     *   [4] maxWin(Double), [5] maxLoss(Double),
+     *   [6] grossWins(Double), [7] grossLosses(Double)
      */
     @Query(value = """
             SELECT
@@ -389,15 +372,67 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                 COALESCE(SUM(net_profit), 0) AS total_pnl,
                 COALESCE(AVG(net_profit), 0) AS avg_pnl,
                 COALESCE(MAX(net_profit), 0) AS max_win,
-                COALESCE(MIN(net_profit), 0) AS max_loss
+                COALESCE(MIN(net_profit), 0) AS max_loss,
+                COALESCE(SUM(net_profit) FILTER (WHERE net_profit > 0), 0) AS gross_wins,
+                COALESCE(SUM(ABS(net_profit)) FILTER (WHERE net_profit < 0), 0) AS gross_losses
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND simulated = false
+              AND source_channel_id = :channelId
+              AND (:guildId IS NULL OR source_guild_id = :guildId)
+              AND (:since IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+            """, nativeQuery = true)
+    Object[] getSourcePerformanceStats(@Param("channelId") String channelId,
+                                       @Param("guildId") String guildId,
+                                       @Param("since") LocalDateTime since);
+
+    /**
+     * 按訊號來源聚合模擬交易績效（simulated = true，支援日期篩選）
+     *
+     * 回傳 Object[]：
+     *   [0] tradeCount(Long), [1] winCount(Long),
+     *   [2] totalPnl(Double), [3] avgPnl(Double),
+     *   [4] maxWin(Double), [5] maxLoss(Double),
+     *   [6] grossWins(Double), [7] grossLosses(Double)
+     */
+    @Query(value = """
+            SELECT
+                COUNT(*) AS trade_count,
+                COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
+                COALESCE(SUM(net_profit), 0) AS total_pnl,
+                COALESCE(AVG(net_profit), 0) AS avg_pnl,
+                COALESCE(MAX(net_profit), 0) AS max_win,
+                COALESCE(MIN(net_profit), 0) AS max_loss,
+                COALESCE(SUM(net_profit) FILTER (WHERE net_profit > 0), 0) AS gross_wins,
+                COALESCE(SUM(ABS(net_profit)) FILTER (WHERE net_profit < 0), 0) AS gross_losses
             FROM trades
             WHERE status = 'CLOSED'
               AND simulated = true
               AND source_channel_id = :channelId
               AND (:guildId IS NULL OR source_guild_id = :guildId)
+              AND (:since IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
             """, nativeQuery = true)
     Object[] getSourcePaperTradeStats(@Param("channelId") String channelId,
-                                      @Param("guildId") String guildId);
+                                      @Param("guildId") String guildId,
+                                      @Param("since") LocalDateTime since);
+
+    /**
+     * 按訊號來源取已平倉交易序列（計算連勝/連虧用）
+     */
+    @Query(value = """
+            SELECT net_profit
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND simulated = :simulated
+              AND source_channel_id = :channelId
+              AND (:guildId IS NULL OR source_guild_id = :guildId)
+              AND (:since IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+            ORDER BY exit_time ASC
+            """, nativeQuery = true)
+    List<Object> getSourceTradeSequence(@Param("channelId") String channelId,
+                                        @Param("guildId") String guildId,
+                                        @Param("simulated") boolean simulated,
+                                        @Param("since") LocalDateTime since);
 
     /**
      * 批次取得所有用戶已平倉交易（依 exitTime DESC 排序）
