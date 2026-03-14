@@ -379,8 +379,8 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
             WHERE status = 'CLOSED'
               AND simulated = false
               AND source_channel_id = :channelId
-              AND (:guildId IS NULL OR source_guild_id = :guildId)
-              AND (:since IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+              AND (CAST(:guildId AS VARCHAR) IS NULL OR source_guild_id = :guildId)
+              AND (CAST(:since AS TIMESTAMP) IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
             """, nativeQuery = true)
     Object[] getSourcePerformanceStats(@Param("channelId") String channelId,
                                        @Param("guildId") String guildId,
@@ -409,8 +409,8 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
             WHERE status = 'CLOSED'
               AND simulated = true
               AND source_channel_id = :channelId
-              AND (:guildId IS NULL OR source_guild_id = :guildId)
-              AND (:since IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+              AND (CAST(:guildId AS VARCHAR) IS NULL OR source_guild_id = :guildId)
+              AND (CAST(:since AS TIMESTAMP) IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
             """, nativeQuery = true)
     Object[] getSourcePaperTradeStats(@Param("channelId") String channelId,
                                       @Param("guildId") String guildId,
@@ -425,8 +425,8 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
             WHERE status = 'CLOSED'
               AND simulated = :simulated
               AND source_channel_id = :channelId
-              AND (:guildId IS NULL OR source_guild_id = :guildId)
-              AND (:since IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+              AND (CAST(:guildId AS VARCHAR) IS NULL OR source_guild_id = :guildId)
+              AND (CAST(:since AS TIMESTAMP) IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
             ORDER BY exit_time ASC
             """, nativeQuery = true)
     List<Object> getSourceTradeSequence(@Param("channelId") String channelId,
