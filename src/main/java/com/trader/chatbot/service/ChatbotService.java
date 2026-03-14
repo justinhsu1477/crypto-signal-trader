@@ -1,8 +1,10 @@
 package com.trader.chatbot.service;
 
+import com.google.gson.JsonObject;
 import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.config.ChatbotConfig;
 import com.trader.chatbot.dto.ChatTurn;
+import com.trader.chatbot.dto.GeminiResponse;
 import com.trader.chatbot.entity.ChatConversation;
 import com.trader.chatbot.repository.ChatConversationRepository;
 import com.trader.chatbot.service.IntentClassifier.Intent;
@@ -33,6 +35,7 @@ public class ChatbotService {
     private final UserContextGatherer userContextGatherer;
     private final ChatbotRateLimiter rateLimiter;
     private final ChatConversationRepository conversationRepository;
+    private final ChatbotActionExecutor actionExecutor;
 
     private static final String ADMIN_USER_ID = "ADMIN";
     private static final String FALLBACK_MESSAGE = "抱歉，AI 客服暫時無法回應。請稍後再試，或輸入「客服」聯繫人工客服。";
@@ -54,8 +57,17 @@ public class ChatbotService {
             ## 操作指引（當用戶問怎麼做時）
             - 綁定 API Key：網站 → 個人設定 → API Key → 輸入 Binance 合約 API Key 和 Secret
             - 綁定 LINE：網站 → 通知設定 → 產生連結碼 → 在 LINE 對話輸入該碼
-            - 修改風控：網站 → 交易設定 → 調整風險比例、槓桿、DCA 層數
+            - 修改風控：你可以直接幫用戶修改，使用提供的工具函式
             - 查看績效：網站 → Dashboard → 績效總覽
+
+            ## 交易設定修改能力
+            你可以直接幫用戶修改交易設定，包括：
+            - 風險比例（0.01~1.0，例如 0.3 = 30%）
+            - 最大槓桿（1~125）
+            - DCA 層數（0~10）
+            - 自動止損/止盈開關
+            當用戶要求修改時，先確認修改內容，再呼叫對應的工具函式執行。
+            如果用戶說「30%」，應轉換為 0.3 再呼叫工具。
 
             ## 用戶資料（系統提供，可信任）
             """;
@@ -119,22 +131,81 @@ public class ChatbotService {
         // 7. 組裝 system prompt
         String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context;
 
-        // 8. 呼叫 Gemini
-        Optional<String> aiResponse = geminiService.generateContentWithHistory(
-                fullSystemPrompt,
-                history,
-                cleanMessage,
-                chatbotConfig.getMaxResponseTokens(),
-                chatbotConfig.getTemperature(),
-                chatbotConfig.getGeminiModel()
-        );
-
-        String response = aiResponse.orElse(FALLBACK_MESSAGE);
+        // 8. 呼叫 Gemini（一般用戶啟用 Function Calling，Admin 不啟用）
+        String response;
+        if (!isAdmin) {
+            response = handleWithFunctionCalling(userId, fullSystemPrompt, history, cleanMessage);
+        } else {
+            Optional<String> aiResponse = geminiService.generateContentWithHistory(
+                    fullSystemPrompt, history, cleanMessage,
+                    chatbotConfig.getMaxResponseTokens(),
+                    chatbotConfig.getTemperature(),
+                    chatbotConfig.getGeminiModel()
+            );
+            response = aiResponse.orElse(FALLBACK_MESSAGE);
+        }
 
         // 9. 儲存對話（Admin 用 sessionKey 區分不同管理員）
         saveConversation(sessionKey, channel, channelUserId, sessionId, cleanMessage, response, intent);
 
         return response;
+    }
+
+    /**
+     * 帶 Function Calling 的 Gemini 對話流程
+     *
+     * 流程：
+     * 1. 呼叫 Gemini（帶 tools schema）
+     * 2. 若回傳 functionCall → 執行動作 → 將結果回傳 Gemini → 取得最終回覆
+     * 3. 若回傳 text → 直接回覆
+     */
+    private String handleWithFunctionCalling(String userId, String systemPrompt,
+                                               List<ChatTurn> history, String userMessage) {
+        JsonObject tools = actionExecutor.buildToolsSchema();
+
+        Optional<GeminiResponse> geminiResponse = geminiService.generateContentWithTools(
+                systemPrompt, history, userMessage,
+                chatbotConfig.getMaxResponseTokens(),
+                chatbotConfig.getTemperature(),
+                chatbotConfig.getGeminiModel(),
+                tools
+        );
+
+        if (geminiResponse.isEmpty()) {
+            return FALLBACK_MESSAGE;
+        }
+
+        GeminiResponse resp = geminiResponse.get();
+
+        // 純文字回覆
+        if (resp.hasText()) {
+            return resp.getText().orElse(FALLBACK_MESSAGE);
+        }
+
+        // Function Call → 執行 → 回傳結果給 Gemini
+        if (resp.hasFunctionCall()) {
+            String functionName = resp.getFunctionCall().getFunctionName();
+            JsonObject args = resp.getFunctionCall().getArgs();
+
+            log.info("Gemini 請求 Function Call: userId={} function={} args={}", userId, functionName, args);
+
+            // 執行動作（userId 由系統注入，不可被 AI 覆蓋）
+            String actionResult = actionExecutor.executeFunction(userId, functionName, args);
+
+            // 將結果回傳 Gemini 取得自然語言回覆
+            Optional<String> finalResponse = geminiService.sendFunctionResult(
+                    systemPrompt, history, userMessage,
+                    functionName, args, actionResult,
+                    chatbotConfig.getMaxResponseTokens(),
+                    chatbotConfig.getTemperature(),
+                    chatbotConfig.getGeminiModel(),
+                    tools
+            );
+
+            return finalResponse.orElse(actionResult); // fallback 直接顯示執行結果
+        }
+
+        return FALLBACK_MESSAGE;
     }
 
     /**

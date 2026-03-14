@@ -223,6 +223,10 @@ public class UserContextGatherer {
                     sb.append(gatherRecentTrades(userId, 5));
                     sb.append(gatherRecentBroadcastLogs(userId));
                 }
+                case SETTING_CHANGE -> {
+                    sb.append(gatherAccountStatus(userId));
+                    sb.append(gatherTradeSettings(userId));
+                }
                 case OPERATION_GUIDE -> {
                     sb.append(gatherAccountStatus(userId));
                 }
