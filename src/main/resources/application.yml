@@ -130,6 +130,9 @@ discord:
     per-user:
       enabled: ${DISCORD_WEBHOOK_PER_USER_ENABLED:true}  # true = 使用用戶自定義 webhook，false = 使用全局
       fallback-to-global: ${DISCORD_WEBHOOK_FALLBACK:true}  # 用戶無自定義 webhook 時 fallback 到全局
+  bot:
+    enabled: ${DISCORD_BOT_ENABLED:false}           # Discord Bot（AI 客服）
+    token: ${DISCORD_BOT_TOKEN:}
 
 # ========== LINE Messaging API ==========
 line:

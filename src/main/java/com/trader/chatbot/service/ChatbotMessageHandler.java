@@ -10,9 +10,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * 客服訊息事件處理器（Event → MQ Producer）
+ * 客服訊息事件處理器（Event -> MQ Producer）
  *
- * 監聽 LineLinkingService 發布的 ChatMessageEvent，
+ * 監聯 LineLinkingService / DiscordBotListener 發布的 ChatMessageEvent，
  * 將請求投遞到 RabbitMQ chatbot.request queue。
  */
 @Slf4j
@@ -24,11 +24,19 @@ public class ChatbotMessageHandler {
 
     @EventListener
     public void onChatMessage(ChatMessageEvent event) {
-        log.info("收到客服訊息事件: userId={} lineUserId={}", event.getUserId(), event.getLineUserId());
+        String channel = event.getChannel() != null ? event.getChannel() : "LINE";
+        String channelUserId = event.getChannelUserId() != null
+                ? event.getChannelUserId()
+                : event.getLineUserId();
+
+        log.info("收到客服訊息事件: userId={} channel={} channelUserId={}",
+                event.getUserId(), channel, channelUserId);
 
         ChatbotRequest request = ChatbotRequest.builder()
                 .userId(event.getUserId())
-                .lineUserId(event.getLineUserId())
+                .channel(channel)
+                .channelUserId(channelUserId)
+                .lineUserId(event.getLineUserId()) // backward compat
                 .message(event.getText())
                 .build();
 
@@ -38,7 +46,7 @@ public class ChatbotMessageHandler {
                     RabbitMQConfig.ROUTING_KEY_CHATBOT,
                     request
             );
-            log.debug("客服請求已投遞到 MQ: userId={}", event.getUserId());
+            log.debug("客服請求已投遞到 MQ: userId={} channel={}", event.getUserId(), channel);
         } catch (Exception e) {
             log.error("客服請求投遞 MQ 失敗: userId={} error={}", event.getUserId(), e.getMessage());
         }
