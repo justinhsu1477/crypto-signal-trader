@@ -26,6 +26,7 @@ import {
   CandlestickChart,
   Target,
   FileBarChart,
+  ScrollText,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -57,6 +58,7 @@ export function Sidebar() {
     { href: "/admin/analytics", label: t("nav.adminAnalytics"), icon: TrendingUp },
     { href: "/admin/insights", label: t("nav.adminInsights"), icon: Users2 },
     { href: "/admin/signal-sources", label: t("nav.adminSignalSources"), icon: Target },
+    { href: "/admin/prompts", label: t("nav.adminPrompts"), icon: ScrollText },
     { href: "/admin/broadcast-logs", label: t("nav.adminBroadcastLogs"), icon: Radio },
     { href: "/admin/daily-reports", label: t("nav.adminDailyReports"), icon: FileBarChart },
     { href: "/admin/notifications", label: t("nav.adminNotifications"), icon: Send },
