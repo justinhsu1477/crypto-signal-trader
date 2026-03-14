@@ -35,27 +35,28 @@ class ChatbotRateLimiterTest {
     void normalTrafficAllowed() {
         when(chatbotConfig.getRateLimitPerMinute()).thenReturn(5);
         when(chatbotConfig.getRateLimitPerDay()).thenReturn(50);
+        when(valueOps.get(anyString())).thenReturn(null); // 尚無計數
         when(valueOps.increment(anyString())).thenReturn(1L);
 
         assertThat(rateLimiter.isAllowed("u1")).isTrue();
     }
 
     @Test
-    @DisplayName("超過每分鐘限制 → 拒絕")
+    @DisplayName("超過每分鐘限制 → 拒絕（不遞增計數）")
     void perMinuteLimitExceeded() {
         when(chatbotConfig.getRateLimitPerMinute()).thenReturn(5);
-        when(valueOps.increment("chatbot:rate:min:u1")).thenReturn(6L);
+        when(valueOps.get("chatbot:rate:min:u1")).thenReturn("5"); // 已達上限
 
         assertThat(rateLimiter.isAllowed("u1")).isFalse();
     }
 
     @Test
-    @DisplayName("超過每日限制 → 拒絕")
+    @DisplayName("超過每日限制 → 拒絕（不遞增計數）")
     void perDayLimitExceeded() {
         when(chatbotConfig.getRateLimitPerMinute()).thenReturn(5);
         when(chatbotConfig.getRateLimitPerDay()).thenReturn(50);
-        when(valueOps.increment("chatbot:rate:min:u1")).thenReturn(1L);
-        when(valueOps.increment("chatbot:rate:day:u1")).thenReturn(51L);
+        when(valueOps.get("chatbot:rate:min:u1")).thenReturn("3"); // 分鐘未超限
+        when(valueOps.get("chatbot:rate:day:u1")).thenReturn("50"); // 每日已達上限
 
         assertThat(rateLimiter.isAllowed("u1")).isFalse();
     }

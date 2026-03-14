@@ -42,6 +42,11 @@ public class UserContextGatherer {
 
     /**
      * Admin 模式：收集全平台資料，讓 Gemini 自己判斷要回答什麼
+     *
+     * 用戶比對邏輯：
+     * 1. 名字長度 >= 2 才做子字串比對（避免短名字誤匹配）
+     * 2. 多個用戶匹配 → 列出候選名單，提示 Admin 指定
+     * 3. 精確匹配 1 人 → 載入該用戶完整詳細資料
      */
     public String gatherAdminContext(String message) {
         StringBuilder sb = new StringBuilder();
@@ -50,19 +55,26 @@ public class UserContextGatherer {
             // 全平台用戶列表（含基本資訊）
             sb.append(gatherAllUsersOverview());
 
-            // 嘗試從訊息中找出目標用戶，提供該用戶的詳細資料
-            String lowerMsg = message.toLowerCase();
-            List<User> allUsers = userRepository.findAll();
-            for (User u : allUsers) {
-                String name = u.getName() != null ? u.getName() : "";
-                String email = u.getEmail() != null ? u.getEmail() : "";
-                if (!name.isEmpty() && lowerMsg.contains(name.toLowerCase())
-                        || !email.isEmpty() && lowerMsg.contains(email.toLowerCase())) {
-                    sb.append(String.format("\n### 用戶「%s」詳細資料\n", name.isEmpty() ? email : name));
-                    sb.append(gatherAccountStatus(u.getUserId()));
-                    sb.append(gatherRecentTrades(u.getUserId(), 10));
-                    sb.append(gatherTradeStats(u.getUserId()));
-                    sb.append(gatherTradeSettings(u.getUserId()));
+            // 嘗試從訊息中找出目標用戶
+            List<User> matchedUsers = findMatchedUsers(message);
+
+            if (matchedUsers.size() == 1) {
+                // 精確匹配 1 人 → 載入完整資料
+                User u = matchedUsers.get(0);
+                String displayName = u.getName() != null && !u.getName().isEmpty() ? u.getName() : u.getEmail();
+                sb.append(String.format("\n### 用戶「%s」詳細資料\n", displayName));
+                sb.append(gatherAccountStatus(u.getUserId()));
+                sb.append(gatherRecentTrades(u.getUserId(), 10));
+                sb.append(gatherTradeStats(u.getUserId()));
+                sb.append(gatherTradeSettings(u.getUserId()));
+            } else if (matchedUsers.size() > 1) {
+                // 多人匹配 → 列出候選，讓 Gemini 提示 Admin 指定
+                sb.append("\n### ⚠️ 多位用戶匹配，請指定\n");
+                sb.append("以下用戶名稱與訊息相似，請管理員指定全名或 email：\n");
+                for (User u : matchedUsers) {
+                    String name = u.getName() != null ? u.getName() : "未設名";
+                    String email = u.getEmail() != null ? u.getEmail() : "";
+                    sb.append(String.format("- %s（%s）\n", name, email));
                 }
             }
 
@@ -74,6 +86,77 @@ public class UserContextGatherer {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 從 Admin 訊息中比對用戶
+     *
+     * 雙向比對策略：
+     * 1. 訊息包含用戶全名（如「蘇小明最近交易如何」匹配「蘇小明」）
+     * 2. 用戶名包含訊息中的關鍵字（如「小明最近交易如何」匹配「蘇小明」和「王小明」）
+     *
+     * 過濾規則：
+     * - email 需完整出現在訊息中
+     * - 含中文的名字：長度 >= 1 即可（中文 1 字就有意義）
+     * - 純英文名字：長度 >= 2（避免 "ok"、"li" 誤觸）
+     */
+    private List<User> findMatchedUsers(String message) {
+        String lowerMsg = message.toLowerCase();
+        List<User> allUsers = userRepository.findAll();
+        List<User> matched = new java.util.ArrayList<>();
+
+        for (User u : allUsers) {
+            String name = u.getName() != null ? u.getName().trim() : "";
+            String email = u.getEmail() != null ? u.getEmail().trim() : "";
+
+            // email 完整匹配
+            if (!email.isEmpty() && lowerMsg.contains(email.toLowerCase())) {
+                matched.add(u);
+                continue;
+            }
+
+            if (name.isEmpty() || !isNameLongEnough(name)) continue;
+
+            String lowerName = name.toLowerCase();
+
+            // 雙向比對：訊息包含全名 OR 全名包含訊息中的關鍵字
+            if (lowerMsg.contains(lowerName) || lowerName.contains(extractNameKeyword(lowerMsg))) {
+                matched.add(u);
+            }
+        }
+
+        return matched;
+    }
+
+    /**
+     * 從 Admin 訊息中擷取可能的用戶名關鍵字
+     *
+     * 移除常見的查詢用語，保留可能是人名的部分。
+     * 例如「用戶 蘇 最近交易如何」→「蘇」
+     */
+    private String extractNameKeyword(String lowerMsg) {
+        String keyword = lowerMsg
+                .replaceAll("用戶|用户|使用者|帳號|帐号|account", "")
+                .replaceAll("最近|交易|狀況|状况|如何|怎麼|怎么|績效|绩效|查詢|查询|情況|情况", "")
+                .replaceAll("的|了|嗎|吗|呢|啊|是|有", "")
+                .trim();
+        // 取第一段非空白字串作為關鍵字
+        String[] parts = keyword.split("\\s+");
+        for (String part : parts) {
+            if (!part.isEmpty()) return part;
+        }
+        return "";
+    }
+
+    /**
+     * 判斷名字是否夠長可做子字串比對
+     * 含中文字 → 1 字以上即可（中文 1 字就有意義）
+     * 純英文 → 需 >= 2 字元（避免 "ok"、"li" 誤觸）
+     */
+    private boolean isNameLongEnough(String name) {
+        boolean hasCjk = name.codePoints().anyMatch(cp ->
+                Character.UnicodeScript.of(cp) == Character.UnicodeScript.HAN);
+        return hasCjk || name.length() >= 2;
     }
 
     private String gatherAllUsersOverview() {
@@ -95,14 +178,15 @@ public class UserContextGatherer {
     private String gatherPlatformStats() {
         StringBuilder sb = new StringBuilder("\n### 全平台交易統計\n");
         try {
-            List<User> users = userRepository.findAll();
+            // 使用批次聚合查詢（1 次 SQL 取代 N 次 per-user 查詢）
+            List<Object[]> stats = tradeRepository.aggregateStatsPerUser();
             long totalTrades = 0;
             long totalWins = 0;
             double totalPnl = 0;
-            for (User u : users) {
-                totalTrades += tradeRepository.countUserClosedTrades(u.getUserId());
-                totalWins += tradeRepository.countUserWinningTrades(u.getUserId());
-                totalPnl += tradeRepository.sumUserNetProfit(u.getUserId());
+            for (Object[] row : stats) {
+                totalTrades += ((Number) row[1]).longValue();
+                totalWins += ((Number) row[2]).longValue();
+                totalPnl += ((Number) row[3]).doubleValue();
             }
             double winRate = totalTrades > 0 ? (double) totalWins / totalTrades * 100 : 0;
             sb.append(String.format("- 總已平倉：%d 筆\n", totalTrades));

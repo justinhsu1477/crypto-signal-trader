@@ -136,7 +136,7 @@ class ChatbotConsumerTest {
 
             consumer.consume(request);
 
-            verify(discordBotService).sendChannelReply("channel456", "頻道回覆內容");
+            verify(discordBotService).sendChannelReply("channel456", "discord123", "頻道回覆內容");
             verify(discordBotService, never()).sendDmReply(anyString(), anyString());
         }
 
@@ -151,7 +151,7 @@ class ChatbotConsumerTest {
 
             consumer.consume(request);
 
-            verify(discordBotService).sendChannelReply(eq("channel456"), anyString());
+            verify(discordBotService).sendChannelReply(eq("channel456"), eq("discord123"), anyString());
             verify(discordBotService, never()).sendDmReply(anyString(), anyString());
         }
     }

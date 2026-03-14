@@ -27,31 +27,37 @@ public class ChatbotRateLimiter {
     private static final String KEY_PREFIX_DAY = "chatbot:rate:day:";
 
     /**
-     * 檢查是否允許（同時遞增計數）
+     * 檢查是否允許（先檢查上限，通過後才遞增計數）
+     *
+     * 避免被拒絕的請求也消耗計數配額
      */
     public boolean isAllowed(String userId) {
         try {
             String minKey = KEY_PREFIX_MIN + userId;
             String dayKey = KEY_PREFIX_DAY + userId;
 
-            // 每分鐘限制
+            // 先檢查當前計數是否已超限（不遞增）
+            String minVal = redisTemplate.opsForValue().get(minKey);
+            if (minVal != null && Long.parseLong(minVal) >= chatbotConfig.getRateLimitPerMinute()) {
+                log.info("客服限流（分鐘）: userId={} count={}", userId, minVal);
+                return false;
+            }
+
+            String dayVal = redisTemplate.opsForValue().get(dayKey);
+            if (dayVal != null && Long.parseLong(dayVal) >= chatbotConfig.getRateLimitPerDay()) {
+                log.info("客服限流（每日）: userId={} count={}", userId, dayVal);
+                return false;
+            }
+
+            // 通過檢查 → 遞增計數
             Long minCount = redisTemplate.opsForValue().increment(minKey);
             if (minCount != null && minCount == 1) {
                 redisTemplate.expire(minKey, Duration.ofSeconds(60));
             }
-            if (minCount != null && minCount > chatbotConfig.getRateLimitPerMinute()) {
-                log.info("客服限流（分鐘）: userId={} count={}", userId, minCount);
-                return false;
-            }
 
-            // 每日限制
             Long dayCount = redisTemplate.opsForValue().increment(dayKey);
             if (dayCount != null && dayCount == 1) {
                 redisTemplate.expire(dayKey, Duration.ofSeconds(86400));
-            }
-            if (dayCount != null && dayCount > chatbotConfig.getRateLimitPerDay()) {
-                log.info("客服限流（每日）: userId={} count={}", userId, dayCount);
-                return false;
             }
 
             return true;

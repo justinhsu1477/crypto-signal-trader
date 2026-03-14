@@ -2,11 +2,8 @@ package com.trader.chatbot.service;
 
 import com.trader.chatbot.config.DiscordBotConfig;
 import com.trader.chatbot.event.ChatMessageEvent;
-import com.trader.user.entity.LineLinkingCode;
 import com.trader.user.entity.UserDiscordBinding;
-import com.trader.user.repository.LineLinkingCodeRepository;
 import com.trader.user.repository.UserDiscordBindingRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
@@ -26,13 +23,22 @@ import java.util.Optional;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class DiscordBotListener extends ListenerAdapter {
 
     private final DiscordBotConfig discordBotConfig;
     private final UserDiscordBindingRepository discordBindingRepository;
-    private final LineLinkingCodeRepository linkingCodeRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final DiscordBotService discordBotService;
+
+    public DiscordBotListener(DiscordBotConfig discordBotConfig,
+                              UserDiscordBindingRepository discordBindingRepository,
+                              ApplicationEventPublisher eventPublisher,
+                              @org.springframework.context.annotation.Lazy DiscordBotService discordBotService) {
+        this.discordBotConfig = discordBotConfig;
+        this.discordBindingRepository = discordBindingRepository;
+        this.eventPublisher = eventPublisher;
+        this.discordBotService = discordBotService;
+    }
 
     private static final String ADMIN_USER_ID = "ADMIN";
 
@@ -142,23 +148,10 @@ public class DiscordBotListener extends ListenerAdapter {
     }
 
     private void handleLinkingCode(MessageReceivedEvent event, String discordUserId, String code) {
-        Optional<LineLinkingCode> codeEntity = linkingCodeRepository.findByCodeAndUsedFalse(code);
-        if (codeEntity.isPresent() && !codeEntity.get().isExpired()) {
-            // 標記碼已使用
-            LineLinkingCode linkCode = codeEntity.get();
-            linkCode.setUsed(true);
-            linkingCodeRepository.save(linkCode);
+        Optional<String> boundUserId = discordBotService.bindDiscordAccount(
+                discordUserId, event.getAuthor().getName(), code);
 
-            // 建立 Discord 綁定
-            UserDiscordBinding newBinding = UserDiscordBinding.builder()
-                    .userId(linkCode.getUserId())
-                    .discordUserId(discordUserId)
-                    .displayName(event.getAuthor().getName())
-                    .enabled(true)
-                    .build();
-            discordBindingRepository.save(newBinding);
-
-            log.info("Discord 綁定成功: userId={} discordUserId={}", linkCode.getUserId(), discordUserId);
+        if (boundUserId.isPresent()) {
             event.getChannel().sendMessage("✅ 綁定成功！\n您現在可以直接在這裡詢問任何問題，AI 客服會為您服務。").queue();
         } else {
             event.getChannel().sendMessage("連結碼無效或已過期。\n請重新在網站產生連結碼。").queue();
