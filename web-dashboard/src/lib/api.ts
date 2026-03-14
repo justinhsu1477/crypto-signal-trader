@@ -1057,6 +1057,77 @@ export async function getAdminActivePrompt(): Promise<PromptVersion | null> {
   }
 }
 
+// ─── Payment History (User) ───
+
+import type {
+  UserPaymentHistoryResponse,
+  ApiKeyHealthResponse,
+  ChangelogEntry,
+  TradeNoteResponse,
+  TradeNoteRequest,
+  BalanceSnapshot,
+} from "@/types";
+
+export async function getPaymentHistory(): Promise<UserPaymentHistoryResponse> {
+  return request<UserPaymentHistoryResponse>("/api/dashboard/payment-history");
+}
+
+// ─── API Key Health Check ───
+
+export async function testApiKeyHealth(): Promise<ApiKeyHealthResponse> {
+  return request<ApiKeyHealthResponse>("/api/user/api-keys/test", {
+    method: "POST",
+  });
+}
+
+// ─── Changelog ───
+
+export async function getChangelogs(): Promise<ChangelogEntry[]> {
+  return request<ChangelogEntry[]>("/api/changelog");
+}
+
+export async function getAdminChangelogs(): Promise<ChangelogEntry[]> {
+  return request<ChangelogEntry[]>("/api/admin/changelog");
+}
+
+export async function createAdminChangelog(data: Partial<ChangelogEntry>): Promise<ChangelogEntry> {
+  return request<ChangelogEntry>("/api/admin/changelog", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function publishAdminChangelog(id: number): Promise<ChangelogEntry> {
+  return request<ChangelogEntry>(`/api/admin/changelog/${id}/publish`, {
+    method: "POST",
+  });
+}
+
+export async function deleteAdminChangelog(id: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/changelog/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ─── Trade Notes ───
+
+export async function getTradeNote(tradeId: string): Promise<TradeNoteResponse> {
+  return request<TradeNoteResponse>(`/api/dashboard/trades/${tradeId}/note`);
+}
+
+export async function saveTradeNote(tradeId: string, data: TradeNoteRequest): Promise<TradeNoteResponse> {
+  return request<TradeNoteResponse>(`/api/dashboard/trades/${tradeId}/note`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+// ─── Equity Curve ───
+
+export async function getEquityCurve(days: number = 90): Promise<BalanceSnapshot[]> {
+  return request<BalanceSnapshot[]>(`/api/dashboard/equity-curve?days=${days}`);
+}
+
 // ─── User Signal Sources ───
 
 export async function getUserSignalSources(): Promise<SignalSourceUserResponse[]> {

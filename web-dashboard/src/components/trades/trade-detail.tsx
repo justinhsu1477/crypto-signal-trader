@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { TradeEvent, TradeRecord } from "@/types";
-import { getTradeEvents } from "@/lib/api";
+import type { TradeEvent, TradeRecord, TradeNoteResponse } from "@/types";
+import { getTradeEvents, getTradeNote, saveTradeNote } from "@/lib/api";
 import { formatDateTime, formatCurrency, pnlColor } from "@/lib/utils";
 import {
   Dialog,
@@ -58,6 +58,14 @@ export function TradeDetail({ tradeId, trade, onClose }: TradeDetailProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Trade Note
+  const [note, setNote] = useState<TradeNoteResponse | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteTags, setNoteTags] = useState("");
+  const [noteRating, setNoteRating] = useState<number>(0);
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteExpanded, setNoteExpanded] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -81,6 +89,12 @@ export function TradeDetail({ tradeId, trade, onClose }: TradeDetailProps) {
     }
 
     fetchEvents();
+    getTradeNote(tradeId).then((n) => {
+      setNote(n);
+      setNoteText(n.note ?? "");
+      setNoteTags(n.tags ?? "");
+      setNoteRating(n.rating ?? 0);
+    }).catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -118,6 +132,74 @@ export function TradeDetail({ tradeId, trade, onClose }: TradeDetailProps) {
             </div>
           </div>
         )}
+
+        {/* Trade Note Section */}
+        <div className="space-y-2 rounded-lg border p-4">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setNoteExpanded(!noteExpanded)}
+          >
+            <h4 className="text-sm font-medium">Trade Note</h4>
+            <span className="text-xs text-muted-foreground">
+              {noteExpanded ? "Collapse" : (note?.note ? "Edit" : "Add Note")}
+            </span>
+          </div>
+
+          {!noteExpanded && note?.note && (
+            <p className="text-sm text-muted-foreground line-clamp-2">{note.note}</p>
+          )}
+
+          {noteExpanded && (
+            <div className="space-y-3">
+              <textarea
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[80px] resize-y"
+                placeholder="Write your trade review..."
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+              />
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder="Tags (comma separated): FOMO, Oversize"
+                value={noteTags}
+                onChange={(e) => setNoteTags(e.target.value)}
+              />
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Rating:</span>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setNoteRating(star === noteRating ? 0 : star)}
+                    className={`text-lg ${star <= noteRating ? "text-yellow-400" : "text-muted-foreground/30"}`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="sm"
+                disabled={noteSaving}
+                onClick={async () => {
+                  setNoteSaving(true);
+                  try {
+                    const saved = await saveTradeNote(tradeId, {
+                      note: noteText || null,
+                      tags: noteTags || null,
+                      rating: noteRating || null,
+                    });
+                    setNote(saved);
+                    setNoteExpanded(false);
+                  } catch {
+                    // silently fail
+                  } finally {
+                    setNoteSaving(false);
+                  }
+                }}
+              >
+                {noteSaving ? "Saving..." : "Save Note"}
+              </Button>
+            </div>
+          )}
+        </div>
 
         {loading && (
           <div className="flex items-center justify-center py-12">
