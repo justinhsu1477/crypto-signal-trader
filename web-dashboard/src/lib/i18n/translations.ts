@@ -39,6 +39,7 @@ const translations = {
     totalRecords: { en: "{count} records total", "zh-TW": "共 {count} 筆", "zh-CN": "共 {count} 条", ja: "合計 {count} 件" },
     undo: { en: "Undo", "zh-TW": "復原", "zh-CN": "撤销", ja: "取り消し" },
     undoSuccess: { en: "Changes reverted", "zh-TW": "已復原變更", "zh-CN": "已撤销变更", ja: "変更が取り消されました" },
+    save: { en: "Save", "zh-TW": "儲存", "zh-CN": "保存", ja: "保存" },
   },
 
   // ─── nav ───
@@ -94,6 +95,7 @@ const translations = {
     metricsCalls: { en: "Calls", "zh-TW": "呼叫數", "zh-CN": "调用数", ja: "呼び出し数" },
     announcements: { en: "Announcements", "zh-TW": "最新公告", "zh-CN": "最新公告", ja: "お知らせ" },
     logout: { en: "Logout", "zh-TW": "登出", "zh-CN": "退出登录", ja: "ログアウト" },
+    logoutCancel: { en: "Cancel", "zh-TW": "取消", "zh-CN": "取消", ja: "キャンセル" },
     logoutConfirmTitle: { en: "Confirm Logout", "zh-TW": "確認登出", "zh-CN": "确认退出", ja: "ログアウト確認" },
     logoutConfirmDesc: { en: "Are you sure you want to logout? You will need to sign in again.", "zh-TW": "確定要登出嗎？您需要重新登入。", "zh-CN": "确定要退出吗？您需要重新登录。", ja: "ログアウトしてもよろしいですか？再度サインインが必要です。" },
     features: { en: "Features", "zh-TW": "功能特色", "zh-CN": "功能特色", ja: "機能" },
@@ -388,6 +390,19 @@ const translations = {
       "zh-TW": "我們注重質量而非數量 — 連接經過精心篩選的訊號來源，並對每筆交易施加機構級風險管理。技術優先的理念意味著持續提升執行速度、風控能力和分析工具。",
       "zh-CN": "我们注重质量而非数量 — 连接经过精心筛选的信号来源，并对每笔交易施加机构级风险管理。技术优先的理念意味着持续提升执行速度、风控能力和分析工具。",
       ja: "質より量を重視します — 慎重に厳選されたシグナルソースに接続し、すべての取引に機関レベルのリスク管理を適用します。技術優先のアプローチは、実行速度、リスクコントロール、分析ツールの継続的な改善を意味します。",
+    },
+    aboutReadMore: { en: "Read more about us", "zh-TW": "了解更多關於我們", "zh-CN": "了解更多关于我们", ja: "私たちについてもっと読む" },
+    aboutLongP1: {
+      en: "Our team combines years of experience in quantitative trading and software engineering. We understand that in the fast-moving crypto market, every second counts — that's why our signal execution pipeline is optimized for sub-second latency.",
+      "zh-TW": "我們的團隊結合了多年的量化交易與軟體工程經驗。我們深知在快速變動的加密貨幣市場中，每一秒都至關重要 — 因此我們的訊號執行管道已優化至毫秒級延遲。",
+      "zh-CN": "我们的团队结合了多年的量化交易与软件工程经验。我们深知在快速变动的加密货币市场中，每一秒都至关重要 — 因此我们的信号执行管道已优化至毫秒级延迟。",
+      ja: "私たちのチームは、定量取引とソフトウェアエンジニアリングの長年の経験を組み合わせています。",
+    },
+    aboutLongP2: {
+      en: "Security is not an afterthought — it's our foundation. Your API keys are encrypted with AES-256, and our non-custodial architecture means we never have access to your funds. Trade with confidence knowing your assets are always under your control.",
+      "zh-TW": "安全不是事後考量 — 而是我們的基礎。您的 API Key 以 AES-256 加密保護，非託管架構意味著我們永遠無法存取您的資金。放心交易，您的資產始終在您的掌控之中。",
+      "zh-CN": "安全不是事后考量 — 而是我们的基础。您的 API Key 以 AES-256 加密保护，非托管架构意味着我们永远无法访问您的资金。放心交易，您的资产始终在您的掌控之中。",
+      ja: "セキュリティは後付けではありません — 基盤です。APIキーはAES-256で暗号化され、ノンカストディアルアーキテクチャにより、私たちがあなたの資金にアクセスすることはありません。",
     },
     // ── Stats bar section ──
     statsBarUptime: { en: "System Uptime", "zh-TW": "系統運行", "zh-CN": "系统运行", ja: "システム可用性" },
@@ -1411,6 +1426,8 @@ const translations = {
     dcaRiskMultiplier: { en: "DCA Risk Multiplier", "zh-TW": "DCA 風險倍數", "zh-CN": "DCA 风险倍数" },
     dailyLossPercent: { en: "Daily Loss %", "zh-TW": "每日虧損%", "zh-CN": "每日亏损%" },
     maxPositionPercent: { en: "Max Position %", "zh-TW": "最大倉位%", "zh-CN": "最大仓位%" },
+    email: { en: "Email", "zh-TW": "電子郵件", "zh-CN": "电子邮件", ja: "メールアドレス" },
+    name: { en: "Name", "zh-TW": "名稱", "zh-CN": "名称", ja: "名前" },
     emailVerified: { en: "Email Verified", "zh-TW": "Email 已驗證", "zh-CN": "Email 已验证" },
     hasPassword: { en: "Has Password", "zh-TW": "有密碼", "zh-CN": "有密码" },
     passwordChangedAt: { en: "Password Changed", "zh-TW": "密碼變更時間", "zh-CN": "密码修改时间" },
