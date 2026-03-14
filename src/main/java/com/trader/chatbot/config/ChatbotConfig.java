@@ -3,13 +3,13 @@ package com.trader.chatbot.config;
 import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
-import org.springframework.context.annotation.Configuration;
 
 /**
  * AI 客服 Agent 設定
+ *
+ * 由 @ConfigurationPropertiesScan 註冊，不需要 @Configuration
  */
 @Getter
-@Configuration
 @ConfigurationProperties(prefix = "chatbot")
 public class ChatbotConfig {
 
