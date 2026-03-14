@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import com.trader.shared.config.AppConstants;
+
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Optional;
@@ -110,7 +112,7 @@ class ChatbotServiceTest {
 
         ChatConversation latest = ChatConversation.builder()
                 .sessionId("existing-session")
-                .createdAt(LocalDateTime.now().minusMinutes(5))
+                .createdAt(LocalDateTime.now(AppConstants.ZONE_ID).minusMinutes(5))
                 .build();
         when(conversationRepository.findTopByUserIdOrderByCreatedAtDesc("u1"))
                 .thenReturn(Optional.of(latest));
