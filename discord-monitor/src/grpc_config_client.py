@@ -186,3 +186,15 @@ class GrpcConfigClient:
                     }
             self.signal_router.source_metadata_map = source_map
             logger.info("🔄 source_metadata_map 已更新: %d 個來源", len(source_map))
+
+        # AI prompt 熱更新（DB 管理的 prompt 版本，由 Admin 啟用後推送）
+        if config.active_prompt and self.signal_router.ai_parser:
+            current_ver = self.signal_router.ai_parser.prompt_version
+            if config.active_prompt_version != current_ver:
+                self.signal_router.ai_parser.update_system_prompt(
+                    config.active_prompt, config.active_prompt_version
+                )
+                logger.info(
+                    "🔄 AI prompt 已更新: v%d → v%d",
+                    current_ver, config.active_prompt_version,
+                )

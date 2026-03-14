@@ -27,6 +27,8 @@ message MonitorConfig {
   repeated string ignore_keywords = 4;  // 保留
   int64 version = 5;                    // 單調遞增版本號，衝突偵測用
   repeated SourceConfig sources = 6;    // 每個來源的完整元資料
+  string active_prompt = 7;             // AI system prompt 全文（gRPC 推送）
+  int32 active_prompt_version = 8;      // prompt 版本號（交易追溯用）
 }
 
 // ─── GetConfig: 啟動時取得初始設定（Unary） ───

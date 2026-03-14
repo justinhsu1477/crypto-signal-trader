@@ -273,6 +273,10 @@ class SignalRouter:
                 # TODO: Insert Agent 2 (risk assessment) here in future
                 # TODO: Insert Agent 3 (arbitration) here in future
 
+                # 附加 prompt 版本號（供後端交易追溯）
+                if self.ai_parser and self.ai_parser.prompt_version:
+                    parsed["prompt_version"] = self.ai_parser.prompt_version
+
                 result = await self.api_client.send_trade(parsed, dry_run=self.dry_run, source=source)
                 if result.success:
                     logger.info("AI trade OK: %s", result.summary[:200])

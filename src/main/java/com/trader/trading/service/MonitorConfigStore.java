@@ -67,6 +67,7 @@ public class MonitorConfigStore {
 
     /**
      * 更新頻道設定並即時推送到所有已連線的 Python Monitor
+     * 保留既有的 activePrompt / activePromptVersion（避免 source CRUD 操作意外清空）
      */
     public void updateConfig(List<String> channelIds, List<String> guildIds,
                              List<String> authorIds, List<String> ignoreKeywords,
@@ -74,14 +75,21 @@ public class MonitorConfigStore {
                              String updatedBy, String reason) {
         long newVersion = version.incrementAndGet();
 
-        this.currentConfig = MonitorConfig.newBuilder()
+        MonitorConfig.Builder builder = MonitorConfig.newBuilder()
                 .addAllChannelIds(channelIds != null ? channelIds : List.of())
                 .addAllGuildIds(guildIds != null ? guildIds : List.of())
                 .addAllAuthorIds(authorIds != null ? authorIds : List.of())
                 .addAllIgnoreKeywords(ignoreKeywords != null ? ignoreKeywords : List.of())
                 .addAllSources(sources != null ? sources : List.of())
-                .setVersion(newVersion)
-                .build();
+                .setVersion(newVersion);
+
+        // 保留 prompt 設定（source CRUD 不應清空 prompt）
+        if (!currentConfig.getActivePrompt().isEmpty()) {
+            builder.setActivePrompt(currentConfig.getActivePrompt());
+            builder.setActivePromptVersion(currentConfig.getActivePromptVersion());
+        }
+
+        this.currentConfig = builder.build();
 
         ConfigUpdate update = ConfigUpdate.newBuilder()
                 .setConfig(currentConfig)
@@ -92,6 +100,31 @@ public class MonitorConfigStore {
 
         pushToObservers(update);
         log.info("Monitor 設定已更新 (v{}): channels={}, by={}", newVersion, channelIds, updatedBy);
+    }
+
+    /**
+     * 更新 AI Prompt 並即時推送到所有已連線的 Python Monitor
+     * 在 currentConfig 基礎上只換 prompt，其他欄位保留
+     */
+    public void updatePrompt(String promptContent, int promptVersion) {
+        long newVersion = version.incrementAndGet();
+
+        this.currentConfig = currentConfig.toBuilder()
+                .setActivePrompt(promptContent)
+                .setActivePromptVersion(promptVersion)
+                .setVersion(newVersion)
+                .build();
+
+        ConfigUpdate update = ConfigUpdate.newBuilder()
+                .setConfig(currentConfig)
+                .setUpdatedBy("admin")
+                .setUpdateReason("prompt_activated:v" + promptVersion)
+                .setTimestamp(System.currentTimeMillis())
+                .build();
+
+        pushToObservers(update);
+        log.info("Prompt 已推送 (v{}): config_version={}, prompt_chars={}",
+                promptVersion, newVersion, promptContent.length());
     }
 
     public void addObserver(StreamObserver<ConfigUpdate> observer) {
