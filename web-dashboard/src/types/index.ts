@@ -950,6 +950,25 @@ export interface SignalSourceUserResponse {
   enabled: boolean;
 }
 
+// ─── Shadow Graduation ───
+
+export interface ShadowGraduationResult {
+  sourceId: number;
+  name: string;
+  displayName: string;
+  paperTradeCount: number;
+  paperWinRate: number;
+  paperProfitFactor: number;
+  paperMaxConsecutiveLosses: number;
+  paperTotalPnl: number;
+  tradesPass: boolean;
+  winRatePass: boolean;
+  profitFactorPass: boolean;
+  consecutiveLossesPass: boolean;
+  passedCriteria: number;
+  status: "READY" | "APPROACHING" | "NOT_READY";
+}
+
 // ─── Daily Signal Report ───
 
 export interface DailySignalReportSummary {

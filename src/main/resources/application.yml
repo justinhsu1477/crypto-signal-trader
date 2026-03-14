@@ -109,6 +109,13 @@ binance:
     allowed-symbols:              # 允許的交易對清單（可加多個）
       - BTCUSDT
 
+# ========== SHADOW 畢業門檻 ==========
+shadow-graduation:
+  min-trades: 30              # 最低模擬交易筆數
+  min-win-rate: 55.0          # 最低勝率 (%)
+  min-profit-factor: 1.3      # 最低盈虧比
+  max-consecutive-losses: 5   # 最大連敗上限
+
 # ========== 廣播跟單批次設定 ==========
 broadcast:
   executor:
