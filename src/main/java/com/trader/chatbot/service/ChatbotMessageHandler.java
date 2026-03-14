@@ -36,6 +36,7 @@ public class ChatbotMessageHandler {
                 .userId(event.getUserId())
                 .channel(channel)
                 .channelUserId(channelUserId)
+                .replyChannelId(event.getReplyChannelId())
                 .lineUserId(event.getLineUserId()) // backward compat
                 .message(event.getText())
                 .build();

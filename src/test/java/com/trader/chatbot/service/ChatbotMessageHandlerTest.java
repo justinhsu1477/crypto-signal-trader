@@ -93,6 +93,27 @@ class ChatbotMessageHandlerTest {
     }
 
     @Test
+    @DisplayName("Discord 頻道 @mention 事件 → 帶 replyChannelId 投遞到 MQ")
+    void discordChannelMentionEvent() {
+        ChatMessageEvent event = new ChatMessageEvent(this,
+                "ADMIN", "DISCORD", "discord123", "查用戶", "channel456");
+
+        handler.onChatMessage(event);
+
+        ArgumentCaptor<ChatbotRequest> captor = ArgumentCaptor.forClass(ChatbotRequest.class);
+        verify(rabbitTemplate).convertAndSend(
+                eq(RabbitMQConfig.EXCHANGE),
+                eq(RabbitMQConfig.ROUTING_KEY_CHATBOT),
+                captor.capture()
+        );
+
+        ChatbotRequest request = captor.getValue();
+        assertThat(request.getChannel()).isEqualTo("DISCORD");
+        assertThat(request.getReplyChannelId()).isEqualTo("channel456");
+        assertThat(request.getChannelUserId()).isEqualTo("discord123");
+    }
+
+    @Test
     @DisplayName("MQ 投遞失敗 → 不拋異常")
     void mqFailureHandled() {
         ChatMessageEvent event = new ChatMessageEvent(this, "user1", "LINE", "lineUser1", "你好");

@@ -17,11 +17,12 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 
 /**
- * Discord Bot 訊息監聯器
+ * Discord Bot 訊息監聽器
  *
- * 雙模式：
- * 1. Admin 模式：白名單 Discord ID 直接使用 AI 客服，可查詢任何用戶資料
- * 2. 一般用戶模式：需先綁定帳號，只能查詢自己的資料
+ * 三種模式：
+ * 1. DM Admin 模式：白名單 Discord ID 直接使用 AI 客服，可查詢任何用戶資料
+ * 2. DM 一般用戶模式：需先綁定帳號，只能查詢自己的資料
+ * 3. 頻道 @mention 模式：在文字頻道 @Bot 提問，Bot 在頻道中回覆（大家都看得到）
  */
 @Slf4j
 @Component
@@ -40,9 +41,17 @@ public class DiscordBotListener extends ListenerAdapter {
         // 忽略 Bot 自身訊息
         if (event.getAuthor().isBot()) return;
 
-        // 只處理 DM（私人頻道）
-        if (!event.isFromType(ChannelType.PRIVATE)) return;
+        if (event.isFromType(ChannelType.PRIVATE)) {
+            handleDmMessage(event);
+        } else if (event.isFromType(ChannelType.TEXT)) {
+            handleChannelMention(event);
+        }
+    }
 
+    /**
+     * 處理 DM 私訊（原有邏輯）
+     */
+    private void handleDmMessage(MessageReceivedEvent event) {
         String discordUserId = event.getAuthor().getId();
         String text = event.getMessage().getContentRaw().trim();
 
@@ -79,6 +88,57 @@ public class DiscordBotListener extends ListenerAdapter {
 
         // 非連結碼 → 回覆綁定指引
         event.getChannel().sendMessage(buildBindingGuide()).queue();
+    }
+
+    /**
+     * 處理頻道 @mention（@Bot 提問，Bot 在頻道中回覆）
+     *
+     * Admin：直接走 Admin 模式，可查全平台資料
+     * 已綁定用戶：走一般用戶模式
+     * 未綁定用戶：提示先 DM 綁定
+     */
+    private void handleChannelMention(MessageReceivedEvent event) {
+        // 只處理有 @mention Bot 的訊息
+        if (!event.getMessage().getMentions().isMentioned(event.getJDA().getSelfUser())) return;
+
+        String discordUserId = event.getAuthor().getId();
+        String textChannelId = event.getChannel().getId();
+
+        // 移除 @mention 部分，取得純文字
+        String text = event.getMessage().getContentDisplay()
+                .replaceAll("@" + event.getJDA().getSelfUser().getName(), "")
+                .trim();
+
+        if (text.isEmpty()) {
+            event.getMessage().reply("請在 @mention 後面輸入您的問題 😊").queue();
+            return;
+        }
+
+        log.debug("收到 Discord 頻道 @mention: discordUserId={} channelId={} text={}",
+                discordUserId, textChannelId,
+                text.length() > 30 ? text.substring(0, 30) + "..." : text);
+
+        // Admin 白名單 → Admin 模式
+        if (discordBotConfig.isAdmin(discordUserId)) {
+            event.getMessage().reply("🔍 查詢中...").queue();
+            eventPublisher.publishEvent(new ChatMessageEvent(this,
+                    ADMIN_USER_ID, "DISCORD", discordUserId, text, textChannelId));
+            return;
+        }
+
+        // 一般用戶：檢查綁定
+        Optional<UserDiscordBinding> binding = discordBindingRepository.findByDiscordUserId(discordUserId);
+
+        if (binding.isPresent() && binding.get().isEnabled()) {
+            event.getMessage().reply("正在為您查詢，請稍候... ⏳").queue();
+            eventPublisher.publishEvent(new ChatMessageEvent(this,
+                    binding.get().getUserId(), "DISCORD", discordUserId, text, textChannelId));
+            return;
+        }
+
+        // 未綁定 → 提示先 DM 綁定
+        event.getMessage().reply("請先私訊我綁定帳號，才能使用 AI 客服 🔗\n" +
+                "步驟：DM 我 → 輸入 8 位數連結碼").queue();
     }
 
     private void handleLinkingCode(MessageReceivedEvent event, String discordUserId, String code) {

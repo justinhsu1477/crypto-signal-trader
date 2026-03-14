@@ -38,23 +38,37 @@ public class ChatbotConsumer {
             String response = chatbotService.handleUserMessage(
                     request.getUserId(), channel, channelUserId, request.getMessage());
 
-            switch (channel) {
-                case "DISCORD" -> discordBotService.sendDmReply(channelUserId, response);
-                default -> lineNotificationService.pushTextMessage(channelUserId, response);
-            }
-            log.info("客服回覆已送出: userId={} channel={}", request.getUserId(), channel);
+            sendReply(channel, channelUserId, request.getReplyChannelId(), response);
+            log.info("客服回覆已送出: userId={} channel={} replyChannelId={}",
+                    request.getUserId(), channel, request.getReplyChannelId());
         } catch (Exception e) {
             log.error("客服訊息處理失敗: userId={} channel={} error={}",
                     request.getUserId(), channel, e.getMessage(), e);
             try {
                 String errorMsg = "抱歉，處理您的訊息時發生錯誤。請稍後再試，或輸入「客服」聯繫人工客服。";
-                switch (channel) {
-                    case "DISCORD" -> discordBotService.sendDmReply(channelUserId, errorMsg);
-                    default -> lineNotificationService.pushTextMessage(channelUserId, errorMsg);
-                }
+                sendReply(channel, channelUserId, request.getReplyChannelId(), errorMsg);
             } catch (Exception ex) {
                 log.error("客服錯誤回覆也失敗: {}", ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * 依據 channel + replyChannelId 路由回覆
+     * - DISCORD + replyChannelId → 頻道回覆
+     * - DISCORD + null           → DM 回覆
+     * - LINE                     → Push API
+     */
+    private void sendReply(String channel, String channelUserId, String replyChannelId, String text) {
+        switch (channel) {
+            case "DISCORD" -> {
+                if (replyChannelId != null && !replyChannelId.isBlank()) {
+                    discordBotService.sendChannelReply(replyChannelId, text);
+                } else {
+                    discordBotService.sendDmReply(channelUserId, text);
+                }
+            }
+            default -> lineNotificationService.pushTextMessage(channelUserId, text);
         }
     }
 }
