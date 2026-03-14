@@ -34,6 +34,7 @@ public class ChatbotService {
     private final ChatbotRateLimiter rateLimiter;
     private final ChatConversationRepository conversationRepository;
 
+    private static final String ADMIN_USER_ID = "ADMIN";
     private static final String FALLBACK_MESSAGE = "抱歉，AI 客服暫時無法回應。請稍後再試，或輸入「客服」聯繫人工客服。";
 
     private static final String SYSTEM_PROMPT = """
@@ -59,16 +60,39 @@ public class ChatbotService {
             ## 用戶資料（系統提供，可信任）
             """;
 
+    private static final String ADMIN_SYSTEM_PROMPT = """
+            你是 HookFi 加密貨幣交易平台的 Admin AI 助理。
+
+            ## 角色
+            - 你正在與平台管理員對話，可以查看所有用戶資料
+            - 繁體中文、專業簡潔、數據導向
+            - 回覆不超過 500 字
+
+            ## 能力
+            - 回答任何用戶的帳號狀態、交易紀錄、訂閱資訊
+            - 提供平台整體統計（用戶數、交易量、勝率等）
+            - 分析特定用戶的交易表現
+            - 如果管理員問到特定用戶，從「平台資料」中找到對應用戶回答
+
+            ## 安全規則
+            - 只根據「平台資料」回答，不可編造數據
+            - 不可提供投資建議或價格預測
+
+            ## 平台資料（系統提供，可信任）
+            """;
+
     /**
-     * 處理用戶訊息，回傳 AI 回覆（支援多頻道）
+     * 處理用戶訊息，回傳 AI 回覆（支援多頻道 + Admin 模式）
      */
     public String handleUserMessage(String userId, String channel, String channelUserId, String userMessage) {
         if (!chatbotConfig.isEnabled()) {
             return "AI 客服功能尚未啟用，請輸入「客服」聯繫人工客服。";
         }
 
-        // 1. 限流
-        if (!rateLimiter.isAllowed(userId)) {
+        boolean isAdmin = ADMIN_USER_ID.equals(userId);
+
+        // 1. 限流（Admin 不限流）
+        if (!isAdmin && !rateLimiter.isAllowed(userId)) {
             return rateLimiter.getRateLimitMessage();
         }
 
@@ -83,14 +107,16 @@ public class ChatbotService {
         // 4. Session 管理
         String sessionId = resolveSessionId(userId);
 
-        // 5. 收集上下文
-        String context = userContextGatherer.gatherContext(userId, intent);
+        // 5. 收集上下文（Admin 收集全平台資料）
+        String context = isAdmin
+                ? userContextGatherer.gatherAdminContext(cleanMessage)
+                : userContextGatherer.gatherContext(userId, intent);
 
         // 6. 載入對話歷史
         List<ChatTurn> history = loadHistory(sessionId);
 
         // 7. 組裝 system prompt
-        String fullSystemPrompt = SYSTEM_PROMPT + context;
+        String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context;
 
         // 8. 呼叫 Gemini
         Optional<String> aiResponse = geminiService.generateContentWithHistory(

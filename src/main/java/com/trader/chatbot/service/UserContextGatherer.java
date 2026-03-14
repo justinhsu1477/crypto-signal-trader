@@ -41,6 +41,80 @@ public class UserContextGatherer {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MM/dd HH:mm");
 
     /**
+     * Admin 模式：收集全平台資料，讓 Gemini 自己判斷要回答什麼
+     */
+    public String gatherAdminContext(String message) {
+        StringBuilder sb = new StringBuilder();
+
+        try {
+            // 全平台用戶列表（含基本資訊）
+            sb.append(gatherAllUsersOverview());
+
+            // 嘗試從訊息中找出目標用戶，提供該用戶的詳細資料
+            String lowerMsg = message.toLowerCase();
+            List<User> allUsers = userRepository.findAll();
+            for (User u : allUsers) {
+                String name = u.getName() != null ? u.getName() : "";
+                String email = u.getEmail() != null ? u.getEmail() : "";
+                if (!name.isEmpty() && lowerMsg.contains(name.toLowerCase())
+                        || !email.isEmpty() && lowerMsg.contains(email.toLowerCase())) {
+                    sb.append(String.format("\n### 用戶「%s」詳細資料\n", name.isEmpty() ? email : name));
+                    sb.append(gatherAccountStatus(u.getUserId()));
+                    sb.append(gatherRecentTrades(u.getUserId(), 10));
+                    sb.append(gatherTradeStats(u.getUserId()));
+                    sb.append(gatherTradeSettings(u.getUserId()));
+                }
+            }
+
+            // 全平台交易統計
+            sb.append(gatherPlatformStats());
+        } catch (Exception e) {
+            log.warn("收集 Admin 上下文失敗: {}", e.getMessage());
+            sb.append("\n[部分資料載入失敗]");
+        }
+
+        return sb.toString();
+    }
+
+    private String gatherAllUsersOverview() {
+        StringBuilder sb = new StringBuilder("\n### 全平台用戶列表\n");
+        try {
+            List<User> users = userRepository.findAll();
+            sb.append(String.format("總用戶數：%d\n", users.size()));
+            for (User u : users) {
+                String name = u.getName() != null ? u.getName() : "未設名";
+                String email = u.getEmail() != null ? u.getEmail() : "";
+                sb.append(String.format("- %s | %s | %s\n", name, email, u.getRole()));
+            }
+        } catch (Exception e) {
+            sb.append("- [用戶列表載入失敗]\n");
+        }
+        return sb.toString();
+    }
+
+    private String gatherPlatformStats() {
+        StringBuilder sb = new StringBuilder("\n### 全平台交易統計\n");
+        try {
+            List<User> users = userRepository.findAll();
+            long totalTrades = 0;
+            long totalWins = 0;
+            double totalPnl = 0;
+            for (User u : users) {
+                totalTrades += tradeRepository.countUserClosedTrades(u.getUserId());
+                totalWins += tradeRepository.countUserWinningTrades(u.getUserId());
+                totalPnl += tradeRepository.sumUserNetProfit(u.getUserId());
+            }
+            double winRate = totalTrades > 0 ? (double) totalWins / totalTrades * 100 : 0;
+            sb.append(String.format("- 總已平倉：%d 筆\n", totalTrades));
+            sb.append(String.format("- 整體勝率：%.1f%%\n", winRate));
+            sb.append(String.format("- 總損益：%.2f USDT\n", totalPnl));
+        } catch (Exception e) {
+            sb.append("- [統計載入失敗]\n");
+        }
+        return sb.toString();
+    }
+
+    /**
      * 根據意圖收集對應的上下文
      */
     public String gatherContext(String userId, Intent intent) {

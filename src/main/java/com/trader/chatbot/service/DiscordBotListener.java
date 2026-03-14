@@ -1,5 +1,6 @@
 package com.trader.chatbot.service;
 
+import com.trader.chatbot.config.DiscordBotConfig;
 import com.trader.chatbot.event.ChatMessageEvent;
 import com.trader.user.entity.LineLinkingCode;
 import com.trader.user.entity.UserDiscordBinding;
@@ -16,21 +17,23 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 
 /**
- * Discord Bot 訊息監聽器
+ * Discord Bot 訊息監聯器
  *
- * 處理 DM（私人訊息）：
- * - 已綁定用戶 → 發布 ChatMessageEvent → AI 客服回覆
- * - 未綁定 + 8 碼連結碼 → 嘗試綁定
- * - 未綁定 + 其他 → 回覆綁定指引
+ * 雙模式：
+ * 1. Admin 模式：白名單 Discord ID 直接使用 AI 客服，可查詢任何用戶資料
+ * 2. 一般用戶模式：需先綁定帳號，只能查詢自己的資料
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class DiscordBotListener extends ListenerAdapter {
 
+    private final DiscordBotConfig discordBotConfig;
     private final UserDiscordBindingRepository discordBindingRepository;
     private final LineLinkingCodeRepository linkingCodeRepository;
     private final ApplicationEventPublisher eventPublisher;
+
+    private static final String ADMIN_USER_ID = "ADMIN";
 
     @Override
     public void onMessageReceived(MessageReceivedEvent event) {
@@ -41,7 +44,6 @@ public class DiscordBotListener extends ListenerAdapter {
         if (!event.isFromType(ChannelType.PRIVATE)) return;
 
         String discordUserId = event.getAuthor().getId();
-        String displayName = event.getAuthor().getName();
         String text = event.getMessage().getContentRaw().trim();
 
         if (text.isEmpty()) return;
@@ -49,7 +51,15 @@ public class DiscordBotListener extends ListenerAdapter {
         log.debug("收到 Discord DM: discordUserId={} text={}", discordUserId,
                 text.length() > 30 ? text.substring(0, 30) + "..." : text);
 
-        // 檢查綁定
+        // Admin 白名單 → 直接進 AI 客服（可查全部用戶）
+        if (discordBotConfig.isAdmin(discordUserId)) {
+            event.getChannel().sendMessage("🔍 查詢中...").queue();
+            eventPublisher.publishEvent(new ChatMessageEvent(this,
+                    ADMIN_USER_ID, "DISCORD", discordUserId, text));
+            return;
+        }
+
+        // 一般用戶：檢查綁定
         Optional<UserDiscordBinding> binding = discordBindingRepository.findByDiscordUserId(discordUserId);
 
         if (binding.isPresent() && binding.get().isEnabled()) {
@@ -63,33 +73,36 @@ public class DiscordBotListener extends ListenerAdapter {
         // 未綁定 → 檢查是否為連結碼
         String upper = text.toUpperCase();
         if (upper.length() == 8) {
-            Optional<LineLinkingCode> code = linkingCodeRepository.findByCodeAndUsedFalse(upper);
-            if (code.isPresent() && !code.get().isExpired()) {
-                // 標記碼已使用
-                LineLinkingCode linkCode = code.get();
-                linkCode.setUsed(true);
-                linkingCodeRepository.save(linkCode);
-
-                // 建立 Discord 綁定
-                UserDiscordBinding newBinding = UserDiscordBinding.builder()
-                        .userId(linkCode.getUserId())
-                        .discordUserId(discordUserId)
-                        .displayName(displayName)
-                        .enabled(true)
-                        .build();
-                discordBindingRepository.save(newBinding);
-
-                log.info("Discord 綁定成功: userId={} discordUserId={}", linkCode.getUserId(), discordUserId);
-                event.getChannel().sendMessage("✅ 綁定成功！\n您現在可以直接在這裡詢問任何問題，AI 客服會為您服務。").queue();
-                return;
-            } else {
-                event.getChannel().sendMessage("連結碼無效或已過期。\n請重新在網站產生連結碼。").queue();
-                return;
-            }
+            handleLinkingCode(event, discordUserId, upper);
+            return;
         }
 
         // 非連結碼 → 回覆綁定指引
         event.getChannel().sendMessage(buildBindingGuide()).queue();
+    }
+
+    private void handleLinkingCode(MessageReceivedEvent event, String discordUserId, String code) {
+        Optional<LineLinkingCode> codeEntity = linkingCodeRepository.findByCodeAndUsedFalse(code);
+        if (codeEntity.isPresent() && !codeEntity.get().isExpired()) {
+            // 標記碼已使用
+            LineLinkingCode linkCode = codeEntity.get();
+            linkCode.setUsed(true);
+            linkingCodeRepository.save(linkCode);
+
+            // 建立 Discord 綁定
+            UserDiscordBinding newBinding = UserDiscordBinding.builder()
+                    .userId(linkCode.getUserId())
+                    .discordUserId(discordUserId)
+                    .displayName(event.getAuthor().getName())
+                    .enabled(true)
+                    .build();
+            discordBindingRepository.save(newBinding);
+
+            log.info("Discord 綁定成功: userId={} discordUserId={}", linkCode.getUserId(), discordUserId);
+            event.getChannel().sendMessage("✅ 綁定成功！\n您現在可以直接在這裡詢問任何問題，AI 客服會為您服務。").queue();
+        } else {
+            event.getChannel().sendMessage("連結碼無效或已過期。\n請重新在網站產生連結碼。").queue();
+        }
     }
 
     private String buildBindingGuide() {
