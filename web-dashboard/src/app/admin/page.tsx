@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats, getAdminMetrics, getAdminUserBalances } from "@/lib/api";
-import type { AdminSystemOverview, UserTradingSummary, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse, AdminMetricsResponse } from "@/types";
+import { getAdminSystemOverview, getSystemHealth, getAdminStreamStatus, getAdminDatabaseStats, getAdminMetrics, getAdminUserBalances, getAdminShadowGraduation } from "@/lib/api";
+import type { AdminSystemOverview, UserTradingSummary, SystemHealthResponse, StreamStatusResponse, DatabaseStatsResponse, AdminMetricsResponse, ShadowGraduationResult } from "@/types";
 import {
   Users,
   UserCheck,
@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
+  Microscope,
 } from "lucide-react";
 
 function StatusDot({ status }: { status: string }) {
@@ -68,6 +69,7 @@ export default function AdminOverviewPage() {
   const [dbStats, setDbStats] = useState<DatabaseStatsResponse | null>(null);
   const [metrics, setMetrics] = useState<AdminMetricsResponse | null>(null);
   const [balances, setBalances] = useState<Record<string, number | null>>({});
+  const [shadowGrad, setShadowGrad] = useState<ShadowGraduationResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [dbTablesOpen, setDbTablesOpen] = useState(false);
@@ -94,6 +96,11 @@ export default function AdminOverviewPage() {
     getAdminUserBalances()
       .then(setBalances)
       .catch(() => setBalances({}));
+
+    // Shadow 畢業評估（獨立載入）
+    getAdminShadowGraduation()
+      .then(setShadowGrad)
+      .catch(() => setShadowGrad([]));
   }, []);
 
   function toggleOverviewSort(field: OverviewSortField) {
@@ -464,6 +471,72 @@ export default function AdminOverviewPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Shadow Graduation */}
+      {shadowGrad.length > 0 && (
+        <div className="rounded-xl border border-border bg-card">
+          <div className="p-4 border-b border-border">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Microscope className="h-5 w-5 text-purple-500" />
+              {t("shadowGraduation")}
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left px-4 py-3 font-medium">{t("signalSources.source")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("shadowTrades")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("shadowWinRate")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("shadowPF")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("shadowMaxLosses")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("shadowPnl")}</th>
+                  <th className="text-center px-4 py-3 font-medium">{t("shadowStatus")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shadowGrad.map((r) => (
+                  <tr key={r.sourceId} className="border-b border-border/50 hover:bg-accent/30 transition-colors">
+                    <td className="px-4 py-3 font-medium">{r.displayName || r.name}</td>
+                    <td className={`px-4 py-3 text-right font-mono ${r.tradesPass ? "text-green-500" : "text-red-500"}`}>
+                      {r.paperTradeCount}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono ${r.winRatePass ? "text-green-500" : "text-red-500"}`}>
+                      {r.paperWinRate.toFixed(1)}%
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono ${r.profitFactorPass ? "text-green-500" : "text-red-500"}`}>
+                      {r.paperProfitFactor.toFixed(2)}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono ${r.consecutiveLossesPass ? "text-green-500" : "text-red-500"}`}>
+                      {r.paperMaxConsecutiveLosses}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono ${r.paperTotalPnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                      {r.paperTotalPnl >= 0 ? "+" : ""}{r.paperTotalPnl.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        r.status === "READY"
+                          ? "bg-green-500/15 text-green-500"
+                          : r.status === "APPROACHING"
+                            ? "bg-yellow-500/15 text-yellow-500"
+                            : "bg-muted text-muted-foreground"
+                      }`}>
+                        {r.status === "READY" ? t("shadowReady") : r.status === "APPROACHING" ? t("shadowApproaching") : t("shadowNotReady")}
+                        <span className="text-[10px]">({r.passedCriteria}/4)</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {shadowGrad.some((r) => r.status === "READY") && (
+            <div className="px-4 py-3 border-t border-border text-sm text-green-500">
+              {t("shadowReadyHint")}
+            </div>
+          )}
         </div>
       )}
 

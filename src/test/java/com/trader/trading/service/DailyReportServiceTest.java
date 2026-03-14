@@ -3,6 +3,7 @@ package com.trader.trading.service;
 import com.trader.shared.config.RiskConfig;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
+import com.trader.trading.dto.signalsource.ShadowGraduationResult;
 import com.trader.trading.entity.Trade;
 import com.trader.notification.service.DiscordWebhookService;
 import com.trader.user.entity.User;
@@ -40,6 +41,7 @@ class DailyReportServiceTest {
     private UserApiKeyService userApiKeyService;
     private UserDiscordWebhookRepository userDiscordWebhookRepository;
     private TradeConfigResolver tradeConfigResolver;
+    private ShadowGraduationService shadowGraduationService;
 
     private DailyReportService service;
 
@@ -124,13 +126,15 @@ class DailyReportServiceTest {
             userApiKeyService = mock(UserApiKeyService.class);
             userDiscordWebhookRepository = mock(UserDiscordWebhookRepository.class);
             tradeConfigResolver = mock(TradeConfigResolver.class);
+            shadowGraduationService = mock(ShadowGraduationService.class);
+            when(shadowGraduationService.evaluateAll()).thenReturn(List.of());
 
             service = new DailyReportService(
                     tradeRecordService, webhookService, binanceFuturesService,
                     userDataStreamService, monitorHeartbeatService, riskConfig,
                     multiUserConfig, userRepository, userApiKeyService,
                     userDiscordWebhookRepository, tradeConfigResolver,
-                    mock(StartOfDayBalanceCache.class));
+                    mock(StartOfDayBalanceCache.class), shadowGraduationService);
 
             setupMonitorMocks();
         }
@@ -223,6 +227,8 @@ class DailyReportServiceTest {
             userApiKeyService = mock(UserApiKeyService.class);
             userDiscordWebhookRepository = mock(UserDiscordWebhookRepository.class);
             tradeConfigResolver = mock(TradeConfigResolver.class);
+            shadowGraduationService = mock(ShadowGraduationService.class);
+            when(shadowGraduationService.evaluateAll()).thenReturn(List.of());
 
             // 預設：所有測試用戶都有 per-user webhook（既有測試不受影響）
             when(userDiscordWebhookRepository.findUserIdsWithEnabledWebhook())
@@ -233,7 +239,7 @@ class DailyReportServiceTest {
                     userDataStreamService, monitorHeartbeatService, riskConfig,
                     multiUserConfig, userRepository, userApiKeyService,
                     userDiscordWebhookRepository, tradeConfigResolver,
-                    mock(StartOfDayBalanceCache.class));
+                    mock(StartOfDayBalanceCache.class), shadowGraduationService);
 
             setupMonitorMocks();
         }
@@ -506,6 +512,70 @@ class DailyReportServiceTest {
                     eq("user-X"), anyString(), messageCaptor.capture(), anyInt());
             assertThat(messageCaptor.getValue()).contains("500.00");
             assertThat(messageCaptor.getValue()).contains("1000");
+        }
+
+        @Test
+        @DisplayName("sendDailyReport — Admin 彙總包含 SHADOW 畢業評估")
+        void sendDailyReport_adminSummary_includesShadowGraduation() {
+            User user = mockUser("user-A", true);
+            when(userRepository.findAll()).thenReturn(List.of(user));
+
+            when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-A"))).thenReturn(emptyStats());
+            when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-A"))).thenReturn(List.of());
+            when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
+            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
+
+            EffectiveTradeConfig config = new EffectiveTradeConfig(
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+            when(tradeConfigResolver.resolve(anyString())).thenReturn(config);
+
+            // 設定 SHADOW 畢業評估結果
+            ShadowGraduationResult readyResult = ShadowGraduationResult.builder()
+                    .sourceId(1L).name("軍長策略").displayName("軍長策略")
+                    .paperTradeCount(50).paperWinRate(61.0).paperProfitFactor(1.8)
+                    .paperMaxConsecutiveLosses(3).paperTotalPnl(500.0)
+                    .passedCriteria(4).status(ShadowGraduationResult.GraduationStatus.READY)
+                    .build();
+            when(shadowGraduationService.evaluateAll()).thenReturn(List.of(readyResult));
+
+            service.sendDailyReport();
+
+            // 驗證 Admin 彙總包含 SHADOW 區塊
+            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+            verify(webhookService).sendNotificationToAdmins(
+                    anyString(), messageCaptor.capture(), anyInt());
+
+            String summary = messageCaptor.getValue();
+            assertThat(summary).contains("SHADOW 觀察中");
+            assertThat(summary).contains("軍長策略");
+            assertThat(summary).contains("已達畢業門檻");
+        }
+
+        @Test
+        @DisplayName("sendDailyReport — 無 SHADOW 來源時不顯示畢業區塊")
+        void sendDailyReport_noShadow_noGraduationSection() {
+            User user = mockUser("user-A", true);
+            when(userRepository.findAll()).thenReturn(List.of(user));
+
+            when(tradeRecordService.getStatsForDateRange(any(), any(), eq("user-A"))).thenReturn(emptyStats());
+            when(tradeRecordService.getClosedTradesForRange(any(), any(), eq("user-A"))).thenReturn(List.of());
+            when(tradeRecordService.getStatsSummary("user-A")).thenReturn(emptySummary());
+            when(userApiKeyService.getUserBinanceKeys("user-A")).thenReturn(Optional.empty());
+
+            EffectiveTradeConfig config = new EffectiveTradeConfig(
+                    0.2, 50000, 2000, 0.0, 0.0, 3, 2.0, 20, List.of("BTCUSDT"), true, "BTCUSDT");
+            when(tradeConfigResolver.resolve(anyString())).thenReturn(config);
+
+            // 無 SHADOW 來源
+            when(shadowGraduationService.evaluateAll()).thenReturn(List.of());
+
+            service.sendDailyReport();
+
+            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+            verify(webhookService).sendNotificationToAdmins(
+                    anyString(), messageCaptor.capture(), anyInt());
+
+            assertThat(messageCaptor.getValue()).doesNotContain("SHADOW 觀察中");
         }
     }
 }

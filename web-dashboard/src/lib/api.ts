@@ -1012,6 +1012,14 @@ export async function getAdminSignalSourcePerformance(id: number, period = "all"
   return request<SignalSourcePerformanceDto>(`/api/admin/signal-sources/${id}/performance?period=${period}`);
 }
 
+// ─── Shadow Graduation ───
+
+import type { ShadowGraduationResult } from "@/types";
+
+export async function getAdminShadowGraduation(): Promise<ShadowGraduationResult[]> {
+  return request<ShadowGraduationResult[]>("/api/admin/shadow-graduation");
+}
+
 // ─── Prompt Version Management ───
 
 export interface PromptVersion {
