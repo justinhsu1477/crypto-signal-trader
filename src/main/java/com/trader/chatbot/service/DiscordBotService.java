@@ -1,6 +1,10 @@
 package com.trader.chatbot.service;
 
 import com.trader.chatbot.config.DiscordBotConfig;
+import com.trader.user.entity.LineLinkingCode;
+import com.trader.user.entity.UserDiscordBinding;
+import com.trader.user.repository.LineLinkingCodeRepository;
+import com.trader.user.repository.UserDiscordBindingRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.JDA;
@@ -10,6 +14,9 @@ import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.cache.CacheFlag;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Optional;
 
 /**
  * Discord Bot 生命週期管理 + 訊息回覆
@@ -25,11 +32,17 @@ public class DiscordBotService implements DisposableBean {
 
     private final DiscordBotConfig config;
     private final DiscordBotListener listener;
+    private final LineLinkingCodeRepository linkingCodeRepository;
+    private final UserDiscordBindingRepository discordBindingRepository;
     private JDA jda;
 
-    public DiscordBotService(DiscordBotConfig config, DiscordBotListener listener) {
+    public DiscordBotService(DiscordBotConfig config, DiscordBotListener listener,
+                             LineLinkingCodeRepository linkingCodeRepository,
+                             UserDiscordBindingRepository discordBindingRepository) {
         this.config = config;
         this.listener = listener;
+        this.linkingCodeRepository = linkingCodeRepository;
+        this.discordBindingRepository = discordBindingRepository;
     }
 
     @PostConstruct
@@ -73,23 +86,55 @@ public class DiscordBotService implements DisposableBean {
     }
 
     /**
-     * 在 Discord 頻道回覆訊息
+     * 在 Discord 頻道回覆訊息（@mention 提問者）
      *
      * @param textChannelId Discord 文字頻道 ID
+     * @param discordUserId 提問者的 Discord ID（用於 @mention）
      * @param text          回覆文字
      */
-    public void sendChannelReply(String textChannelId, String text) {
+    public void sendChannelReply(String textChannelId, String discordUserId, String text) {
         if (jda == null) return;
         var channel = jda.getTextChannelById(textChannelId);
         if (channel == null) {
             log.warn("找不到 Discord 頻道: channelId={}", textChannelId);
             return;
         }
-        String msg = text.length() > 2000 ? text.substring(0, 1997) + "..." : text;
+        // @mention 提問者，讓多人頻道中能辨識回覆對象
+        String mention = "<@" + discordUserId + "> ";
+        String fullMsg = mention + text;
+        String msg = fullMsg.length() > 2000 ? fullMsg.substring(0, 1997) + "..." : fullMsg;
         channel.sendMessage(msg).queue(
                 success -> {},
                 error -> log.warn("Discord 頻道回覆失敗: channelId={} error={}", textChannelId, error.getMessage())
         );
+    }
+
+    /**
+     * 處理 Discord 帳號綁定（事務保護，避免 race condition 重複綁定）
+     *
+     * @return 綁定成功的 userId，失敗回傳 empty
+     */
+    @Transactional
+    public Optional<String> bindDiscordAccount(String discordUserId, String displayName, String code) {
+        Optional<LineLinkingCode> codeEntity = linkingCodeRepository.findByCodeAndUsedFalse(code);
+        if (codeEntity.isEmpty() || codeEntity.get().isExpired()) {
+            return Optional.empty();
+        }
+
+        LineLinkingCode linkCode = codeEntity.get();
+        linkCode.setUsed(true);
+        linkingCodeRepository.save(linkCode);
+
+        UserDiscordBinding newBinding = UserDiscordBinding.builder()
+                .userId(linkCode.getUserId())
+                .discordUserId(discordUserId)
+                .displayName(displayName)
+                .enabled(true)
+                .build();
+        discordBindingRepository.save(newBinding);
+
+        log.info("Discord 綁定成功: userId={} discordUserId={}", linkCode.getUserId(), discordUserId);
+        return Optional.of(linkCode.getUserId());
     }
 
     @Override

@@ -55,7 +55,7 @@ public class ChatbotConsumer {
 
     /**
      * 依據 channel + replyChannelId 路由回覆
-     * - DISCORD + replyChannelId → 頻道回覆
+     * - DISCORD + replyChannelId → 頻道回覆（@mention 提問者）
      * - DISCORD + null           → DM 回覆
      * - LINE                     → Push API
      */
@@ -63,7 +63,7 @@ public class ChatbotConsumer {
         switch (channel) {
             case "DISCORD" -> {
                 if (replyChannelId != null && !replyChannelId.isBlank()) {
-                    discordBotService.sendChannelReply(replyChannelId, text);
+                    discordBotService.sendChannelReply(replyChannelId, channelUserId, text);
                 } else {
                     discordBotService.sendDmReply(channelUserId, text);
                 }

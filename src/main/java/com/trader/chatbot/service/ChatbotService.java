@@ -104,8 +104,9 @@ public class ChatbotService {
         log.info("客服意圖分類: userId={} channel={} intent={} message={}", userId, channel, intent,
                 cleanMessage.length() > 50 ? cleanMessage.substring(0, 50) + "..." : cleanMessage);
 
-        // 4. Session 管理
-        String sessionId = resolveSessionId(userId);
+        // 4. Session 管理（Admin 用 channelUserId 區分不同管理員的對話）
+        String sessionKey = isAdmin ? ADMIN_USER_ID + ":" + channelUserId : userId;
+        String sessionId = resolveSessionId(sessionKey);
 
         // 5. 收集上下文（Admin 收集全平台資料）
         String context = isAdmin
@@ -130,8 +131,8 @@ public class ChatbotService {
 
         String response = aiResponse.orElse(FALLBACK_MESSAGE);
 
-        // 9. 儲存對話
-        saveConversation(userId, channel, channelUserId, sessionId, cleanMessage, response, intent);
+        // 9. 儲存對話（Admin 用 sessionKey 區分不同管理員）
+        saveConversation(sessionKey, channel, channelUserId, sessionId, cleanMessage, response, intent);
 
         return response;
     }
