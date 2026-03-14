@@ -537,13 +537,15 @@ class SignalSourceServiceTest {
                     .id(1L).name("VIP").displayName("訊號源 A")
                     .channelId("ch-1").guildId("g-1").build();
 
-            // stats: [tradeCount, winCount, totalPnl, avgPnl]
-            Object[] stats = new Object[]{10L, 7L, 350.5, 35.05};
+            // stats: [tradeCount, winCount, totalPnl, avgPnl, maxWin, maxLoss, grossWins, grossLosses]
+            Object[] stats = new Object[]{10L, 7L, 350.5, 35.05, 120.0, -50.0, 500.0, 149.5};
 
             when(sourceRepository.findById(1L)).thenReturn(Optional.of(source));
-            when(tradeRepository.getSourcePerformanceStats("ch-1", "g-1")).thenReturn(stats);
+            when(tradeRepository.getSourcePerformanceStats(eq("ch-1"), eq("g-1"), any())).thenReturn(stats);
+            when(tradeRepository.getSourcePaperTradeStats(eq("ch-1"), eq("g-1"), any())).thenReturn(null);
+            when(tradeRepository.getSourceTradeSequence(eq("ch-1"), eq("g-1"), anyBoolean(), any())).thenReturn(List.of());
 
-            SignalSourcePerformanceDto result = service.getSourcePerformance(1L);
+            SignalSourcePerformanceDto result = service.getSourcePerformance(1L, "all");
 
             assertThat(result.getSourceId()).isEqualTo(1L);
             assertThat(result.getTradeCount()).isEqualTo(10L);
@@ -551,6 +553,9 @@ class SignalSourceServiceTest {
             assertThat(result.getWinRate()).isEqualTo(70.0);
             assertThat(result.getTotalPnl()).isEqualTo(350.5);
             assertThat(result.getAvgPnl()).isEqualTo(35.05);
+            assertThat(result.getMaxWin()).isEqualTo(120.0);
+            assertThat(result.getMaxLoss()).isEqualTo(-50.0);
+            assertThat(result.getProfitFactor()).isEqualTo(3.34); // 500/149.5
         }
 
         @Test
@@ -561,12 +566,12 @@ class SignalSourceServiceTest {
 
             when(sourceRepository.findById(2L)).thenReturn(Optional.of(source));
 
-            SignalSourcePerformanceDto result = service.getSourcePerformance(2L);
+            SignalSourcePerformanceDto result = service.getSourcePerformance(2L, "all");
 
             assertThat(result.getSourceId()).isEqualTo(2L);
             assertThat(result.getTradeCount()).isEqualTo(0L);
             assertThat(result.getTotalPnl()).isEqualTo(0.0);
-            verify(tradeRepository, never()).getSourcePerformanceStats(any(), any());
+            verify(tradeRepository, never()).getSourcePerformanceStats(any(), any(), any());
         }
 
         @Test
@@ -576,9 +581,10 @@ class SignalSourceServiceTest {
                     .id(3L).name("新").displayName("新源").channelId("ch-3").guildId("g-3").build();
 
             when(sourceRepository.findById(3L)).thenReturn(Optional.of(source));
-            when(tradeRepository.getSourcePerformanceStats("ch-3", "g-3")).thenReturn(null);
+            when(tradeRepository.getSourcePerformanceStats(eq("ch-3"), eq("g-3"), any())).thenReturn(null);
+            when(tradeRepository.getSourcePaperTradeStats(eq("ch-3"), eq("g-3"), any())).thenReturn(null);
 
-            SignalSourcePerformanceDto result = service.getSourcePerformance(3L);
+            SignalSourcePerformanceDto result = service.getSourcePerformance(3L, "all");
 
             assertThat(result.getTradeCount()).isEqualTo(0L);
         }
@@ -588,9 +594,31 @@ class SignalSourceServiceTest {
         void getSourcePerformance_notFoundThrows() {
             when(sourceRepository.findById(99L)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.getSourcePerformance(99L))
+            assertThatThrownBy(() -> service.getSourcePerformance(99L, "all"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("不存在");
+        }
+
+        @Test
+        @DisplayName("連勝/連虧計算")
+        void calculateStreaks_correctResult() {
+            List<Object> seq = List.of(10.0, 20.0, -5.0, 15.0, 25.0, 30.0, -10.0, -20.0);
+            when(tradeRepository.getSourceTradeSequence("ch", "g", false, null)).thenReturn(seq);
+
+            int[] streaks = service.calculateStreaks("ch", "g", false, null);
+
+            assertThat(streaks[0]).isEqualTo(3); // 連勝 3（15, 25, 30）
+            assertThat(streaks[1]).isEqualTo(2); // 連虧 2（-10, -20）
+        }
+
+        @Test
+        @DisplayName("period 轉換")
+        void parsePeriod_correctConversion() {
+            assertThat(service.parsePeriod("all")).isNull();
+            assertThat(service.parsePeriod(null)).isNull();
+            assertThat(service.parsePeriod("7d")).isNotNull();
+            assertThat(service.parsePeriod("30d")).isNotNull();
+            assertThat(service.parsePeriod("invalid")).isNull();
         }
     }
 

@@ -26,6 +26,11 @@ public class SignalSourcePerformanceDto {
     private double winRate;
     private double totalPnl;
     private double avgPnl;
+    private double maxWin;
+    private double maxLoss;
+    private double profitFactor;            // grossWins / grossLosses
+    private int maxConsecutiveWins;
+    private int maxConsecutiveLosses;
 
     // 模擬交易績效（SHADOW 頻道用）
     private long paperTradeCount;
@@ -35,4 +40,7 @@ public class SignalSourcePerformanceDto {
     private double paperAvgPnl;
     private double paperMaxWin;
     private double paperMaxLoss;
+    private double paperProfitFactor;
+    private int paperMaxConsecutiveWins;
+    private int paperMaxConsecutiveLosses;
 }

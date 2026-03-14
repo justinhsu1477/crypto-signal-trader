@@ -69,13 +69,14 @@ export default function AdminSignalSourcesPage() {
   const [showChannelActivity, setShowChannelActivity] = useState(false);
   const [perfSortField, setPerfSortField] = useState<keyof SignalSourcePerformanceDto | null>(null);
   const [perfSortDir, setPerfSortDir] = useState<"asc" | "desc">("desc");
+  const [perfPeriod, setPerfPeriod] = useState("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [s, p, m] = await Promise.all([
         getAdminSignalSources(),
-        getAdminSignalSourcePerformances(),
+        getAdminSignalSourcePerformances(perfPeriod),
         getSignalSourceMonitorStatus(),
       ]);
       setSources(s);
@@ -86,7 +87,7 @@ export default function AdminSignalSourcesPage() {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, perfPeriod]);
 
   useEffect(() => {
     fetchData();
@@ -535,14 +536,27 @@ export default function AdminSignalSourcesPage() {
       {/* Performance comparison */}
       {performances.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-            <BarChart3 className="h-5 w-5 text-purple-400" />
-            {t("signalSources.performance")}
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-purple-400" />
+              {t("signalSources.performance")}
+            </h2>
+            <select
+              value={perfPeriod}
+              onChange={(e) => setPerfPeriod(e.target.value)}
+              className="bg-background border border-border rounded-lg px-3 py-1.5 text-xs"
+            >
+              <option value="7d">{t("signalSources.period7d")}</option>
+              <option value="30d">{t("signalSources.period30d")}</option>
+              <option value="90d">{t("signalSources.period90d")}</option>
+              <option value="all">{t("signalSources.periodAll")}</option>
+            </select>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="py-2 pr-2 text-center text-xs font-medium w-8">#</th>
                   <SortableTh field="displayName" label={t("signalSources.displayName")} align="left"
                     sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
                   <th className="py-2 pr-4 text-right text-xs font-medium">{t("signalSources.mode")}</th>
@@ -553,21 +567,40 @@ export default function AdminSignalSourcesPage() {
                   <SortableTh field="totalPnl" label={t("signalSources.totalPnl")} align="right"
                     sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
                   <SortableTh field="avgPnl" label={t("signalSources.avgPnl")} align="right"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <SortableTh field="profitFactor" label={t("signalSources.profitFactor")} align="right"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <SortableTh field="maxWin" label={t("signalSources.maxWin")} align="right"
+                    sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} />
+                  <SortableTh field="maxConsecutiveWins" label={t("signalSources.streak")} align="right"
                     sortField={perfSortField} sortDir={perfSortDir} onSort={handlePerfSort} last />
                 </tr>
               </thead>
               <tbody>
-                {sortedPerformances.map((p) => {
+                {sortedPerformances.map((p, idx) => {
                   // SHADOW 頻道優先顯示模擬交易績效
                   const isPaper = p.tradeCount === 0 && p.paperTradeCount > 0;
                   const count = isPaper ? p.paperTradeCount : p.tradeCount;
                   const rate = isPaper ? p.paperWinRate : p.winRate;
                   const pnl = isPaper ? p.paperTotalPnl : p.totalPnl;
                   const avg = isPaper ? p.paperAvgPnl : p.avgPnl;
+                  const pf = isPaper ? p.paperProfitFactor : p.profitFactor;
+                  const mw = isPaper ? p.paperMaxWin : p.maxWin;
+                  const consWins = isPaper ? p.paperMaxConsecutiveWins : p.maxConsecutiveWins;
+                  const consLosses = isPaper ? p.paperMaxConsecutiveLosses : p.maxConsecutiveLosses;
+                  const insufficient = count < 10;
 
                   return (
-                    <tr key={p.sourceId} className="border-b border-border/50">
-                      <td className="py-2 pr-4 font-medium">{p.displayName}</td>
+                    <tr key={p.sourceId} className={`border-b border-border/50 ${insufficient ? "opacity-50" : ""}`}>
+                      <td className="py-2 pr-2 text-center font-mono text-xs text-muted-foreground">{idx + 1}</td>
+                      <td className="py-2 pr-4 font-medium">
+                        {p.displayName}
+                        {insufficient && (
+                          <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-400">
+                            {t("signalSources.insufficientData")}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2 pr-4 text-right">
                         <span className={`text-xs px-1.5 py-0.5 rounded ${
                           p.tradeMode === "AUTO" ? "bg-green-500/20 text-green-400" :
@@ -584,8 +617,19 @@ export default function AdminSignalSourcesPage() {
                       <td className={`py-2 pr-4 text-right font-mono ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
                         ${pnl.toFixed(2)}
                       </td>
-                      <td className={`py-2 text-right font-mono ${avg >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      <td className={`py-2 pr-4 text-right font-mono ${avg >= 0 ? "text-green-400" : "text-red-400"}`}>
                         ${avg.toFixed(2)}
+                      </td>
+                      <td className={`py-2 pr-4 text-right font-mono ${pf >= 1 ? "text-green-400" : "text-red-400"}`}>
+                        {pf > 99 ? "∞" : pf.toFixed(2)}
+                      </td>
+                      <td className={`py-2 pr-4 text-right font-mono ${mw >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        ${mw.toFixed(2)}
+                      </td>
+                      <td className="py-2 text-right font-mono text-xs">
+                        <span className="text-green-400">{consWins}W</span>
+                        {" / "}
+                        <span className="text-red-400">{consLosses}L</span>
                       </td>
                     </tr>
                   );

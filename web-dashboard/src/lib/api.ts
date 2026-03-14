@@ -1004,12 +1004,49 @@ export async function toggleAdminSignalSourceUser(sourceId: number, userId: stri
   });
 }
 
-export async function getAdminSignalSourcePerformances(): Promise<SignalSourcePerformanceDto[]> {
-  return request<SignalSourcePerformanceDto[]>("/api/admin/signal-sources/performance");
+export async function getAdminSignalSourcePerformances(period = "all"): Promise<SignalSourcePerformanceDto[]> {
+  return request<SignalSourcePerformanceDto[]>(`/api/admin/signal-sources/performance?period=${period}`);
 }
 
-export async function getAdminSignalSourcePerformance(id: number): Promise<SignalSourcePerformanceDto> {
-  return request<SignalSourcePerformanceDto>(`/api/admin/signal-sources/${id}/performance`);
+export async function getAdminSignalSourcePerformance(id: number, period = "all"): Promise<SignalSourcePerformanceDto> {
+  return request<SignalSourcePerformanceDto>(`/api/admin/signal-sources/${id}/performance?period=${period}`);
+}
+
+// ─── Prompt Version Management ───
+
+export interface PromptVersion {
+  id: number;
+  version: number;
+  content: string;
+  description: string | null;
+  active: boolean;
+  tokenCount: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getAdminPromptVersions(): Promise<PromptVersion[]> {
+  return request<PromptVersion[]>("/api/admin/prompts");
+}
+
+export async function createAdminPromptVersion(content: string, description: string): Promise<PromptVersion> {
+  return request<PromptVersion>("/api/admin/prompts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, description }),
+  });
+}
+
+export async function activateAdminPromptVersion(id: number): Promise<PromptVersion> {
+  return request<PromptVersion>(`/api/admin/prompts/${id}/activate`, { method: "POST" });
+}
+
+export async function getAdminActivePrompt(): Promise<PromptVersion | null> {
+  try {
+    return await request<PromptVersion>("/api/admin/prompts/active");
+  } catch {
+    return null;
+  }
 }
 
 // ─── User Signal Sources ───

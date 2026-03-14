@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -292,22 +294,24 @@ public class SignalSourceService {
 
     // ======================== 績效查詢 ========================
 
-    public List<SignalSourcePerformanceDto> getAllSourcePerformances() {
+    public List<SignalSourcePerformanceDto> getAllSourcePerformances(String period) {
+        LocalDateTime since = parsePeriod(period);
         List<SignalSourceConfig> sources = sourceRepository.findByEnabledTrue();
         return sources.stream()
-                .map(this::buildPerformance)
+                .map(s -> buildPerformance(s, since))
                 .collect(Collectors.toList());
     }
 
-    public SignalSourcePerformanceDto getSourcePerformance(Long sourceId) {
+    public SignalSourcePerformanceDto getSourcePerformance(Long sourceId, String period) {
+        LocalDateTime since = parsePeriod(period);
         SignalSourceConfig source = sourceRepository.findById(sourceId)
                 .orElseThrow(() -> new IllegalArgumentException("訊號來源不存在: id=" + sourceId));
-        return buildPerformance(source);
+        return buildPerformance(source, since);
     }
 
     // ======================== 內部方法 ========================
 
-    private SignalSourcePerformanceDto buildPerformance(SignalSourceConfig source) {
+    private SignalSourcePerformanceDto buildPerformance(SignalSourceConfig source, LocalDateTime since) {
         SignalSourcePerformanceDto.SignalSourcePerformanceDtoBuilder builder =
                 SignalSourcePerformanceDto.builder()
                         .sourceId(source.getId())
@@ -320,38 +324,19 @@ public class SignalSourceService {
         }
 
         // 真實交易績效
-        parseRealTradeStats(builder, source);
+        parseTradeStats(builder, source, false, since);
 
         // 模擬交易績效（SHADOW 頻道）
-        parsePaperTradeStats(builder, source);
+        parseTradeStats(builder, source, true, since);
 
         return builder.build();
     }
 
-    private void parseRealTradeStats(SignalSourcePerformanceDto.SignalSourcePerformanceDtoBuilder builder,
-                                     SignalSourceConfig source) {
-        Object[] stats = tradeRepository.getSourcePerformanceStats(
-                source.getChannelId(), source.getGuildId());
-        Object[] row = extractRow(stats);
-        if (row == null) return;
-
-        long tradeCount = ((Number) row[0]).longValue();
-        long winCount = ((Number) row[1]).longValue();
-        double totalPnl = ((Number) row[2]).doubleValue();
-        double avgPnl = ((Number) row[3]).doubleValue();
-        double winRate = tradeCount > 0 ? winCount * 100.0 / tradeCount : 0;
-
-        builder.tradeCount(tradeCount)
-                .winCount(winCount)
-                .winRate(Math.round(winRate * 10.0) / 10.0)
-                .totalPnl(Math.round(totalPnl * 100.0) / 100.0)
-                .avgPnl(Math.round(avgPnl * 100.0) / 100.0);
-    }
-
-    private void parsePaperTradeStats(SignalSourcePerformanceDto.SignalSourcePerformanceDtoBuilder builder,
-                                      SignalSourceConfig source) {
-        Object[] stats = tradeRepository.getSourcePaperTradeStats(
-                source.getChannelId(), source.getGuildId());
+    private void parseTradeStats(SignalSourcePerformanceDto.SignalSourcePerformanceDtoBuilder builder,
+                                 SignalSourceConfig source, boolean simulated, LocalDateTime since) {
+        Object[] stats = simulated
+                ? tradeRepository.getSourcePaperTradeStats(source.getChannelId(), source.getGuildId(), since)
+                : tradeRepository.getSourcePerformanceStats(source.getChannelId(), source.getGuildId(), since);
         Object[] row = extractRow(stats);
         if (row == null) return;
 
@@ -361,15 +346,84 @@ public class SignalSourceService {
         double avgPnl = ((Number) row[3]).doubleValue();
         double maxWin = ((Number) row[4]).doubleValue();
         double maxLoss = ((Number) row[5]).doubleValue();
+        double grossWins = ((Number) row[6]).doubleValue();
+        double grossLosses = ((Number) row[7]).doubleValue();
         double winRate = tradeCount > 0 ? winCount * 100.0 / tradeCount : 0;
+        double profitFactor = grossLosses > 0 ? grossWins / grossLosses : (grossWins > 0 ? Double.MAX_VALUE : 0);
 
-        builder.paperTradeCount(tradeCount)
-                .paperWinCount(winCount)
-                .paperWinRate(Math.round(winRate * 10.0) / 10.0)
-                .paperTotalPnl(Math.round(totalPnl * 100.0) / 100.0)
-                .paperAvgPnl(Math.round(avgPnl * 100.0) / 100.0)
-                .paperMaxWin(Math.round(maxWin * 100.0) / 100.0)
-                .paperMaxLoss(Math.round(maxLoss * 100.0) / 100.0);
+        // 連勝/連虧計算
+        int[] streaks = calculateStreaks(source.getChannelId(), source.getGuildId(), simulated, since);
+
+        if (simulated) {
+            builder.paperTradeCount(tradeCount)
+                    .paperWinCount(winCount)
+                    .paperWinRate(round1(winRate))
+                    .paperTotalPnl(round2(totalPnl))
+                    .paperAvgPnl(round2(avgPnl))
+                    .paperMaxWin(round2(maxWin))
+                    .paperMaxLoss(round2(maxLoss))
+                    .paperProfitFactor(round2(profitFactor))
+                    .paperMaxConsecutiveWins(streaks[0])
+                    .paperMaxConsecutiveLosses(streaks[1]);
+        } else {
+            builder.tradeCount(tradeCount)
+                    .winCount(winCount)
+                    .winRate(round1(winRate))
+                    .totalPnl(round2(totalPnl))
+                    .avgPnl(round2(avgPnl))
+                    .maxWin(round2(maxWin))
+                    .maxLoss(round2(maxLoss))
+                    .profitFactor(round2(profitFactor))
+                    .maxConsecutiveWins(streaks[0])
+                    .maxConsecutiveLosses(streaks[1]);
+        }
+    }
+
+    /**
+     * 計算最大連勝/連虧 — 從有序交易序列遍歷
+     *
+     * @return int[]{maxConsecutiveWins, maxConsecutiveLosses}
+     */
+    int[] calculateStreaks(String channelId, String guildId, boolean simulated, LocalDateTime since) {
+        List<Object> sequence = tradeRepository.getSourceTradeSequence(channelId, guildId, simulated, since);
+        int maxWins = 0, maxLosses = 0, curWins = 0, curLosses = 0;
+        for (Object obj : sequence) {
+            double pnl = ((Number) obj).doubleValue();
+            if (pnl > 0) {
+                curWins++;
+                curLosses = 0;
+                maxWins = Math.max(maxWins, curWins);
+            } else {
+                curLosses++;
+                curWins = 0;
+                maxLosses = Math.max(maxLosses, curLosses);
+            }
+        }
+        return new int[]{maxWins, maxLosses};
+    }
+
+    /**
+     * 將 period 字串轉為 LocalDateTime（null = 全部）
+     */
+    LocalDateTime parsePeriod(String period) {
+        if (period == null || "all".equalsIgnoreCase(period)) {
+            return null;
+        }
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Taipei"));
+        return switch (period.toLowerCase()) {
+            case "7d" -> now.minusDays(7);
+            case "30d" -> now.minusDays(30);
+            case "90d" -> now.minusDays(90);
+            default -> null;
+        };
+    }
+
+    private static double round1(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     /**
