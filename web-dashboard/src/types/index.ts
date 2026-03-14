@@ -1004,3 +1004,75 @@ export interface DailySignalReportDetail {
   aiTokensUsed: number | null;
   createdAt: string;
 }
+
+// ==================== Payment History (User) ====================
+
+export interface UserPaymentHistoryResponse {
+  payments: UserPaymentRecord[];
+  totalPayments: number;
+  totalAmountPaid: number;
+}
+
+export interface UserPaymentRecord {
+  id: number;
+  txHash: string | null;
+  network: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  planId: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+// ==================== API Key Health ====================
+
+export interface ApiKeyHealthResponse {
+  valid: boolean;
+  exchange: string;
+  message: string;
+  canTrade: boolean;
+  futuresEnabled: boolean;
+}
+
+// ==================== Changelog ====================
+
+export interface ChangelogEntry {
+  id: number;
+  version: string;
+  title: string;
+  content: string;
+  category: string;
+  published: boolean;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==================== Trade Notes ====================
+
+export interface TradeNoteResponse {
+  id: number | null;
+  tradeId: string;
+  note: string | null;
+  tags: string | null;
+  rating: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TradeNoteRequest {
+  note: string | null;
+  tags: string | null;
+  rating: number | null;
+}
+
+// ==================== Balance Snapshot ====================
+
+export interface BalanceSnapshot {
+  id: number;
+  userId: string;
+  snapshotDate: string;
+  balance: number;
+  createdAt: string;
+}

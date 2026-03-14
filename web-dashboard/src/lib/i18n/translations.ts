@@ -62,6 +62,8 @@ const translations = {
     adminInsights: { en: "User Insights", "zh-TW": "用戶洞察", "zh-CN": "用户洞察", ja: "ユーザーインサイト" },
     adminNotifications: { en: "Send Notification", "zh-TW": "發送通知", "zh-CN": "发送通知", ja: "通知送信" },
     adminAnnouncements: { en: "Announcements", "zh-TW": "公告管理", "zh-CN": "公告管理", ja: "お知らせ管理" },
+    payments: { en: "Payment History", "zh-TW": "付款紀錄", "zh-CN": "付款记录", ja: "支払い履歴" },
+    changelog: { en: "Changelog", "zh-TW": "更新日誌", "zh-CN": "更新日志", ja: "変更履歴" },
     adminSignalSources: { en: "Signal Sources", "zh-TW": "訊號來源", "zh-CN": "信号来源", ja: "シグナルソース" },
     adminPrompts: { en: "AI Prompts", "zh-TW": "AI Prompt", "zh-CN": "AI Prompt", ja: "AIプロンプト" },
     shadowGraduation: { en: "Shadow Graduation", "zh-TW": "SHADOW 畢業評估", "zh-CN": "SHADOW 毕业评估", ja: "SHADOW 卒業評価" },
