@@ -133,6 +133,7 @@ discord:
   bot:
     enabled: ${DISCORD_BOT_ENABLED:false}           # Discord Bot（AI 客服）
     token: ${DISCORD_BOT_TOKEN:}
+    admin-ids: ${DISCORD_BOT_ADMIN_IDS:}            # Admin Discord User ID（逗號分隔）
 
 # ========== LINE Messaging API ==========
 line:
