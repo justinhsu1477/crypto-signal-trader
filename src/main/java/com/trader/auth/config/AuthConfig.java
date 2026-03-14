@@ -88,6 +88,7 @@ public class AuthConfig {
                         // === 公告 API ===
                         .requestMatchers("/api/announcements/**").authenticated()
 
+                        .requestMatchers("/api/changelog").authenticated()
                         .requestMatchers("/api/referral/**").authenticated()
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/dashboard/**").authenticated()
