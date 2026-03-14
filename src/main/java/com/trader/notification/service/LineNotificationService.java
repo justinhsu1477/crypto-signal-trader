@@ -158,6 +158,56 @@ public class LineNotificationService implements NotificationService {
         log.info("已清除所有 LINE 通知快取");
     }
 
+    // ==================== Public Helpers ====================
+
+    /**
+     * 直接推送純文字到指定 LINE 用戶（客服回覆用）
+     *
+     * 不帶 title/footer，直接發送文字內容。
+     */
+    public void pushTextMessage(String lineUserId, String text) {
+        if (lineUserId == null || lineUserId.isBlank()) {
+            log.warn("pushTextMessage: lineUserId 為空，跳過");
+            return;
+        }
+
+        // 截斷超長訊息
+        if (text.length() > LINE_TEXT_MAX_LENGTH) {
+            text = text.substring(0, LINE_TEXT_MAX_LENGTH - 20) + "\n\n...（訊息過長已截斷）";
+        }
+
+        String body = String.format("""
+                {
+                  "to": "%s",
+                  "messages": [{
+                    "type": "text",
+                    "text": "%s"
+                  }]
+                }""", lineUserId, escapeJson(text));
+
+        Request request = new Request.Builder()
+                .url(PUSH_API_URL)
+                .addHeader("Authorization", "Bearer " + lineConfig.getChannelAccessToken())
+                .addHeader("Content-Type", "application/json")
+                .post(RequestBody.create(body, JSON_TYPE))
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                String respBody = response.body() != null ? response.body().string() : "no body";
+                log.warn("LINE Push（客服）回應異常: HTTP {} - {}", response.code(), respBody);
+                if (response.code() >= 500 || response.code() == 429) {
+                    throw new RuntimeException("LINE Push 伺服器錯誤: HTTP " + response.code());
+                }
+            } else {
+                log.debug("LINE Push（客服）發送成功: lineUserId={}", lineUserId);
+            }
+        } catch (IOException e) {
+            log.warn("LINE Push（客服）連線失敗: {}", e.getMessage());
+            throw new RuntimeException("LINE Push 連線失敗: " + e.getMessage(), e);
+        }
+    }
+
     // ==================== Private Helpers ====================
 
     /**
