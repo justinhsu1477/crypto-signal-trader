@@ -28,7 +28,7 @@ public class ChatbotConfig {
             @DefaultValue("0.3") double temperature,
             @DefaultValue("10") int maxConversationTurns,
             @DefaultValue("30") int conversationTtlMinutes,
-            @DefaultValue("gemini-3.0-pro") String geminiModel,
+            @DefaultValue("gemini-3.1-pro-preview") String geminiModel,
             @DefaultValue("5") int rateLimitPerMinute,
             @DefaultValue("50") int rateLimitPerDay
     ) {
