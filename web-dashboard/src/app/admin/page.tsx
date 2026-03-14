@@ -389,13 +389,13 @@ export default function AdminOverviewPage() {
         <div className="rounded-xl border border-border bg-card">
           <div className="p-4 border-b border-border">
             <h2 className="text-lg font-semibold flex items-center gap-2">
-              📊 {t("adminMetrics")}
+              📊 {t("nav.adminMetrics")}
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
             {/* Order Success Rate */}
             <div className="p-4 md:border-r border-b md:border-b-0 border-border">
-              <div className="text-xs text-muted-foreground mb-1">{t("metricsOrders")}</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("nav.metricsOrders")}</div>
               <div className="text-2xl font-bold">
                 {metrics.orders.total > 0 ? (
                   <span className={metrics.orders.successRate >= 90 ? "text-green-500" : metrics.orders.successRate >= 70 ? "text-yellow-500" : "text-red-500"}>
@@ -406,14 +406,14 @@ export default function AdminOverviewPage() {
                 )}
               </div>
               <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                <div className="flex justify-between"><span>{t("metricsSuccess")}</span><span className="font-mono">{metrics.orders.success}</span></div>
-                <div className="flex justify-between"><span>{t("metricsFailed")}</span><span className="font-mono">{metrics.orders.failed}</span></div>
+                <div className="flex justify-between"><span>{t("nav.metricsSuccess")}</span><span className="font-mono">{metrics.orders.success}</span></div>
+                <div className="flex justify-between"><span>{t("nav.metricsFailed")}</span><span className="font-mono">{metrics.orders.failed}</span></div>
               </div>
             </div>
 
             {/* Signals Processed */}
             <div className="p-4 md:border-r border-b md:border-b-0 border-border">
-              <div className="text-xs text-muted-foreground mb-1">{t("metricsSignals")}</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("nav.metricsSignals")}</div>
               <div className="text-2xl font-bold">{metrics.signals.total}</div>
               <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                 {Object.entries(metrics.signals.byType).map(([type, count]) => (
@@ -426,7 +426,7 @@ export default function AdminOverviewPage() {
 
             {/* API Latency */}
             <div className="p-4 border-b md:border-b-0 border-border">
-              <div className="text-xs text-muted-foreground mb-1">{t("metricsApi")}</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("nav.metricsApi")}</div>
               <div className="text-2xl font-bold">
                 {metrics.api.totalCalls > 0 ? (
                   <span>{metrics.api.avgLatencyMs}ms</span>
@@ -435,14 +435,14 @@ export default function AdminOverviewPage() {
                 )}
               </div>
               <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                <div className="flex justify-between"><span>{t("metricsP99")}</span><span className="font-mono">{metrics.api.p99LatencyMs}ms</span></div>
-                <div className="flex justify-between"><span>{t("metricsCalls")}</span><span className="font-mono">{metrics.api.totalCalls}</span></div>
+                <div className="flex justify-between"><span>{t("nav.metricsP99")}</span><span className="font-mono">{metrics.api.p99LatencyMs}ms</span></div>
+                <div className="flex justify-between"><span>{t("nav.metricsCalls")}</span><span className="font-mono">{metrics.api.totalCalls}</span></div>
               </div>
             </div>
 
             {/* Notifications */}
             <div className="p-4 md:border-r border-b md:border-b-0 border-border">
-              <div className="text-xs text-muted-foreground mb-1">{t("metricsNotifications")}</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("nav.metricsNotifications")}</div>
               <div className="text-2xl font-bold">{metrics.notifications.total}</div>
               <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                 {Object.entries(metrics.notifications.byChannel).map(([ch, count]) => (
@@ -450,13 +450,13 @@ export default function AdminOverviewPage() {
                     <span className="capitalize">{ch}</span><span className="font-mono">{count}</span>
                   </div>
                 ))}
-                <div className="flex justify-between"><span>{t("metricsFailRate")}</span><span className="font-mono">{metrics.notifications.failRate}%</span></div>
+                <div className="flex justify-between"><span>{t("nav.metricsFailRate")}</span><span className="font-mono">{metrics.notifications.failRate}%</span></div>
               </div>
             </div>
 
             {/* System Status */}
             <div className="p-4 md:col-span-2">
-              <div className="text-xs text-muted-foreground mb-1">{t("metricsSystem")}</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("nav.metricsSystem")}</div>
               <div className="text-2xl font-bold">
                 {(() => {
                   const s = metrics.system.uptimeSeconds;
@@ -467,7 +467,7 @@ export default function AdminOverviewPage() {
                 })()}
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
-                <div className="flex justify-between"><span>{t("metricsUptime")}</span><span className="font-mono">{metrics.system.uptimeSeconds.toLocaleString()}s</span></div>
+                <div className="flex justify-between"><span>{t("nav.metricsUptime")}</span><span className="font-mono">{metrics.system.uptimeSeconds.toLocaleString()}s</span></div>
               </div>
             </div>
           </div>
@@ -480,20 +480,20 @@ export default function AdminOverviewPage() {
           <div className="p-4 border-b border-border">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Microscope className="h-5 w-5 text-purple-500" />
-              {t("shadowGraduation")}
+              {t("nav.shadowGraduation")}
             </h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
-                  <th className="text-left px-4 py-3 font-medium">{t("signalSources.source")}</th>
-                  <th className="text-right px-4 py-3 font-medium">{t("shadowTrades")}</th>
-                  <th className="text-right px-4 py-3 font-medium">{t("shadowWinRate")}</th>
-                  <th className="text-right px-4 py-3 font-medium">{t("shadowPF")}</th>
-                  <th className="text-right px-4 py-3 font-medium">{t("shadowMaxLosses")}</th>
-                  <th className="text-right px-4 py-3 font-medium">{t("shadowPnl")}</th>
-                  <th className="text-center px-4 py-3 font-medium">{t("shadowStatus")}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t("performance.source")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("nav.shadowTrades")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("nav.shadowWinRate")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("nav.shadowPF")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("nav.shadowMaxLosses")}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t("nav.shadowPnl")}</th>
+                  <th className="text-center px-4 py-3 font-medium">{t("nav.shadowStatus")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -523,7 +523,7 @@ export default function AdminOverviewPage() {
                             ? "bg-yellow-500/15 text-yellow-500"
                             : "bg-muted text-muted-foreground"
                       }`}>
-                        {r.status === "READY" ? t("shadowReady") : r.status === "APPROACHING" ? t("shadowApproaching") : t("shadowNotReady")}
+                        {r.status === "READY" ? t("nav.shadowReady") : r.status === "APPROACHING" ? t("nav.shadowApproaching") : t("nav.shadowNotReady")}
                         <span className="text-[10px]">({r.passedCriteria}/4)</span>
                       </span>
                     </td>
@@ -534,7 +534,7 @@ export default function AdminOverviewPage() {
           </div>
           {shadowGrad.some((r) => r.status === "READY") && (
             <div className="px-4 py-3 border-t border-border text-sm text-green-500">
-              {t("shadowReadyHint")}
+              {t("nav.shadowReadyHint")}
             </div>
           )}
         </div>
