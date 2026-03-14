@@ -60,9 +60,9 @@ public class ChatbotService {
             """;
 
     /**
-     * 處理用戶訊息，回傳 AI 回覆
+     * 處理用戶訊息，回傳 AI 回覆（支援多頻道）
      */
-    public String handleUserMessage(String userId, String lineUserId, String userMessage) {
+    public String handleUserMessage(String userId, String channel, String channelUserId, String userMessage) {
         if (!chatbotConfig.isEnabled()) {
             return "AI 客服功能尚未啟用，請輸入「客服」聯繫人工客服。";
         }
@@ -77,7 +77,7 @@ public class ChatbotService {
 
         // 3. 意圖分類
         Intent intent = intentClassifier.classify(cleanMessage);
-        log.info("客服意圖分類: userId={} intent={} message={}", userId, intent,
+        log.info("客服意圖分類: userId={} channel={} intent={} message={}", userId, channel, intent,
                 cleanMessage.length() > 50 ? cleanMessage.substring(0, 50) + "..." : cleanMessage);
 
         // 4. Session 管理
@@ -105,7 +105,7 @@ public class ChatbotService {
         String response = aiResponse.orElse(FALLBACK_MESSAGE);
 
         // 9. 儲存對話
-        saveConversation(userId, lineUserId, sessionId, cleanMessage, response, intent);
+        saveConversation(userId, channel, channelUserId, sessionId, cleanMessage, response, intent);
 
         return response;
     }
@@ -150,16 +150,19 @@ public class ChatbotService {
     }
 
     /**
-     * 儲存 user + assistant 對話紀錄
+     * 儲存 user + assistant 對話紀錄（多頻道）
      */
-    private void saveConversation(String userId, String lineUserId, String sessionId,
-                                   String userMessage, String aiResponse, Intent intent) {
+    private void saveConversation(String userId, String channel, String channelUserId,
+                                   String sessionId, String userMessage, String aiResponse, Intent intent) {
         try {
             LocalDateTime now = LocalDateTime.now(AppConstants.ZONE_ID);
+            String lineUserId = "LINE".equals(channel) ? channelUserId : null;
 
             // 用戶訊息
             conversationRepository.save(ChatConversation.builder()
                     .userId(userId)
+                    .channel(channel)
+                    .channelUserId(channelUserId)
                     .lineUserId(lineUserId)
                     .sessionId(sessionId)
                     .role("user")
@@ -171,6 +174,8 @@ public class ChatbotService {
             // AI 回覆
             conversationRepository.save(ChatConversation.builder()
                     .userId(userId)
+                    .channel(channel)
+                    .channelUserId(channelUserId)
                     .lineUserId(lineUserId)
                     .sessionId(sessionId)
                     .role("assistant")

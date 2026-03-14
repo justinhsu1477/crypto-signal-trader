@@ -119,7 +119,7 @@ public class LineLinkingService {
             // 已綁定用戶：其他訊息 → AI 客服
             replyText(replyToken, "正在為您查詢，請稍候... ⏳");
             eventPublisher.publishEvent(new ChatMessageEvent(this,
-                    existing.get().getUserId(), lineUserId, trimmed));
+                    existing.get().getUserId(), "LINE", lineUserId, trimmed));
             return;
         }
 

@@ -23,8 +23,15 @@ public class ChatConversation {
     @Column(name = "user_id", nullable = false)
     private String userId;
 
-    @Column(name = "line_user_id", nullable = false)
+    @Column(name = "line_user_id")
     private String lineUserId;
+
+    @Builder.Default
+    @Column(name = "channel", length = 20)
+    private String channel = "LINE";
+
+    @Column(name = "channel_user_id")
+    private String channelUserId;
 
     @Column(name = "session_id", nullable = false, length = 36)
     private String sessionId;
