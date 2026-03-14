@@ -47,6 +47,10 @@ class DashboardControllerTest {
     private SubscriptionService subscriptionService;
     private PlanRepository planRepository;
     private com.trader.trading.service.SignalSourceService signalSourceService;
+    private com.trader.subscription.repository.PaymentHistoryRepository paymentHistoryRepository;
+    private com.trader.subscription.repository.SubscriptionRepository subscriptionRepository;
+    private com.trader.trading.repository.TradeNoteRepository tradeNoteRepository;
+    private com.trader.trading.repository.BalanceSnapshotRepository balanceSnapshotRepository;
     private DashboardController controller;
     private MockedStatic<SecurityUtil> securityUtil;
 
@@ -61,9 +65,14 @@ class DashboardControllerTest {
         lineLinkingService = mock(LineLinkingService.class);
         subscriptionService = mock(SubscriptionService.class);
         planRepository = mock(PlanRepository.class);
+        paymentHistoryRepository = mock(com.trader.subscription.repository.PaymentHistoryRepository.class);
+        subscriptionRepository = mock(com.trader.subscription.repository.SubscriptionRepository.class);
+        tradeNoteRepository = mock(com.trader.trading.repository.TradeNoteRepository.class);
+        balanceSnapshotRepository = mock(com.trader.trading.repository.BalanceSnapshotRepository.class);
         signalSourceService = mock(com.trader.trading.service.SignalSourceService.class);
         controller = new DashboardController(dashboardService, tradeExportService, userRepository, webhookService,
-                tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository, signalSourceService);
+                tradeSettingsService, discordWebhookService, lineLinkingService, subscriptionService, planRepository,
+                paymentHistoryRepository, subscriptionRepository, tradeNoteRepository, balanceSnapshotRepository, signalSourceService);
         securityUtil = mockStatic(SecurityUtil.class);
         securityUtil.when(SecurityUtil::getCurrentUserId).thenReturn("user-123");
 
