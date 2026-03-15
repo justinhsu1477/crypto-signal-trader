@@ -259,35 +259,8 @@ public class BroadcastTradeService {
             }
         }
 
-        if (activeUsers.isEmpty()) {
-            String message;
-            if (enabledUsers.isEmpty()) {
-                message = "無啟用用戶";
-            } else if (skippedNoSubscription > 0 && skippedNoApiKey == 0) {
-                message = "所有用戶均無有效訂閱";
-            } else if (skippedNoApiKey > 0 && skippedNoSubscription == 0) {
-                message = "所有用戶均未設定 API Key";
-            } else {
-                message = "所有用戶均未符合條件 (訂閱/API Key)";
-            }
-            saveBroadcastLog(request, 0, 0, 0,
-                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
-                    resolvedSourceId, "COMPLETED", null,
-                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
-            Map<String, Object> emptyResult = new HashMap<>();
-            emptyResult.put("status", "COMPLETED");
-            emptyResult.put("totalUsers", 0);
-            emptyResult.put("successCount", 0);
-            emptyResult.put("failCount", 0);
-            emptyResult.put("skippedNoSubscription", skippedNoSubscription);
-            emptyResult.put("skippedNoApiKey", skippedNoApiKey);
-            emptyResult.put("skippedNotAssigned", skippedNotAssigned);
-            emptyResult.put("skippedNotTargeted", skippedNotTargeted);
-            emptyResult.put("message", message);
-            return emptyResult;
-        }
-
-        // SHADOW 模式 → 記錄廣播日誌但不執行 Binance 交易
+        // SHADOW 模式 → 記錄廣播日誌但不執行 Binance 交易（必須在 activeUsers.isEmpty() 之前，
+        // 因為 SHADOW + ASSIGNED 頻道可能沒有綁定用戶，但仍需建立模擬交易）
         if (resolvedTradeMode == SignalSourceConfig.TradeMode.SHADOW) {
             log.info("SHADOW 模式: 來源 sourceId={} 記錄訊號但不執行交易, 符合用戶={}", resolvedSourceId, activeUsers.size());
 
@@ -335,6 +308,34 @@ public class BroadcastTradeService {
             shadowResult.put("totalEligibleUsers", activeUsers.size());
             shadowResult.put("message", "影子模式：訊號已記錄但未執行交易");
             return shadowResult;
+        }
+
+        if (activeUsers.isEmpty()) {
+            String message;
+            if (enabledUsers.isEmpty()) {
+                message = "無啟用用戶";
+            } else if (skippedNoSubscription > 0 && skippedNoApiKey == 0) {
+                message = "所有用戶均無有效訂閱";
+            } else if (skippedNoApiKey > 0 && skippedNoSubscription == 0) {
+                message = "所有用戶均未設定 API Key";
+            } else {
+                message = "所有用戶均未符合條件 (訂閱/API Key)";
+            }
+            saveBroadcastLog(request, 0, 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "COMPLETED", null,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
+            Map<String, Object> emptyResult = new HashMap<>();
+            emptyResult.put("status", "COMPLETED");
+            emptyResult.put("totalUsers", 0);
+            emptyResult.put("successCount", 0);
+            emptyResult.put("failCount", 0);
+            emptyResult.put("skippedNoSubscription", skippedNoSubscription);
+            emptyResult.put("skippedNoApiKey", skippedNoApiKey);
+            emptyResult.put("skippedNotAssigned", skippedNotAssigned);
+            emptyResult.put("skippedNotTargeted", skippedNotTargeted);
+            emptyResult.put("message", message);
+            return emptyResult;
         }
 
         // 用共享線程池並行執行（不排隊，全員同時下單）
