@@ -9,6 +9,7 @@ import com.trader.trading.service.SignalSourceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -148,6 +149,21 @@ public class AdminSignalSourceController {
             @RequestParam(defaultValue = "all") String period) {
         try {
             return ResponseEntity.ok(signalSourceService.getSourcePerformance(id, period));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    // ======================== 模擬交易明細 ========================
+
+    @GetMapping("/{id}/paper-trades")
+    public ResponseEntity<Page<PaperTradeDetailResponse>> getPaperTrades(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "all") String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        try {
+            return ResponseEntity.ok(signalSourceService.getPaperTrades(id, status, page, size));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }

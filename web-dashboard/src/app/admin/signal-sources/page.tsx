@@ -12,6 +12,7 @@ import {
   unassignAdminSignalSourceUser,
   toggleAdminSignalSourceUser,
   getAdminSignalSourcePerformances,
+  getAdminPaperTrades,
   getAdminUsers,
   getSignalSourceMonitorStatus,
   updateGlobalMonitorSettings,
@@ -22,6 +23,7 @@ import type {
   UpdateSignalSourceRequest,
   UserAssignmentResponse,
   SignalSourcePerformanceDto,
+  PaperTradeDetailResponse,
   AdminUserListResponse,
   MonitorStatusResponse,
   TradeMode,
@@ -46,6 +48,7 @@ import {
   X,
   Radio,
   ChevronsUpDown,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +70,12 @@ export default function AdminSignalSourcesPage() {
   const [assigning, setAssigning] = useState(false);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showChannelActivity, setShowChannelActivity] = useState(false);
+  const [paperTradeSourceId, setPaperTradeSourceId] = useState<number | null>(null);
+  const [paperTrades, setPaperTrades] = useState<PaperTradeDetailResponse[]>([]);
+  const [paperTradePage, setPaperTradePage] = useState(0);
+  const [paperTradeTotalPages, setPaperTradeTotalPages] = useState(0);
+  const [paperTradeStatus, setPaperTradeStatus] = useState("all");
+  const [loadingPaperTrades, setLoadingPaperTrades] = useState(false);
   const [perfSortField, setPerfSortField] = useState<keyof SignalSourcePerformanceDto | null>(null);
   const [perfSortDir, setPerfSortDir] = useState<"asc" | "desc">("desc");
   const [perfPeriod, setPerfPeriod] = useState("all");
@@ -141,6 +150,22 @@ export default function AdminSignalSourcesPage() {
       fetchData();
     } catch {
       toast.error(t("common.saveFailed"));
+    }
+  }
+
+  async function handleOpenPaperTrades(sourceId: number, status = "all", page = 0) {
+    setPaperTradeSourceId(sourceId);
+    setPaperTradeStatus(status);
+    setPaperTradePage(page);
+    setLoadingPaperTrades(true);
+    try {
+      const res = await getAdminPaperTrades(sourceId, status, page, 20);
+      setPaperTrades(res.content);
+      setPaperTradeTotalPages(res.totalPages);
+    } catch {
+      toast.error(t("common.loadFailed"));
+    } finally {
+      setLoadingPaperTrades(false);
     }
   }
 
@@ -436,13 +461,24 @@ export default function AdminSignalSourcesPage() {
                       <Power className="h-4 w-4" />
                     </button>
                     {source.tradeMode === "SHADOW" && (
-                      <button
-                        onClick={() => handleTogglePaperTrading(source)}
-                        className={`p-1.5 rounded-md hover:bg-accent transition-colors ${source.paperTradingEnabled ? "text-blue-400" : "text-gray-400"}`}
-                        title={t("signalSources.paperTrading")}
-                      >
-                        <BarChart3 className="h-4 w-4" />
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleTogglePaperTrading(source)}
+                          className={`p-1.5 rounded-md hover:bg-accent transition-colors ${source.paperTradingEnabled ? "text-blue-400" : "text-gray-400"}`}
+                          title={t("signalSources.paperTrading")}
+                        >
+                          <BarChart3 className="h-4 w-4" />
+                        </button>
+                        {perf && perf.paperTradeCount > 0 && (
+                          <button
+                            onClick={() => handleOpenPaperTrades(source.id)}
+                            className="p-1.5 rounded-md hover:bg-accent text-yellow-400 transition-colors"
+                            title={t("signalSources.paperTradeDetails")}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                        )}
+                      </>
                     )}
                     <button
                       onClick={() => { setEditingSource(source); setShowCreateModal(true); }}
@@ -649,6 +685,149 @@ export default function AdminSignalSourcesPage() {
           onClose={() => { setShowCreateModal(false); setEditingSource(null); }}
           onSaved={() => { setShowCreateModal(false); setEditingSource(null); fetchData(); }}
         />
+      )}
+
+      {/* Paper Trade Detail Modal */}
+      {paperTradeSourceId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setPaperTradeSourceId(null)}>
+          <div className="bg-card border border-border rounded-xl w-full max-w-4xl mx-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <FileText className="h-5 w-5 text-yellow-400" />
+                {t("signalSources.paperTradeDetails")}
+                <span className="text-sm text-muted-foreground">
+                  — {sources.find(s => s.id === paperTradeSourceId)?.displayName}
+                </span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <select
+                  value={paperTradeStatus}
+                  onChange={(e) => handleOpenPaperTrades(paperTradeSourceId, e.target.value, 0)}
+                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs"
+                >
+                  <option value="all">{t("signalSources.periodAll")}</option>
+                  <option value="OPEN">OPEN</option>
+                  <option value="CLOSED">CLOSED</option>
+                </select>
+                <button onClick={() => setPaperTradeSourceId(null)} className="p-1 hover:bg-accent rounded-md">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto flex-1 p-4">
+              {loadingPaperTrades ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : paperTrades.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">{t("common.noData")}</p>
+              ) : (
+                <div className="space-y-3">
+                  {paperTrades.map((trade) => (
+                    <div key={trade.tradeId} className="bg-accent/30 border border-border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-semibold">{trade.symbol}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                            trade.side === "LONG" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+                          }`}>
+                            {trade.side}
+                          </span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            trade.status === "OPEN" ? "bg-blue-500/20 text-blue-400" : "bg-gray-500/20 text-gray-400"
+                          }`}>
+                            {trade.status}
+                          </span>
+                          {trade.exitReason && (
+                            <span className="text-xs text-muted-foreground">{trade.exitReason}</span>
+                          )}
+                        </div>
+                        {trade.netProfit !== null && (
+                          <span className={`font-mono font-semibold ${trade.netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                            {trade.netProfit >= 0 ? "+" : ""}${trade.netProfit.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">Entry: </span>
+                          <span className="font-mono">{trade.entryPrice?.toFixed(2) ?? "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Exit: </span>
+                          <span className="font-mono">{trade.exitPrice?.toFixed(2) ?? "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">SL: </span>
+                          <span className="font-mono">{trade.stopLoss?.toFixed(2) ?? "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Lev: </span>
+                          <span className="font-mono">{trade.leverage ?? "—"}x</span>
+                        </div>
+                        {trade.entryTime && (
+                          <div>
+                            <span className="text-muted-foreground">Open: </span>
+                            <span className="font-mono">{new Date(trade.entryTime).toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+                        )}
+                        {trade.exitTime && (
+                          <div>
+                            <span className="text-muted-foreground">Close: </span>
+                            <span className="font-mono">{new Date(trade.exitTime).toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+                        )}
+                        {trade.durationSeconds !== null && (
+                          <div>
+                            <span className="text-muted-foreground">Duration: </span>
+                            <span className="font-mono">
+                              {trade.durationSeconds >= 3600
+                                ? `${Math.floor(trade.durationSeconds / 3600)}h ${Math.floor((trade.durationSeconds % 3600) / 60)}m`
+                                : `${Math.floor(trade.durationSeconds / 60)}m`}
+                            </span>
+                          </div>
+                        )}
+                        {trade.aiConfidence !== null && (
+                          <div>
+                            <span className="text-muted-foreground">AI: </span>
+                            <span className={`font-mono ${trade.aiConfidence >= 70 ? "text-green-400" : trade.aiConfidence >= 50 ? "text-yellow-400" : "text-red-400"}`}>
+                              {trade.aiConfidence}/100
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      {trade.aiReasoning && (
+                        <div className="mt-1.5 text-xs text-muted-foreground italic">{trade.aiReasoning}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Pagination */}
+            {paperTradeTotalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 p-3 border-t border-border">
+                <button
+                  onClick={() => handleOpenPaperTrades(paperTradeSourceId, paperTradeStatus, paperTradePage - 1)}
+                  disabled={paperTradePage === 0}
+                  className="px-3 py-1 text-xs rounded-md border border-border hover:bg-accent disabled:opacity-30 transition-colors"
+                >
+                  {t("common.prev")}
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  {paperTradePage + 1} / {paperTradeTotalPages}
+                </span>
+                <button
+                  onClick={() => handleOpenPaperTrades(paperTradeSourceId, paperTradeStatus, paperTradePage + 1)}
+                  disabled={paperTradePage >= paperTradeTotalPages - 1}
+                  className="px-3 py-1 text-xs rounded-md border border-border hover:bg-accent disabled:opacity-30 transition-colors"
+                >
+                  {t("common.next")}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Assign User Modal */}

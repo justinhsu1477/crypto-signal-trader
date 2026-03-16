@@ -8,6 +8,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -461,4 +464,18 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
            "AND t.symbol = :symbol AND t.sourceChannelId = :channelId")
     Optional<Trade> findOpenSimulatedTrade(@Param("symbol") String symbol,
                                            @Param("channelId") String channelId);
+
+    /**
+     * 按訊號來源查詢模擬交易明細（分頁，依建立時間倒序）
+     * 支援篩選 status（OPEN/CLOSED/全部）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.simulated = true " +
+           "AND t.sourceChannelId = :channelId " +
+           "AND (:guildId IS NULL OR t.sourceGuildId = :guildId) " +
+           "AND (:status IS NULL OR t.status = :status) " +
+           "ORDER BY t.createdAt DESC")
+    Page<Trade> findSimulatedTradesBySource(@Param("channelId") String channelId,
+                                            @Param("guildId") String guildId,
+                                            @Param("status") String status,
+                                            Pageable pageable);
 }

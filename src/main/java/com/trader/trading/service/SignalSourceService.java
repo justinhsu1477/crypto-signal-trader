@@ -2,6 +2,7 @@ package com.trader.trading.service;
 
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
+import com.trader.trading.entity.Trade;
 import com.trader.trading.entity.UserSignalSource;
 import com.trader.trading.grpc.generated.MonitorConfig;
 import com.trader.trading.grpc.generated.SourceConfig;
@@ -13,9 +14,12 @@ import com.trader.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
@@ -307,6 +311,55 @@ public class SignalSourceService {
         SignalSourceConfig source = sourceRepository.findById(sourceId)
                 .orElseThrow(() -> new IllegalArgumentException("訊號來源不存在: id=" + sourceId));
         return buildPerformance(source, since);
+    }
+
+    // ======================== 模擬交易明細查詢 ========================
+
+    public Page<PaperTradeDetailResponse> getPaperTrades(Long sourceId, String status, int page, int size) {
+        SignalSourceConfig source = sourceRepository.findById(sourceId)
+                .orElseThrow(() -> new IllegalArgumentException("訊號來源不存在: id=" + sourceId));
+
+        if (source.getChannelId() == null) {
+            return Page.empty();
+        }
+
+        String statusFilter = (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status))
+                ? status.toUpperCase() : null;
+
+        Page<Trade> trades = tradeRepository.findSimulatedTradesBySource(
+                source.getChannelId(), source.getGuildId(), statusFilter, PageRequest.of(page, size));
+
+        return trades.map(this::toPaperTradeDetail);
+    }
+
+    private PaperTradeDetailResponse toPaperTradeDetail(Trade trade) {
+        Long durationSeconds = null;
+        if (trade.getEntryTime() != null && trade.getExitTime() != null) {
+            durationSeconds = Duration.between(trade.getEntryTime(), trade.getExitTime()).getSeconds();
+        }
+
+        return PaperTradeDetailResponse.builder()
+                .tradeId(trade.getTradeId())
+                .symbol(trade.getSymbol())
+                .side(trade.getSide())
+                .status(trade.getStatus())
+                .entryPrice(trade.getEntryPrice())
+                .entryQuantity(trade.getEntryQuantity())
+                .entryTime(trade.getEntryTime())
+                .exitPrice(trade.getExitPrice())
+                .exitTime(trade.getExitTime())
+                .exitReason(trade.getExitReason())
+                .stopLoss(trade.getStopLoss())
+                .takeProfits(trade.getTakeProfits())
+                .leverage(trade.getLeverage())
+                .grossProfit(trade.getGrossProfit())
+                .commission(trade.getCommission())
+                .netProfit(trade.getNetProfit())
+                .aiConfidence(trade.getAiConfidence())
+                .aiReasoning(trade.getAiReasoning())
+                .sourceAuthorName(trade.getSourceAuthorName())
+                .durationSeconds(durationSeconds)
+                .build();
     }
 
     // ======================== 內部方法 ========================
