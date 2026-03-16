@@ -950,6 +950,39 @@ export interface SignalSourceUserResponse {
   enabled: boolean;
 }
 
+// ─── Paper Trade Detail ───
+
+export interface PaperTradeDetailResponse {
+  tradeId: string;
+  symbol: string;
+  side: "LONG" | "SHORT";
+  status: "OPEN" | "CLOSED";
+  entryPrice: number | null;
+  entryQuantity: number | null;
+  entryTime: string | null;
+  exitPrice: number | null;
+  exitTime: string | null;
+  exitReason: string | null;
+  stopLoss: number | null;
+  takeProfits: string | null;
+  leverage: number | null;
+  grossProfit: number | null;
+  commission: number | null;
+  netProfit: number | null;
+  aiConfidence: number | null;
+  aiReasoning: string | null;
+  sourceAuthorName: string | null;
+  durationSeconds: number | null;
+}
+
+export interface PageResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
 // ─── Shadow Graduation ───
 
 export interface ShadowGraduationResult {

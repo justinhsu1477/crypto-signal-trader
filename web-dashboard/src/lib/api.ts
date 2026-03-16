@@ -1012,9 +1012,24 @@ export async function getAdminSignalSourcePerformance(id: number, period = "all"
   return request<SignalSourcePerformanceDto>(`/api/admin/signal-sources/${id}/performance?period=${period}`);
 }
 
+// ─── Paper Trade Detail ───
+
+import type { PaperTradeDetailResponse, PageResponse, ShadowGraduationResult } from "@/types";
+
+export async function getAdminPaperTrades(
+  sourceId: number,
+  status = "all",
+  page = 0,
+  size = 20
+): Promise<PageResponse<PaperTradeDetailResponse>> {
+  return request<PageResponse<PaperTradeDetailResponse>>(
+    `/api/admin/signal-sources/${sourceId}/paper-trades?status=${status}&page=${page}&size=${size}`
+  );
+}
+
 // ─── Shadow Graduation ───
 
-import type { ShadowGraduationResult } from "@/types";
+// ShadowGraduationResult imported above with PaperTradeDetailResponse
 
 export async function getAdminShadowGraduation(): Promise<ShadowGraduationResult[]> {
   return request<ShadowGraduationResult[]>("/api/admin/shadow-graduation");

@@ -1997,6 +1997,7 @@ const translations = {
       ja: "配信をスキップし、割当ユーザーにのみ通知を送信",
     },
     paperTrading: { en: "Paper Trading", "zh-TW": "模擬交易", "zh-CN": "模拟交易", ja: "ペーパートレード" },
+    paperTradeDetails: { en: "Paper Trade Details", "zh-TW": "模擬交易明細", "zh-CN": "模拟交易明细", ja: "ペーパートレード詳細" },
     riskMultiplier: { en: "Risk Multiplier", "zh-TW": "風險倍率", "zh-CN": "风险倍率", ja: "リスク倍率" },
     riskMultiplierHint: {
       en: "Range 0.1 ~ 3.0, default 1.0 (Phase 3 will apply to trade sizing)",

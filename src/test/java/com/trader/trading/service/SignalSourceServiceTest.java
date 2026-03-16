@@ -2,6 +2,7 @@ package com.trader.trading.service;
 
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
+import com.trader.trading.entity.Trade;
 import com.trader.trading.entity.UserSignalSource;
 import com.trader.trading.grpc.generated.MonitorConfig;
 import com.trader.trading.repository.SignalSourceConfigRepository;
@@ -10,6 +11,9 @@ import com.trader.trading.repository.UserSignalSourceRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import org.junit.jupiter.api.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -1076,6 +1080,129 @@ class SignalSourceServiceTest {
             assertThat(sources.get(0).getTradeMode()).isEqualTo("SHADOW");
             assertThat(sources.get(0).getRiskMultiplier()).isEqualTo(1.5);
             assertThat(sources.get(0).getCustomPrompt()).isEqualTo("custom");
+        }
+    }
+
+    // ==================== 模擬交易明細查詢 ====================
+
+    @Nested
+    @DisplayName("模擬交易明細查詢")
+    class PaperTradeDetailTests {
+
+        private SignalSourceConfig shadowSource() {
+            SignalSourceConfig s = new SignalSourceConfig();
+            s.setId(10L);
+            s.setName("shadow-test");
+            s.setDisplayName("Shadow Test");
+            s.setChannelId("ch-shadow");
+            s.setGuildId("g-1");
+            s.setTradeMode(SignalSourceConfig.TradeMode.SHADOW);
+            s.setEnabled(true);
+            return s;
+        }
+
+        private Trade buildPaperTrade(String tradeId, String symbol, String side, String status,
+                                       Double entryPrice, Double exitPrice, Double netProfit,
+                                       LocalDateTime entryTime, LocalDateTime exitTime) {
+            return Trade.builder()
+                    .tradeId(tradeId)
+                    .symbol(symbol)
+                    .side(side)
+                    .status(status)
+                    .entryPrice(entryPrice)
+                    .entryQuantity(0.1)
+                    .entryTime(entryTime)
+                    .exitPrice(exitPrice)
+                    .exitTime(exitTime)
+                    .exitReason(exitPrice != null ? "STOP_LOSS" : null)
+                    .stopLoss(60000.0)
+                    .takeProfits("[70000.0]")
+                    .leverage(10)
+                    .grossProfit(netProfit != null ? netProfit + 0.5 : null)
+                    .commission(0.5)
+                    .netProfit(netProfit)
+                    .aiConfidence(75)
+                    .aiReasoning("趨勢向上")
+                    .sourceChannelId("ch-shadow")
+                    .sourceGuildId("g-1")
+                    .sourceAuthorName("signal-master")
+                    .simulated(true)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("查詢模擬交易 — 正常回傳分頁結果")
+        void getPaperTrades_returnsPagedResult() {
+            SignalSourceConfig source = shadowSource();
+            when(sourceRepository.findById(10L)).thenReturn(Optional.of(source));
+
+            LocalDateTime now = LocalDateTime.now();
+            Trade t1 = buildPaperTrade("t-1", "BTCUSDT", "LONG", "CLOSED",
+                    65000.0, 66000.0, 95.0, now.minusHours(5), now.minusHours(3));
+            Trade t2 = buildPaperTrade("t-2", "BTCUSDT", "SHORT", "OPEN",
+                    67000.0, null, null, now.minusHours(1), null);
+
+            Page<Trade> page = new PageImpl<>(List.of(t1, t2), PageRequest.of(0, 20), 2);
+            when(tradeRepository.findSimulatedTradesBySource("ch-shadow", "g-1", null, PageRequest.of(0, 20)))
+                    .thenReturn(page);
+
+            Page<PaperTradeDetailResponse> result = service.getPaperTrades(10L, "all", 0, 20);
+
+            assertThat(result.getTotalElements()).isEqualTo(2);
+            assertThat(result.getContent()).hasSize(2);
+
+            PaperTradeDetailResponse r1 = result.getContent().get(0);
+            assertThat(r1.getTradeId()).isEqualTo("t-1");
+            assertThat(r1.getSymbol()).isEqualTo("BTCUSDT");
+            assertThat(r1.getSide()).isEqualTo("LONG");
+            assertThat(r1.getStatus()).isEqualTo("CLOSED");
+            assertThat(r1.getEntryPrice()).isEqualTo(65000.0);
+            assertThat(r1.getExitPrice()).isEqualTo(66000.0);
+            assertThat(r1.getNetProfit()).isEqualTo(95.0);
+            assertThat(r1.getAiConfidence()).isEqualTo(75);
+            assertThat(r1.getAiReasoning()).isEqualTo("趨勢向上");
+            assertThat(r1.getDurationSeconds()).isEqualTo(7200L);
+
+            PaperTradeDetailResponse r2 = result.getContent().get(1);
+            assertThat(r2.getStatus()).isEqualTo("OPEN");
+            assertThat(r2.getExitPrice()).isNull();
+            assertThat(r2.getDurationSeconds()).isNull();
+        }
+
+        @Test
+        @DisplayName("按 status 篩選 — 傳入 CLOSED")
+        void getPaperTrades_filterByStatus() {
+            SignalSourceConfig source = shadowSource();
+            when(sourceRepository.findById(10L)).thenReturn(Optional.of(source));
+            when(tradeRepository.findSimulatedTradesBySource("ch-shadow", "g-1", "CLOSED", PageRequest.of(0, 20)))
+                    .thenReturn(Page.empty());
+
+            Page<PaperTradeDetailResponse> result = service.getPaperTrades(10L, "CLOSED", 0, 20);
+
+            assertThat(result.getContent()).isEmpty();
+            verify(tradeRepository).findSimulatedTradesBySource("ch-shadow", "g-1", "CLOSED", PageRequest.of(0, 20));
+        }
+
+        @Test
+        @DisplayName("來源不存在 — 拋出 IllegalArgumentException")
+        void getPaperTrades_sourceNotFound() {
+            when(sourceRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getPaperTrades(99L, "all", 0, 20))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("來源沒有 channelId — 回傳空頁")
+        void getPaperTrades_noChannelId_returnsEmpty() {
+            SignalSourceConfig source = shadowSource();
+            source.setChannelId(null);
+            when(sourceRepository.findById(10L)).thenReturn(Optional.of(source));
+
+            Page<PaperTradeDetailResponse> result = service.getPaperTrades(10L, "all", 0, 20);
+
+            assertThat(result.getContent()).isEmpty();
+            verify(tradeRepository, never()).findSimulatedTradesBySource(any(), any(), any(), any());
         }
     }
 }
