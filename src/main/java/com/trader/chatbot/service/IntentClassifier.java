@@ -19,6 +19,7 @@ public class IntentClassifier {
         TRADE_QUERY,       // 交易紀錄、損益
         SIGNAL_EXPLAIN,    // 訊號、跟單解釋
         SETTING_CHANGE,    // 修改交易設定（觸發 Function Calling）
+        MARKET_DATA,       // 市場行情、BTC 價格、持倉
         OPERATION_GUIDE,   // 操作指引
         ANOMALY_REPORT,    // 異常回報
         GENERAL            // 一般對話
@@ -40,6 +41,12 @@ public class IntentClassifier {
             Map.entry(Intent.SETTING_CHANGE, Set.of(
                     "改", "修改", "調整", "風險", "槓桿", "dca", "層數",
                     "risk", "leverage", "改成", "設為", "調成"
+            )),
+            Map.entry(Intent.MARKET_DATA, Set.of(
+                    "行情", "市場", "btc", "比特幣", "bitcoin", "多少錢", "價格", "price",
+                    "做多", "做空", "漲", "跌", "趨勢", "funding", "費率",
+                    "恐懼", "貪婪", "fear", "greed", "持倉", "倉位", "我的單",
+                    "日報", "報告", "report"
             )),
             Map.entry(Intent.OPERATION_GUIDE, Set.of(
                     "怎麼", "如何", "設定", "教學", "api key", "apikey", "綁定",
@@ -67,6 +74,7 @@ public class IntentClassifier {
                 Intent.SETTING_CHANGE,
                 Intent.SIGNAL_EXPLAIN,
                 Intent.TRADE_QUERY,
+                Intent.MARKET_DATA,
                 Intent.ACCOUNT_STATUS,
                 Intent.OPERATION_GUIDE
         };

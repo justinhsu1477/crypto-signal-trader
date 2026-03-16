@@ -54,6 +54,18 @@ class IntentClassifierTest {
     }
 
     @Test
+    @DisplayName("市場行情關鍵字 → MARKET_DATA")
+    void marketDataKeywords() {
+        assertThat(classifier.classify("BTC 多少錢")).isEqualTo(Intent.MARKET_DATA);
+        assertThat(classifier.classify("比特幣現在行情")).isEqualTo(Intent.MARKET_DATA);
+        assertThat(classifier.classify("目前市場趨勢")).isEqualTo(Intent.MARKET_DATA);
+        assertThat(classifier.classify("funding rate")).isEqualTo(Intent.MARKET_DATA);
+        assertThat(classifier.classify("我的持倉")).isEqualTo(Intent.MARKET_DATA);
+        assertThat(classifier.classify("恐懼指數")).isEqualTo(Intent.MARKET_DATA);
+        assertThat(classifier.classify("今天日報")).isEqualTo(Intent.MARKET_DATA);
+    }
+
+    @Test
     @DisplayName("無關鍵字 → GENERAL")
     void generalFallback() {
         assertThat(classifier.classify("你好")).isEqualTo(Intent.GENERAL);

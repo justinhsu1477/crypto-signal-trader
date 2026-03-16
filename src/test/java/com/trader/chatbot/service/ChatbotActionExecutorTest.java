@@ -23,16 +23,19 @@ class ChatbotActionExecutorTest {
     @Mock
     private UserTradeSettingsService userTradeSettingsService;
 
+    @Mock
+    private MarketDataService marketDataService;
+
     @InjectMocks
     private ChatbotActionExecutor executor;
 
     private static final String USER_ID = "test-user";
 
     @Test
-    void buildToolsSchema_包含五個函式定義() {
+    void buildToolsSchema_包含八個函式定義() {
         JsonObject tools = executor.buildToolsSchema();
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(5);
+        assertThat(declarations).hasSize(8);
     }
 
     @Test
@@ -145,6 +148,36 @@ class ChatbotActionExecutorTest {
 
         assertThat(result).contains("操作失敗");
         assertThat(result).contains("稍後再試");
+    }
+
+    @Test
+    void executeGetMarketData_委派給MarketDataService() {
+        when(marketDataService.getMarketOverview()).thenReturn("BTC $67000");
+
+        String result = executor.executeFunction(USER_ID, "get_market_data", new JsonObject());
+
+        assertThat(result).isEqualTo("BTC $67000");
+        verify(marketDataService).getMarketOverview();
+    }
+
+    @Test
+    void executeGetMyPositions_委派給MarketDataService() {
+        when(marketDataService.getUserPositions(USER_ID)).thenReturn("BTCUSDT LONG");
+
+        String result = executor.executeFunction(USER_ID, "get_my_positions", new JsonObject());
+
+        assertThat(result).isEqualTo("BTCUSDT LONG");
+        verify(marketDataService).getUserPositions(USER_ID);
+    }
+
+    @Test
+    void executeGetSignalReport_委派給MarketDataService() {
+        when(marketDataService.getSignalReportSummary()).thenReturn("15 條訊號");
+
+        String result = executor.executeFunction(USER_ID, "get_signal_report", new JsonObject());
+
+        assertThat(result).isEqualTo("15 條訊號");
+        verify(marketDataService).getSignalReportSummary();
     }
 
     @Test
