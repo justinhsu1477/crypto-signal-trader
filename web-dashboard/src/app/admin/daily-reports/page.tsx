@@ -5,6 +5,7 @@ import { useT } from "@/lib/i18n/i18n-context";
 import { getAdminDailyReports, getAdminDailyReportDetail, generateAdminDailyReport } from "@/lib/api";
 import type { DailySignalReportSummary, DailySignalReportDetail } from "@/types";
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface SourceStat {
   source: string;
@@ -72,7 +73,8 @@ export default function DailyReportsPage() {
     if (!generateDate || generating) return;
     setGenerating(true);
     try {
-      await generateAdminDailyReport(generateDate);
+      const result = await generateAdminDailyReport(generateDate);
+      toast.success(`日報已產生：${generateDate}（${result.totalSignals} 條訊號）`);
       // Refresh list
       setPage(0);
       const res = await getAdminDailyReports(0, 20);
@@ -80,8 +82,8 @@ export default function DailyReportsPage() {
       setTotalPages(res.totalPages);
       setTotalElements(res.totalElements);
       setGenerateDate("");
-    } catch {
-      // silent
+    } catch (err) {
+      toast.error(`產生日報失敗：${err instanceof Error ? err.message : "未知錯誤"}`);
     } finally {
       setGenerating(false);
     }
