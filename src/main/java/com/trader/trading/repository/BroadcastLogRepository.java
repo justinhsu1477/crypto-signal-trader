@@ -58,4 +58,10 @@ public interface BroadcastLogRepository extends JpaRepository<BroadcastLog, Long
      * 查詢指定時間範圍的廣播紀錄（日報用）
      */
     List<BroadcastLog> findByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    /**
+     * 查詢指定時間範圍 [start, end) 的廣播紀錄（日報用，排除上界）
+     */
+    List<BroadcastLog> findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            LocalDateTime start, LocalDateTime end);
 }

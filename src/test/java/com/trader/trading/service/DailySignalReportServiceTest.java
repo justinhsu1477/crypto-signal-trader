@@ -151,7 +151,7 @@ class DailySignalReportServiceTest {
 
         @Test
         void noLogs_savesEmptyReport_skipsAi() {
-            when(broadcastLogRepository.findByCreatedAtBetween(any(), any())).thenReturn(List.of());
+            when(broadcastLogRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any())).thenReturn(List.of());
 
             DailySignalReport result = service.generateReportForDate(LocalDate.of(2026, 3, 13));
 
@@ -167,7 +167,7 @@ class DailySignalReportServiceTest {
                     buildLog("BTCUSDT", "LONG", "ENTRY", "a", 80),
                     buildLog("ETHUSDT", "SHORT", "ENTRY", "a", 70)
             );
-            when(broadcastLogRepository.findByCreatedAtBetween(any(), any())).thenReturn(logs);
+            when(broadcastLogRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any())).thenReturn(logs);
 
             service.generateReportForDate(LocalDate.of(2026, 3, 13));
 
@@ -181,7 +181,7 @@ class DailySignalReportServiceTest {
                     buildLog("ETHUSDT", "SHORT", "ENTRY", "b", 70),
                     buildLog("SOLUSDT", "LONG", "CLOSE", "a", 60)
             );
-            when(broadcastLogRepository.findByCreatedAtBetween(any(), any())).thenReturn(logs);
+            when(broadcastLogRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any())).thenReturn(logs);
             when(geminiService.generateContent(anyString(), anyString()))
                     .thenReturn(Optional.of("AI analysis result"));
 
@@ -196,7 +196,7 @@ class DailySignalReportServiceTest {
         void existingReport_deletedAndRecreated() {
             DailySignalReport existing = DailySignalReport.builder().id(99L).build();
             when(dailySignalReportRepository.findByReportDate(any())).thenReturn(Optional.of(existing));
-            when(broadcastLogRepository.findByCreatedAtBetween(any(), any())).thenReturn(List.of());
+            when(broadcastLogRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any())).thenReturn(List.of());
 
             service.generateReportForDate(LocalDate.of(2026, 3, 13));
 
@@ -210,7 +210,7 @@ class DailySignalReportServiceTest {
                     buildLog("BTCUSDT", "LONG", "ENTRY", "alpha", 80),
                     buildLog("ETHUSDT", "SHORT", "ENTRY", "beta", 60)
             );
-            when(broadcastLogRepository.findByCreatedAtBetween(any(), any())).thenReturn(logs);
+            when(broadcastLogRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any())).thenReturn(logs);
 
             service.generateReportForDate(LocalDate.of(2026, 3, 13));
 
@@ -228,7 +228,7 @@ class DailySignalReportServiceTest {
 
         @Test
         void adminNotification_sentAfterSave() {
-            when(broadcastLogRepository.findByCreatedAtBetween(any(), any())).thenReturn(List.of());
+            when(broadcastLogRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any())).thenReturn(List.of());
 
             service.generateReportForDate(LocalDate.of(2026, 3, 13));
 

@@ -70,10 +70,11 @@ public class DailySignalReportService {
             dailySignalReportRepository.delete(existing.get());
         }
 
-        // 1. 查詢當日 BroadcastLog
+        // 1. 查詢當日 BroadcastLog [startOfDay, nextDay) — 避免漏掉 23:59:59.xxx
         LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.atTime(23, 59, 59);
-        List<BroadcastLog> logs = broadcastLogRepository.findByCreatedAtBetween(startOfDay, endOfDay);
+        LocalDateTime nextDay = date.plusDays(1).atStartOfDay();
+        List<BroadcastLog> logs = broadcastLogRepository
+                .findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(startOfDay, nextDay);
 
         log.info("日報統計 {}: {} 條訊號", date, logs.size());
 
