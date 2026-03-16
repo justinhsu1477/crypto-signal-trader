@@ -34,6 +34,7 @@ class UserContextGathererTest {
     @Mock private UserTradeSettingsRepository userTradeSettingsRepository;
     @Mock private SubscriptionRepository subscriptionRepository;
     @Mock private BroadcastLogRepository broadcastLogRepository;
+    @Mock private MarketDataService marketDataService;
 
     private UserContextGatherer gatherer;
 
@@ -41,7 +42,8 @@ class UserContextGathererTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         gatherer = new UserContextGatherer(userRepository, tradeRepository,
-                userTradeSettingsRepository, subscriptionRepository, broadcastLogRepository);
+                userTradeSettingsRepository, subscriptionRepository, broadcastLogRepository,
+                marketDataService);
     }
 
     @Test

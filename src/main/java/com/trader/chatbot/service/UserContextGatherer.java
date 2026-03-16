@@ -37,6 +37,7 @@ public class UserContextGatherer {
     private final UserTradeSettingsRepository userTradeSettingsRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final BroadcastLogRepository broadcastLogRepository;
+    private final MarketDataService marketDataService;
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MM/dd HH:mm");
 
@@ -226,6 +227,10 @@ public class UserContextGatherer {
                 case SETTING_CHANGE -> {
                     sb.append(gatherAccountStatus(userId));
                     sb.append(gatherTradeSettings(userId));
+                }
+                case MARKET_DATA -> {
+                    // 市場數據由 Function Calling 即時取得，context 只帶帳號 + 持倉概要
+                    sb.append(gatherAccountStatus(userId));
                 }
                 case OPERATION_GUIDE -> {
                     sb.append(gatherAccountStatus(userId));

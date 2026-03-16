@@ -278,6 +278,25 @@ public class BinanceFuturesService {
     }
 
     /**
+     * 取得 24 小時行情摘要（價格、漲跌幅、成交量）
+     */
+    public JsonObject get24hTicker(String symbol) {
+        String endpoint = "/fapi/v1/ticker/24hr?symbol=" + symbol;
+        String response = sendPublicGet(endpoint);
+        return gson.fromJson(response, JsonObject.class);
+    }
+
+    /**
+     * 取得最新資金費率
+     */
+    public JsonObject getFundingRate(String symbol) {
+        String endpoint = "/fapi/v1/fundingRate?symbol=" + symbol + "&limit=1";
+        String response = sendPublicGet(endpoint);
+        JsonArray arr = gson.fromJson(response, JsonArray.class);
+        return arr.size() > 0 ? arr.get(0).getAsJsonObject() : new JsonObject();
+    }
+
+    /**
      * 取得目前活躍持倉數量（positionAmt != 0 的交易對數量）
      * ⚠️ API 失敗時拋出 RuntimeException，避免回傳 0 繞過持倉上限檢查
      */

@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,7 @@ import java.util.Map;
 public class ChatbotActionExecutor {
 
     private final UserTradeSettingsService userTradeSettingsService;
+    private final MarketDataService marketDataService;
     private final Gson gson = new Gson();
 
     /**
@@ -70,6 +72,26 @@ public class ChatbotActionExecutor {
                 )
         ));
 
+        // === 市場數據查詢（唯讀） ===
+
+        declarations.add(buildFunction(
+                "get_market_data",
+                "查詢 BTC 即時行情：價格、24h漲跌幅、成交量、資金費率（Funding Rate）、恐懼貪婪指數。用戶問到行情、市場、BTC 多少錢、適不適合做多時呼叫此函式。",
+                Map.of()
+        ));
+
+        declarations.add(buildFunction(
+                "get_my_positions",
+                "查詢用戶目前的持倉狀況，包含入場價、止損、槓桿、未實現損益。用戶問到持倉、倉位、我的單時呼叫此函式。",
+                Map.of()
+        ));
+
+        declarations.add(buildFunction(
+                "get_signal_report",
+                "查詢最近的訊號日報摘要：每日訊號數量、多空比例、AI 平均信心分數。用戶問到最近訊號表現、日報時呼叫此函式。",
+                Map.of()
+        ));
+
         tools.add("function_declarations", declarations);
         return tools;
     }
@@ -92,6 +114,9 @@ public class ChatbotActionExecutor {
                 case "update_max_leverage" -> executeUpdateMaxLeverage(userId, args);
                 case "update_max_dca_layers" -> executeUpdateMaxDcaLayers(userId, args);
                 case "toggle_auto_sl_tp" -> executeToggleAutoSlTp(userId, args);
+                case "get_market_data" -> marketDataService.getMarketOverview();
+                case "get_my_positions" -> marketDataService.getUserPositions(userId);
+                case "get_signal_report" -> marketDataService.getSignalReportSummary();
                 default -> {
                     log.warn("Chatbot 收到未知 function: {} userId={}", functionName, userId);
                     yield "不支援的操作。";
