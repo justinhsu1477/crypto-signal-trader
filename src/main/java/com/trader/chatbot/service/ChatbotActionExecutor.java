@@ -100,6 +100,39 @@ public class ChatbotActionExecutor {
                 Map.of()
         ));
 
+        declarations.add(buildFunction(
+                "get_source_list",
+                "查詢所有訊號來源清單，包含名稱、交易模式（AUTO/SHADOW）、啟用狀態。管理員問到「有哪些頻道」「訊號來源」「來源清單」時呼叫。",
+                Map.of()
+        ));
+
+        declarations.add(buildFunction(
+                "get_source_performance",
+                "查詢指定訊號來源的績效統計：交易數、勝率、總損益、平均損益、最大獲利/虧損、Profit Factor。管理員問到某頻道/來源的表現、績效、勝率時呼叫。",
+                Map.of(
+                        "source_name", Map.of("type", "STRING", "description", "來源名稱（模糊匹配，如「比特幣飛揚」）"),
+                        "period", Map.of("type", "STRING", "description", "時間區間：7d / 30d / 90d / all（預設 all）")
+                )
+        ));
+
+        declarations.add(buildFunction(
+                "get_source_recent_trades",
+                "查詢指定訊號來源最近的交易紀錄明細（入場價、出場價、PnL、AI 信心分數）。管理員問到某頻道「最近交易」「最近的單」「最新紀錄」時呼叫。",
+                Map.of(
+                        "source_name", Map.of("type", "STRING", "description", "來源名稱（模糊匹配，如「比特幣飛揚」）"),
+                        "count", Map.of("type", "INTEGER", "description", "筆數（預設 5，最多 10）")
+                )
+        ));
+
+        declarations.add(buildFunction(
+                "get_recent_broadcasts",
+                "查詢最近的廣播跟單紀錄，包含訊號動作、成功/失敗/跳過人數。可按來源篩選。管理員問到「最近廣播」「跟單紀錄」「廣播歷史」時呼叫。",
+                Map.of(
+                        "source_name", Map.of("type", "STRING", "description", "來源名稱篩選（模糊匹配，空字串代表查全部）"),
+                        "count", Map.of("type", "INTEGER", "description", "筆數（預設 5，最多 10）")
+                )
+        ));
+
         tools.add("function_declarations", declarations);
         return tools;
     }
@@ -126,6 +159,22 @@ public class ChatbotActionExecutor {
                 case "get_my_positions" -> marketDataService.getUserPositions(userId);
                 case "get_signal_report" -> marketDataService.getSignalReportSummary();
                 case "get_all_users_summary" -> marketDataService.getAllUsersSummary();
+                case "get_source_list" -> marketDataService.getSourceList();
+                case "get_source_performance" -> {
+                    String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
+                    String period = args.has("period") ? args.get("period").getAsString() : "all";
+                    yield marketDataService.getSourcePerformance(sourceName, period);
+                }
+                case "get_source_recent_trades" -> {
+                    String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
+                    int count = args.has("count") ? args.get("count").getAsInt() : 5;
+                    yield marketDataService.getSourceRecentTrades(sourceName, count);
+                }
+                case "get_recent_broadcasts" -> {
+                    String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
+                    int count = args.has("count") ? args.get("count").getAsInt() : 5;
+                    yield marketDataService.getRecentBroadcasts(sourceName, count);
+                }
                 default -> {
                     log.warn("Chatbot 收到未知 function: {} userId={}", functionName, userId);
                     yield "不支援的操作。";

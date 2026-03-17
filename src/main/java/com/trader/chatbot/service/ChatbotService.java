@@ -102,6 +102,10 @@ public class ChatbotService {
             - 查詢全部用戶的持倉與餘額概覽（使用 get_all_users_summary 工具）
             - 查詢 BTC 即時行情、Funding Rate、恐懼貪婪指數（使用 get_market_data 工具）
             - 查詢最近訊號日報（使用 get_signal_report 工具）
+            - 查詢所有訊號來源清單（使用 get_source_list 工具）
+            - 查詢指定來源的績效統計：勝率、PnL、Profit Factor（使用 get_source_performance 工具）
+            - 查詢指定來源最近的交易明細（使用 get_source_recent_trades 工具）
+            - 查詢最近廣播跟單紀錄（使用 get_recent_broadcasts 工具）
 
             ## 市場分析能力
             你可以根據市場數據提供專業分析和觀點，包括：

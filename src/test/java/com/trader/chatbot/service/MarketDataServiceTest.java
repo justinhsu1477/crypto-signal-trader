@@ -1,13 +1,18 @@
 package com.trader.chatbot.service;
 
 import com.google.gson.JsonObject;
+import com.trader.trading.entity.BroadcastLog;
 import com.trader.trading.entity.DailySignalReport;
+import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.DailySignalReportRepository;
+import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import org.springframework.data.domain.PageImpl;
 import okhttp3.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,6 +39,8 @@ class MarketDataServiceTest {
     @Mock private DailySignalReportRepository dailySignalReportRepository;
     @Mock private TradeRepository tradeRepository;
     @Mock private UserRepository userRepository;
+    @Mock private SignalSourceConfigRepository signalSourceConfigRepository;
+    @Mock private BroadcastLogRepository broadcastLogRepository;
     @Mock private OkHttpClient okHttpClient;
 
     private MarketDataService service;
@@ -42,7 +49,8 @@ class MarketDataServiceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         service = new MarketDataService(binanceFuturesService, dailySignalReportRepository,
-                tradeRepository, userRepository, okHttpClient);
+                tradeRepository, userRepository, signalSourceConfigRepository,
+                broadcastLogRepository, okHttpClient);
     }
 
     @Nested
@@ -358,6 +366,193 @@ class MarketDataServiceTest {
             String result = service.fetchFearGreedIndex();
 
             assertThat(result).isNull();
+        }
+    }
+
+    // ==================== 新增：訊號來源查詢測試 ====================
+
+    @Nested
+    @DisplayName("getSourceList")
+    class SourceListTests {
+
+        @Test
+        @DisplayName("有來源時列出清單")
+        void withSources() {
+            SignalSourceConfig s1 = SignalSourceConfig.builder()
+                    .name("比特幣飛揚VIP").displayName("訊號源A")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).enabled(true).build();
+            SignalSourceConfig s2 = SignalSourceConfig.builder()
+                    .name("陳哥頻道").displayName("訊號源B")
+                    .tradeMode(SignalSourceConfig.TradeMode.SHADOW).enabled(false)
+                    .riskMultiplier(0.5).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(List.of(s1, s2));
+
+            String result = service.getSourceList();
+
+            assertThat(result).contains("比特幣飛揚VIP");
+            assertThat(result).contains("陳哥頻道");
+            assertThat(result).contains("AUTO");
+            assertThat(result).contains("SHADOW");
+            assertThat(result).contains("啟用");
+            assertThat(result).contains("停用");
+            assertThat(result).contains("共 2 個來源");
+        }
+
+        @Test
+        @DisplayName("無來源時顯示提示")
+        void noSources() {
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(Collections.emptyList());
+
+            String result = service.getSourceList();
+
+            assertThat(result).contains("目前無訊號來源");
+        }
+    }
+
+    @Nested
+    @DisplayName("getSourcePerformance")
+    class SourcePerformanceTests {
+
+        @Test
+        @DisplayName("查到來源並回傳績效")
+        void withPerformanceData() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("比特幣飛揚VIP").channelId("ch1").guildId("g1")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(List.of(source));
+
+            // tradeCount, winCount, totalPnl, avgPnl, maxWin, maxLoss, grossWins, grossLosses
+            Object[] stats = new Object[]{10L, 7L, 500.0, 50.0, 200.0, -80.0, 700.0, -200.0};
+            when(tradeRepository.getSourcePerformanceStats(eq("ch1"), eq("g1"), any()))
+                    .thenReturn(stats);
+            when(tradeRepository.getSourcePaperTradeStats(eq("ch1"), eq("g1"), any()))
+                    .thenReturn(new Object[]{null});
+
+            String result = service.getSourcePerformance("比特幣飛揚", "all");
+
+            assertThat(result).contains("比特幣飛揚VIP");
+            assertThat(result).contains("70%");
+            assertThat(result).contains("+500.00");
+            assertThat(result).contains("Profit Factor");
+        }
+
+        @Test
+        @DisplayName("找不到來源時列出可用來源")
+        void sourceNotFound() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("陳哥頻道").build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(List.of(source));
+
+            String result = service.getSourcePerformance("不存在的頻道", "all");
+
+            assertThat(result).contains("找不到");
+            assertThat(result).contains("陳哥頻道");
+        }
+    }
+
+    @Nested
+    @DisplayName("getSourceRecentTrades")
+    class SourceRecentTradesTests {
+
+        @Test
+        @DisplayName("有交易時列出明細")
+        void withTrades() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("比特幣飛揚VIP").channelId("ch1").guildId("g1")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(List.of(source));
+
+            Trade t = Trade.builder()
+                    .symbol("BTCUSDT").side("LONG").status("CLOSED")
+                    .entryPrice(65000.0).exitPrice(66000.0).netProfit(100.0)
+                    .aiConfidence(85).build();
+            when(tradeRepository.findRecentTradesBySource(eq("ch1"), eq("g1"), any()))
+                    .thenReturn(List.of(t));
+
+            String result = service.getSourceRecentTrades("飛揚", 5);
+
+            assertThat(result).contains("BTCUSDT");
+            assertThat(result).contains("LONG");
+            assertThat(result).contains("65000.00");
+            assertThat(result).contains("66000.00");
+            assertThat(result).contains("+100.00");
+            assertThat(result).contains("AI：85");
+        }
+
+        @Test
+        @DisplayName("無交易時顯示提示")
+        void noTrades() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("陳哥頻道").channelId("ch2").guildId("g2")
+                    .tradeMode(SignalSourceConfig.TradeMode.SHADOW).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(List.of(source));
+            when(tradeRepository.findRecentTradesBySource(eq("ch2"), eq("g2"), any()))
+                    .thenReturn(Collections.emptyList());
+
+            String result = service.getSourceRecentTrades("陳哥", 5);
+
+            assertThat(result).contains("無交易紀錄");
+        }
+    }
+
+    @Nested
+    @DisplayName("getRecentBroadcasts")
+    class RecentBroadcastsTests {
+
+        @Test
+        @DisplayName("有廣播紀錄時列出明細")
+        void withBroadcasts() {
+            BroadcastLog bl = BroadcastLog.builder()
+                    .signalAction("ENTRY").symbol("BTCUSDT").side("LONG")
+                    .sourceAuthor("飛揚老師")
+                    .successCount(3).failCount(0)
+                    .skippedNoSub(1).skippedNoKey(0).skippedNotAssigned(0)
+                    .aiConfidence(90).build();
+            when(broadcastLogRepository.findAllByOrderByCreatedAtDesc(any()))
+                    .thenReturn(new PageImpl<>(List.of(bl)));
+
+            String result = service.getRecentBroadcasts("", 5);
+
+            assertThat(result).contains("ENTRY");
+            assertThat(result).contains("BTCUSDT");
+            assertThat(result).contains("飛揚老師");
+            assertThat(result).contains("成功：3");
+        }
+
+        @Test
+        @DisplayName("按來源篩選")
+        void filterBySource() {
+            BroadcastLog bl = BroadcastLog.builder()
+                    .signalAction("CLOSE").symbol("ETHUSDT").side("SHORT")
+                    .sourceAuthor("陳哥")
+                    .successCount(2).failCount(1)
+                    .skippedNoSub(0).skippedNoKey(0).skippedNotAssigned(0)
+                    .build();
+            when(broadcastLogRepository.findBySourceAuthorContainingIgnoreCaseOrderByCreatedAtDesc(
+                    eq("陳哥"), any())).thenReturn(new PageImpl<>(List.of(bl)));
+
+            String result = service.getRecentBroadcasts("陳哥", 5);
+
+            assertThat(result).contains("陳哥");
+            assertThat(result).contains("CLOSE");
+            assertThat(result).contains("ETHUSDT");
+        }
+
+        @Test
+        @DisplayName("無紀錄時顯示提示")
+        void noBroadcasts() {
+            when(broadcastLogRepository.findAllByOrderByCreatedAtDesc(any()))
+                    .thenReturn(new PageImpl<>(Collections.emptyList()));
+
+            String result = service.getRecentBroadcasts("", 5);
+
+            assertThat(result).contains("無廣播紀錄");
         }
     }
 }
