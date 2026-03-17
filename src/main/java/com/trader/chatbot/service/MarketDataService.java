@@ -2,13 +2,18 @@ package com.trader.chatbot.service;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.trader.trading.entity.BroadcastLog;
 import com.trader.trading.entity.DailySignalReport;
+import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.DailySignalReportRepository;
+import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import org.springframework.data.domain.PageRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
@@ -37,6 +42,8 @@ public class MarketDataService {
     private final DailySignalReportRepository dailySignalReportRepository;
     private final TradeRepository tradeRepository;
     private final UserRepository userRepository;
+    private final SignalSourceConfigRepository signalSourceConfigRepository;
+    private final BroadcastLogRepository broadcastLogRepository;
     private final OkHttpClient okHttpClient;
     private final Gson gson = new Gson();
 
@@ -264,5 +271,253 @@ public class MarketDataService {
         }
 
         return sb.toString();
+    }
+
+    // ==================== 訊號來源查詢（Admin 專屬） ====================
+
+    /**
+     * 取得所有訊號來源清單
+     */
+    public String getSourceList() {
+        StringBuilder sb = new StringBuilder("### 訊號來源清單\n");
+
+        try {
+            List<SignalSourceConfig> sources = signalSourceConfigRepository.findAllByOrderByCreatedAtDesc();
+            if (sources.isEmpty()) {
+                sb.append("- 目前無訊號來源\n");
+                return sb.toString();
+            }
+
+            for (SignalSourceConfig s : sources) {
+                sb.append(String.format("- %s（%s）| 模式：%s | 狀態：%s",
+                        s.getName(),
+                        s.getDisplayName() != null ? s.getDisplayName() : "無別名",
+                        s.getTradeMode().name(),
+                        s.isEnabled() ? "啟用" : "停用"));
+                if (s.getRiskMultiplier() != 1.0) {
+                    sb.append(String.format(" | 風險倍率：%.1fx", s.getRiskMultiplier()));
+                }
+                sb.append("\n");
+            }
+
+            sb.append(String.format("\n共 %d 個來源\n", sources.size()));
+        } catch (Exception e) {
+            log.warn("取得訊號來源清單失敗: {}", e.getMessage());
+            sb.append("- [資料載入失敗]\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 取得指定訊號來源的績效統計
+     */
+    public String getSourcePerformance(String sourceName, String period) {
+        StringBuilder sb = new StringBuilder();
+
+        try {
+            SignalSourceConfig source = findSourceByName(sourceName);
+            if (source == null) {
+                return "找不到名稱包含「" + sourceName + "」的訊號來源。\n" + getAvailableSourceNames();
+            }
+
+            sb.append(String.format("### %s 績效統計\n", source.getName()));
+            sb.append(String.format("- 模式：%s\n", source.getTradeMode().name()));
+
+            java.time.LocalDateTime since = parsePeriod(period);
+            String periodLabel = since == null ? "全部" : period;
+            sb.append(String.format("- 期間：%s\n\n", periodLabel));
+
+            // 真實交易績效
+            Object[] stats = tradeRepository.getSourcePerformanceStats(
+                    source.getChannelId(), source.getGuildId(), since);
+            if (stats != null && stats[0] != null) {
+                appendPerformanceStats(sb, stats, "真實交易");
+            } else {
+                sb.append("**真實交易**：無資料\n");
+            }
+
+            // 模擬交易績效（若有）
+            Object[] paperStats = tradeRepository.getSourcePaperTradeStats(
+                    source.getChannelId(), source.getGuildId(), since);
+            if (paperStats != null && paperStats[0] != null) {
+                sb.append("\n");
+                appendPerformanceStats(sb, paperStats, "模擬交易");
+            }
+        } catch (Exception e) {
+            log.warn("取得來源績效失敗: sourceName={} error={}", sourceName, e.getMessage());
+            sb.append("- [績效資料載入失敗]\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 取得指定訊號來源最近的交易明細
+     */
+    public String getSourceRecentTrades(String sourceName, int count) {
+        StringBuilder sb = new StringBuilder();
+
+        try {
+            SignalSourceConfig source = findSourceByName(sourceName);
+            if (source == null) {
+                return "找不到名稱包含「" + sourceName + "」的訊號來源。\n" + getAvailableSourceNames();
+            }
+
+            int limit = Math.min(Math.max(count, 1), 10);
+            sb.append(String.format("### %s 最近 %d 筆交易\n", source.getName(), limit));
+
+            List<Trade> trades = tradeRepository.findRecentTradesBySource(
+                    source.getChannelId(), source.getGuildId(), PageRequest.of(0, limit));
+
+            if (trades.isEmpty()) {
+                sb.append("- 無交易紀錄\n");
+                return sb.toString();
+            }
+
+            for (Trade t : trades) {
+                sb.append(String.format("- %s %s %s", t.getSymbol(), t.getSide(), t.getStatus()));
+                if (t.getEntryPrice() != null) {
+                    sb.append(String.format(" | 入場：$%.2f", t.getEntryPrice()));
+                }
+                if (t.getExitPrice() != null && t.getExitPrice() > 0) {
+                    sb.append(String.format(" | 出場：$%.2f", t.getExitPrice()));
+                }
+                if (t.getNetProfit() != null) {
+                    sb.append(String.format(" | PnL：%s%.2f",
+                            t.getNetProfit() >= 0 ? "+" : "", t.getNetProfit()));
+                }
+                if (t.getAiConfidence() != null) {
+                    sb.append(String.format(" | AI：%d", t.getAiConfidence()));
+                }
+                if (t.getCreatedAt() != null) {
+                    sb.append(String.format(" | %s", t.getCreatedAt().toLocalDate()));
+                }
+                sb.append("\n");
+            }
+        } catch (Exception e) {
+            log.warn("取得來源交易明細失敗: sourceName={} error={}", sourceName, e.getMessage());
+            sb.append("- [交易資料載入失敗]\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 取得最近廣播跟單紀錄
+     */
+    public String getRecentBroadcasts(String sourceName, int count) {
+        StringBuilder sb = new StringBuilder("### 最近廣播紀錄");
+
+        try {
+            int limit = Math.min(Math.max(count, 1), 10);
+
+            List<BroadcastLog> logs;
+            if (sourceName != null && !sourceName.isBlank()) {
+                sb.append(String.format("（%s）\n", sourceName));
+                logs = broadcastLogRepository.findBySourceAuthorContainingIgnoreCaseOrderByCreatedAtDesc(
+                        sourceName, PageRequest.of(0, limit)).getContent();
+            } else {
+                sb.append("\n");
+                logs = broadcastLogRepository.findAllByOrderByCreatedAtDesc(
+                        PageRequest.of(0, limit)).getContent();
+            }
+
+            if (logs.isEmpty()) {
+                sb.append("- 無廣播紀錄\n");
+                return sb.toString();
+            }
+
+            for (BroadcastLog bl : logs) {
+                sb.append(String.format("- %s %s %s | 來源：%s",
+                        bl.getSignalAction(),
+                        bl.getSymbol() != null ? bl.getSymbol() : "",
+                        bl.getSide() != null ? bl.getSide() : "",
+                        bl.getSourceAuthor() != null ? bl.getSourceAuthor() : "未知"));
+                sb.append(String.format(" | 成功：%d/失敗：%d/跳過：%d",
+                        bl.getSuccessCount(), bl.getFailCount(),
+                        bl.getSkippedNoSub() + bl.getSkippedNoKey() + bl.getSkippedNotAssigned()));
+                if (bl.getAiConfidence() != null) {
+                    sb.append(String.format(" | AI：%d", bl.getAiConfidence()));
+                }
+                if (bl.getCreatedAt() != null) {
+                    sb.append(String.format(" | %s",
+                            bl.getCreatedAt().format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm"))));
+                }
+                sb.append("\n");
+            }
+        } catch (Exception e) {
+            log.warn("取得廣播紀錄失敗: error={}", e.getMessage());
+            sb.append("\n- [廣播資料載入失敗]\n");
+        }
+
+        return sb.toString();
+    }
+
+    // ==================== Private Helpers ====================
+
+    /**
+     * 模糊搜尋訊號來源（name 或 displayName 包含關鍵字）
+     */
+    private SignalSourceConfig findSourceByName(String keyword) {
+        List<SignalSourceConfig> sources = signalSourceConfigRepository.findAllByOrderByCreatedAtDesc();
+        String lower = keyword.toLowerCase();
+        return sources.stream()
+                .filter(s -> (s.getName() != null && s.getName().toLowerCase().contains(lower))
+                        || (s.getDisplayName() != null && s.getDisplayName().toLowerCase().contains(lower)))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 列出可用的來源名稱（找不到時的提示）
+     */
+    private String getAvailableSourceNames() {
+        List<SignalSourceConfig> sources = signalSourceConfigRepository.findAllByOrderByCreatedAtDesc();
+        if (sources.isEmpty()) return "目前無訊號來源。";
+        StringBuilder sb = new StringBuilder("可用的訊號來源：\n");
+        for (SignalSourceConfig s : sources) {
+            sb.append(String.format("- %s\n", s.getName()));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 解析時間區間字串
+     */
+    private java.time.LocalDateTime parsePeriod(String period) {
+        if (period == null || period.isBlank() || "all".equalsIgnoreCase(period)) return null;
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        return switch (period.toLowerCase()) {
+            case "7d" -> now.minusDays(7);
+            case "30d" -> now.minusDays(30);
+            case "90d" -> now.minusDays(90);
+            default -> null;
+        };
+    }
+
+    /**
+     * 格式化績效統計輸出
+     */
+    private void appendPerformanceStats(StringBuilder sb, Object[] stats, String label) {
+        long tradeCount = ((Number) stats[0]).longValue();
+        long winCount = ((Number) stats[1]).longValue();
+        double totalPnl = ((Number) stats[2]).doubleValue();
+        double avgPnl = ((Number) stats[3]).doubleValue();
+        double maxWin = ((Number) stats[4]).doubleValue();
+        double maxLoss = ((Number) stats[5]).doubleValue();
+        double grossWins = ((Number) stats[6]).doubleValue();
+        double grossLosses = ((Number) stats[7]).doubleValue();
+        double winRate = tradeCount > 0 ? (double) winCount / tradeCount * 100 : 0;
+        double profitFactor = grossLosses != 0 ? Math.abs(grossWins / grossLosses) : 0;
+
+        sb.append(String.format("**%s**\n", label));
+        sb.append(String.format("- 交易數：%d | 勝率：%.0f%%（%d 勝 / %d 負）\n",
+                tradeCount, winRate, winCount, tradeCount - winCount));
+        sb.append(String.format("- 總 PnL：%s%.2f USDT | 平均：%s%.2f\n",
+                totalPnl >= 0 ? "+" : "", totalPnl,
+                avgPnl >= 0 ? "+" : "", avgPnl));
+        sb.append(String.format("- 最大獲利：+%.2f | 最大虧損：%.2f\n", maxWin, maxLoss));
+        sb.append(String.format("- Profit Factor：%.2f\n", profitFactor));
     }
 }
