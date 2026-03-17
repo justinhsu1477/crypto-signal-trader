@@ -6,6 +6,8 @@ import com.trader.trading.entity.Trade;
 import com.trader.trading.repository.DailySignalReportRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.user.entity.User;
+import com.trader.user.repository.UserRepository;
 import okhttp3.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +18,7 @@ import org.mockito.MockitoAnnotations;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,6 +33,7 @@ class MarketDataServiceTest {
     @Mock private BinanceFuturesService binanceFuturesService;
     @Mock private DailySignalReportRepository dailySignalReportRepository;
     @Mock private TradeRepository tradeRepository;
+    @Mock private UserRepository userRepository;
     @Mock private OkHttpClient okHttpClient;
 
     private MarketDataService service;
@@ -38,7 +42,7 @@ class MarketDataServiceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         service = new MarketDataService(binanceFuturesService, dailySignalReportRepository,
-                tradeRepository, okHttpClient);
+                tradeRepository, userRepository, okHttpClient);
     }
 
     @Nested
@@ -183,6 +187,66 @@ class MarketDataServiceTest {
             String result = service.getSignalReportSummary();
 
             assertThat(result).contains("近 3 天無日報資料");
+        }
+    }
+
+    @Nested
+    @DisplayName("getAllUsersSummary")
+    class AllUsersSummaryTests {
+
+        @Test
+        @DisplayName("有用戶有交易時顯示概覽")
+        void withUsersAndTrades() {
+            User user1 = User.builder().userId("u1").name("Alice").email("alice@test.com").build();
+            User user2 = User.builder().userId("u2").name("Bob").email("bob@test.com").build();
+            when(userRepository.findAll()).thenReturn(List.of(user1, user2));
+
+            // 聚合統計：userId, totalTrades, wins, pnl
+            Object[] stats1 = new Object[]{"u1", 10L, 7L, 500.0};
+            Object[] stats2 = new Object[]{"u2", 5L, 2L, -100.0};
+            when(tradeRepository.aggregateStatsPerUser()).thenReturn(List.of(stats1, stats2));
+
+            Trade openTrade = Trade.builder().userId("u1").symbol("BTCUSDT").side("LONG").build();
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(openTrade));
+
+            String result = service.getAllUsersSummary();
+
+            assertThat(result).contains("Alice");
+            assertThat(result).contains("Bob");
+            assertThat(result).contains("持倉：1");   // Alice has 1 open
+            assertThat(result).contains("持倉：0");   // Bob has 0 open
+            assertThat(result).contains("70%");        // Alice 7/10
+            assertThat(result).contains("+500.00");
+            assertThat(result).contains("-100.00");
+        }
+
+        @Test
+        @DisplayName("無交易資料時顯示提示")
+        void noData() {
+            when(userRepository.findAll()).thenReturn(Collections.emptyList());
+            when(tradeRepository.aggregateStatsPerUser()).thenReturn(Collections.emptyList());
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(Collections.emptyList());
+
+            String result = service.getAllUsersSummary();
+
+            assertThat(result).contains("無任何交易資料");
+        }
+
+        @Test
+        @DisplayName("有持倉但無已平倉的用戶也顯示")
+        void openOnlyUser() {
+            User user = User.builder().userId("u3").name("Charlie").email("c@test.com").build();
+            when(userRepository.findAll()).thenReturn(List.of(user));
+            when(tradeRepository.aggregateStatsPerUser()).thenReturn(Collections.emptyList());
+
+            Trade openTrade = Trade.builder().userId("u3").symbol("ETHUSDT").side("SHORT").build();
+            when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(openTrade));
+
+            String result = service.getAllUsersSummary();
+
+            assertThat(result).contains("Charlie");
+            assertThat(result).contains("持倉：1");
+            assertThat(result).contains("已平倉：0");
         }
     }
 

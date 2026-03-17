@@ -149,8 +149,8 @@ class ChatbotServiceTest {
     }
 
     @Test
-    @DisplayName("Admin 模式 — 不使用 Function Calling")
-    void adminModeNoFunctionCalling() {
+    @DisplayName("Admin 模式 — 使用 Function Calling（與一般用戶相同）")
+    void adminModeWithFunctionCalling() {
         when(chatbotConfig.isEnabled()).thenReturn(true);
         when(chatbotConfig.getConversationTtlMinutes()).thenReturn(30);
         when(chatbotConfig.getMaxConversationTurns()).thenReturn(10);
@@ -159,14 +159,17 @@ class ChatbotServiceTest {
         when(userContextGatherer.gatherAdminContext(anyString())).thenReturn("平台資料");
         when(conversationRepository.findTopByUserIdOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
         when(conversationRepository.findBySessionIdOrderByCreatedAtAsc(anyString())).thenReturn(Collections.emptyList());
-        when(geminiService.generateContentWithHistory(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any()))
-                .thenReturn(Optional.of("Admin 回覆"));
+        GeminiResponse textResp = GeminiResponse.builder().text("Admin 回覆").build();
+        when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                .thenReturn(Optional.of(textResp));
 
         String result = chatbotService.handleUserMessage("ADMIN", "DISCORD", "admin123", "平台狀態");
 
         assertThat(result).isEqualTo("Admin 回覆");
-        // Admin 不應該呼叫 generateContentWithTools
-        verify(geminiService, never()).generateContentWithTools(any(), any(), any(), anyInt(), anyDouble(), any(), any());
+        // Admin 應該使用 generateContentWithTools（Function Calling）
+        verify(geminiService).generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any());
+        // Admin 不應該走舊的 generateContentWithHistory
+        verify(geminiService, never()).generateContentWithHistory(any(), any(), any(), anyInt(), anyDouble(), any());
     }
 
     /**
