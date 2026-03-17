@@ -21,6 +21,7 @@ public class ChatbotConfig {
     private final String geminiModel;
     private final int rateLimitPerMinute;
     private final int rateLimitPerDay;
+    private final boolean aiClassificationEnabled;
 
     public ChatbotConfig(
             @DefaultValue("false") boolean enabled,
@@ -30,7 +31,8 @@ public class ChatbotConfig {
             @DefaultValue("30") int conversationTtlMinutes,
             @DefaultValue("gemini-3.1-pro-preview") String geminiModel,
             @DefaultValue("5") int rateLimitPerMinute,
-            @DefaultValue("50") int rateLimitPerDay
+            @DefaultValue("50") int rateLimitPerDay,
+            @DefaultValue("true") boolean aiClassificationEnabled
     ) {
         this.enabled = enabled;
         this.maxResponseTokens = maxResponseTokens;
@@ -40,5 +42,6 @@ public class ChatbotConfig {
         this.geminiModel = geminiModel;
         this.rateLimitPerMinute = rateLimitPerMinute;
         this.rateLimitPerDay = rateLimitPerDay;
+        this.aiClassificationEnabled = aiClassificationEnabled;
     }
 }
