@@ -1,18 +1,33 @@
 package com.trader.chatbot.service;
 
+import com.trader.advisor.service.GeminiService;
+import com.trader.chatbot.config.ChatbotConfig;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
- * 意圖分類器 — 關鍵字匹配
+ * 意圖分類器 — 混合策略（Keyword 優先 + Gemini AI fallback）
  *
- * 根據用戶訊息中的關鍵字判斷意圖類型，
- * 決定需要收集哪些上下文資料給 AI 回覆。
+ * 1. 先用 keyword matching（零延遲、確定性高）
+ * 2. 若結果為 GENERAL 且 AI 分類開關開啟，呼叫 Gemini 做更精確的分類
+ * 3. Gemini 失敗時 graceful degradation 回 GENERAL
  */
+@Slf4j
 @Component
 public class IntentClassifier {
+
+    private final GeminiService geminiService;
+    private final ChatbotConfig chatbotConfig;
+
+    public IntentClassifier(GeminiService geminiService, ChatbotConfig chatbotConfig) {
+        this.geminiService = geminiService;
+        this.chatbotConfig = chatbotConfig;
+    }
 
     public enum Intent {
         ACCOUNT_STATUS,    // 帳號、餘額、訂閱
@@ -58,10 +73,53 @@ public class IntentClassifier {
             ))
     );
 
+    private static final String CLASSIFICATION_PROMPT = """
+            你是意圖分類器。根據用戶訊息，判斷最符合的意圖類別。
+            只回傳類別名稱，不要任何其他文字。
+
+            類別說明：
+            - ACCOUNT_STATUS：查詢帳號、餘額、訂閱相關
+            - TRADE_QUERY：查詢交易紀錄、損益、績效、特定頻道/來源的交易
+            - SIGNAL_EXPLAIN：詢問訊號、跟單原因
+            - SETTING_CHANGE：要求修改交易設定
+            - MARKET_DATA：查詢市場行情、BTC 價格、持倉
+            - OPERATION_GUIDE：詢問操作步驟、教學
+            - ANOMALY_REPORT：回報問題、異常
+            - GENERAL：一般對話、閒聊
+
+            用戶訊息：
+            """;
+
     /**
-     * 分類用戶訊息意圖
+     * 分類用戶訊息意圖（混合策略）
+     *
+     * Keyword 匹配到具體意圖 → 直接回傳（零延遲）
+     * Keyword 結果為 GENERAL → 嘗試 Gemini AI 分類（更精確）
      */
     public Intent classify(String message) {
+        Intent keywordResult = classifyByKeyword(message);
+
+        if (keywordResult != Intent.GENERAL) {
+            return keywordResult;
+        }
+
+        // Keyword 沒匹配到，嘗試 AI 分類
+        if (chatbotConfig.isAiClassificationEnabled()) {
+            Intent aiResult = classifyWithAI(message);
+            if (aiResult != Intent.GENERAL) {
+                log.info("AI 意圖分類覆蓋 keyword 結果: message={} intent={}",
+                        message.length() > 30 ? message.substring(0, 30) + "..." : message, aiResult);
+            }
+            return aiResult;
+        }
+
+        return Intent.GENERAL;
+    }
+
+    /**
+     * 關鍵字匹配分類（原有邏輯）
+     */
+    Intent classifyByKeyword(String message) {
         if (message == null || message.isBlank()) {
             return Intent.GENERAL;
         }
@@ -91,5 +149,39 @@ public class IntentClassifier {
         }
 
         return Intent.GENERAL;
+    }
+
+    /**
+     * Gemini AI 意圖分類
+     *
+     * 用最小 token 呼叫 Gemini，解析回傳的意圖名稱。
+     * 失敗時 graceful degradation 回 GENERAL。
+     */
+    Intent classifyWithAI(String message) {
+        try {
+            Optional<String> result = geminiService.generateContentWithHistory(
+                    CLASSIFICATION_PROMPT,
+                    Collections.emptyList(),
+                    message,
+                    20,    // maxTokens：只需要一個類別名稱
+                    0.1,   // temperature：越低越確定
+                    chatbotConfig.getGeminiModel()
+            );
+
+            if (result.isEmpty()) {
+                return Intent.GENERAL;
+            }
+
+            String intentStr = result.get().trim().toUpperCase()
+                    .replaceAll("[^A-Z_]", ""); // 移除非字母字元
+
+            return Intent.valueOf(intentStr);
+        } catch (IllegalArgumentException e) {
+            log.debug("AI 分類結果無法解析為 Intent: message={}", message);
+            return Intent.GENERAL;
+        } catch (Exception e) {
+            log.warn("AI 意圖分類失敗，fallback GENERAL: {}", e.getMessage());
+            return Intent.GENERAL;
+        }
     }
 }
