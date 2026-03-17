@@ -1,5 +1,6 @@
 package com.trader.chatbot.service;
 
+import com.trader.chatbot.dto.KnowledgeSection;
 import com.trader.chatbot.service.IntentClassifier.Intent;
 import com.trader.shared.config.AppConstants;
 import com.trader.subscription.entity.Subscription;
@@ -38,6 +39,7 @@ public class UserContextGatherer {
     private final SubscriptionRepository subscriptionRepository;
     private final BroadcastLogRepository broadcastLogRepository;
     private final MarketDataService marketDataService;
+    private final KnowledgeBaseService knowledgeBaseService;
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MM/dd HH:mm");
 
@@ -203,6 +205,15 @@ public class UserContextGatherer {
      * 根據意圖收集對應的上下文
      */
     public String gatherContext(String userId, Intent intent) {
+        return gatherContext(userId, intent, null);
+    }
+
+    /**
+     * 根據意圖收集對應的上下文（含 FAQ 知識庫匹配）
+     *
+     * @param userMessage 用戶原始訊息，用於 FAQ 知識庫匹配（可為 null）
+     */
+    public String gatherContext(String userId, Intent intent, String userMessage) {
         StringBuilder sb = new StringBuilder();
 
         try {
@@ -234,10 +245,12 @@ public class UserContextGatherer {
                 }
                 case OPERATION_GUIDE -> {
                     sb.append(gatherAccountStatus(userId));
+                    sb.append(gatherFaqContext(userMessage));
                 }
                 case GENERAL -> {
                     sb.append(gatherAccountStatus(userId));
                     sb.append(gatherTradeStats(userId));
+                    sb.append(gatherFaqContext(userMessage));
                 }
             }
         } catch (Exception e) {
@@ -246,6 +259,31 @@ public class UserContextGatherer {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 從 FAQ 知識庫匹配相關段落
+     */
+    private String gatherFaqContext(String userMessage) {
+        if (userMessage == null || userMessage.isBlank()) {
+            return "";
+        }
+
+        try {
+            List<KnowledgeSection> matched = knowledgeBaseService.findRelevantSections(userMessage, 3);
+            if (matched.isEmpty()) {
+                return "";
+            }
+
+            StringBuilder sb = new StringBuilder("\n### FAQ 知識庫\n");
+            for (KnowledgeSection section : matched) {
+                sb.append(String.format("\n#### %s\n%s\n", section.getTitle(), section.getContent()));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("FAQ 知識庫匹配失敗: {}", e.getMessage());
+            return "";
+        }
     }
 
     private String gatherAccountStatus(String userId) {
