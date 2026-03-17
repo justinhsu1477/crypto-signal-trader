@@ -7,8 +7,10 @@ import com.trader.chatbot.dto.GeminiResponse;
 import com.trader.chatbot.entity.ChatConversation;
 import com.trader.chatbot.repository.ChatConversationRepository;
 import com.trader.chatbot.service.IntentClassifier.Intent;
+import com.trader.chatbot.dto.GeminiFunctionCall;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -170,6 +172,137 @@ class ChatbotServiceTest {
         verify(geminiService).generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any());
         // Admin 不應該走舊的 generateContentWithHistory
         verify(geminiService, never()).generateContentWithHistory(any(), any(), any(), anyInt(), anyDouble(), any());
+    }
+
+    @Nested
+    @DisplayName("Function Calling 邊界測試")
+    class FunctionCallingEdgeCases {
+
+        @Test
+        @DisplayName("Gemini 回傳 functionCall → 執行後回傳結果給 Gemini")
+        void functionCallFlow() {
+            setupNormalMocks();
+
+            // 第一次：Gemini 回傳 functionCall
+            GeminiFunctionCall fc = GeminiFunctionCall.builder()
+                    .functionName("get_market_data").args(new JsonObject()).build();
+            GeminiResponse fcResp = GeminiResponse.builder().functionCall(fc).build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp));
+
+            // 執行 function
+            when(actionExecutor.executeFunction(eq("u1"), eq("get_market_data"), any()))
+                    .thenReturn("BTC $95000");
+
+            // 第二次：Gemini 用 function 結果回覆自然語言
+            when(geminiService.sendFunctionResult(anyString(), anyList(), anyString(),
+                    eq("get_market_data"), any(), eq("BTC $95000"), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of("目前 BTC 報價 $95,000"));
+
+            String result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "BTC 多少錢");
+
+            assertThat(result).isEqualTo("目前 BTC 報價 $95,000");
+            verify(actionExecutor).executeFunction(eq("u1"), eq("get_market_data"), any());
+        }
+
+        @Test
+        @DisplayName("functionCall 執行後 Gemini 第二次失敗 → fallback 直接回傳 function 結果")
+        void functionCallSecondCallFails_fallbackToRawResult() {
+            setupNormalMocks();
+
+            GeminiFunctionCall fc = GeminiFunctionCall.builder()
+                    .functionName("get_my_positions").args(new JsonObject()).build();
+            GeminiResponse fcResp = GeminiResponse.builder().functionCall(fc).build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp));
+
+            when(actionExecutor.executeFunction(eq("u1"), eq("get_my_positions"), any()))
+                    .thenReturn("BTCUSDT LONG | 入場：$65000");
+
+            // 第二次呼叫失敗
+            when(geminiService.sendFunctionResult(anyString(), anyList(), anyString(),
+                    anyString(), any(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.empty());
+
+            String result = chatbotService.handleUserMessage("u1", "LINE", "l1", "我的持倉");
+
+            // fallback：直接回傳 function 執行結果
+            assertThat(result).isEqualTo("BTCUSDT LONG | 入場：$65000");
+        }
+
+        @Test
+        @DisplayName("Gemini 回傳空文字（非 functionCall）→ fallback")
+        void emptyTextResponse_fallback() {
+            setupNormalMocks();
+
+            // hasText() = false, hasFunctionCall() = false
+            GeminiResponse emptyResp = GeminiResponse.builder().build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(emptyResp));
+
+            String result = chatbotService.handleUserMessage("u1", "LINE", "l1", "你好");
+
+            assertThat(result).contains("暫時無法回應");
+        }
+
+        @Test
+        @DisplayName("Admin 不限流 — 不會觸發 rateLimiter")
+        void adminBypassesRateLimit() {
+            when(chatbotConfig.isEnabled()).thenReturn(true);
+            when(chatbotConfig.getConversationTtlMinutes()).thenReturn(30);
+            when(chatbotConfig.getMaxConversationTurns()).thenReturn(10);
+            when(chatbotConfig.getMaxResponseTokens()).thenReturn(512);
+            when(chatbotConfig.getTemperature()).thenReturn(0.3);
+            when(userContextGatherer.gatherAdminContext(anyString())).thenReturn("資料");
+            when(conversationRepository.findTopByUserIdOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
+            when(conversationRepository.findBySessionIdOrderByCreatedAtAsc(anyString())).thenReturn(Collections.emptyList());
+            GeminiResponse textResp = GeminiResponse.builder().text("OK").build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(textResp));
+
+            chatbotService.handleUserMessage("ADMIN", "DISCORD", "admin1", "查詢");
+
+            // Admin 不應該呼叫 rateLimiter
+            verifyNoInteractions(rateLimiter);
+        }
+
+        @Test
+        @DisplayName("Admin 使用 Admin System Prompt — 包含架構知識")
+        void adminUsesAdminPrompt() {
+            when(chatbotConfig.isEnabled()).thenReturn(true);
+            when(chatbotConfig.getConversationTtlMinutes()).thenReturn(30);
+            when(chatbotConfig.getMaxConversationTurns()).thenReturn(10);
+            when(chatbotConfig.getMaxResponseTokens()).thenReturn(512);
+            when(chatbotConfig.getTemperature()).thenReturn(0.3);
+            when(userContextGatherer.gatherAdminContext(anyString())).thenReturn("平台資料");
+            when(conversationRepository.findTopByUserIdOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
+            when(conversationRepository.findBySessionIdOrderByCreatedAtAsc(anyString())).thenReturn(Collections.emptyList());
+            GeminiResponse textResp = GeminiResponse.builder().text("OK").build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(textResp));
+
+            chatbotService.handleUserMessage("ADMIN", "DISCORD", "admin1", "WebSocket 怎麼運作");
+
+            // 驗證 system prompt 包含架構知識 + Admin 上下文
+            verify(geminiService).generateContentWithTools(
+                    argThat(prompt -> prompt.contains("HookFi 平台架構知識") && prompt.contains("平台資料")),
+                    anyList(), anyString(), anyInt(), anyDouble(), any(), any());
+        }
+
+        @Test
+        @DisplayName("對話儲存失敗不影響回覆")
+        void saveConversationFailure_doesNotAffectResponse() {
+            setupNormalMocks();
+            GeminiResponse textResp = GeminiResponse.builder().text("回覆").build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(textResp));
+            doThrow(new RuntimeException("DB error")).when(conversationRepository).save(any());
+
+            String result = chatbotService.handleUserMessage("u1", "LINE", "l1", "你好");
+
+            // 儲存失敗但回覆仍正常
+            assertThat(result).isEqualTo("回覆");
+        }
     }
 
     /**

@@ -191,6 +191,44 @@ class ChatbotActionExecutorTest {
     }
 
     @Test
+    void executeNonWhitelistedFunction_回傳不支援() {
+        String result = executor.executeFunction(USER_ID, "get_fear_greed", new JsonObject());
+
+        // get_fear_greed 不是白名單內的函式，應回傳不支援
+        assertThat(result).contains("不支援");
+        verifyNoInteractions(userTradeSettingsService);
+        verifyNoInteractions(marketDataService);
+    }
+
+    @Test
+    void executeFunction_空args不拋異常() {
+        UserTradeSettings settings = UserTradeSettings.builder()
+                .userId(USER_ID).riskPercent(0.2).maxLeverage(10)
+                .maxDcaLayers(2).autoSlEnabled(true).autoTpEnabled(true).build();
+        when(userTradeSettingsService.getOrCreateSettings(USER_ID)).thenReturn(settings);
+
+        String result = executor.executeFunction(USER_ID, "get_trade_settings", null);
+
+        assertThat(result).contains("20%");
+    }
+
+    @Test
+    void buildToolsSchema_包含所有必要的函式名稱() {
+        JsonObject tools = executor.buildToolsSchema();
+        String json = tools.toString();
+
+        assertThat(json).contains("get_trade_settings");
+        assertThat(json).contains("update_risk_percent");
+        assertThat(json).contains("update_max_leverage");
+        assertThat(json).contains("update_max_dca_layers");
+        assertThat(json).contains("toggle_auto_sl_tp");
+        assertThat(json).contains("get_market_data");
+        assertThat(json).contains("get_my_positions");
+        assertThat(json).contains("get_signal_report");
+        assertThat(json).contains("get_all_users_summary");
+    }
+
+    @Test
     void userId由系統注入_AI無法覆蓋() {
         // 模擬 AI 嘗試在 args 中傳入其他 userId
         JsonObject args = new JsonObject();
