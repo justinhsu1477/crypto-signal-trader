@@ -1,5 +1,6 @@
 package com.trader.chatbot.service;
 
+import com.trader.chatbot.dto.KnowledgeSection;
 import com.trader.chatbot.service.IntentClassifier.Intent;
 import com.trader.subscription.entity.Subscription;
 import com.trader.subscription.repository.SubscriptionRepository;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -35,6 +37,7 @@ class UserContextGathererTest {
     @Mock private SubscriptionRepository subscriptionRepository;
     @Mock private BroadcastLogRepository broadcastLogRepository;
     @Mock private MarketDataService marketDataService;
+    @Mock private KnowledgeBaseService knowledgeBaseService;
 
     private UserContextGatherer gatherer;
 
@@ -43,7 +46,7 @@ class UserContextGathererTest {
         MockitoAnnotations.openMocks(this);
         gatherer = new UserContextGatherer(userRepository, tradeRepository,
                 userTradeSettingsRepository, subscriptionRepository, broadcastLogRepository,
-                marketDataService);
+                marketDataService, knowledgeBaseService);
     }
 
     @Test
@@ -200,5 +203,75 @@ class UserContextGathererTest {
         assertThat(context).contains("10 筆");
         assertThat(context).contains("60.0%");
         assertThat(context).contains("500.00");
+    }
+
+    // ===== FAQ 知識庫 Tests =====
+
+    @Test
+    @DisplayName("OPERATION_GUIDE — 帶 userMessage 時注入 FAQ 段落")
+    void operationGuideWithFaq() {
+        when(userRepository.findById("u1")).thenReturn(Optional.empty());
+        when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.empty());
+
+        KnowledgeSection faq = KnowledgeSection.builder()
+                .title("API Key 綁定教學")
+                .tags(Set.of("api key", "綁定"))
+                .content("步驟 1：登入 Binance...")
+                .build();
+        when(knowledgeBaseService.findRelevantSections("怎麼綁定 api key", 3))
+                .thenReturn(List.of(faq));
+
+        String context = gatherer.gatherContext("u1", Intent.OPERATION_GUIDE, "怎麼綁定 api key");
+
+        assertThat(context).contains("FAQ 知識庫");
+        assertThat(context).contains("API Key 綁定教學");
+        assertThat(context).contains("步驟 1：登入 Binance");
+    }
+
+    @Test
+    @DisplayName("GENERAL — 帶 userMessage 時也能注入 FAQ")
+    void generalWithFaq() {
+        when(userRepository.findById("u1")).thenReturn(Optional.empty());
+        when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.empty());
+        when(tradeRepository.countUserClosedTrades("u1")).thenReturn(0L);
+        when(tradeRepository.countUserWinningTrades("u1")).thenReturn(0L);
+        when(tradeRepository.sumUserNetProfit("u1")).thenReturn(0.0);
+
+        KnowledgeSection faq = KnowledgeSection.builder()
+                .title("風控參數說明")
+                .tags(Set.of("風險", "槓桿"))
+                .content("風險比例說明...")
+                .build();
+        when(knowledgeBaseService.findRelevantSections("風險比例是什麼", 3))
+                .thenReturn(List.of(faq));
+
+        String context = gatherer.gatherContext("u1", Intent.GENERAL, "風險比例是什麼");
+
+        assertThat(context).contains("FAQ 知識庫");
+        assertThat(context).contains("風控參數說明");
+    }
+
+    @Test
+    @DisplayName("OPERATION_GUIDE — 無匹配 FAQ → 不影響原有 context")
+    void operationGuideNoFaqMatch() {
+        when(userRepository.findById("u1")).thenReturn(Optional.empty());
+        when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.empty());
+        when(knowledgeBaseService.findRelevantSections(any(), eq(3)))
+                .thenReturn(Collections.emptyList());
+
+        String context = gatherer.gatherContext("u1", Intent.OPERATION_GUIDE, "隨便問一個問題");
+
+        assertThat(context).doesNotContain("FAQ 知識庫");
+    }
+
+    @Test
+    @DisplayName("不帶 userMessage 的 gatherContext（向後相容）")
+    void gatherContextWithoutMessage() {
+        when(userRepository.findById("u1")).thenReturn(Optional.empty());
+        when(subscriptionRepository.findActiveByUserId("u1")).thenReturn(Optional.empty());
+
+        String context = gatherer.gatherContext("u1", Intent.OPERATION_GUIDE);
+
+        assertThat(context).doesNotContain("FAQ 知識庫");
     }
 }
