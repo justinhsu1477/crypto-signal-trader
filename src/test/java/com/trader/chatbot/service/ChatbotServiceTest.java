@@ -317,7 +317,66 @@ class ChatbotServiceTest {
         when(rateLimiter.isAllowed("u1")).thenReturn(true);
         when(intentClassifier.classify(anyString())).thenReturn(Intent.GENERAL);
         when(userContextGatherer.gatherContext(eq("u1"), any())).thenReturn("用戶資料");
+        when(userContextGatherer.gatherContext(eq("u1"), any(), anyString())).thenReturn("用戶資料");
         when(conversationRepository.findTopByUserIdOrderByCreatedAtDesc("u1")).thenReturn(Optional.empty());
         when(conversationRepository.findBySessionIdOrderByCreatedAtAsc(anyString())).thenReturn(Collections.emptyList());
+    }
+
+    @Nested
+    @DisplayName("人工客服引導 — postProcessResponse")
+    class HumanHandoffTests {
+
+        @Test
+        @DisplayName("正常回覆 → 不加引導語")
+        void normalResponse_noHandoff() {
+            String result = chatbotService.postProcessResponse("您好！有什麼可以幫助您？");
+
+            assertThat(result).isEqualTo("您好！有什麼可以幫助您？");
+            assertThat(result).doesNotContain("💡");
+        }
+
+        @Test
+        @DisplayName("含不確定指標 → 自動加引導語")
+        void uncertainResponse_appendsHandoff() {
+            String result = chatbotService.postProcessResponse("抱歉，我不確定這個問題的答案。");
+
+            assertThat(result).contains("💡");
+            assertThat(result).contains("客服");
+        }
+
+        @Test
+        @DisplayName("已包含客服引導 → 不重複加")
+        void alreadyHasHandoff_noDuplicate() {
+            String original = "我不確定，請輸入「客服」聯繫人工客服。";
+            String result = chatbotService.postProcessResponse(original);
+
+            assertThat(result).isEqualTo(original);
+        }
+
+        @Test
+        @DisplayName("null/空回覆 → 原樣回傳")
+        void nullOrEmpty_passThrough() {
+            assertThat(chatbotService.postProcessResponse(null)).isNull();
+            assertThat(chatbotService.postProcessResponse("")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("多個不確定指標 → 只加一次引導語")
+        void multipleIndicators_onlyOneHandoff() {
+            String result = chatbotService.postProcessResponse("我不確定，資料不足以回答。");
+
+            long count = result.chars().filter(c -> c == '💡').count();
+            assertThat(count).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("所有不確定指標都能觸發引導")
+        void allIndicatorsTrigger() {
+            for (String indicator : ChatbotService.UNCERTAINTY_INDICATORS) {
+                String result = chatbotService.postProcessResponse("回覆中包含" + indicator + "的內容");
+                assertThat(result).as("指標「%s」應觸發引導", indicator)
+                        .contains("💡");
+            }
+        }
     }
 }
