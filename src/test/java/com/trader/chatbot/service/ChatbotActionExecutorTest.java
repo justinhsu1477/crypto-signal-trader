@@ -32,10 +32,10 @@ class ChatbotActionExecutorTest {
     private static final String USER_ID = "test-user";
 
     @Test
-    void buildToolsSchema_包含八個函式定義() {
+    void buildToolsSchema_包含九個函式定義() {
         JsonObject tools = executor.buildToolsSchema();
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(8);
+        assertThat(declarations).hasSize(9);
     }
 
     @Test
@@ -178,6 +178,16 @@ class ChatbotActionExecutorTest {
 
         assertThat(result).isEqualTo("15 條訊號");
         verify(marketDataService).getSignalReportSummary();
+    }
+
+    @Test
+    void executeGetAllUsersSummary_委派給MarketDataService() {
+        when(marketDataService.getAllUsersSummary()).thenReturn("全用戶概覽");
+
+        String result = executor.executeFunction(USER_ID, "get_all_users_summary", new JsonObject());
+
+        assertThat(result).isEqualTo("全用戶概覽");
+        verify(marketDataService).getAllUsersSummary();
     }
 
     @Test

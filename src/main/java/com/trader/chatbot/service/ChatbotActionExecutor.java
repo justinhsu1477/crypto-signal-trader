@@ -92,6 +92,14 @@ public class ChatbotActionExecutor {
                 Map.of()
         ));
 
+        // === Admin 專屬工具 ===
+
+        declarations.add(buildFunction(
+                "get_all_users_summary",
+                "查詢全部用戶的持倉與交易概覽，包含每位用戶的持倉數、總損益、勝率。僅限 Admin 使用。管理員問到全部用戶、所有用戶、餘額、持倉概覽時呼叫。",
+                Map.of()
+        ));
+
         tools.add("function_declarations", declarations);
         return tools;
     }
@@ -117,6 +125,7 @@ public class ChatbotActionExecutor {
                 case "get_market_data" -> marketDataService.getMarketOverview();
                 case "get_my_positions" -> marketDataService.getUserPositions(userId);
                 case "get_signal_report" -> marketDataService.getSignalReportSummary();
+                case "get_all_users_summary" -> marketDataService.getAllUsersSummary();
                 default -> {
                     log.warn("Chatbot 收到未知 function: {} userId={}", functionName, userId);
                     yield "不支援的操作。";

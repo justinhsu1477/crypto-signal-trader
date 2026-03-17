@@ -7,6 +7,8 @@ import com.trader.trading.entity.Trade;
 import com.trader.trading.repository.DailySignalReportRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.user.entity.User;
+import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
@@ -16,7 +18,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 市場數據服務 — Chatbot 用
@@ -32,6 +36,7 @@ public class MarketDataService {
     private final BinanceFuturesService binanceFuturesService;
     private final DailySignalReportRepository dailySignalReportRepository;
     private final TradeRepository tradeRepository;
+    private final UserRepository userRepository;
     private final OkHttpClient okHttpClient;
     private final Gson gson = new Gson();
 
@@ -158,6 +163,69 @@ public class MarketDataService {
         } catch (Exception e) {
             log.warn("取得用戶持倉失敗: userId={} error={}", userId, e.getMessage());
             sb.append("- [持倉資料載入失敗]\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 全用戶持倉與交易概覽（Admin 專屬）
+     */
+    public String getAllUsersSummary() {
+        StringBuilder sb = new StringBuilder("### 全用戶持倉與交易概覽\n");
+
+        try {
+            // 用戶名稱對照表（一次查詢）
+            Map<String, String> userNames = userRepository.findAll().stream()
+                    .collect(Collectors.toMap(
+                            User::getUserId,
+                            u -> u.getName() != null && !u.getName().isEmpty() ? u.getName() : u.getEmail(),
+                            (a, b) -> a
+                    ));
+
+            // 批次聚合統計（一次 SQL）
+            List<Object[]> stats = tradeRepository.aggregateStatsPerUser();
+
+            // 全部 OPEN 持倉（一次查詢）
+            List<Trade> allOpenTrades = tradeRepository.findByStatus("OPEN");
+            Map<String, Long> openCountByUser = allOpenTrades.stream()
+                    .collect(Collectors.groupingBy(Trade::getUserId, Collectors.counting()));
+
+            if (stats.isEmpty() && allOpenTrades.isEmpty()) {
+                sb.append("- 目前無任何交易資料\n");
+                return sb.toString();
+            }
+
+            // 按用戶輸出
+            for (Object[] row : stats) {
+                String userId = (String) row[0];
+                long totalTrades = ((Number) row[1]).longValue();
+                long wins = ((Number) row[2]).longValue();
+                double pnl = ((Number) row[3]).doubleValue();
+                double winRate = totalTrades > 0 ? (double) wins / totalTrades * 100 : 0;
+                long openCount = openCountByUser.getOrDefault(userId, 0L);
+
+                String name = userNames.getOrDefault(userId, userId);
+                sb.append(String.format("- %s | 持倉：%d | 已平倉：%d | 勝率：%.0f%% | PnL：%s%.2f USDT\n",
+                        name, openCount, totalTrades, winRate,
+                        pnl >= 0 ? "+" : "", pnl));
+            }
+
+            // 有持倉但沒有已平倉紀錄的用戶
+            for (var entry : openCountByUser.entrySet()) {
+                boolean alreadyListed = stats.stream().anyMatch(r -> r[0].equals(entry.getKey()));
+                if (!alreadyListed) {
+                    String name = userNames.getOrDefault(entry.getKey(), entry.getKey());
+                    sb.append(String.format("- %s | 持倉：%d | 已平倉：0 | 勝率：N/A | PnL：0.00 USDT\n",
+                            name, entry.getValue()));
+                }
+            }
+
+            sb.append(String.format("\n總持倉用戶：%d | 總開倉數：%d\n",
+                    openCountByUser.size(), allOpenTrades.size()));
+        } catch (Exception e) {
+            log.warn("取得全用戶概覽失敗: {}", e.getMessage());
+            sb.append("- [資料載入失敗]\n");
         }
 
         return sb.toString();
