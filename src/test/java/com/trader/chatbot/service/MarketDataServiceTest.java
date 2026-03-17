@@ -251,6 +251,76 @@ class MarketDataServiceTest {
     }
 
     @Nested
+    @DisplayName("getMarketOverview 部分失敗")
+    class MarketOverviewPartialFailureTests {
+
+        @Test
+        @DisplayName("Funding Rate 失敗但 BTC 行情正常回傳")
+        void fundingRateFailure_tickerStillReturned() {
+            JsonObject ticker = new JsonObject();
+            ticker.addProperty("lastPrice", 67500.0);
+            ticker.addProperty("priceChangePercent", 2.5);
+            ticker.addProperty("highPrice", 68000.0);
+            ticker.addProperty("lowPrice", 66000.0);
+            ticker.addProperty("quoteVolume", 5_000_000_000.0);
+            when(binanceFuturesService.get24hTicker("BTCUSDT")).thenReturn(ticker);
+            when(binanceFuturesService.getFundingRate("BTCUSDT"))
+                    .thenThrow(new RuntimeException("funding error"));
+
+            String result = service.getMarketOverview();
+
+            assertThat(result).contains("67500.00");
+            assertThat(result).doesNotContain("資料載入失敗");
+        }
+
+        @Test
+        @DisplayName("中性 Funding Rate 顯示中性")
+        void neutralFundingRate() {
+            JsonObject ticker = new JsonObject();
+            ticker.addProperty("lastPrice", 65000.0);
+            ticker.addProperty("priceChangePercent", 0.1);
+            ticker.addProperty("highPrice", 65500.0);
+            ticker.addProperty("lowPrice", 64500.0);
+            ticker.addProperty("quoteVolume", 2_000_000_000.0);
+            when(binanceFuturesService.get24hTicker("BTCUSDT")).thenReturn(ticker);
+
+            JsonObject funding = new JsonObject();
+            funding.addProperty("fundingRate", 0.00005); // 中性範圍
+            when(binanceFuturesService.getFundingRate("BTCUSDT")).thenReturn(funding);
+
+            String result = service.getMarketOverview();
+
+            assertThat(result).contains("中性");
+        }
+    }
+
+    @Nested
+    @DisplayName("getAllUsersSummary 異常測試")
+    class AllUsersSummaryExceptionTests {
+
+        @Test
+        @DisplayName("userRepository 異常時回傳載入失敗")
+        void userRepoFailure_gracefulDegradation() {
+            when(userRepository.findAll()).thenThrow(new RuntimeException("DB error"));
+
+            String result = service.getAllUsersSummary();
+
+            assertThat(result).contains("資料載入失敗");
+        }
+
+        @Test
+        @DisplayName("aggregateStatsPerUser 異常時回傳載入失敗")
+        void statsRepoFailure_gracefulDegradation() {
+            when(userRepository.findAll()).thenReturn(List.of());
+            when(tradeRepository.aggregateStatsPerUser()).thenThrow(new RuntimeException("DB error"));
+
+            String result = service.getAllUsersSummary();
+
+            assertThat(result).contains("資料載入失敗");
+        }
+    }
+
+    @Nested
     @DisplayName("fetchFearGreedIndex")
     class FearGreedTests {
 
