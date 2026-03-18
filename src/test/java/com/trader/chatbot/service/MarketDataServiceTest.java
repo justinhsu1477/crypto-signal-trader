@@ -9,7 +9,9 @@ import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.DailySignalReportRepository;
 import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
+import com.trader.trading.dto.signalsource.UpdateSignalSourceRequest;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.SignalSourceService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import org.springframework.data.domain.PageImpl;
@@ -29,8 +31,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @DisplayName("MarketDataService — 市場數據整合")
 class MarketDataServiceTest {
@@ -41,6 +42,7 @@ class MarketDataServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private SignalSourceConfigRepository signalSourceConfigRepository;
     @Mock private BroadcastLogRepository broadcastLogRepository;
+    @Mock private SignalSourceService signalSourceService;
     @Mock private OkHttpClient okHttpClient;
 
     private MarketDataService service;
@@ -50,7 +52,7 @@ class MarketDataServiceTest {
         MockitoAnnotations.openMocks(this);
         service = new MarketDataService(binanceFuturesService, dailySignalReportRepository,
                 tradeRepository, userRepository, signalSourceConfigRepository,
-                broadcastLogRepository, okHttpClient);
+                broadcastLogRepository, signalSourceService, okHttpClient);
     }
 
     @Nested
@@ -553,6 +555,63 @@ class MarketDataServiceTest {
             String result = service.getRecentBroadcasts("", 5);
 
             assertThat(result).contains("無廣播紀錄");
+        }
+    }
+
+    @Nested
+    @DisplayName("updateSourceTradeMode")
+    class UpdateSourceTradeModeTests {
+
+        @Test
+        @DisplayName("成功修改來源模式")
+        void updateMode_成功() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .id(1L).name("陳哥VIP").tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(source));
+            when(signalSourceService.updateSource(eq(1L), any(UpdateSignalSourceRequest.class))).thenReturn(source);
+
+            String result = service.updateSourceTradeMode("陳哥", "SHADOW");
+
+            assertThat(result).contains("已成功");
+            assertThat(result).contains("陳哥VIP");
+            assertThat(result).contains("AUTO");
+            assertThat(result).contains("SHADOW");
+        }
+
+        @Test
+        @DisplayName("來源不存在")
+        void updateMode_來源不存在() {
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+            String result = service.updateSourceTradeMode("不存在", "SHADOW");
+
+            assertThat(result).contains("找不到");
+        }
+
+        @Test
+        @DisplayName("無效的模式值")
+        void updateMode_無效模式() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .id(1L).name("陳哥VIP").tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(source));
+
+            String result = service.updateSourceTradeMode("陳哥", "INVALID");
+
+            assertThat(result).contains("不支援");
+            assertThat(result).contains("AUTO");
+            assertThat(result).contains("SHADOW");
+        }
+
+        @Test
+        @DisplayName("已是相同模式")
+        void updateMode_相同模式不修改() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .id(1L).name("陳哥VIP").tradeMode(SignalSourceConfig.TradeMode.SHADOW).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(source));
+
+            String result = service.updateSourceTradeMode("陳哥", "SHADOW");
+
+            assertThat(result).contains("已是 SHADOW");
         }
     }
 }

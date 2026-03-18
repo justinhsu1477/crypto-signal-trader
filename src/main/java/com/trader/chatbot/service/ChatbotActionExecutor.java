@@ -151,6 +151,15 @@ public class ChatbotActionExecutor {
                 )
         ));
 
+        declarations.add(buildFunction(
+                "update_source_mode",
+                "修改訊號來源的交易模式。僅限 Admin 使用。管理員說「把 XX 改成影子模式」「XX 切換到 AUTO」時呼叫。直接將名稱作為 source_name 呼叫，工具支援模糊匹配。",
+                Map.of(
+                        "source_name", Map.of("type", "STRING", "description", "來源名稱（模糊匹配，如「陳哥」「飛揚」「加密大漂亮」）"),
+                        "trade_mode", Map.of("type", "STRING", "description", "交易模式：AUTO（自動跟單）、SHADOW（影子模式）、MANUAL（手動）")
+                )
+        ));
+
         tools.add("function_declarations", declarations);
         return tools;
     }
@@ -195,6 +204,14 @@ public class ChatbotActionExecutor {
                     String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
                     int count = args.has("count") ? args.get("count").getAsInt() : 5;
                     yield marketDataService.getRecentBroadcasts(sourceName, count);
+                }
+                case "update_source_mode" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
+                    String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
+                    String tradeMode = args.has("trade_mode") ? args.get("trade_mode").getAsString() : "";
+                    yield marketDataService.updateSourceTradeMode(sourceName, tradeMode);
                 }
                 default -> {
                     log.warn("Chatbot 收到未知 function: {} userId={}", functionName, userId);
