@@ -59,6 +59,31 @@ public class AdminChatbotController {
         }
         stats.put("intentDistribution", intentDistribution);
 
+        // Feedback 統計
+        long positive = conversationRepository.countByFeedbackRating(1);
+        long negative = conversationRepository.countByFeedbackRating(-1);
+        long feedbackTotal = conversationRepository.countByFeedbackRatingIsNotNull();
+        double satisfactionRate = feedbackTotal > 0 ? (double) positive / feedbackTotal * 100 : 0;
+
+        Map<String, Object> feedback = new HashMap<>();
+        feedback.put("positive", positive);
+        feedback.put("negative", negative);
+        feedback.put("total", feedbackTotal);
+        feedback.put("satisfactionRate", Math.round(satisfactionRate * 10.0) / 10.0);
+        stats.put("feedback", feedback);
+
+        // 每個意圖的 feedback 分佈（哪些意圖常被 👎）
+        List<Object[]> feedbackByIntent = conversationRepository.countFeedbackByIntent();
+        Map<String, Map<String, Long>> intentFeedback = new HashMap<>();
+        for (Object[] row : feedbackByIntent) {
+            String intent = (String) row[0];
+            Integer rating = (Integer) row[1];
+            long count = (Long) row[2];
+            intentFeedback.computeIfAbsent(intent != null ? intent : "UNKNOWN", k -> new HashMap<>())
+                    .put(rating == 1 ? "positive" : "negative", count);
+        }
+        stats.put("intentFeedback", intentFeedback);
+
         return ResponseEntity.ok(stats);
     }
 }

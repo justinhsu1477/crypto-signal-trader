@@ -44,4 +44,19 @@ public interface ChatConversationRepository extends JpaRepository<ChatConversati
      */
     @Query("SELECT COUNT(DISTINCT c.sessionId) FROM ChatConversation c")
     long countDistinctSessions();
+
+    // ── Feedback ──
+
+    Optional<ChatConversation> findByDiscordMessageId(String discordMessageId);
+
+    long countByFeedbackRating(Integer rating);
+
+    long countByFeedbackRatingIsNotNull();
+
+    /**
+     * 每個意圖的 feedback 分佈（用於分析哪些意圖常被 👎）
+     */
+    @Query("SELECT c.intentType, c.feedbackRating, COUNT(c) FROM ChatConversation c " +
+            "WHERE c.feedbackRating IS NOT NULL GROUP BY c.intentType, c.feedbackRating")
+    List<Object[]> countFeedbackByIntent();
 }

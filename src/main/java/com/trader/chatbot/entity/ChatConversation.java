@@ -48,6 +48,17 @@ public class ChatConversation {
     @Column(name = "token_count")
     private Integer tokenCount;
 
+    /** 用戶反饋評分：1=👍, -1=👎, null=未評 */
+    @Column(name = "feedback_rating")
+    private Integer feedbackRating;
+
+    @Column(name = "feedback_at")
+    private LocalDateTime feedbackAt;
+
+    /** Discord Bot 回覆的 message ID（用於反應事件反查） */
+    @Column(name = "discord_message_id", length = 50)
+    private String discordMessageId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
