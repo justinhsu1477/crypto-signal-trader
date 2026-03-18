@@ -230,6 +230,50 @@ public class GeminiService {
     }
 
     /**
+     * Function Call 結果回傳給 Gemini（支援 Multi-tool Chaining）
+     *
+     * 回傳 GeminiResponse 而非純文字，讓呼叫端判斷 Gemini 是否還想呼叫下一個工具。
+     */
+    public Optional<GeminiResponse> sendFunctionResultForChaining(String systemPrompt,
+                                                                     List<ChatTurn> history,
+                                                                     String userMessage,
+                                                                     String functionName,
+                                                                     JsonObject functionCallArgs,
+                                                                     String functionResult,
+                                                                     int maxTokens,
+                                                                     double temperature,
+                                                                     String model,
+                                                                     JsonObject tools) {
+        String apiKey = advisorConfig.getGeminiApiKey();
+        if (apiKey == null || apiKey.isBlank()) return Optional.empty();
+
+        String effectiveModel = (model != null && !model.isBlank()) ? model : advisorConfig.getGeminiModel();
+        String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
+
+        String requestBody = buildFunctionResultRequestBody(
+                systemPrompt, history, userMessage, functionName, functionCallArgs, functionResult, maxTokens, temperature, tools);
+
+        Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(requestBody, JSON_MEDIA))
+                .build();
+
+        try (Response response = aiHttpClient.newCall(request).execute()) {
+            String body = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                log.warn("Gemini API（Function Chaining）回應異常: HTTP {} - {}", response.code(), body);
+                return Optional.empty();
+            }
+
+            return parseGeminiResponse(body);
+        } catch (IOException e) {
+            log.warn("Gemini API（Function Chaining）呼叫失敗: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
      * 建構含 tools 的多輪對話 request body
      */
     private String buildMultiTurnRequestBodyWithTools(String systemPrompt,
