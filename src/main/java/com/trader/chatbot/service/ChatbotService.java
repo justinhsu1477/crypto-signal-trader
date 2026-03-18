@@ -224,13 +224,16 @@ public class ChatbotService {
         return ChatbotResponse.builder().text(response).conversationId(assistantConvId).build();
     }
 
+    private static final int MAX_TOOL_CHAIN_ROUNDS = 5;  // 防止無限迴圈
+
     /**
-     * 帶 Function Calling 的 Gemini 對話流程
+     * 帶 Function Calling 的 Gemini 對話流程（支援 Multi-tool Chaining）
      *
      * 流程：
      * 1. 呼叫 Gemini（帶 tools schema）
-     * 2. 若回傳 functionCall → 執行動作 → 將結果回傳 Gemini → 取得最終回覆
-     * 3. 若回傳 text → 直接回覆
+     * 2. 若回傳 functionCall → 執行動作 → 將結果回傳 Gemini
+     * 3. 若 Gemini 繼續回傳 functionCall → 再執行 → 再回傳（最多 5 輪）
+     * 4. 直到 Gemini 回傳 text → 作為最終回覆
      */
     private String handleWithFunctionCalling(String userId, boolean isAdmin, String systemPrompt,
                                                List<ChatTurn> history, String userMessage) {
@@ -250,35 +253,49 @@ public class ChatbotService {
 
         GeminiResponse resp = geminiResponse.get();
 
-        // 純文字回覆
+        // 純文字回覆 → 直接回傳
         if (resp.hasText()) {
             return resp.getText().orElse(FALLBACK_MESSAGE);
         }
 
-        // Function Call → 執行 → 回傳結果給 Gemini
-        if (resp.hasFunctionCall()) {
+        // Function Call Chaining Loop
+        String lastActionResult = null;
+        for (int round = 0; round < MAX_TOOL_CHAIN_ROUNDS && resp.hasFunctionCall(); round++) {
             String functionName = resp.getFunctionCall().getFunctionName();
             JsonObject args = resp.getFunctionCall().getArgs();
 
-            log.info("Gemini 請求 Function Call: userId={} function={} args={}", userId, functionName, args);
+            log.info("Gemini 請求 Function Call [{}/{}]: userId={} function={} args={}",
+                    round + 1, MAX_TOOL_CHAIN_ROUNDS, userId, functionName, args);
 
             // 執行動作（userId 由系統注入，Admin 可指定目標用戶）
-            String actionResult = actionExecutor.executeFunction(userId, isAdmin, functionName, args);
+            lastActionResult = actionExecutor.executeFunction(userId, isAdmin, functionName, args);
 
-            // 將結果回傳 Gemini 取得自然語言回覆
-            Optional<String> finalResponse = geminiService.sendFunctionResult(
+            // 將結果回傳 Gemini，檢查是否還要呼叫下一個工具
+            Optional<GeminiResponse> nextResponse = geminiService.sendFunctionResultForChaining(
                     systemPrompt, history, userMessage,
-                    functionName, args, actionResult,
+                    functionName, args, lastActionResult,
                     chatbotConfig.getMaxResponseTokens(),
                     chatbotConfig.getTemperature(),
                     chatbotConfig.getGeminiModel(),
                     tools
             );
 
-            return finalResponse.orElse(actionResult); // fallback 直接顯示執行結果
+            if (nextResponse.isEmpty()) {
+                // Gemini 呼叫失敗 → fallback 直接顯示最後一次工具結果
+                return lastActionResult != null ? lastActionResult : FALLBACK_MESSAGE;
+            }
+
+            resp = nextResponse.get();
+
+            // 如果回傳 text → 結束 loop
+            if (resp.hasText()) {
+                return resp.getText().orElse(lastActionResult != null ? lastActionResult : FALLBACK_MESSAGE);
+            }
         }
 
-        return FALLBACK_MESSAGE;
+        // 超過 MAX_TOOL_CHAIN_ROUNDS 還在呼叫工具 → fallback
+        log.warn("Function Calling 超過最大輪次 {}: userId={}", MAX_TOOL_CHAIN_ROUNDS, userId);
+        return lastActionResult != null ? lastActionResult : FALLBACK_MESSAGE;
     }
 
     /**

@@ -173,16 +173,17 @@ class MarketDataServiceTest {
         @Test
         @DisplayName("有日報時顯示摘要")
         void withReports() {
+            LocalDate today = LocalDate.now();
             DailySignalReport report = DailySignalReport.builder()
-                    .reportDate(LocalDate.of(2026, 3, 16))
+                    .reportDate(today)
                     .totalSignals(15).longCount(10).shortCount(5)
                     .avgConfidence(72.0).totalSources(3).build();
-            when(dailySignalReportRepository.findByReportDate(LocalDate.of(2026, 3, 16)))
+            when(dailySignalReportRepository.findByReportDate(today))
                     .thenReturn(Optional.of(report));
 
             String result = service.getSignalReportSummary();
 
-            assertThat(result).contains("2026-03-16");
+            assertThat(result).contains(today.toString());
             assertThat(result).contains("15 條訊號");
             assertThat(result).contains("10L/5S");
             assertThat(result).contains("72/100");

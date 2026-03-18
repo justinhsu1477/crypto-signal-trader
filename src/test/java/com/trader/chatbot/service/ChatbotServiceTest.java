@@ -194,10 +194,11 @@ class ChatbotServiceTest {
             when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_market_data"), any()))
                     .thenReturn("BTC $95000");
 
-            // 第二次：Gemini 用 function 結果回覆自然語言
-            when(geminiService.sendFunctionResult(anyString(), anyList(), anyString(),
+            // 第二次：Gemini 用 function 結果回覆自然語言（Multi-tool Chaining）
+            GeminiResponse textResp = GeminiResponse.builder().text("目前 BTC 報價 $95,000").build();
+            when(geminiService.sendFunctionResultForChaining(anyString(), anyList(), anyString(),
                     eq("get_market_data"), any(), eq("BTC $95000"), anyInt(), anyDouble(), any(), any()))
-                    .thenReturn(Optional.of("目前 BTC 報價 $95,000"));
+                    .thenReturn(Optional.of(textResp));
 
             var result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "BTC 多少錢");
 
@@ -219,8 +220,8 @@ class ChatbotServiceTest {
             when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_my_positions"), any()))
                     .thenReturn("BTCUSDT LONG | 入場：$65000");
 
-            // 第二次呼叫失敗
-            when(geminiService.sendFunctionResult(anyString(), anyList(), anyString(),
+            // 第二次呼叫失敗（Multi-tool Chaining）
+            when(geminiService.sendFunctionResultForChaining(anyString(), anyList(), anyString(),
                     anyString(), any(), anyString(), anyInt(), anyDouble(), any(), any()))
                     .thenReturn(Optional.empty());
 
