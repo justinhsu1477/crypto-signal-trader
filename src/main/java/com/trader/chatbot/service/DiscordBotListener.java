@@ -1,16 +1,21 @@
 package com.trader.chatbot.service;
 
 import com.trader.chatbot.config.DiscordBotConfig;
+import com.trader.chatbot.entity.ChatConversation;
 import com.trader.chatbot.event.ChatMessageEvent;
+import com.trader.chatbot.repository.ChatConversationRepository;
+import com.trader.shared.config.AppConstants;
 import com.trader.user.entity.UserDiscordBinding;
 import com.trader.user.repository.UserDiscordBindingRepository;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
+import net.dv8tion.jda.api.events.message.react.MessageReactionAddEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
@@ -27,15 +32,18 @@ public class DiscordBotListener extends ListenerAdapter {
 
     private final DiscordBotConfig discordBotConfig;
     private final UserDiscordBindingRepository discordBindingRepository;
+    private final ChatConversationRepository conversationRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final DiscordBotService discordBotService;
 
     public DiscordBotListener(DiscordBotConfig discordBotConfig,
                               UserDiscordBindingRepository discordBindingRepository,
+                              ChatConversationRepository conversationRepository,
                               ApplicationEventPublisher eventPublisher,
                               @org.springframework.context.annotation.Lazy DiscordBotService discordBotService) {
         this.discordBotConfig = discordBotConfig;
         this.discordBindingRepository = discordBindingRepository;
+        this.conversationRepository = conversationRepository;
         this.eventPublisher = eventPublisher;
         this.discordBotService = discordBotService;
     }
@@ -145,6 +153,34 @@ public class DiscordBotListener extends ListenerAdapter {
         // 未綁定 → 提示先 DM 綁定
         event.getMessage().reply("請先私訊我綁定帳號，才能使用 AI 客服 🔗\n" +
                 "步驟：DM 我 → 輸入 8 位數連結碼").queue();
+    }
+
+    /**
+     * 監聽用戶對 Bot 回覆的 👍👎 反應 → 寫入 feedback
+     */
+    @Override
+    public void onMessageReactionAdd(MessageReactionAddEvent event) {
+        // 忽略 Bot 自己的反應
+        if (event.getUserId().equals(event.getJDA().getSelfUser().getId())) return;
+
+        String emoji = event.getReaction().getEmoji().getAsReactionCode();
+        Integer rating = null;
+        if ("👍".equals(emoji)) {
+            rating = 1;
+        } else if ("👎".equals(emoji)) {
+            rating = -1;
+        }
+
+        if (rating == null) return;  // 非 feedback 反應，忽略
+
+        String messageId = event.getMessageId();
+        Integer finalRating = rating;
+        conversationRepository.findByDiscordMessageId(messageId).ifPresent(conv -> {
+            conv.setFeedbackRating(finalRating);
+            conv.setFeedbackAt(LocalDateTime.now(AppConstants.ZONE_ID));
+            conversationRepository.save(conv);
+            log.info("收到 Feedback: messageId={} rating={} userId={}", messageId, finalRating, event.getUserId());
+        });
     }
 
     private void handleLinkingCode(MessageReceivedEvent event, String discordUserId, String code) {

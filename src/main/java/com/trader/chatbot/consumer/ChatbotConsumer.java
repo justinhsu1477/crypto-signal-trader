@@ -1,5 +1,6 @@
 package com.trader.chatbot.consumer;
 
+import com.trader.chatbot.dto.ChatbotResponse;
 import com.trader.chatbot.model.ChatbotRequest;
 import com.trader.chatbot.service.ChatbotService;
 import com.trader.chatbot.service.DiscordBotService;
@@ -35,18 +36,20 @@ public class ChatbotConsumer {
         log.info("開始處理客服訊息: userId={} channel={}", request.getUserId(), channel);
 
         try {
-            String response = chatbotService.handleUserMessage(
+            ChatbotResponse chatbotResponse = chatbotService.handleUserMessage(
                     request.getUserId(), channel, channelUserId, request.getMessage());
 
-            sendReply(channel, channelUserId, request.getReplyChannelId(), response);
-            log.info("客服回覆已送出: userId={} channel={} replyChannelId={}",
-                    request.getUserId(), channel, request.getReplyChannelId());
+            sendReply(channel, channelUserId, request.getReplyChannelId(),
+                    chatbotResponse.getText(), chatbotResponse.getConversationId());
+            log.info("客服回覆已送出: userId={} channel={} replyChannelId={} convId={}",
+                    request.getUserId(), channel, request.getReplyChannelId(),
+                    chatbotResponse.getConversationId());
         } catch (Exception e) {
             log.error("客服訊息處理失敗: userId={} channel={} error={}",
                     request.getUserId(), channel, e.getMessage(), e);
             try {
                 String errorMsg = "抱歉，處理您的訊息時發生錯誤。請稍後再試，或輸入「客服」聯繫人工客服。";
-                sendReply(channel, channelUserId, request.getReplyChannelId(), errorMsg);
+                sendReply(channel, channelUserId, request.getReplyChannelId(), errorMsg, null);
             } catch (Exception ex) {
                 log.error("客服錯誤回覆也失敗: {}", ex.getMessage());
             }
@@ -55,17 +58,18 @@ public class ChatbotConsumer {
 
     /**
      * 依據 channel + replyChannelId 路由回覆
-     * - DISCORD + replyChannelId → 頻道回覆（@mention 提問者）
-     * - DISCORD + null           → DM 回覆
+     * - DISCORD + replyChannelId → 頻道回覆（@mention 提問者 + 👍👎 反應）
+     * - DISCORD + null           → DM 回覆（+ 👍👎 反應）
      * - LINE                     → Push API
      */
-    private void sendReply(String channel, String channelUserId, String replyChannelId, String text) {
+    private void sendReply(String channel, String channelUserId, String replyChannelId,
+                           String text, Long conversationId) {
         switch (channel) {
             case "DISCORD" -> {
                 if (replyChannelId != null && !replyChannelId.isBlank()) {
-                    discordBotService.sendChannelReply(replyChannelId, channelUserId, text);
+                    discordBotService.sendChannelReply(replyChannelId, channelUserId, text, conversationId);
                 } else {
-                    discordBotService.sendDmReply(channelUserId, text);
+                    discordBotService.sendDmReply(channelUserId, text, conversationId);
                 }
             }
             default -> lineNotificationService.pushTextMessage(channelUserId, text);
