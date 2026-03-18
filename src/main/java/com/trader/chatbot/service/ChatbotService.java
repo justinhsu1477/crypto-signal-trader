@@ -124,6 +124,13 @@ public class ChatbotService {
             - 查詢指定來源最近的交易明細（使用 get_source_recent_trades 工具）
             - 查詢最近廣播跟單紀錄（使用 get_recent_broadcasts 工具）
 
+            ## 訊號來源查詢規則
+            當管理員提到一個名稱（如「加密大漂亮」「比特幣飛揚」「陳哥」）搭配「頻道」「來源」「最近交易」「績效」「表現」等字眼時：
+            - 直接將該名稱作為 source_name 參數呼叫對應的 source 工具（get_source_recent_trades / get_source_performance）
+            - 工具內部支援模糊匹配，不需要完全精確的名稱
+            - 不要問管理員確認「是否為訊號來源」，直接查詢即可
+            - 如果查詢結果為「找不到來源」，再告知管理員並建議使用 get_source_list 查看所有可用來源
+
             ## 市場分析能力
             你可以根據市場數據提供專業分析和觀點，包括：
             - 多空方向判斷（結合 Funding Rate、恐懼貪婪指數、價格趨勢）

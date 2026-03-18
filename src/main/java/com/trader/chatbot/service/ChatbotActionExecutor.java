@@ -108,18 +108,18 @@ public class ChatbotActionExecutor {
 
         declarations.add(buildFunction(
                 "get_source_performance",
-                "查詢指定訊號來源的績效統計：交易數、勝率、總損益、平均損益、最大獲利/虧損、Profit Factor。管理員問到某頻道/來源的表現、績效、勝率時呼叫。",
+                "查詢指定訊號來源的績效統計：交易數、勝率、總損益、平均損益、最大獲利/虧損、Profit Factor。當管理員提到任何頻道/來源名稱並搭配「表現」「績效」「勝率」等字眼時，直接將名稱作為 source_name 呼叫。",
                 Map.of(
-                        "source_name", Map.of("type", "STRING", "description", "來源名稱（模糊匹配，如「比特幣飛揚」）"),
+                        "source_name", Map.of("type", "STRING", "description", "來源名稱（支援模糊匹配，直接填入用戶提到的名稱即可，如「加密大漂亮」「飛揚」「陳哥」）"),
                         "period", Map.of("type", "STRING", "description", "時間區間：7d / 30d / 90d / all（預設 all）")
                 )
         ));
 
         declarations.add(buildFunction(
                 "get_source_recent_trades",
-                "查詢指定訊號來源最近的交易紀錄明細（入場價、出場價、PnL、AI 信心分數）。管理員問到某頻道「最近交易」「最近的單」「最新紀錄」時呼叫。",
+                "查詢指定訊號來源最近的交易紀錄明細（入場價、出場價、PnL、AI 信心分數）。當管理員提到任何頻道/來源名稱並搭配「最近交易」「最近的單」「紀錄」等字眼時，直接將名稱作為 source_name 呼叫，工具支援模糊匹配。",
                 Map.of(
-                        "source_name", Map.of("type", "STRING", "description", "來源名稱（模糊匹配，如「比特幣飛揚」）"),
+                        "source_name", Map.of("type", "STRING", "description", "來源名稱（支援模糊匹配，直接填入用戶提到的名稱即可，如「加密大漂亮」「飛揚」「陳哥」）"),
                         "count", Map.of("type", "INTEGER", "description", "筆數（預設 5，最多 10）")
                 )
         ));
