@@ -204,7 +204,7 @@ public class ChatbotService {
         String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context;
 
         // 8. 呼叫 Gemini（一般用戶 + Admin 都啟用 Function Calling）
-        String response = handleWithFunctionCalling(userId, fullSystemPrompt, history, cleanMessage);
+        String response = handleWithFunctionCalling(userId, isAdmin, fullSystemPrompt, history, cleanMessage);
 
         // 9. 後處理：不確定回覆自動加人工客服引導
         response = postProcessResponse(response);
@@ -223,7 +223,7 @@ public class ChatbotService {
      * 2. 若回傳 functionCall → 執行動作 → 將結果回傳 Gemini → 取得最終回覆
      * 3. 若回傳 text → 直接回覆
      */
-    private String handleWithFunctionCalling(String userId, String systemPrompt,
+    private String handleWithFunctionCalling(String userId, boolean isAdmin, String systemPrompt,
                                                List<ChatTurn> history, String userMessage) {
         JsonObject tools = actionExecutor.buildToolsSchema();
 
@@ -253,8 +253,8 @@ public class ChatbotService {
 
             log.info("Gemini 請求 Function Call: userId={} function={} args={}", userId, functionName, args);
 
-            // 執行動作（userId 由系統注入，不可被 AI 覆蓋）
-            String actionResult = actionExecutor.executeFunction(userId, functionName, args);
+            // 執行動作（userId 由系統注入，Admin 可指定目標用戶）
+            String actionResult = actionExecutor.executeFunction(userId, isAdmin, functionName, args);
 
             // 將結果回傳 Gemini 取得自然語言回覆
             Optional<String> finalResponse = geminiService.sendFunctionResult(
