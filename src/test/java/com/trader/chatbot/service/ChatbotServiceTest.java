@@ -291,6 +291,107 @@ class ChatbotServiceTest {
         }
 
         @Test
+        @DisplayName("Multi-tool Chaining — Gemini 連續呼叫 2 個工具後回覆")
+        void multiToolChaining_twoToolCalls() {
+            setupNormalMocks();
+
+            // 第一次：Gemini 回傳 functionCall（查加密大漂亮績效）
+            GeminiFunctionCall fc1 = GeminiFunctionCall.builder()
+                    .functionName("get_source_performance").args(new JsonObject()).build();
+            GeminiResponse fcResp1 = GeminiResponse.builder().functionCall(fc1).build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp1));
+
+            when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_source_performance"), any()))
+                    .thenReturn("加密大漂亮 勝率 100%");
+
+            // 第二次：Gemini 繼續呼叫第二個工具（查陳哥績效）
+            GeminiFunctionCall fc2 = GeminiFunctionCall.builder()
+                    .functionName("get_source_performance").args(new JsonObject()).build();
+            GeminiResponse fcResp2 = GeminiResponse.builder().functionCall(fc2).build();
+
+            when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_source_performance"), any()))
+                    .thenReturn("加密大漂亮 勝率 100%")
+                    .thenReturn("陳哥 勝率 50%");
+
+            // 第二次 chaining 回傳第二個 functionCall
+            // 第三次回傳最終文字
+            GeminiResponse finalTextResp = GeminiResponse.builder()
+                    .text("加密大漂亮勝率 100%，陳哥勝率 50%，加密大漂亮表現較好。").build();
+
+            when(geminiService.sendFunctionResultForChaining(anyString(), anyList(), anyString(),
+                    anyString(), any(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp2))
+                    .thenReturn(Optional.of(finalTextResp));
+
+            var result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "加密大漂亮跟陳哥誰比較好");
+
+            assertThat(result.getText()).contains("加密大漂亮").contains("陳哥");
+            verify(actionExecutor, times(2)).executeFunction(eq("u1"), anyBoolean(), eq("get_source_performance"), any());
+        }
+
+        @Test
+        @DisplayName("Multi-tool Chaining — 超過最大輪次 → fallback 最後工具結果")
+        void multiToolChaining_exceedsMaxRounds() {
+            setupNormalMocks();
+
+            // 第一次回傳 functionCall
+            GeminiFunctionCall fc = GeminiFunctionCall.builder()
+                    .functionName("get_market_data").args(new JsonObject()).build();
+            GeminiResponse fcResp = GeminiResponse.builder().functionCall(fc).build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp));
+
+            when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), anyString(), any()))
+                    .thenReturn("最後一次結果");
+
+            // 每次都回 functionCall，永遠不回 text
+            when(geminiService.sendFunctionResultForChaining(anyString(), anyList(), anyString(),
+                    anyString(), any(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp));
+
+            var result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "查詢");
+
+            // 超過 MAX_TOOL_CHAIN_ROUNDS → fallback 到最後一次工具結果
+            assertThat(result.getText()).isEqualTo("最後一次結果");
+        }
+
+        @Test
+        @DisplayName("Multi-tool Chaining — 第 N 輪 Gemini 失敗 → fallback 前一輪工具結果")
+        void multiToolChaining_midChainFailure() {
+            setupNormalMocks();
+
+            // 第一次回傳 functionCall
+            GeminiFunctionCall fc1 = GeminiFunctionCall.builder()
+                    .functionName("get_source_list").args(new JsonObject()).build();
+            GeminiResponse fcResp1 = GeminiResponse.builder().functionCall(fc1).build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp1));
+
+            when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_source_list"), any()))
+                    .thenReturn("來源清單：加密大漂亮、陳哥");
+
+            // 第一輪成功，回傳第二個 functionCall
+            GeminiFunctionCall fc2 = GeminiFunctionCall.builder()
+                    .functionName("get_source_performance").args(new JsonObject()).build();
+            GeminiResponse fcResp2 = GeminiResponse.builder().functionCall(fc2).build();
+
+            when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_source_performance"), any()))
+                    .thenReturn("加密大漂亮 勝率 100%");
+
+            // 第一輪回傳 fc2，第二輪 Gemini 失敗
+            when(geminiService.sendFunctionResultForChaining(anyString(), anyList(), anyString(),
+                    anyString(), any(), anyString(), anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(fcResp2))
+                    .thenReturn(Optional.empty());
+
+            var result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "哪個頻道最好");
+
+            // 第二輪失敗 → fallback 到最後成功的工具結果
+            assertThat(result.getText()).isEqualTo("加密大漂亮 勝率 100%");
+        }
+
+        @Test
         @DisplayName("對話儲存失敗不影響回覆")
         void saveConversationFailure_doesNotAffectResponse() {
             setupNormalMocks();
