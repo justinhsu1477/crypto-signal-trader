@@ -52,9 +52,9 @@ class ChatbotServiceTest {
     void disabledReturnsMessage() {
         when(chatbotConfig.isEnabled()).thenReturn(false);
 
-        String result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
+        var result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
 
-        assertThat(result).contains("尚未啟用");
+        assertThat(result.getText()).contains("尚未啟用");
         verifyNoInteractions(geminiService);
     }
 
@@ -65,9 +65,9 @@ class ChatbotServiceTest {
         when(rateLimiter.isAllowed("u1")).thenReturn(false);
         when(rateLimiter.getRateLimitMessage()).thenReturn("頻率過高");
 
-        String result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
+        var result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
 
-        assertThat(result).isEqualTo("頻率過高");
+        assertThat(result.getText()).isEqualTo("頻率過高");
         verifyNoInteractions(geminiService);
     }
 
@@ -79,9 +79,9 @@ class ChatbotServiceTest {
         when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
                 .thenReturn(Optional.of(textResp));
 
-        String result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
+        var result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
 
-        assertThat(result).isEqualTo("您好！有什麼可以幫助您？");
+        assertThat(result.getText()).isEqualTo("您好！有什麼可以幫助您？");
         verify(conversationRepository, times(2)).save(any(ChatConversation.class));
     }
 
@@ -93,9 +93,9 @@ class ChatbotServiceTest {
         when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
                 .thenReturn(Optional.of(textResp));
 
-        String result = chatbotService.handleUserMessage("u1", "DISCORD", "discord123", "你好");
+        var result = chatbotService.handleUserMessage("u1", "DISCORD", "discord123", "你好");
 
-        assertThat(result).isEqualTo("您好！");
+        assertThat(result.getText()).isEqualTo("您好！");
         verify(conversationRepository, times(2)).save(argThat(conv -> {
             ChatConversation c = (ChatConversation) conv;
             return "DISCORD".equals(c.getChannel()) && "discord123".equals(c.getChannelUserId());
@@ -109,9 +109,9 @@ class ChatbotServiceTest {
         when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
                 .thenReturn(Optional.empty());
 
-        String result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
+        var result = chatbotService.handleUserMessage("u1", "LINE", "line1", "你好");
 
-        assertThat(result).contains("暫時無法回應");
+        assertThat(result.getText()).contains("暫時無法回應");
     }
 
     @Test
@@ -165,9 +165,9 @@ class ChatbotServiceTest {
         when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
                 .thenReturn(Optional.of(textResp));
 
-        String result = chatbotService.handleUserMessage("ADMIN", "DISCORD", "admin123", "平台狀態");
+        var result = chatbotService.handleUserMessage("ADMIN", "DISCORD", "admin123", "平台狀態");
 
-        assertThat(result).isEqualTo("Admin 回覆");
+        assertThat(result.getText()).isEqualTo("Admin 回覆");
         // Admin 應該使用 generateContentWithTools（Function Calling）
         verify(geminiService).generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any());
         // Admin 不應該走舊的 generateContentWithHistory
@@ -199,9 +199,9 @@ class ChatbotServiceTest {
                     eq("get_market_data"), any(), eq("BTC $95000"), anyInt(), anyDouble(), any(), any()))
                     .thenReturn(Optional.of("目前 BTC 報價 $95,000"));
 
-            String result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "BTC 多少錢");
+            var result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "BTC 多少錢");
 
-            assertThat(result).isEqualTo("目前 BTC 報價 $95,000");
+            assertThat(result.getText()).isEqualTo("目前 BTC 報價 $95,000");
             verify(actionExecutor).executeFunction(eq("u1"), anyBoolean(), eq("get_market_data"), any());
         }
 
@@ -224,10 +224,10 @@ class ChatbotServiceTest {
                     anyString(), any(), anyString(), anyInt(), anyDouble(), any(), any()))
                     .thenReturn(Optional.empty());
 
-            String result = chatbotService.handleUserMessage("u1", "LINE", "l1", "我的持倉");
+            var result = chatbotService.handleUserMessage("u1", "LINE", "l1", "我的持倉");
 
             // fallback：直接回傳 function 執行結果
-            assertThat(result).isEqualTo("BTCUSDT LONG | 入場：$65000");
+            assertThat(result.getText()).isEqualTo("BTCUSDT LONG | 入場：$65000");
         }
 
         @Test
@@ -240,9 +240,9 @@ class ChatbotServiceTest {
             when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
                     .thenReturn(Optional.of(emptyResp));
 
-            String result = chatbotService.handleUserMessage("u1", "LINE", "l1", "你好");
+            var result = chatbotService.handleUserMessage("u1", "LINE", "l1", "你好");
 
-            assertThat(result).contains("暫時無法回應");
+            assertThat(result.getText()).contains("暫時無法回應");
         }
 
         @Test
@@ -298,10 +298,10 @@ class ChatbotServiceTest {
                     .thenReturn(Optional.of(textResp));
             doThrow(new RuntimeException("DB error")).when(conversationRepository).save(any());
 
-            String result = chatbotService.handleUserMessage("u1", "LINE", "l1", "你好");
+            var result = chatbotService.handleUserMessage("u1", "LINE", "l1", "你好");
 
             // 儲存失敗但回覆仍正常
-            assertThat(result).isEqualTo("回覆");
+            assertThat(result.getText()).isEqualTo("回覆");
         }
     }
 
