@@ -191,7 +191,7 @@ class ChatbotServiceTest {
                     .thenReturn(Optional.of(fcResp));
 
             // 執行 function
-            when(actionExecutor.executeFunction(eq("u1"), eq("get_market_data"), any()))
+            when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_market_data"), any()))
                     .thenReturn("BTC $95000");
 
             // 第二次：Gemini 用 function 結果回覆自然語言
@@ -202,7 +202,7 @@ class ChatbotServiceTest {
             String result = chatbotService.handleUserMessage("u1", "DISCORD", "d1", "BTC 多少錢");
 
             assertThat(result).isEqualTo("目前 BTC 報價 $95,000");
-            verify(actionExecutor).executeFunction(eq("u1"), eq("get_market_data"), any());
+            verify(actionExecutor).executeFunction(eq("u1"), anyBoolean(), eq("get_market_data"), any());
         }
 
         @Test
@@ -216,7 +216,7 @@ class ChatbotServiceTest {
             when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any()))
                     .thenReturn(Optional.of(fcResp));
 
-            when(actionExecutor.executeFunction(eq("u1"), eq("get_my_positions"), any()))
+            when(actionExecutor.executeFunction(eq("u1"), anyBoolean(), eq("get_my_positions"), any()))
                     .thenReturn("BTCUSDT LONG | 入場：$65000");
 
             // 第二次呼叫失敗

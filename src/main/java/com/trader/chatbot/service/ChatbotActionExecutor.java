@@ -3,7 +3,9 @@ package com.trader.chatbot.service;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.user.dto.UpdateTradeSettingsRequest;
+import com.trader.user.entity.User;
 import com.trader.user.entity.UserTradeSettings;
+import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserTradeSettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +31,7 @@ public class ChatbotActionExecutor {
 
     private final UserTradeSettingsService userTradeSettingsService;
     private final MarketDataService marketDataService;
+    private final UserRepository userRepository;
     private final Gson gson = new Gson();
 
     /**
@@ -41,35 +44,50 @@ public class ChatbotActionExecutor {
 
         declarations.add(buildFunction(
                 "get_trade_settings",
-                "查詢用戶當前的交易設定（風險比例、槓桿、DCA 層數等）",
-                Map.of()
+                "查詢用戶當前的交易設定（風險比例、槓桿、DCA 層數等）。Admin 可指定 target_user_name 查詢特定用戶。",
+                Map.of("target_user_name", Map.of("type", "STRING", "description", "（Admin 專用，可選）目標用戶名稱，如「Edward Lin」。不填則查自己。")),
+                List.of()
         ));
 
         declarations.add(buildFunction(
                 "update_risk_percent",
-                "修改用戶的風險比例。值為小數，例如 0.3 代表 30%。範圍：0.01 ~ 1.0",
-                Map.of("risk_percent", Map.of("type", "NUMBER", "description", "風險比例，例如 0.3 代表 30%"))
+                "修改用戶的風險比例。值為小數，例如 0.3 代表 30%。範圍：0.01 ~ 1.0。Admin 可指定 target_user_name 修改特定用戶。",
+                Map.of(
+                        "risk_percent", Map.of("type", "NUMBER", "description", "風險比例，例如 0.3 代表 30%"),
+                        "target_user_name", Map.of("type", "STRING", "description", "（Admin 專用，可選）目標用戶名稱")
+                ),
+                List.of("risk_percent")
         ));
 
         declarations.add(buildFunction(
                 "update_max_leverage",
-                "修改用戶的最大槓桿倍數。範圍：1 ~ 125",
-                Map.of("max_leverage", Map.of("type", "INTEGER", "description", "最大槓桿倍數，例如 20"))
+                "修改用戶的最大槓桿倍數。範圍：1 ~ 125。Admin 可指定 target_user_name 修改特定用戶。",
+                Map.of(
+                        "max_leverage", Map.of("type", "INTEGER", "description", "最大槓桿倍數，例如 20"),
+                        "target_user_name", Map.of("type", "STRING", "description", "（Admin 專用，可選）目標用戶名稱")
+                ),
+                List.of("max_leverage")
         ));
 
         declarations.add(buildFunction(
                 "update_max_dca_layers",
-                "修改用戶的最大 DCA（加倉/補倉）層數。範圍：0 ~ 10",
-                Map.of("max_dca_layers", Map.of("type", "INTEGER", "description", "最大 DCA 層數，例如 3"))
+                "修改用戶的最大 DCA（加倉/補倉）層數。範圍：0 ~ 10。Admin 可指定 target_user_name 修改特定用戶。",
+                Map.of(
+                        "max_dca_layers", Map.of("type", "INTEGER", "description", "最大 DCA 層數，例如 3"),
+                        "target_user_name", Map.of("type", "STRING", "description", "（Admin 專用，可選）目標用戶名稱")
+                ),
+                List.of("max_dca_layers")
         ));
 
         declarations.add(buildFunction(
                 "toggle_auto_sl_tp",
-                "開啟或關閉自動止損（SL）和自動止盈（TP）",
+                "開啟或關閉自動止損（SL）和自動止盈（TP）。Admin 可指定 target_user_name 修改特定用戶。",
                 Map.of(
                         "auto_sl_enabled", Map.of("type", "BOOLEAN", "description", "是否啟用自動止損"),
-                        "auto_tp_enabled", Map.of("type", "BOOLEAN", "description", "是否啟用自動止盈")
-                )
+                        "auto_tp_enabled", Map.of("type", "BOOLEAN", "description", "是否啟用自動止盈"),
+                        "target_user_name", Map.of("type", "STRING", "description", "（Admin 專用，可選）目標用戶名稱")
+                ),
+                List.of("auto_sl_enabled", "auto_tp_enabled")
         ));
 
         // === 市場數據查詢（唯讀） ===
@@ -145,16 +163,19 @@ public class ChatbotActionExecutor {
      * @param args         函式參數（JSON object）
      * @return 執行結果（格式化字串，回傳給 Gemini 做自然語言回覆）
      */
-    public String executeFunction(String userId, String functionName, JsonObject args) {
-        log.info("Chatbot 動作執行: userId={} function={} args={}", userId, functionName, args);
+    public String executeFunction(String userId, boolean isAdmin, String functionName, JsonObject args) {
+        log.info("Chatbot 動作執行: userId={} isAdmin={} function={} args={}", userId, isAdmin, functionName, args);
 
         try {
+            // Admin 可指定 target_user_name 操作特定用戶的設定
+            String effectiveUserId = resolveTargetUserId(userId, isAdmin, args);
+
             return switch (functionName) {
-                case "get_trade_settings" -> executeGetSettings(userId);
-                case "update_risk_percent" -> executeUpdateRiskPercent(userId, args);
-                case "update_max_leverage" -> executeUpdateMaxLeverage(userId, args);
-                case "update_max_dca_layers" -> executeUpdateMaxDcaLayers(userId, args);
-                case "toggle_auto_sl_tp" -> executeToggleAutoSlTp(userId, args);
+                case "get_trade_settings" -> executeGetSettings(effectiveUserId);
+                case "update_risk_percent" -> executeUpdateRiskPercent(effectiveUserId, args);
+                case "update_max_leverage" -> executeUpdateMaxLeverage(effectiveUserId, args);
+                case "update_max_dca_layers" -> executeUpdateMaxDcaLayers(effectiveUserId, args);
+                case "toggle_auto_sl_tp" -> executeToggleAutoSlTp(effectiveUserId, args);
                 case "get_market_data" -> marketDataService.getMarketOverview();
                 case "get_my_positions" -> marketDataService.getUserPositions(userId);
                 case "get_signal_report" -> marketDataService.getSignalReportSummary();
@@ -252,9 +273,44 @@ public class ChatbotActionExecutor {
     }
 
     /**
-     * 建構單一 function declaration
+     * Admin 指定 target_user_name 時，解析為目標用戶的 userId
+     * 非 Admin 或未指定 target_user_name 時，回傳呼叫者自己的 userId
+     */
+    private String resolveTargetUserId(String callerUserId, boolean isAdmin, JsonObject args) {
+        if (!isAdmin || args == null || !args.has("target_user_name")) {
+            return callerUserId;
+        }
+
+        String targetName = args.get("target_user_name").getAsString().trim();
+        if (targetName.isEmpty()) {
+            return callerUserId;
+        }
+
+        List<User> matched = userRepository.findByNameContainingIgnoreCase(targetName);
+        if (matched.isEmpty()) {
+            throw new IllegalArgumentException("找不到用戶「" + targetName + "」，請確認名稱是否正確。");
+        }
+        if (matched.size() > 1) {
+            String names = matched.stream().map(User::getName).collect(java.util.stream.Collectors.joining("、"));
+            throw new IllegalArgumentException("找到多位符合的用戶：" + names + "，請提供更精確的名稱。");
+        }
+
+        User target = matched.get(0);
+        log.info("Admin 指定目標用戶: targetName={} → userId={} name={}", targetName, target.getUserId(), target.getName());
+        return target.getUserId();
+    }
+
+    /**
+     * 建構單一 function declaration（所有參數皆 required）
      */
     private JsonObject buildFunction(String name, String description, Map<String, Map<String, String>> params) {
+        return buildFunction(name, description, params, new java.util.ArrayList<>(params.keySet()));
+    }
+
+    /**
+     * 建構單一 function declaration（指定 required 欄位）
+     */
+    private JsonObject buildFunction(String name, String description, Map<String, Map<String, String>> params, List<String> requiredFields) {
         JsonObject func = new JsonObject();
         func.addProperty("name", name);
         func.addProperty("description", description);
@@ -263,14 +319,12 @@ public class ChatbotActionExecutor {
         parameters.addProperty("type", "OBJECT");
 
         JsonObject properties = new JsonObject();
-        List<String> requiredFields = new java.util.ArrayList<>();
 
         for (var entry : params.entrySet()) {
             JsonObject prop = new JsonObject();
             prop.addProperty("type", entry.getValue().get("type"));
             prop.addProperty("description", entry.getValue().get("description"));
             properties.add(entry.getKey(), prop);
-            requiredFields.add(entry.getKey());
         }
 
         parameters.add("properties", properties);

@@ -2,15 +2,19 @@ package com.trader.chatbot.service;
 
 import com.google.gson.JsonObject;
 import com.trader.user.dto.UpdateTradeSettingsRequest;
+import com.trader.user.entity.User;
 import com.trader.user.entity.UserTradeSettings;
+import com.trader.user.repository.UserRepository;
 import com.trader.user.service.UserTradeSettingsService;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,10 +30,14 @@ class ChatbotActionExecutorTest {
     @Mock
     private MarketDataService marketDataService;
 
+    @Mock
+    private UserRepository userRepository;
+
     @InjectMocks
     private ChatbotActionExecutor executor;
 
     private static final String USER_ID = "test-user";
+    private static final String ADMIN_ID = "admin-user";
 
     @Test
     void buildToolsSchema_包含十三個函式定義() {
@@ -51,13 +59,13 @@ class ChatbotActionExecutorTest {
                 .build();
         when(userTradeSettingsService.getOrCreateSettings(USER_ID)).thenReturn(settings);
 
-        String result = executor.executeFunction(USER_ID, "get_trade_settings", new JsonObject());
+        String result = executor.executeFunction(USER_ID, false, "get_trade_settings", new JsonObject());
 
         assertThat(result).contains("30%");
         assertThat(result).contains("20x");
         assertThat(result).contains("DCA 層數：3");
-        assertThat(result).contains("開啟");   // SL
-        assertThat(result).contains("關閉");   // TP
+        assertThat(result).contains("開啟");
+        assertThat(result).contains("關閉");
     }
 
     @Test
@@ -65,7 +73,7 @@ class ChatbotActionExecutorTest {
         JsonObject args = new JsonObject();
         args.addProperty("risk_percent", 0.25);
 
-        String result = executor.executeFunction(USER_ID, "update_risk_percent", args);
+        String result = executor.executeFunction(USER_ID, false, "update_risk_percent", args);
 
         ArgumentCaptor<UpdateTradeSettingsRequest> captor = ArgumentCaptor.forClass(UpdateTradeSettingsRequest.class);
         verify(userTradeSettingsService).updateSettings(eq(USER_ID), captor.capture());
@@ -78,7 +86,7 @@ class ChatbotActionExecutorTest {
         JsonObject args = new JsonObject();
         args.addProperty("max_leverage", 50);
 
-        String result = executor.executeFunction(USER_ID, "update_max_leverage", args);
+        String result = executor.executeFunction(USER_ID, false, "update_max_leverage", args);
 
         ArgumentCaptor<UpdateTradeSettingsRequest> captor = ArgumentCaptor.forClass(UpdateTradeSettingsRequest.class);
         verify(userTradeSettingsService).updateSettings(eq(USER_ID), captor.capture());
@@ -91,7 +99,7 @@ class ChatbotActionExecutorTest {
         JsonObject args = new JsonObject();
         args.addProperty("max_dca_layers", 5);
 
-        String result = executor.executeFunction(USER_ID, "update_max_dca_layers", args);
+        String result = executor.executeFunction(USER_ID, false, "update_max_dca_layers", args);
 
         ArgumentCaptor<UpdateTradeSettingsRequest> captor = ArgumentCaptor.forClass(UpdateTradeSettingsRequest.class);
         verify(userTradeSettingsService).updateSettings(eq(USER_ID), captor.capture());
@@ -105,7 +113,7 @@ class ChatbotActionExecutorTest {
         args.addProperty("auto_sl_enabled", false);
         args.addProperty("auto_tp_enabled", true);
 
-        String result = executor.executeFunction(USER_ID, "toggle_auto_sl_tp", args);
+        String result = executor.executeFunction(USER_ID, false, "toggle_auto_sl_tp", args);
 
         ArgumentCaptor<UpdateTradeSettingsRequest> captor = ArgumentCaptor.forClass(UpdateTradeSettingsRequest.class);
         verify(userTradeSettingsService).updateSettings(eq(USER_ID), captor.capture());
@@ -117,7 +125,7 @@ class ChatbotActionExecutorTest {
 
     @Test
     void executeUnknownFunction_回傳不支援() {
-        String result = executor.executeFunction(USER_ID, "delete_account", new JsonObject());
+        String result = executor.executeFunction(USER_ID, false, "delete_account", new JsonObject());
         assertThat(result).contains("不支援");
         verifyNoInteractions(userTradeSettingsService);
     }
@@ -125,12 +133,12 @@ class ChatbotActionExecutorTest {
     @Test
     void executeFunction_Service驗證失敗時回傳錯誤訊息() {
         JsonObject args = new JsonObject();
-        args.addProperty("risk_percent", 5.0); // 超出範圍
+        args.addProperty("risk_percent", 5.0);
 
         doThrow(new IllegalArgumentException("riskPercent 必須在 0.01 ~ 1.0 之間"))
                 .when(userTradeSettingsService).updateSettings(eq(USER_ID), any());
 
-        String result = executor.executeFunction(USER_ID, "update_risk_percent", args);
+        String result = executor.executeFunction(USER_ID, false, "update_risk_percent", args);
 
         assertThat(result).contains("操作失敗");
         assertThat(result).contains("0.01 ~ 1.0");
@@ -144,7 +152,7 @@ class ChatbotActionExecutorTest {
         doThrow(new RuntimeException("DB connection error"))
                 .when(userTradeSettingsService).updateSettings(eq(USER_ID), any());
 
-        String result = executor.executeFunction(USER_ID, "update_risk_percent", args);
+        String result = executor.executeFunction(USER_ID, false, "update_risk_percent", args);
 
         assertThat(result).contains("操作失敗");
         assertThat(result).contains("稍後再試");
@@ -154,7 +162,7 @@ class ChatbotActionExecutorTest {
     void executeGetMarketData_委派給MarketDataService() {
         when(marketDataService.getMarketOverview()).thenReturn("BTC $67000");
 
-        String result = executor.executeFunction(USER_ID, "get_market_data", new JsonObject());
+        String result = executor.executeFunction(USER_ID, false, "get_market_data", new JsonObject());
 
         assertThat(result).isEqualTo("BTC $67000");
         verify(marketDataService).getMarketOverview();
@@ -164,7 +172,7 @@ class ChatbotActionExecutorTest {
     void executeGetMyPositions_委派給MarketDataService() {
         when(marketDataService.getUserPositions(USER_ID)).thenReturn("BTCUSDT LONG");
 
-        String result = executor.executeFunction(USER_ID, "get_my_positions", new JsonObject());
+        String result = executor.executeFunction(USER_ID, false, "get_my_positions", new JsonObject());
 
         assertThat(result).isEqualTo("BTCUSDT LONG");
         verify(marketDataService).getUserPositions(USER_ID);
@@ -174,7 +182,7 @@ class ChatbotActionExecutorTest {
     void executeGetSignalReport_委派給MarketDataService() {
         when(marketDataService.getSignalReportSummary()).thenReturn("15 條訊號");
 
-        String result = executor.executeFunction(USER_ID, "get_signal_report", new JsonObject());
+        String result = executor.executeFunction(USER_ID, false, "get_signal_report", new JsonObject());
 
         assertThat(result).isEqualTo("15 條訊號");
         verify(marketDataService).getSignalReportSummary();
@@ -184,32 +192,82 @@ class ChatbotActionExecutorTest {
     void executeGetAllUsersSummary_委派給MarketDataService() {
         when(marketDataService.getAllUsersSummary()).thenReturn("全用戶概覽");
 
-        String result = executor.executeFunction(USER_ID, "get_all_users_summary", new JsonObject());
+        String result = executor.executeFunction(USER_ID, false, "get_all_users_summary", new JsonObject());
 
         assertThat(result).isEqualTo("全用戶概覽");
         verify(marketDataService).getAllUsersSummary();
     }
 
     @Test
-    void executeNonWhitelistedFunction_回傳不支援() {
-        String result = executor.executeFunction(USER_ID, "get_fear_greed", new JsonObject());
+    void executeGetSourceList_委派給MarketDataService() {
+        when(marketDataService.getSourceList()).thenReturn("來源清單");
 
-        // get_fear_greed 不是白名單內的函式，應回傳不支援
-        assertThat(result).contains("不支援");
-        verifyNoInteractions(userTradeSettingsService);
-        verifyNoInteractions(marketDataService);
+        String result = executor.executeFunction(USER_ID, false, "get_source_list", new JsonObject());
+
+        assertThat(result).isEqualTo("來源清單");
+        verify(marketDataService).getSourceList();
     }
 
     @Test
-    void executeFunction_空args不拋異常() {
-        UserTradeSettings settings = UserTradeSettings.builder()
-                .userId(USER_ID).riskPercent(0.2).maxLeverage(10)
-                .maxDcaLayers(2).autoSlEnabled(true).autoTpEnabled(true).build();
-        when(userTradeSettingsService.getOrCreateSettings(USER_ID)).thenReturn(settings);
+    void executeGetSourcePerformance_傳遞參數並委派() {
+        JsonObject args = new JsonObject();
+        args.addProperty("source_name", "比特幣飛揚");
+        args.addProperty("period", "30d");
+        when(marketDataService.getSourcePerformance("比特幣飛揚", "30d")).thenReturn("績效數據");
 
-        String result = executor.executeFunction(USER_ID, "get_trade_settings", null);
+        String result = executor.executeFunction(USER_ID, false, "get_source_performance", args);
 
-        assertThat(result).contains("20%");
+        assertThat(result).isEqualTo("績效數據");
+        verify(marketDataService).getSourcePerformance("比特幣飛揚", "30d");
+    }
+
+    @Test
+    void executeGetSourceRecentTrades_傳遞參數並委派() {
+        JsonObject args = new JsonObject();
+        args.addProperty("source_name", "陳哥");
+        args.addProperty("count", 3);
+        when(marketDataService.getSourceRecentTrades("陳哥", 3)).thenReturn("交易明細");
+
+        String result = executor.executeFunction(USER_ID, false, "get_source_recent_trades", args);
+
+        assertThat(result).isEqualTo("交易明細");
+        verify(marketDataService).getSourceRecentTrades("陳哥", 3);
+    }
+
+    @Test
+    void executeGetRecentBroadcasts_傳遞參數並委派() {
+        JsonObject args = new JsonObject();
+        args.addProperty("source_name", "飛揚");
+        args.addProperty("count", 5);
+        when(marketDataService.getRecentBroadcasts("飛揚", 5)).thenReturn("廣播紀錄");
+
+        String result = executor.executeFunction(USER_ID, false, "get_recent_broadcasts", args);
+
+        assertThat(result).isEqualTo("廣播紀錄");
+        verify(marketDataService).getRecentBroadcasts("飛揚", 5);
+    }
+
+    @Test
+    void executeGetRecentBroadcasts_無sourceName時傳空字串() {
+        JsonObject args = new JsonObject();
+        args.addProperty("source_name", "");
+        args.addProperty("count", 5);
+        when(marketDataService.getRecentBroadcasts("", 5)).thenReturn("全部廣播");
+
+        String result = executor.executeFunction(USER_ID, false, "get_recent_broadcasts", args);
+
+        assertThat(result).isEqualTo("全部廣播");
+    }
+
+    @Test
+    void userId由系統注入_AI無法覆蓋() {
+        JsonObject args = new JsonObject();
+        args.addProperty("risk_percent", 0.3);
+        args.addProperty("user_id", "other-user");
+
+        executor.executeFunction(USER_ID, false, "update_risk_percent", args);
+
+        verify(userTradeSettingsService).updateSettings(eq(USER_ID), any());
     }
 
     @Test
@@ -233,76 +291,129 @@ class ChatbotActionExecutorTest {
     }
 
     @Test
-    void executeGetSourceList_委派給MarketDataService() {
-        when(marketDataService.getSourceList()).thenReturn("來源清單");
+    void buildToolsSchema_修改類工具包含target_user_name參數() {
+        JsonObject tools = executor.buildToolsSchema();
+        String json = tools.toString();
 
-        String result = executor.executeFunction(USER_ID, "get_source_list", new JsonObject());
-
-        assertThat(result).isEqualTo("來源清單");
-        verify(marketDataService).getSourceList();
+        assertThat(json).contains("target_user_name");
+        assertThat(json).contains("Admin 專用");
     }
 
     @Test
-    void executeGetSourcePerformance_傳遞參數並委派() {
-        JsonObject args = new JsonObject();
-        args.addProperty("source_name", "比特幣飛揚");
-        args.addProperty("period", "30d");
-        when(marketDataService.getSourcePerformance("比特幣飛揚", "30d")).thenReturn("績效數據");
+    void executeFunction_空args不拋異常() {
+        UserTradeSettings settings = UserTradeSettings.builder()
+                .userId(USER_ID).riskPercent(0.2).maxLeverage(10)
+                .maxDcaLayers(2).autoSlEnabled(true).autoTpEnabled(true).build();
+        when(userTradeSettingsService.getOrCreateSettings(USER_ID)).thenReturn(settings);
 
-        String result = executor.executeFunction(USER_ID, "get_source_performance", args);
+        String result = executor.executeFunction(USER_ID, false, "get_trade_settings", null);
 
-        assertThat(result).isEqualTo("績效數據");
-        verify(marketDataService).getSourcePerformance("比特幣飛揚", "30d");
+        assertThat(result).contains("20%");
     }
 
     @Test
-    void executeGetSourceRecentTrades_傳遞參數並委派() {
-        JsonObject args = new JsonObject();
-        args.addProperty("source_name", "陳哥");
-        args.addProperty("count", 3);
-        when(marketDataService.getSourceRecentTrades("陳哥", 3)).thenReturn("交易明細");
+    void executeNonWhitelistedFunction_回傳不支援() {
+        String result = executor.executeFunction(USER_ID, false, "get_fear_greed", new JsonObject());
 
-        String result = executor.executeFunction(USER_ID, "get_source_recent_trades", args);
-
-        assertThat(result).isEqualTo("交易明細");
-        verify(marketDataService).getSourceRecentTrades("陳哥", 3);
+        assertThat(result).contains("不支援");
+        verifyNoInteractions(userTradeSettingsService);
+        verifyNoInteractions(marketDataService);
     }
 
-    @Test
-    void executeGetRecentBroadcasts_傳遞參數並委派() {
-        JsonObject args = new JsonObject();
-        args.addProperty("source_name", "飛揚");
-        args.addProperty("count", 5);
-        when(marketDataService.getRecentBroadcasts("飛揚", 5)).thenReturn("廣播紀錄");
+    // === Admin 指定用戶測試 ===
 
-        String result = executor.executeFunction(USER_ID, "get_recent_broadcasts", args);
+    @Nested
+    class AdminTargetUserTests {
 
-        assertThat(result).isEqualTo("廣播紀錄");
-        verify(marketDataService).getRecentBroadcasts("飛揚", 5);
-    }
+        @Test
+        void admin指定用戶名稱_修改該用戶風險比例() {
+            User targetUser = User.builder().userId("edward-id").name("Edward Lin").build();
+            when(userRepository.findByNameContainingIgnoreCase("Edward Lin")).thenReturn(List.of(targetUser));
 
-    @Test
-    void executeGetRecentBroadcasts_無sourceName時傳空字串() {
-        JsonObject args = new JsonObject();
-        args.addProperty("source_name", "");
-        args.addProperty("count", 5);
-        when(marketDataService.getRecentBroadcasts("", 5)).thenReturn("全部廣播");
+            JsonObject args = new JsonObject();
+            args.addProperty("risk_percent", 0.4);
+            args.addProperty("target_user_name", "Edward Lin");
 
-        String result = executor.executeFunction(USER_ID, "get_recent_broadcasts", args);
+            String result = executor.executeFunction(ADMIN_ID, true, "update_risk_percent", args);
 
-        assertThat(result).isEqualTo("全部廣播");
-    }
+            verify(userTradeSettingsService).updateSettings(eq("edward-id"), any());
+            assertThat(result).contains("40%");
+        }
 
-    @Test
-    void userId由系統注入_AI無法覆蓋() {
-        // 模擬 AI 嘗試在 args 中傳入其他 userId
-        JsonObject args = new JsonObject();
-        args.addProperty("risk_percent", 0.3);
-        args.addProperty("user_id", "other-user"); // AI 嘗試注入
+        @Test
+        void admin指定用戶名稱_查詢該用戶設定() {
+            User targetUser = User.builder().userId("edward-id").name("Edward Lin").build();
+            when(userRepository.findByNameContainingIgnoreCase("Edward")).thenReturn(List.of(targetUser));
+            UserTradeSettings settings = UserTradeSettings.builder()
+                    .userId("edward-id").riskPercent(0.3).maxLeverage(20)
+                    .maxDcaLayers(3).autoSlEnabled(true).autoTpEnabled(false).build();
+            when(userTradeSettingsService.getOrCreateSettings("edward-id")).thenReturn(settings);
 
-        executor.executeFunction(USER_ID, "update_risk_percent", args);
+            JsonObject args = new JsonObject();
+            args.addProperty("target_user_name", "Edward");
 
-        // 確認使用的是系統注入的 userId，不是 args 中的
-        verify(userTradeSettingsService).updateSettings(eq(USER_ID), any());
+            String result = executor.executeFunction(ADMIN_ID, true, "get_trade_settings", args);
+
+            verify(userTradeSettingsService).getOrCreateSettings("edward-id");
+            assertThat(result).contains("30%");
+        }
+
+        @Test
+        void admin未指定用戶名稱_修改自己的設定() {
+            JsonObject args = new JsonObject();
+            args.addProperty("risk_percent", 0.5);
+
+            executor.executeFunction(ADMIN_ID, true, "update_risk_percent", args);
+
+            verify(userTradeSettingsService).updateSettings(eq(ADMIN_ID), any());
+            verifyNoInteractions(userRepository);
+        }
+
+        @Test
+        void admin指定不存在的用戶_回傳錯誤() {
+            when(userRepository.findByNameContainingIgnoreCase("不存在")).thenReturn(List.of());
+
+            JsonObject args = new JsonObject();
+            args.addProperty("risk_percent", 0.3);
+            args.addProperty("target_user_name", "不存在");
+
+            String result = executor.executeFunction(ADMIN_ID, true, "update_risk_percent", args);
+
+            assertThat(result).contains("操作失敗");
+            assertThat(result).contains("找不到用戶");
+            verifyNoInteractions(userTradeSettingsService);
+        }
+
+        @Test
+        void admin指定模糊名稱_匹配到多人_回傳錯誤() {
+            User user1 = User.builder().userId("id1").name("Edward Lin").build();
+            User user2 = User.builder().userId("id2").name("Edward Chen").build();
+            when(userRepository.findByNameContainingIgnoreCase("Edward")).thenReturn(List.of(user1, user2));
+
+            JsonObject args = new JsonObject();
+            args.addProperty("risk_percent", 0.3);
+            args.addProperty("target_user_name", "Edward");
+
+            String result = executor.executeFunction(ADMIN_ID, true, "update_risk_percent", args);
+
+            assertThat(result).contains("操作失敗");
+            assertThat(result).contains("多位符合");
+            assertThat(result).contains("Edward Lin");
+            assertThat(result).contains("Edward Chen");
+            verifyNoInteractions(userTradeSettingsService);
+        }
+
+        @Test
+        void 非Admin指定target_user_name_忽略直接用自己的userId() {
+            JsonObject args = new JsonObject();
+            args.addProperty("risk_percent", 0.3);
+            args.addProperty("target_user_name", "Edward Lin");
+
+            executor.executeFunction(USER_ID, false, "update_risk_percent", args);
+
+            // 非 Admin 即使有 target_user_name 也只能改自己
+            verify(userTradeSettingsService).updateSettings(eq(USER_ID), any());
+            verifyNoInteractions(userRepository);
+        }
     }
 }
