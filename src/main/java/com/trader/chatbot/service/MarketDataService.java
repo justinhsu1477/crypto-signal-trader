@@ -6,11 +6,13 @@ import com.trader.trading.entity.BroadcastLog;
 import com.trader.trading.entity.DailySignalReport;
 import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.entity.Trade;
+import com.trader.trading.dto.signalsource.UpdateSignalSourceRequest;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.DailySignalReportRepository;
 import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.service.BinanceFuturesService;
+import com.trader.trading.service.SignalSourceService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
@@ -44,6 +46,7 @@ public class MarketDataService {
     private final UserRepository userRepository;
     private final SignalSourceConfigRepository signalSourceConfigRepository;
     private final BroadcastLogRepository broadcastLogRepository;
+    private final SignalSourceService signalSourceService;
     private final OkHttpClient okHttpClient;
     private final Gson gson = new Gson();
 
@@ -453,6 +456,37 @@ public class MarketDataService {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 修改訊號來源的交易模式（Admin 專用）
+     */
+    public String updateSourceTradeMode(String sourceName, String newMode) {
+        SignalSourceConfig source = findSourceByName(sourceName);
+        if (source == null) {
+            return "找不到名稱包含「" + sourceName + "」的訊號來源。\n" + getAvailableSourceNames();
+        }
+
+        // 驗證模式值
+        String upperMode = newMode.toUpperCase().trim();
+        try {
+            SignalSourceConfig.TradeMode.valueOf(upperMode);
+        } catch (IllegalArgumentException e) {
+            return "不支援的交易模式「" + newMode + "」。可用模式：AUTO（自動跟單）、SHADOW（影子模式）、MANUAL（手動）。";
+        }
+
+        String oldMode = source.getTradeMode().name();
+        if (oldMode.equals(upperMode)) {
+            return String.format("「%s」目前已是 %s 模式，無需修改。", source.getName(), oldMode);
+        }
+
+        UpdateSignalSourceRequest req = UpdateSignalSourceRequest.builder()
+                .tradeMode(upperMode)
+                .build();
+        signalSourceService.updateSource(source.getId(), req);
+
+        log.info("✅ Chatbot 修改來源模式: source={} {} → {}", source.getName(), oldMode, upperMode);
+        return String.format("已成功將「%s」的交易模式從 %s 修改為 %s。", source.getName(), oldMode, upperMode);
     }
 
     // ==================== Private Helpers ====================
