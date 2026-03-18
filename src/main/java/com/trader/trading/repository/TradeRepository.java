@@ -480,12 +480,11 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                                             Pageable pageable);
 
     /**
-     * 按訊號來源查詢最近交易明細（真實交易，非模擬）
-     * Chatbot 用：「比特幣飛揚頻道最近交易」
+     * 按訊號來源查詢最近交易明細（含真實交易 + 模擬交易）
+     * Chatbot 用：「比特幣飛揚頻道最近交易」「加密大漂亮頻道最近交易」
      */
     @Query("SELECT t FROM Trade t WHERE t.sourceChannelId = :channelId " +
            "AND (:guildId IS NULL OR t.sourceGuildId = :guildId) " +
-           "AND t.simulated = false " +
            "ORDER BY t.createdAt DESC")
     List<Trade> findRecentTradesBySource(@Param("channelId") String channelId,
                                          @Param("guildId") String guildId,
