@@ -376,7 +376,8 @@ public class MarketDataService {
             }
 
             for (Trade t : trades) {
-                sb.append(String.format("- %s %s %s", t.getSymbol(), t.getSide(), t.getStatus()));
+                String typeTag = t.isSimulated() ? "[模擬]" : "[實單]";
+                sb.append(String.format("- %s %s %s %s", typeTag, t.getSymbol(), t.getSide(), t.getStatus()));
                 if (t.getEntryPrice() != null) {
                     sb.append(String.format(" | 入場：$%.2f", t.getEntryPrice()));
                 }
