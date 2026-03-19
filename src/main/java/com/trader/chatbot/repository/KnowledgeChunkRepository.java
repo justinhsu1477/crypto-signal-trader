@@ -16,7 +16,7 @@ import java.util.List;
  * - 1 - distance = similarity（0~1, 越高越相似）
  */
 @Repository
-public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunk, Long> {
+public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunk, Integer> {
 
     /**
      * 向量語意搜尋 — 找最相似的 N 個 chunks
