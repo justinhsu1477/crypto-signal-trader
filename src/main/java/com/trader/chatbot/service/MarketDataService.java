@@ -24,10 +24,14 @@ import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import com.trader.shared.config.AppConstants;
 
 /**
  * 市場數據服務 — Chatbot 用
@@ -554,5 +558,105 @@ public class MarketDataService {
                 avgPnl >= 0 ? "+" : "", avgPnl));
         sb.append(String.format("- 最大獲利：+%.2f | 最大虧損：%.2f\n", maxWin, maxLoss));
         sb.append(String.format("- Profit Factor：%.2f\n", profitFactor));
+    }
+
+    // ═══════════════════════════════════════
+    //  日期範圍交易查詢
+    // ═══════════════════════════════════════
+
+    /**
+     * 查詢指定日期範圍的所有交易紀錄
+     *
+     * @param dateStr 日期描述（支援：yesterday, today, 7d, 30d, 或 YYYY-MM-DD）
+     * @return 格式化的交易明細
+     */
+    public String getTradesByDate(String dateStr) {
+        try {
+            LocalDate today = LocalDate.now(AppConstants.ZONE_ID);
+            LocalDateTime from;
+            LocalDateTime to;
+            String label;
+
+            switch (dateStr.toLowerCase().trim()) {
+                case "yesterday", "昨天" -> {
+                    LocalDate yesterday = today.minusDays(1);
+                    from = yesterday.atStartOfDay();
+                    to = yesterday.atTime(LocalTime.MAX);
+                    label = yesterday.toString();
+                }
+                case "today", "今天" -> {
+                    from = today.atStartOfDay();
+                    to = today.atTime(LocalTime.MAX);
+                    label = today.toString();
+                }
+                case "7d", "本週" -> {
+                    from = today.minusDays(7).atStartOfDay();
+                    to = today.atTime(LocalTime.MAX);
+                    label = "近 7 天";
+                }
+                case "30d", "本月" -> {
+                    from = today.minusDays(30).atStartOfDay();
+                    to = today.atTime(LocalTime.MAX);
+                    label = "近 30 天";
+                }
+                default -> {
+                    // 嘗試解析 YYYY-MM-DD
+                    try {
+                        LocalDate date = LocalDate.parse(dateStr.trim());
+                        from = date.atStartOfDay();
+                        to = date.atTime(LocalTime.MAX);
+                        label = date.toString();
+                    } catch (Exception e) {
+                        return "無法解析日期「" + dateStr + "」，支援格式：yesterday / today / 7d / 30d / YYYY-MM-DD";
+                    }
+                }
+            }
+
+            List<Trade> trades = tradeRepository.findClosedTradesBetween(from, to);
+
+            if (trades.isEmpty()) {
+                return label + " 沒有已平倉的交易紀錄。";
+            }
+
+            // 聚合統計
+            long winCount = trades.stream().filter(t -> t.getNetProfit() != null && t.getNetProfit() > 0).count();
+            double totalPnl = trades.stream().mapToDouble(t -> t.getNetProfit() != null ? t.getNetProfit() : 0).sum();
+            double winRate = (double) winCount / trades.size() * 100;
+
+            // 按用戶分組
+            Map<String, List<Trade>> byUser = trades.stream()
+                    .collect(Collectors.groupingBy(t -> t.getUserId() != null ? t.getUserId() : "unknown"));
+
+            // 用戶名稱對照
+            Map<String, String> userNames = userRepository.findAll().stream()
+                    .collect(Collectors.toMap(User::getUserId, u -> u.getName() != null ? u.getName() : u.getEmail(), (a, b) -> a));
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("📊 %s 交易紀錄（共 %d 筆）\n", label, trades.size()));
+            sb.append(String.format("勝率：%.0f%%（%d 勝 / %d 負）| 總 PnL：%s%.2f USDT\n\n",
+                    winRate, winCount, trades.size() - winCount,
+                    totalPnl >= 0 ? "+" : "", totalPnl));
+
+            for (var entry : byUser.entrySet()) {
+                String userName = userNames.getOrDefault(entry.getKey(), entry.getKey());
+                List<Trade> userTrades = entry.getValue();
+                double userPnl = userTrades.stream().mapToDouble(t -> t.getNetProfit() != null ? t.getNetProfit() : 0).sum();
+
+                sb.append(String.format("👤 %s（%d 筆 | %s%.2f USDT）\n",
+                        userName, userTrades.size(), userPnl >= 0 ? "+" : "", userPnl));
+
+                for (Trade t : userTrades) {
+                    String pnl = t.getNetProfit() != null ? String.format("%s%.2f", t.getNetProfit() >= 0 ? "+" : "", t.getNetProfit()) : "N/A";
+                    sb.append(String.format("  - %s %s | PnL: %s USDT\n",
+                            t.getSymbol(), t.getSide() != null ? t.getSide() : "", pnl));
+                }
+                sb.append("\n");
+            }
+
+            return sb.toString();
+        } catch (Exception e) {
+            log.error("查詢日期交易失敗: {}", e.getMessage(), e);
+            return "查詢失敗：" + e.getMessage();
+        }
     }
 }
