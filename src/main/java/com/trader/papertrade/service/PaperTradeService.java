@@ -108,27 +108,30 @@ public class PaperTradeService {
      */
     @Transactional
     public Optional<Trade> closePaperTrade(String symbol, String channelId, double exitPrice, String exitReason) {
-        Optional<Trade> opt = tradeRepository.findOpenSimulatedTrade(symbol, channelId);
-        if (opt.isEmpty()) {
+        List<Trade> openTrades = tradeRepository.findOpenSimulatedTrades(symbol, channelId);
+        if (openTrades.isEmpty()) {
             log.debug("找不到模擬持倉: {} channelId={}", symbol, channelId);
             return Optional.empty();
         }
 
-        Trade trade = opt.get();
-        trade.setExitPrice(exitPrice);
-        trade.setExitQuantity(trade.getEntryQuantity());
-        trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
-        trade.setExitOrderId("PAPER");
-        trade.setExitReason(exitReason);
-        trade.setStatus("CLOSED");
+        // 平倉所有同 symbol + channelId 的 OPEN 模擬交易
+        Trade firstTrade = null;
+        for (Trade trade : openTrades) {
+            trade.setExitPrice(exitPrice);
+            trade.setExitQuantity(trade.getEntryQuantity());
+            trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
+            trade.setExitOrderId("PAPER");
+            trade.setExitReason(exitReason);
+            trade.setStatus("CLOSED");
+            calculateProfit(trade);
+            if (firstTrade == null) firstTrade = trade;
+        }
 
-        // PnL 計算（與 TradeRecordService.calculateProfit 同公式）
-        calculateProfit(trade);
-
-        tradeRepository.save(trade);
-        log.info("模擬交易已平倉: tradeId={} {} exitPrice={} exitReason={} netProfit={}",
-                trade.getTradeId(), symbol, exitPrice, exitReason, trade.getNetProfit());
-        return Optional.of(trade);
+        tradeRepository.saveAll(openTrades);
+        log.info("模擬交易已平倉: {} {} 共 {} 筆 exitPrice={} exitReason={} 首筆netProfit={}",
+                symbol, channelId, openTrades.size(), exitPrice, exitReason,
+                firstTrade != null ? firstTrade.getNetProfit() : "N/A");
+        return Optional.of(firstTrade);
     }
 
     /**
@@ -136,28 +139,27 @@ public class PaperTradeService {
      */
     @Transactional
     public Optional<Trade> movePaperStopLoss(String symbol, String channelId, Double newSl, Double newTp) {
-        Optional<Trade> opt = tradeRepository.findOpenSimulatedTrade(symbol, channelId);
-        if (opt.isEmpty()) {
+        List<Trade> openTrades = tradeRepository.findOpenSimulatedTrades(symbol, channelId);
+        if (openTrades.isEmpty()) {
             log.debug("找不到模擬持倉可移動止損: {} channelId={}", symbol, channelId);
             return Optional.empty();
         }
 
-        Trade trade = opt.get();
-        if (newSl != null) {
-            trade.setStopLoss(newSl);
-        }
-        if (newTp != null) {
-            try {
-                trade.setTakeProfits(objectMapper.writeValueAsString(
-                        Map.of("targets", List.of(newTp))));
-            } catch (Exception e) {
-                log.warn("止盈序列化失敗: {}", e.getMessage());
+        // 更新所有同 symbol + channelId 的 OPEN 模擬交易
+        for (Trade t : openTrades) {
+            if (newSl != null) t.setStopLoss(newSl);
+            if (newTp != null) {
+                try {
+                    String tpJson = objectMapper.writeValueAsString(Map.of("targets", List.of(newTp)));
+                    t.setTakeProfits(tpJson);
+                } catch (Exception ignored) {}
             }
         }
+        tradeRepository.saveAll(openTrades);
 
-        tradeRepository.save(trade);
-        log.info("模擬持倉止損已更新: tradeId={} {} newSL={} newTP={}",
-                trade.getTradeId(), symbol, newSl, newTp);
+        Trade trade = openTrades.get(0);
+        log.info("模擬持倉止損已更新: {} 共 {} 筆 newSL={} newTP={}",
+                symbol, openTrades.size(), newSl, newTp);
         return Optional.of(trade);
     }
 

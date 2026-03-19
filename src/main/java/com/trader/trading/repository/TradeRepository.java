@@ -458,12 +458,12 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     List<Trade> findAllOpenSimulatedTrades();
 
     /**
-     * 查找特定幣種 + 頻道的 OPEN 模擬交易
+     * 查找特定幣種 + 頻道的所有 OPEN 模擬交易（可能多筆）
      */
     @Query("SELECT t FROM Trade t WHERE t.simulated = true AND t.status = 'OPEN' " +
-           "AND t.symbol = :symbol AND t.sourceChannelId = :channelId")
-    Optional<Trade> findOpenSimulatedTrade(@Param("symbol") String symbol,
-                                           @Param("channelId") String channelId);
+           "AND t.symbol = :symbol AND t.sourceChannelId = :channelId ORDER BY t.createdAt DESC")
+    List<Trade> findOpenSimulatedTrades(@Param("symbol") String symbol,
+                                        @Param("channelId") String channelId);
 
     /**
      * 按訊號來源查詢模擬交易明細（分頁，依建立時間倒序）
