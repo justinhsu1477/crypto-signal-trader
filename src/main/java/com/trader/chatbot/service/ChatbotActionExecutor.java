@@ -160,6 +160,12 @@ public class ChatbotActionExecutor {
                 )
         ));
 
+        declarations.add(buildFunction(
+                "get_trades_by_date",
+                "查詢指定日期範圍的所有會員交易紀錄，包含每位用戶的交易明細和損益統計。管理員問到「昨天交易」「今天成交」「給我某天的資料」「本週交易」時呼叫。",
+                Map.of("date", Map.of("type", "STRING", "description", "日期描述：yesterday（昨天）、today（今天）、7d（近7天）、30d（近30天）、或 YYYY-MM-DD 格式"))
+        ));
+
         tools.add("function_declarations", declarations);
         return tools;
     }
@@ -212,6 +218,13 @@ public class ChatbotActionExecutor {
                     String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
                     String tradeMode = args.has("trade_mode") ? args.get("trade_mode").getAsString() : "";
                     yield marketDataService.updateSourceTradeMode(sourceName, tradeMode);
+                }
+                case "get_trades_by_date" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
+                    String date = args.has("date") ? args.get("date").getAsString() : "today";
+                    yield marketDataService.getTradesByDate(date);
                 }
                 default -> {
                     log.warn("Chatbot 收到未知 function: {} userId={}", functionName, userId);

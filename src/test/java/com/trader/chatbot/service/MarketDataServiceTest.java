@@ -615,4 +615,64 @@ class MarketDataServiceTest {
             assertThat(result).contains("已是 SHADOW");
         }
     }
+
+    @Nested
+    @DisplayName("日期範圍交易查詢")
+    class TradesByDateTests {
+
+        @Test
+        @DisplayName("查詢昨天交易 — 有資料回傳明細")
+        void getTradesByDate_yesterday_withTrades() {
+            Trade trade = Trade.builder()
+                    .userId("u1").symbol("BTCUSDT").side("LONG").netProfit(100.0).build();
+            User user = User.builder().userId("u1").name("TestUser").build();
+
+            when(tradeRepository.findClosedTradesBetween(any(), any())).thenReturn(List.of(trade));
+            when(userRepository.findAll()).thenReturn(List.of(user));
+
+            String result = service.getTradesByDate("yesterday");
+
+            assertThat(result).contains("交易紀錄");
+            assertThat(result).contains("BTCUSDT");
+            assertThat(result).contains("TestUser");
+        }
+
+        @Test
+        @DisplayName("查詢今天交易 — 無資料")
+        void getTradesByDate_today_noTrades() {
+            when(tradeRepository.findClosedTradesBetween(any(), any())).thenReturn(Collections.emptyList());
+
+            String result = service.getTradesByDate("today");
+
+            assertThat(result).contains("沒有已平倉的交易");
+        }
+
+        @Test
+        @DisplayName("查詢 7d — 回傳近 7 天")
+        void getTradesByDate_7d() {
+            when(tradeRepository.findClosedTradesBetween(any(), any())).thenReturn(Collections.emptyList());
+
+            String result = service.getTradesByDate("7d");
+
+            assertThat(result).contains("近 7 天");
+        }
+
+        @Test
+        @DisplayName("無效日期格式 — 回傳錯誤訊息")
+        void getTradesByDate_invalidFormat() {
+            String result = service.getTradesByDate("abc123");
+
+            assertThat(result).contains("無法解析日期");
+        }
+
+        @Test
+        @DisplayName("YYYY-MM-DD 格式 — 正常查詢")
+        void getTradesByDate_isoFormat() {
+            when(tradeRepository.findClosedTradesBetween(any(), any())).thenReturn(Collections.emptyList());
+
+            String result = service.getTradesByDate("2026-03-18");
+
+            assertThat(result).contains("2026-03-18");
+        }
+    }
 }
