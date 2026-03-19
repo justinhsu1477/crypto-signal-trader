@@ -9,6 +9,7 @@ import com.trader.trading.entity.Trade;
 import com.trader.trading.repository.TradeRepository;
 import org.junit.jupiter.api.*;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -146,8 +147,8 @@ class PaperTradeServiceTest {
                 .simulated(true)
                 .build();
 
-        when(tradeRepository.findOpenSimulatedTrade("BTCUSDT", "ch1"))
-                .thenReturn(Optional.of(openTrade));
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch1"))
+                .thenReturn(List.of(openTrade));
         when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Optional<Trade> result = service.closePaperTrade("BTCUSDT", "ch1", 52000.0, "TAKE_PROFIT");
@@ -184,8 +185,8 @@ class PaperTradeServiceTest {
                 .simulated(true)
                 .build();
 
-        when(tradeRepository.findOpenSimulatedTrade("ETHUSDT", "ch2"))
-                .thenReturn(Optional.of(openTrade));
+        when(tradeRepository.findOpenSimulatedTrades("ETHUSDT", "ch2"))
+                .thenReturn(List.of(openTrade));
         when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Optional<Trade> result = service.closePaperTrade("ETHUSDT", "ch2", 3300.0, "STOP_LOSS");
@@ -201,13 +202,13 @@ class PaperTradeServiceTest {
     @Test
     @DisplayName("找不到模擬持倉時返回 empty")
     void closePaperTrade_notFound_returnsEmpty() {
-        when(tradeRepository.findOpenSimulatedTrade("BTCUSDT", "ch1"))
-                .thenReturn(Optional.empty());
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch1"))
+                .thenReturn(List.of());
 
         Optional<Trade> result = service.closePaperTrade("BTCUSDT", "ch1", 52000.0, "SIGNAL_CLOSE");
 
         assertThat(result).isEmpty();
-        verify(tradeRepository, never()).save(any());
+        verify(tradeRepository, never()).saveAll(any());
     }
 
     // ==================== movePaperStopLoss ====================
@@ -224,8 +225,8 @@ class PaperTradeServiceTest {
                 .simulated(true)
                 .build();
 
-        when(tradeRepository.findOpenSimulatedTrade("BTCUSDT", "ch1"))
-                .thenReturn(Optional.of(openTrade));
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch1"))
+                .thenReturn(List.of(openTrade));
         when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Optional<Trade> result = service.movePaperStopLoss("BTCUSDT", "ch1", 50500.0, 55000.0);
@@ -234,7 +235,7 @@ class PaperTradeServiceTest {
         Trade updated = result.get();
         assertThat(updated.getStopLoss()).isEqualTo(50500.0);
         assertThat(updated.getTakeProfits()).contains("55000");
-        verify(tradeRepository).save(any(Trade.class));
+        verify(tradeRepository).saveAll(any());
     }
 
     @Test
@@ -250,8 +251,8 @@ class PaperTradeServiceTest {
                 .simulated(true)
                 .build();
 
-        when(tradeRepository.findOpenSimulatedTrade("BTCUSDT", "ch1"))
-                .thenReturn(Optional.of(openTrade));
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch1"))
+                .thenReturn(List.of(openTrade));
         when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Optional<Trade> result = service.movePaperStopLoss("BTCUSDT", "ch1", 50500.0, null);
@@ -265,12 +266,12 @@ class PaperTradeServiceTest {
     @Test
     @DisplayName("移動止損 — 找不到持倉返回 empty")
     void movePaperStopLoss_notFound_returnsEmpty() {
-        when(tradeRepository.findOpenSimulatedTrade("BTCUSDT", "ch1"))
-                .thenReturn(Optional.empty());
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch1"))
+                .thenReturn(List.of());
 
         Optional<Trade> result = service.movePaperStopLoss("BTCUSDT", "ch1", 50500.0, null);
 
         assertThat(result).isEmpty();
-        verify(tradeRepository, never()).save(any());
+        verify(tradeRepository, never()).saveAll(any());
     }
 }
