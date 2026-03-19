@@ -50,8 +50,9 @@ public class KnowledgeChunk {
     @Column(columnDefinition = "vector(768)")
     private String embedding;
 
-    @Column(columnDefinition = "JSONB DEFAULT '{}'")
-    private String metadata;
+    @Column(columnDefinition = "JSONB")
+    @Builder.Default
+    private String metadata = "{}";
 
     @Builder.Default
     @Column(nullable = false)
