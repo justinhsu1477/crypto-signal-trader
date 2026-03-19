@@ -569,6 +569,117 @@ public class GeminiService {
         return gson.toJson(body);
     }
 
+    // ═══════════════════════════════════════
+    //  Embedding API（RAG 向量知識庫用）
+    // ═══════════════════════════════════════
+
+    private static final String EMBEDDING_MODEL = "text-embedding-004";
+
+    /**
+     * 呼叫 Gemini Embedding API，將文字轉為 768 維向量
+     *
+     * @param text 要轉換的文字
+     * @return 向量陣列（768 維），失敗時回傳 empty
+     */
+    public Optional<float[]> getEmbedding(String text) {
+        String apiKey = advisorConfig.getGeminiApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Gemini API Key 未設定，無法生成 embedding");
+            return Optional.empty();
+        }
+
+        String url = GEMINI_API_BASE + EMBEDDING_MODEL + ":embedContent?key=" + apiKey;
+
+        JsonObject requestBody = new JsonObject();
+        JsonObject model = new JsonObject();
+        model.addProperty("model", "models/" + EMBEDDING_MODEL);
+        requestBody.add("model", model);
+
+        JsonObject content = new JsonObject();
+        JsonArray parts = new JsonArray();
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("text", text);
+        parts.add(textPart);
+        content.add("parts", parts);
+        requestBody.add("content", content);
+
+        Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(gson.toJson(requestBody), JSON_MEDIA))
+                .build();
+
+        try (Response response = aiHttpClient.newCall(request).execute()) {
+            String body = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                log.warn("Gemini Embedding API 回應異常: HTTP {} - {}", response.code(), body);
+                return Optional.empty();
+            }
+
+            return parseEmbeddingResponse(body);
+        } catch (IOException e) {
+            log.warn("Gemini Embedding API 呼叫失敗: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 批次生成 embedding（避免逐筆呼叫 API）
+     */
+    public Optional<List<float[]>> getBatchEmbeddings(List<String> texts) {
+        List<float[]> results = new java.util.ArrayList<>();
+        for (String text : texts) {
+            Optional<float[]> embedding = getEmbedding(text);
+            if (embedding.isEmpty()) {
+                log.warn("批次 embedding 中有失敗項: text={}", text.substring(0, Math.min(50, text.length())));
+                return Optional.empty();
+            }
+            results.add(embedding.get());
+        }
+        return Optional.of(results);
+    }
+
+    /**
+     * 將 float[] 向量轉為 pgvector 格式字串 "[0.1, 0.2, ...]"
+     */
+    public static String vectorToString(float[] vector) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < vector.length; i++) {
+            if (i > 0) sb.append(",");
+            sb.append(vector[i]);
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private Optional<float[]> parseEmbeddingResponse(String responseBody) {
+        try {
+            JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+            JsonObject embeddingObj = json.getAsJsonObject("embedding");
+            if (embeddingObj == null) {
+                log.warn("Embedding 回覆無 embedding 欄位");
+                return Optional.empty();
+            }
+
+            JsonArray values = embeddingObj.getAsJsonArray("values");
+            if (values == null || values.isEmpty()) {
+                log.warn("Embedding 回覆無 values");
+                return Optional.empty();
+            }
+
+            float[] vector = new float[values.size()];
+            for (int i = 0; i < values.size(); i++) {
+                vector[i] = values.get(i).getAsFloat();
+            }
+
+            log.debug("Embedding 生成成功: 維度={}", vector.length);
+            return Optional.of(vector);
+        } catch (Exception e) {
+            log.warn("解析 Embedding 回覆失敗: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     /**
      * 解析 Gemini API 回覆
      * 路徑: candidates[0].content.parts[0].text

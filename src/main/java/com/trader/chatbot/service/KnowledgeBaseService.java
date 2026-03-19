@@ -1,6 +1,9 @@
 package com.trader.chatbot.service;
 
+import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.dto.KnowledgeSection;
+import com.trader.chatbot.entity.KnowledgeChunk;
+import com.trader.chatbot.repository.KnowledgeChunkRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -13,16 +16,21 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * FAQ 知識庫服務
+ * FAQ 知識庫服務（混合搜尋策略）
+ *
+ * 搜尋優先順序：
+ * 1. 向量語意搜尋（pgvector）— 語意匹配，用戶換說法也能找到
+ * 2. Keyword tag matching — 零延遲 fallback，embedding 不可用時退而求其次
  *
  * 啟動時載入 knowledge_base.md，解析為段落列表。
- * 根據用戶訊息中的關鍵字匹配相關段落，注入 LLM context。
+ * 向量索引由 KnowledgeIndexService 管理。
  */
 @Slf4j
 @Service
@@ -30,8 +38,17 @@ public class KnowledgeBaseService {
 
     private static final String KNOWLEDGE_BASE_PATH = "knowledge_base.md";
     private static final Pattern TAG_PATTERN = Pattern.compile("<!--\\s*tags:\\s*(.+?)\\s*-->");
+    private static final double SIMILARITY_THRESHOLD = 0.5;  // cosine distance 門檻（越小越嚴格）
+
+    private final KnowledgeChunkRepository chunkRepository;
+    private final GeminiService geminiService;
 
     private List<KnowledgeSection> sections = Collections.emptyList();
+
+    public KnowledgeBaseService(KnowledgeChunkRepository chunkRepository, GeminiService geminiService) {
+        this.chunkRepository = chunkRepository;
+        this.geminiService = geminiService;
+    }
 
     @PostConstruct
     void loadKnowledgeBase() {
@@ -51,20 +68,68 @@ public class KnowledgeBaseService {
     }
 
     /**
-     * 根據用戶訊息找出相關的知識段落
+     * 根據用戶訊息找出相關的知識段落（混合搜尋）
+     *
+     * 策略：向量語意搜尋優先 → keyword fallback
      *
      * @param message     用戶訊息
      * @param maxSections 最多回傳段落數
-     * @return 匹配的段落列表（按匹配數排序）
+     * @return 匹配的段落列表
      */
     public List<KnowledgeSection> findRelevantSections(String message, int maxSections) {
+        if (message == null || message.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        // 1. 嘗試向量語意搜尋
+        List<KnowledgeSection> vectorResults = findByVectorSearch(message, maxSections);
+        if (!vectorResults.isEmpty()) {
+            log.debug("知識庫搜尋：向量匹配 {} 段", vectorResults.size());
+            return vectorResults;
+        }
+
+        // 2. Fallback: keyword tag matching
+        log.debug("知識庫搜尋：向量無結果，fallback 到 keyword matching");
+        return findByKeywordMatching(message, maxSections);
+    }
+
+    /**
+     * 向量語意搜尋（pgvector）
+     */
+    private List<KnowledgeSection> findByVectorSearch(String message, int maxSections) {
+        try {
+            Optional<float[]> embedding = geminiService.getEmbedding(message);
+            if (embedding.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            String queryVector = GeminiService.vectorToString(embedding.get());
+            List<KnowledgeChunk> chunks = chunkRepository.findTopKBySimilarityWithThreshold(
+                    queryVector, maxSections, SIMILARITY_THRESHOLD);
+
+            return chunks.stream()
+                    .map(c -> KnowledgeSection.builder()
+                            .title(c.getTitle())
+                            .tags(Collections.emptySet())
+                            .content(c.getContent())
+                            .build())
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("向量搜尋失敗（fallback 到 keyword）: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Keyword tag matching（零延遲 fallback）
+     */
+    List<KnowledgeSection> findByKeywordMatching(String message, int maxSections) {
         if (message == null || message.isBlank() || sections.isEmpty()) {
             return Collections.emptyList();
         }
 
         String lower = message.toLowerCase();
 
-        // 計算每段的匹配分數（匹配到的 tag 數量）
         List<ScoredSection> scored = new ArrayList<>();
         for (KnowledgeSection section : sections) {
             int score = 0;
@@ -78,7 +143,6 @@ public class KnowledgeBaseService {
             }
         }
 
-        // 按分數降序排列
         scored.sort((a, b) -> Integer.compare(b.score, a.score));
 
         return scored.stream()
@@ -134,6 +198,13 @@ public class KnowledgeBaseService {
     }
 
     List<KnowledgeSection> getSections() {
+        return Collections.unmodifiableList(sections);
+    }
+
+    /**
+     * 取得所有已載入的 FAQ 段落（KnowledgeIndexService 同步用）
+     */
+    public List<KnowledgeSection> getAllSections() {
         return Collections.unmodifiableList(sections);
     }
 
