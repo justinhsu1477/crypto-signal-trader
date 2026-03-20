@@ -18,16 +18,18 @@ public class MartingaleSession {
     private final String symbol;
     private final TradeSignal.Side side;
     private final int plannedLayers;
+    private final double baseEntryPrice;
     private final AtomicInteger filledLayers = new AtomicInteger(0);
     private final AtomicReference<Status> status = new AtomicReference<>(Status.ACTIVE);
     private final Instant createdAt;
     private volatile Instant updatedAt;
 
-    public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers) {
+    public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
         this.sessionId = sessionId;
         this.symbol = symbol;
         this.side = side;
         this.plannedLayers = plannedLayers;
+        this.baseEntryPrice = baseEntryPrice;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -46,6 +48,10 @@ public class MartingaleSession {
 
     public int getPlannedLayers() {
         return plannedLayers;
+    }
+
+    public double getBaseEntryPrice() {
+        return baseEntryPrice;
     }
 
     public int getFilledLayers() {

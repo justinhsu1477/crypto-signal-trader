@@ -167,7 +167,8 @@ class MartingaleStrategyTest {
                 MAX_POSITION_USDT,
                 0.15,
                 30,
-                60000
+                60000,
+                5000
         );
 
         return new MartingaleStrategy(
