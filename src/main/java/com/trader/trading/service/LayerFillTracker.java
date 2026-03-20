@@ -43,15 +43,16 @@ public class LayerFillTracker {
         recordFill(symbol, order.getLayer(), filledQty, avgPrice);
     }
 
-    public void recordFillByOrderId(String orderId, double filledQty, double avgPrice) {
+    public boolean recordFillByOrderId(String orderId, double filledQty, double avgPrice) {
         if (orderId == null || filledQty <= 0 || avgPrice <= 0) {
-            return;
+            return false;
         }
         OrderRef ref = orderRefs.get(orderId);
         if (ref == null) {
-            return;
+            return false;
         }
         recordFill(ref.symbol, ref.layer, filledQty, avgPrice);
+        return true;
     }
 
     public double getFilledQty(String symbol, Integer layer) {

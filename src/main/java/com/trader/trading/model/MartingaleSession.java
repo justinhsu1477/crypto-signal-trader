@@ -23,6 +23,7 @@ public class MartingaleSession {
     private final AtomicReference<Status> status = new AtomicReference<>(Status.ACTIVE);
     private final Instant createdAt;
     private volatile Instant updatedAt;
+    private volatile String currentTpOrderId;
 
     public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
         this.sessionId = sessionId;
@@ -68,6 +69,15 @@ public class MartingaleSession {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getCurrentTpOrderId() {
+        return currentTpOrderId;
+    }
+
+    public void setCurrentTpOrderId(String currentTpOrderId) {
+        this.currentTpOrderId = currentTpOrderId;
+        touch();
     }
 
     public void markFilledLayer() {

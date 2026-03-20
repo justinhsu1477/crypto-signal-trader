@@ -8,14 +8,17 @@ import org.springframework.stereotype.Component;
 /**
  * Martingale 專用的 User Data Stream 旁路監聽器
  * 僅處理 ORDER_TRADE_UPDATE 的實際成交事件。
+ * ENTRY 層成交後觸發 TP 動態更新。
  */
 @Component
 public class MartingaleFillListener implements UserDataEventObserver {
 
     private final LayerFillTracker layerFillTracker;
+    private final MartingaleTpManager tpManager;
 
-    public MartingaleFillListener(LayerFillTracker layerFillTracker) {
+    public MartingaleFillListener(LayerFillTracker layerFillTracker, MartingaleTpManager tpManager) {
         this.layerFillTracker = layerFillTracker;
+        this.tpManager = tpManager;
     }
 
     @Override
@@ -45,11 +48,20 @@ public class MartingaleFillListener implements UserDataEventObserver {
             return;
         }
 
-        layerFillTracker.recordFillByOrderId(orderId, lastQty, lastPrice);
+        // 只有已註冊的 ENTRY 單才會在 orderRefs 中，recordFillByOrderId 對未註冊的 orderId 直接跳過
+        boolean recorded = layerFillTracker.recordFillByOrderId(orderId, lastQty, lastPrice);
 
         String status = order.has("X") ? order.get("X").getAsString() : "";
         if ("FILLED".equals(status) || "CANCELED".equals(status) || "EXPIRED".equals(status) || "REJECTED".equals(status)) {
             layerFillTracker.clearOrder(orderId);
+        }
+
+        // ENTRY 層有新成交 → 觸發 TP 動態更新
+        if (recorded) {
+            String symbol = order.has("s") ? order.get("s").getAsString() : null;
+            if (symbol != null) {
+                tpManager.updateTakeProfit(symbol);
+            }
         }
     }
 }
