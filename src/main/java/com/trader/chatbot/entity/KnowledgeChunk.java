@@ -47,7 +47,7 @@ public class KnowledgeChunk {
      * pgvector 的 vector(768) 在 JPA 中以 String 形式存取
      * 格式：[0.1, 0.2, 0.3, ...]
      */
-    @Column(columnDefinition = "vector(768)")
+    @Column(columnDefinition = "vector(768)", insertable = false, updatable = false)
     private String embedding;
 
     @Column(columnDefinition = "JSONB")
