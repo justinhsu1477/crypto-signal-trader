@@ -574,6 +574,7 @@ public class GeminiService {
     // ═══════════════════════════════════════
 
     private static final String EMBEDDING_MODEL = "text-embedding-004";
+    private static final String EMBEDDING_API_BASE = "https://generativelanguage.googleapis.com/v1/models/";
 
     /**
      * 呼叫 Gemini Embedding API，將文字轉為 768 維向量
@@ -588,7 +589,7 @@ public class GeminiService {
             return Optional.empty();
         }
 
-        String url = GEMINI_API_BASE + EMBEDDING_MODEL + ":embedContent?key=" + apiKey;
+        String url = EMBEDDING_API_BASE + EMBEDDING_MODEL + ":embedContent?key=" + apiKey;
 
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("model", "models/" + EMBEDDING_MODEL);
