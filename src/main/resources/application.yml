@@ -11,6 +11,18 @@ multi-user:
 trading:
   user-id: ${TRADING_USER_ID:system-trader}  # 單用戶模式的用戶 ID
                                               # SingleUserInitializer 啟動時自動建立此用戶
+  strategy:
+    martingale:
+      max-layers: ${MARTINGALE_MAX_LAYERS:5}
+      step-percent: ${MARTINGALE_STEP_PERCENT:0.02}
+      base-size: ${MARTINGALE_BASE_SIZE:100}
+      size-multiplier: ${MARTINGALE_SIZE_MULTIPLIER:2.0}
+      take-profit-percent: ${MARTINGALE_TAKE_PROFIT_PERCENT:0.01}
+      max-capital-usage: ${MARTINGALE_MAX_CAPITAL_USAGE:0.30}
+      max-position-size: ${MARTINGALE_MAX_POSITION_SIZE:10000}
+      stop-loss-percent: ${MARTINGALE_STOP_LOSS_PERCENT:0.15}
+      session-idle-timeout-minutes: ${MARTINGALE_SESSION_IDLE_TIMEOUT_MINUTES:30}
+      session-cleanup-interval-millis: ${MARTINGALE_SESSION_CLEANUP_INTERVAL_MILLIS:60000}
 
 server:
   port: ${SERVER_PORT:8080}
