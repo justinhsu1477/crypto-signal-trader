@@ -70,6 +70,20 @@ public class BinanceFuturesService {
      */
     private static final ThreadLocal<BinanceKeys> CURRENT_USER_KEYS = new ThreadLocal<>();
 
+    // ==================== 監控查詢快取 ====================
+    // 30 秒本地快取，減少定期排程的 API weight（交易路徑不走快取）
+    private static final long CACHE_TTL_MS = 30_000;
+
+    private record CacheEntry(String data, long timestamp) {
+        boolean isExpired() {
+            return System.currentTimeMillis() - timestamp > CACHE_TTL_MS;
+        }
+    }
+
+    // key = apiKeyHash + ":" + endpoint
+    private final java.util.concurrent.ConcurrentHashMap<String, CacheEntry> readCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     // 下單重試配置（Market / Limit / SL / TP 共用）
     private static final int ORDER_MAX_RETRIES = 2;
     private static final long[] ORDER_RETRY_DELAYS_MS = {1000, 3000};
@@ -165,9 +179,40 @@ public class BinanceFuturesService {
 
     // ==================== 帳戶相關 ====================
 
+    /**
+     * 取得快取 key：用 API Key 前 8 碼 hash + endpoint 區分不同用戶/查詢
+     */
+    private String cacheKey(String endpoint) {
+        String apiKey = getActiveApiKey();
+        String keyHash = apiKey.length() >= 8 ? apiKey.substring(0, 8) : apiKey;
+        return keyHash + ":" + endpoint;
+    }
+
+    /**
+     * 帶快取的讀取（30 秒 TTL）— 供監控排程使用，減少 API weight
+     */
+    private String getCachedOrFetch(String endpoint, java.util.function.Supplier<String> fetcher) {
+        String key = cacheKey(endpoint);
+        CacheEntry cached = readCache.get(key);
+        if (cached != null && !cached.isExpired()) {
+            log.debug("Binance 快取命中: {}", endpoint);
+            return cached.data();
+        }
+        String result = fetcher.get();
+        readCache.put(key, new CacheEntry(result, System.currentTimeMillis()));
+        return result;
+    }
+
     public String getAccountBalance() {
         String endpoint = "/fapi/v2/balance";
         return sendSignedGet(endpoint, Map.of());
+    }
+
+    /**
+     * 帶快取的帳戶餘額查詢 — 監控排程專用
+     */
+    public String getAccountBalanceCached() {
+        return getCachedOrFetch("/fapi/v2/balance", this::getAccountBalance);
     }
 
     /**
@@ -199,6 +244,13 @@ public class BinanceFuturesService {
     public String getPositions() {
         String endpoint = "/fapi/v2/positionRisk";
         return sendSignedGet(endpoint, Map.of());
+    }
+
+    /**
+     * 帶快取的持倉查詢 — 監控排程專用
+     */
+    public String getPositionsCached() {
+        return getCachedOrFetch("/fapi/v2/positionRisk", this::getPositions);
     }
 
     @Cacheable(EXCHANGE_INFO)
@@ -238,7 +290,17 @@ public class BinanceFuturesService {
      * API weight: 5（同 getPositions）
      */
     public Map<String, Double> getAllPositionAmounts() {
-        String response = getPositions();
+        return parsePositionAmounts(getPositions());
+    }
+
+    /**
+     * 帶快取的批量持倉查詢 — 監控排程專用
+     */
+    public Map<String, Double> getAllPositionAmountsCached() {
+        return parsePositionAmounts(getPositionsCached());
+    }
+
+    private Map<String, Double> parsePositionAmounts(String response) {
         Map<String, Double> result = new HashMap<>();
         JsonArray positions = gson.fromJson(response, JsonArray.class);
         for (JsonElement elem : positions) {
