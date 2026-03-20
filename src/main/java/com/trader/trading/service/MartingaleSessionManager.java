@@ -25,8 +25,8 @@ public class MartingaleSessionManager {
         return Optional.of(session);
     }
 
-    public MartingaleSession startSession(String symbol, TradeSignal.Side side, int plannedLayers) {
-        MartingaleSession newSession = new MartingaleSession(UUID.randomUUID().toString(), symbol, side, plannedLayers);
+    public MartingaleSession startSession(String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
+        MartingaleSession newSession = new MartingaleSession(UUID.randomUUID().toString(), symbol, side, plannedLayers, baseEntryPrice);
         MartingaleSession existing = sessions.putIfAbsent(symbol, newSession);
         return existing != null ? existing : newSession;
     }

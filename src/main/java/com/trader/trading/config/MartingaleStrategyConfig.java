@@ -18,6 +18,7 @@ public class MartingaleStrategyConfig {
     private final double stopLossPercent;
     private final int sessionIdleTimeoutMinutes;
     private final long sessionCleanupIntervalMillis;
+    private final long stopLossCheckIntervalMillis;
 
     public MartingaleStrategyConfig(
             @DefaultValue("5") int maxLayers,
@@ -29,7 +30,8 @@ public class MartingaleStrategyConfig {
             @DefaultValue("10000") double maxPositionSize,
             @DefaultValue("0.15") double stopLossPercent,
             @DefaultValue("30") int sessionIdleTimeoutMinutes,
-            @DefaultValue("60000") long sessionCleanupIntervalMillis
+            @DefaultValue("60000") long sessionCleanupIntervalMillis,
+            @DefaultValue("5000") long stopLossCheckIntervalMillis
     ) {
         this.maxLayers = maxLayers;
         this.stepPercent = stepPercent;
@@ -41,5 +43,6 @@ public class MartingaleStrategyConfig {
         this.stopLossPercent = stopLossPercent;
         this.sessionIdleTimeoutMinutes = sessionIdleTimeoutMinutes;
         this.sessionCleanupIntervalMillis = sessionCleanupIntervalMillis;
+        this.stopLossCheckIntervalMillis = stopLossCheckIntervalMillis;
     }
 }

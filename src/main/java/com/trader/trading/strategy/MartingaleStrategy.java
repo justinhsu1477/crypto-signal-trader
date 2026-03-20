@@ -174,7 +174,7 @@ public class MartingaleStrategy implements TradingStrategy {
         // 4) Generate actual orders only up to allowedLayers.
         //    - Compute weighted average entry price
         //    - Place a TAKE_PROFIT at averagePrice * (1 + TAKE_PROFIT_PERCENT)
-        sessionManager.startSession(signal.getSymbol(), side, allowedLayers);
+        sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
 
         var filled = layerFillTracker.getAggregatedFill(signal.getSymbol());
         double filledQty = filled.totalQty();
