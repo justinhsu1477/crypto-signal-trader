@@ -2,9 +2,11 @@ package com.trader.chatbot.repository;
 
 import com.trader.chatbot.entity.KnowledgeChunk;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -50,6 +52,16 @@ public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunk, 
     List<KnowledgeChunk> findTopKBySimilarityWithThreshold(@Param("query") String queryEmbedding,
                                                             @Param("topK") int topK,
                                                             @Param("maxDistance") double maxDistance);
+
+    /**
+     * 原生 SQL 更新 embedding — 繞過 Hibernate varchar→vector 型別不匹配
+     * 使用 CAST(:embedding AS vector) 確保 PostgreSQL 正確接收 vector 型別
+     */
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE knowledge_chunks SET embedding = CAST(:embedding AS vector) WHERE id = :id",
+            nativeQuery = true)
+    void updateEmbedding(@Param("id") Integer id, @Param("embedding") String embedding);
 
     List<KnowledgeChunk> findByEnabledTrue();
 

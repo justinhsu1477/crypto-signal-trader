@@ -101,8 +101,8 @@ public class KnowledgeIndexService {
                 Optional<float[]> embedding = geminiService.getEmbedding(textForEmbedding);
 
                 if (embedding.isPresent()) {
-                    chunk.setEmbedding(GeminiService.vectorToString(embedding.get()));
-                    chunkRepository.save(chunk);
+                    String vectorStr = GeminiService.vectorToString(embedding.get());
+                    chunkRepository.updateEmbedding(chunk.getId(), vectorStr);
                     successCount++;
                     log.info("Embedding 生成成功: {} ({}維)", chunk.getTitle(), embedding.get().length);
                 } else {
@@ -129,10 +129,7 @@ public class KnowledgeIndexService {
      */
     public String rebuildAllEmbeddings() {
         List<KnowledgeChunk> allChunks = chunkRepository.findByEnabledTrue();
-        allChunks.forEach(c -> {
-            c.setEmbedding(null);
-            chunkRepository.save(c);
-        });
+        allChunks.forEach(c -> chunkRepository.updateEmbedding(c.getId(), null));
 
         int synced = syncFromMarkdown();
         int embedded = generateMissingEmbeddings();
@@ -153,12 +150,12 @@ public class KnowledgeIndexService {
                 .build();
         chunkRepository.save(chunk);
 
-        // 非同步生成 embedding
+        // 非同步生成 embedding（使用 native SQL 繞過 Hibernate vector 型別問題）
         try {
             String textForEmbedding = title + "\n" + content;
             geminiService.getEmbedding(textForEmbedding).ifPresent(vec -> {
-                chunk.setEmbedding(GeminiService.vectorToString(vec));
-                chunkRepository.save(chunk);
+                String vectorStr = GeminiService.vectorToString(vec);
+                chunkRepository.updateEmbedding(chunk.getId(), vectorStr);
                 log.info("新增知識 embedding 完成: {}", title);
             });
         } catch (Exception e) {
