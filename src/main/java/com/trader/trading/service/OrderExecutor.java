@@ -86,6 +86,10 @@ public class OrderExecutor {
                             order.getQuantity()
                     );
                     results.add(result);
+                    if (result != null && result.isSuccess() && result.getOrderId() != null) {
+                        sessionManager.getActiveSession(symbol)
+                                .ifPresent(s -> s.setCurrentTpOrderId(result.getOrderId()));
+                    }
                 }
                 case CLOSE -> {
                     binanceFuturesService.cancelAllOrders(symbol);
