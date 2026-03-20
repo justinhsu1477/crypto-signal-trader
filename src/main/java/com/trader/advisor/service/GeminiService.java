@@ -591,9 +591,7 @@ public class GeminiService {
         String url = GEMINI_API_BASE + EMBEDDING_MODEL + ":embedContent?key=" + apiKey;
 
         JsonObject requestBody = new JsonObject();
-        JsonObject model = new JsonObject();
-        model.addProperty("model", "models/" + EMBEDDING_MODEL);
-        requestBody.add("model", model);
+        requestBody.addProperty("model", "models/" + EMBEDDING_MODEL);
 
         JsonObject content = new JsonObject();
         JsonArray parts = new JsonArray();
