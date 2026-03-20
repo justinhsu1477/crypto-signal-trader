@@ -54,9 +54,10 @@ class BinanceUserDataStreamReconnectTest {
         when(mockBuilder.build()).thenReturn(mockWsClient);
 
         BinanceFuturesService binanceFuturesService = mock(BinanceFuturesService.class);
+        UserDataEventDispatcher eventDispatcher = mock(UserDataEventDispatcher.class);
         service = new BinanceUserDataStreamService(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
-                new SymbolLockRegistry(), multiUserConfig, multiUserManager, binanceFuturesService);
+                new SymbolLockRegistry(), multiUserConfig, multiUserManager, binanceFuturesService, eventDispatcher);
     }
 
     @AfterEach

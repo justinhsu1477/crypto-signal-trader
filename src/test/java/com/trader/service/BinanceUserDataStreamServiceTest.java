@@ -12,6 +12,7 @@ import com.trader.trading.service.MultiUserDataStreamManager;
 import com.trader.trading.service.OrderEventHandler;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.trading.service.UserDataEventDispatcher;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -58,9 +59,10 @@ class BinanceUserDataStreamServiceTest {
         when(mockBuilder.pingInterval(anyLong(), any())).thenReturn(mockBuilder);
         when(mockBuilder.build()).thenReturn(mockWsClient);
 
+        UserDataEventDispatcher eventDispatcher = mock(UserDataEventDispatcher.class);
         service = new BinanceUserDataStreamService(
                 httpClient, binanceConfig, tradeRecordService, discordWebhookService,
-                new SymbolLockRegistry(), multiUserConfig, multiUserManager, binanceFuturesService);
+                new SymbolLockRegistry(), multiUserConfig, multiUserManager, binanceFuturesService, eventDispatcher);
 
         // 直接建立 OrderEventHandler 測試事件處理邏輯
         orderEventHandler = new OrderEventHandler(
