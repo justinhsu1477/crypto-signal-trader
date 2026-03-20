@@ -21,7 +21,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("KnowledgeBaseService — FAQ 知識庫（混合搜尋）")
+@DisplayName("KnowledgeBaseService — FAQ 知識庫（混合評分搜尋）")
 class KnowledgeBaseServiceTest {
 
     @Mock
@@ -35,6 +35,16 @@ class KnowledgeBaseServiceTest {
     @BeforeEach
     void setUp() {
         service = new KnowledgeBaseService(chunkRepository, geminiService);
+    }
+
+    private void loadTestSections(String md) {
+        try {
+            var field = KnowledgeBaseService.class.getDeclaredField("sections");
+            field.setAccessible(true);
+            field.set(service, service.parseSections(md));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Nested
@@ -106,12 +116,12 @@ class KnowledgeBaseServiceTest {
     }
 
     @Nested
-    @DisplayName("Keyword 匹配（fallback）")
+    @DisplayName("Keyword 匹配")
     class KeywordMatchingTests {
 
         @BeforeEach
         void loadTestData() {
-            String md = """
+            loadTestSections("""
                     ## API Key 綁定教學
                     <!-- tags: api key,apikey,綁定,幣安,binance -->
                     步驟 1：登入 Binance...
@@ -123,14 +133,7 @@ class KnowledgeBaseServiceTest {
                     ## 風控參數說明
                     <!-- tags: 風險,風控,槓桿,leverage,dca -->
                     風險比例、槓桿、DCA 說明...
-                    """;
-            try {
-                var field = KnowledgeBaseService.class.getDeclaredField("sections");
-                field.setAccessible(true);
-                field.set(service, service.parseSections(md));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+                    """);
         }
 
         @Test
@@ -176,73 +179,72 @@ class KnowledgeBaseServiceTest {
     }
 
     @Nested
-    @DisplayName("混合搜尋策略")
-    class HybridSearchTests {
+    @DisplayName("混合評分搜尋")
+    class HybridScoringTests {
 
         @Test
-        @DisplayName("向量搜尋有結果 → 使用向量結果")
-        void vectorSearchSuccess() {
+        @DisplayName("向量 + keyword 都有結果 → 融合評分排序")
+        void hybridScoringCombinesBothSignals() {
+            loadTestSections("""
+                    ## API Key 綁定教學
+                    <!-- tags: api key,綁定,binance -->
+                    步驟說明...
+
+                    ## LINE 綁定流程
+                    <!-- tags: line,綁定,通知 -->
+                    LINE 綁定說明...
+                    """);
+
+            // 向量搜尋：API Key 排第 1, LINE 排第 2
             float[] mockVector = new float[768];
             when(geminiService.getEmbedding(anyString())).thenReturn(Optional.of(mockVector));
+            when(chunkRepository.findTopKBySimilarity(anyString(), anyInt()))
+                    .thenReturn(List.of(
+                            KnowledgeChunk.builder().title("API Key 綁定教學").content("步驟說明...").build(),
+                            KnowledgeChunk.builder().title("LINE 綁定流程").content("LINE 說明...").build()
+                    ));
+            when(chunkRepository.findByEnabledTrue()).thenReturn(Collections.emptyList());
 
-            KnowledgeChunk chunk = KnowledgeChunk.builder()
-                    .title("API Key 綁定教學")
-                    .content("如何綁定 API Key...")
-                    .build();
-            when(chunkRepository.findTopKBySimilarityWithThreshold(anyString(), anyInt(), anyDouble()))
-                    .thenReturn(List.of(chunk));
+            // 用戶問「綁定」— keyword 兩段都匹配
+            List<KnowledgeSection> result = service.findRelevantSections("怎麼綁定", 3);
 
+            assertThat(result).isNotEmpty();
+            // API Key 向量分數高 + keyword 也匹配 → 排第一
+            assertThat(result.get(0).getTitle()).isEqualTo("API Key 綁定教學");
+        }
+
+        @Test
+        @DisplayName("向量有結果但 keyword 無匹配 → 仍使用向量結果")
+        void vectorOnlyNoKeyword() {
+            loadTestSections("""
+                    ## API Key 綁定教學
+                    <!-- tags: api key,綁定 -->
+                    步驟說明...
+                    """);
+
+            float[] mockVector = new float[768];
+            when(geminiService.getEmbedding(anyString())).thenReturn(Optional.of(mockVector));
+            when(chunkRepository.findTopKBySimilarity(anyString(), anyInt()))
+                    .thenReturn(List.of(
+                            KnowledgeChunk.builder().title("API Key 綁定教學").content("步驟說明...").build()
+                    ));
+            when(chunkRepository.findByEnabledTrue()).thenReturn(Collections.emptyList());
+
+            // 用戶用語意相似但不含 tags 的問法
             List<KnowledgeSection> result = service.findRelevantSections("金鑰怎麼設定", 3);
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getTitle()).isEqualTo("API Key 綁定教學");
-            verify(geminiService).getEmbedding("金鑰怎麼設定");
         }
 
         @Test
-        @DisplayName("向量搜尋無結果 → fallback 到 keyword")
-        void vectorSearchEmpty_fallbackToKeyword() {
-            // 設定 sections 讓 keyword matching 有結果
-            String md = """
-                    ## API Key 綁定教學
-                    <!-- tags: api key,綁定 -->
-                    步驟說明...
-                    """;
-            try {
-                var field = KnowledgeBaseService.class.getDeclaredField("sections");
-                field.setAccessible(true);
-                field.set(service, service.parseSections(md));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-
-            // 向量搜尋回空
-            float[] mockVector = new float[768];
-            when(geminiService.getEmbedding(anyString())).thenReturn(Optional.of(mockVector));
-            when(chunkRepository.findTopKBySimilarityWithThreshold(anyString(), anyInt(), anyDouble()))
-                    .thenReturn(Collections.emptyList());
-
-            List<KnowledgeSection> result = service.findRelevantSections("api key 綁定", 3);
-
-            assertThat(result).isNotEmpty();
-            assertThat(result.get(0).getTitle()).isEqualTo("API Key 綁定教學");
-        }
-
-        @Test
-        @DisplayName("Embedding API 失敗 → fallback 到 keyword")
-        void embeddingApiFails_fallbackToKeyword() {
-            String md = """
+        @DisplayName("向量搜尋失敗 → 降級為純 keyword")
+        void vectorFails_fallbackToKeyword() {
+            loadTestSections("""
                     ## 風控參數說明
                     <!-- tags: 風控,風險,槓桿 -->
                     風險比例說明...
-                    """;
-            try {
-                var field = KnowledgeBaseService.class.getDeclaredField("sections");
-                field.setAccessible(true);
-                field.set(service, service.parseSections(md));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+                    """);
 
             when(geminiService.getEmbedding(anyString())).thenReturn(Optional.empty());
 
@@ -253,20 +255,13 @@ class KnowledgeBaseServiceTest {
         }
 
         @Test
-        @DisplayName("向量搜尋異常 → fallback 到 keyword 不拋錯")
-        void vectorSearchException_fallbackGracefully() {
-            String md = """
+        @DisplayName("向量搜尋異常 → 降級為 keyword 不拋錯")
+        void vectorException_fallbackGracefully() {
+            loadTestSections("""
                     ## LINE 綁定流程
                     <!-- tags: line,通知 -->
                     LINE 綁定說明...
-                    """;
-            try {
-                var field = KnowledgeBaseService.class.getDeclaredField("sections");
-                field.setAccessible(true);
-                field.set(service, service.parseSections(md));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+                    """);
 
             when(geminiService.getEmbedding(anyString())).thenThrow(new RuntimeException("API 爆了"));
 
@@ -274,6 +269,91 @@ class KnowledgeBaseServiceTest {
 
             assertThat(result).isNotEmpty();
             assertThat(result.get(0).getTitle()).isEqualTo("LINE 綁定流程");
+        }
+
+        @Test
+        @DisplayName("兩者都無結果 → 回傳空")
+        void bothEmpty_returnsEmpty() {
+            loadTestSections("""
+                    ## API Key 綁定教學
+                    <!-- tags: api key,綁定 -->
+                    步驟說明...
+                    """);
+
+            when(geminiService.getEmbedding(anyString())).thenReturn(Optional.of(new float[768]));
+            when(chunkRepository.findTopKBySimilarity(anyString(), anyInt()))
+                    .thenReturn(Collections.emptyList());
+
+            List<KnowledgeSection> result = service.findRelevantSections("今天天氣怎麼樣", 3);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("null/空訊息 → 回傳空")
+        void nullOrBlankMessage() {
+            assertThat(service.findRelevantSections(null, 3)).isEmpty();
+            assertThat(service.findRelevantSections("", 3)).isEmpty();
+            assertThat(service.findRelevantSections("   ", 3)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("DB 有動態新增的知識 → 也能出現在結果")
+        void dynamicChunksFromDb() {
+            loadTestSections("");  // in-memory 無段落
+
+            float[] mockVector = new float[768];
+            when(geminiService.getEmbedding(anyString())).thenReturn(Optional.of(mockVector));
+
+            KnowledgeChunk dbChunk = KnowledgeChunk.builder()
+                    .title("動態新增知識")
+                    .content("這是管理員手動新增的知識")
+                    .build();
+            when(chunkRepository.findTopKBySimilarity(anyString(), anyInt()))
+                    .thenReturn(List.of(dbChunk));
+            when(chunkRepository.findByEnabledTrue()).thenReturn(List.of(dbChunk));
+
+            List<KnowledgeSection> result = service.findRelevantSections("新功能", 3);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getTitle()).isEqualTo("動態新增知識");
+        }
+
+        @Test
+        @DisplayName("keyword 加分讓原本向量排名較低的結果升上來")
+        void keywordBoostReranks() {
+            loadTestSections("""
+                    ## 訂閱方案說明
+                    <!-- tags: 訂閱,方案,付費 -->
+                    訂閱說明...
+
+                    ## 風控參數說明
+                    <!-- tags: 風控,風險,槓桿 -->
+                    風控說明...
+                    """);
+
+            float[] mockVector = new float[768];
+            when(geminiService.getEmbedding(anyString())).thenReturn(Optional.of(mockVector));
+
+            // 向量：風控排第 1, 訂閱排第 2
+            when(chunkRepository.findTopKBySimilarity(anyString(), anyInt()))
+                    .thenReturn(List.of(
+                            KnowledgeChunk.builder().title("風控參數說明").content("風控說明...").build(),
+                            KnowledgeChunk.builder().title("訂閱方案說明").content("訂閱說明...").build()
+                    ));
+            when(chunkRepository.findByEnabledTrue()).thenReturn(Collections.emptyList());
+
+            // 用戶問的訊息只匹配「訂閱」keyword → 訂閱的 keyword 分數 > 風控
+            // 但向量風控排第 1 (score=1.0) vs 訂閱排第 2 (score=0.1)
+            // 風控：1.0*0.7 + 0*0.3 = 0.7
+            // 訂閱：0.1*0.7 + 1.0*0.3 = 0.37
+            // 風控仍排第一（向量權重 0.7 較高）
+            List<KnowledgeSection> result = service.findRelevantSections("訂閱方案付費", 3);
+
+            assertThat(result).hasSizeGreaterThanOrEqualTo(2);
+            // 兩個都在結果中（不會像之前的 fallback 模式那樣只看到向量結果）
+            assertThat(result.stream().map(KnowledgeSection::getTitle))
+                    .contains("訂閱方案說明", "風控參數說明");
         }
     }
 
@@ -289,6 +369,23 @@ class KnowledgeBaseServiceTest {
             assertThat(service.getSections()).isNotEmpty();
             assertThat(service.getSections().stream()
                     .anyMatch(s -> s.getTitle().contains("API Key"))).isTrue();
+        }
+
+        @Test
+        @DisplayName("擴充後的知識庫包含新段落")
+        void expandedKnowledgeBase() {
+            service.loadKnowledgeBase();
+
+            List<String> titles = service.getSections().stream()
+                    .map(KnowledgeSection::getTitle)
+                    .toList();
+
+            assertThat(titles).contains("新手入門指南");
+            assertThat(titles).contains("市場數據與指標解讀");
+            assertThat(titles).contains("訊號品質與 AI 分析");
+            assertThat(titles).contains("DCA 加碼策略說明");
+            assertThat(titles).contains("帳號管理與安全");
+            assertThat(titles).contains("異常排查指南");
         }
     }
 }
