@@ -62,26 +62,30 @@ public class MartingaleTpManager {
                 return;
             }
 
-            // 取消舊 TP
-            cancelCurrentTp(session);
-
             // 按實際成交均價計算新 TP 價格
             double tpPrice = session.getSide() == TradeSignal.Side.LONG
                     ? fill.avgPrice() * (1.0 + config.getTakeProfitPercent())
                     : fill.avgPrice() * (1.0 - config.getTakeProfitPercent());
 
+            // 先掛新 TP → 再取消舊 TP（消除無保護窗口）
             String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
+            String oldTpId = session.getCurrentTpOrderId();
             OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, tpPrice, fill.totalQty());
 
             if (result != null && result.isSuccess() && result.getOrderId() != null) {
                 session.setCurrentTpOrderId(result.getOrderId());
+
+                // 新 TP 掛成功後才取消舊 TP → 確保始終有 TP 保護
+                cancelTpById(session.getSymbol(), oldTpId);
+
                 log.info("Martingale TP updated: symbol={} side={} avgPrice={} tpPrice={} qty={}",
                         symbol, session.getSide(), fill.avgPrice(), tpPrice, fill.totalQty());
                 notifier.notifyTpUpdated(symbol, tpPrice, fill.totalQty());
                 notifier.notifyLayerFilled(symbol, fill.avgPrice(), fill.totalQty(), fill.avgPrice(), fill.totalQty());
             } else {
+                // 新 TP 掛單失敗 → 不取消舊 TP，保留原有保護
                 String err = result != null ? result.getErrorMessage() : "null result";
-                log.error("Martingale TP placement failed: symbol={} err={}", symbol, err);
+                log.error("Martingale TP placement failed (keeping old TP): symbol={} err={}", symbol, err);
             }
         } finally {
             lock.unlock();
@@ -125,17 +129,15 @@ public class MartingaleTpManager {
         }
     }
 
-    private void cancelCurrentTp(MartingaleSession session) {
-        String tpOrderId = session.getCurrentTpOrderId();
+    private void cancelTpById(String symbol, String tpOrderId) {
         if (tpOrderId == null || tpOrderId.isBlank()) {
             return;
         }
         try {
-            binanceFuturesService.cancelAlgoOrder(session.getSymbol(), Long.parseLong(tpOrderId));
-            session.setCurrentTpOrderId(null);
+            binanceFuturesService.cancelAlgoOrder(symbol, Long.parseLong(tpOrderId));
         } catch (Exception e) {
             log.warn("Failed to cancel old TP: symbol={} algoId={} err={}",
-                    session.getSymbol(), tpOrderId, e.getMessage());
+                    symbol, tpOrderId, e.getMessage());
         }
     }
 }
