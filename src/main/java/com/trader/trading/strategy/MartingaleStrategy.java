@@ -3,8 +3,11 @@ package com.trader.trading.strategy;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.model.Order;
 import com.trader.trading.risk.LayerPlan;
+import com.trader.trading.risk.MarketFilter;
+import com.trader.trading.risk.MarketRiskScorer;
 import com.trader.trading.risk.RiskDecision;
 import com.trader.trading.risk.RiskManager;
+import com.trader.trading.risk.RiskScoreResult;
 import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.model.PositionInfo;
@@ -41,6 +44,7 @@ public class MartingaleStrategy implements TradingStrategy {
     private final MartingaleSessionManager sessionManager;
     private final SymbolLockRegistry symbolLockRegistry;
     private final LayerFillTracker layerFillTracker;
+    private final MarketRiskScorer marketRiskScorer;
 
     public MartingaleStrategy(
             RiskManager riskManager,
@@ -54,7 +58,8 @@ public class MartingaleStrategy implements TradingStrategy {
             PositionSizer positionSizer,
             MartingaleSessionManager sessionManager,
             SymbolLockRegistry symbolLockRegistry,
-            LayerFillTracker layerFillTracker
+            LayerFillTracker layerFillTracker,
+            MarketRiskScorer marketRiskScorer
     ) {
         this.riskManager = riskManager;
         this.config = config;
@@ -68,6 +73,7 @@ public class MartingaleStrategy implements TradingStrategy {
         this.sessionManager = sessionManager;
         this.symbolLockRegistry = symbolLockRegistry;
         this.layerFillTracker = layerFillTracker;
+        this.marketRiskScorer = marketRiskScorer;
     }
 
     @Override
@@ -111,12 +117,6 @@ public class MartingaleStrategy implements TradingStrategy {
         double totalLoss = Math.abs(todayLoss) + Math.abs(unrealizedLoss);
         double drawdownPercent = (sodBalance > 0) ? totalLoss / sodBalance : 0.0;
 
-        double ema50 = marketIndicatorService.getEMA(signal.getSymbol(), 50);
-        double ema200 = marketIndicatorService.getEMA(signal.getSymbol(), 200);
-        if (Double.isNaN(ema50) || Double.isNaN(ema200)) {
-            return List.of();
-        }
-
         double currentPositionSize = position != null ? position.quantity() : 0.0;
         EffectiveTradeConfig effectiveConfig = tradeConfigResolver.resolve(userId);
         int leverage = Math.max(1, effectiveConfig.fixedLeverage());
@@ -155,7 +155,9 @@ public class MartingaleStrategy implements TradingStrategy {
             return List.of();
         }
 
-        // 3) Apply risk controls and decide how many layers are allowed.
+        // 3) Build market filter: multi-factor score (default) or legacy EMA.
+        MarketFilter marketFilter = buildMarketFilter(signal.getSymbol(), side);
+
         RiskDecision decision = riskManager.evaluateMartingale(
                 side,
                 accountBalance,
@@ -166,8 +168,7 @@ public class MartingaleStrategy implements TradingStrategy {
                 leverage,
                 drawdownPercent,
                 MAX_DRAWDOWN_PERCENT,
-                ema50,
-                ema200,
+                marketFilter,
                 layerPlans
         );
 
@@ -282,6 +283,31 @@ public class MartingaleStrategy implements TradingStrategy {
                 .build());
 
         return orders;
+    }
+
+    /**
+     * 根據配置選擇市場過濾模式：
+     * 1. riskScoreThreshold > 0 且 !emaFilterEnabled → 多因子評分（推薦）
+     * 2. emaFilterEnabled → 舊版 EMA 趨勢過濾
+     * 3. 兩者都關閉 → 直接放行（不建議用於實盤）
+     */
+    private MarketFilter buildMarketFilter(String symbol, TradeSignal.Side side) {
+        if (config.getRiskScoreThreshold() > 0) {
+            RiskScoreResult scoreResult = marketRiskScorer.evaluate(symbol, side, config);
+            return MarketFilter.riskScore(scoreResult, config.getRiskScoreThreshold());
+        }
+
+        if (config.isEmaFilterEnabled()) {
+            double ema50 = marketIndicatorService.getEMA(symbol, 50);
+            double ema200 = marketIndicatorService.getEMA(symbol, 200);
+            if (Double.isNaN(ema50) || Double.isNaN(ema200)) {
+                // EMA 無法取得 → 拒絕入場（安全起見）
+                return s -> RiskDecision.reject("ema-data-unavailable");
+            }
+            return MarketFilter.ema(ema50, ema200);
+        }
+
+        return MarketFilter.passThrough();
     }
 
     private boolean isGlobalStopLossTriggered(TradeSignal.Side side, double markPrice, double baseEntryPrice) {

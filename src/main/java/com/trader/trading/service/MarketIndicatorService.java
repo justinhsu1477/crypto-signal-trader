@@ -216,6 +216,213 @@ public class MarketIndicatorService {
         });
     }
 
+    /**
+     * 取得最新一期 Funding Rate（永續合約獨有指標）。
+     * 正值 = 多頭支付空頭（市場偏多），負值 = 空頭支付多頭（市場偏空）。
+     * Binance 每 8 小時結算一次。
+     */
+    public double getFundingRate(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return Double.NaN;
+        }
+
+        String cacheKey = symbol + ":FUNDING";
+        CacheEntry cached = cache.get(cacheKey);
+        if (cached != null) {
+            if (cached.isExpired()) {
+                refreshGenericAsync(cacheKey, () -> fetchFundingRate(symbol), cached);
+            }
+            return cached.value;
+        }
+
+        try {
+            double rate = fetchFundingRate(symbol);
+            if (!Double.isNaN(rate)) {
+                cache.put(cacheKey, new CacheEntry(rate, System.currentTimeMillis(), new AtomicBoolean(false)));
+            }
+            return rate;
+        } catch (Exception e) {
+            log.warn("Funding rate fetch failed: symbol={} err={}", symbol, e.getMessage());
+            return Double.NaN;
+        }
+    }
+
+    /**
+     * 取得 RSI(period)。RSI < 30 超賣，RSI > 70 超買。
+     */
+    public double getRSI(String symbol, int period) {
+        if (symbol == null || symbol.isBlank() || period <= 1) {
+            return Double.NaN;
+        }
+
+        String cacheKey = symbol + ":RSI:" + period;
+        CacheEntry cached = cache.get(cacheKey);
+        if (cached != null) {
+            if (cached.isExpired()) {
+                refreshGenericAsync(cacheKey, () -> fetchRSI(symbol, period), cached);
+            }
+            return cached.value;
+        }
+
+        try {
+            double rsi = fetchRSI(symbol, period);
+            if (!Double.isNaN(rsi)) {
+                cache.put(cacheKey, new CacheEntry(rsi, System.currentTimeMillis(), new AtomicBoolean(false)));
+            }
+            return rsi;
+        } catch (Exception e) {
+            log.warn("RSI fetch failed: symbol={} period={} err={}", symbol, period, e.getMessage());
+            return Double.NaN;
+        }
+    }
+
+    /**
+     * 取得近 4 小時的 Open Interest 變化百分比。
+     * 正值 = OI 增加（新倉位進入），負值 = OI 減少（平倉潮）。
+     */
+    public double getOpenInterestChange4h(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return Double.NaN;
+        }
+
+        String cacheKey = symbol + ":OI_CHANGE_4H";
+        CacheEntry cached = cache.get(cacheKey);
+        if (cached != null) {
+            if (cached.isExpired()) {
+                refreshGenericAsync(cacheKey, () -> fetchOpenInterestChange(symbol), cached);
+            }
+            return cached.value;
+        }
+
+        try {
+            double change = fetchOpenInterestChange(symbol);
+            if (!Double.isNaN(change)) {
+                cache.put(cacheKey, new CacheEntry(change, System.currentTimeMillis(), new AtomicBoolean(false)));
+            }
+            return change;
+        } catch (Exception e) {
+            log.warn("OI change fetch failed: symbol={} err={}", symbol, e.getMessage());
+            return Double.NaN;
+        }
+    }
+
+    private double fetchFundingRate(String symbol) throws IOException {
+        String url = binanceConfig.getBaseUrl()
+                + "/fapi/v1/fundingRate?symbol=" + symbol + "&limit=1";
+
+        Request request = new Request.Builder().url(url).get().build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                return Double.NaN;
+            }
+            JsonNode root = objectMapper.readTree(Objects.requireNonNull(response.body()).string());
+            if (!root.isArray() || root.isEmpty()) {
+                return Double.NaN;
+            }
+            return root.get(0).get("fundingRate").asDouble();
+        }
+    }
+
+    private double fetchRSI(String symbol, int period) throws IOException {
+        String url = binanceConfig.getBaseUrl()
+                + "/fapi/v1/klines?symbol=" + symbol
+                + "&interval=" + DEFAULT_INTERVAL
+                + "&limit=" + KLINE_LIMIT;
+
+        Request request = new Request.Builder().url(url).get().build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                return Double.NaN;
+            }
+
+            JsonNode root = objectMapper.readTree(Objects.requireNonNull(response.body()).string());
+            if (!root.isArray() || root.size() < period + 1) {
+                return Double.NaN;
+            }
+
+            double avgGain = 0.0;
+            double avgLoss = 0.0;
+            double prevClose = root.get(0).get(4).asDouble();
+
+            // Initial average over first 'period' changes
+            for (int i = 1; i <= period && i < root.size(); i++) {
+                double close = root.get(i).get(4).asDouble();
+                double change = close - prevClose;
+                if (change > 0) avgGain += change;
+                else avgLoss += Math.abs(change);
+                prevClose = close;
+            }
+            avgGain /= period;
+            avgLoss /= period;
+
+            // Smoothed RSI (Wilder's method)
+            for (int i = period + 1; i < root.size(); i++) {
+                double close = root.get(i).get(4).asDouble();
+                double change = close - prevClose;
+                if (change > 0) {
+                    avgGain = (avgGain * (period - 1) + change) / period;
+                    avgLoss = (avgLoss * (period - 1)) / period;
+                } else {
+                    avgGain = (avgGain * (period - 1)) / period;
+                    avgLoss = (avgLoss * (period - 1) + Math.abs(change)) / period;
+                }
+                prevClose = close;
+            }
+
+            if (avgLoss == 0) return 100.0;
+            double rs = avgGain / avgLoss;
+            return 100.0 - (100.0 / (1.0 + rs));
+        }
+    }
+
+    private double fetchOpenInterestChange(String symbol) throws IOException {
+        // 使用 /futures/data/openInterestHist 取得歷史 OI（5 分鐘間隔，48 筆 = 4 小時）
+        String url = binanceConfig.getBaseUrl()
+                + "/futures/data/openInterestHist?symbol=" + symbol
+                + "&period=5m&limit=48";
+
+        Request request = new Request.Builder().url(url).get().build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                return Double.NaN;
+            }
+
+            JsonNode root = objectMapper.readTree(Objects.requireNonNull(response.body()).string());
+            if (!root.isArray() || root.size() < 2) {
+                return Double.NaN;
+            }
+
+            double oldest = root.get(0).get("sumOpenInterestValue").asDouble();
+            double newest = root.get(root.size() - 1).get("sumOpenInterestValue").asDouble();
+
+            if (oldest <= 0) return Double.NaN;
+            return (newest - oldest) / oldest; // 變化百分比
+        }
+    }
+
+    private void refreshGenericAsync(String cacheKey, FetchTask task, CacheEntry cached) {
+        if (!cached.refreshing.compareAndSet(false, true)) {
+            return;
+        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                double value = task.fetch();
+                if (!Double.isNaN(value)) {
+                    cache.put(cacheKey, new CacheEntry(value, System.currentTimeMillis(), new AtomicBoolean(false)));
+                }
+            } catch (Exception e) {
+                log.debug("Async refresh failed: key={} err={}", cacheKey, e.getMessage());
+            } finally {
+                cached.refreshing.set(false);
+            }
+        });
+    }
+
+    @FunctionalInterface
+    private interface FetchTask {
+        double fetch() throws IOException;
+    }
+
     private record CacheEntry(double value, long timestampMs, AtomicBoolean refreshing) {
         boolean isExpired() {
             return System.currentTimeMillis() - timestampMs > CACHE_TTL.toMillis();
