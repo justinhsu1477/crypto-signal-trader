@@ -31,6 +31,10 @@ public class MartingaleStrategyConfig {
     private final int atrPeriod;
     /** ATR 參考值（佔價格百分比）。ATR% = reference 時 stepPercent 不變 */
     private final double atrReferencePercent;
+    /** 多因子風控評分閾值（0~100）。分數 >= 此值才允許入場。0 = 停用評分，改用 EMA */
+    private final int riskScoreThreshold;
+    /** 是否啟用 EMA 趨勢過濾（建議加密貨幣市場關閉） */
+    private final boolean emaFilterEnabled;
 
     public MartingaleStrategyConfig(
             @DefaultValue("5") int maxLayers,
@@ -49,7 +53,9 @@ public class MartingaleStrategyConfig {
             @DefaultValue("0.008") double breakevenTriggerPercent,
             @DefaultValue("0.002") double breakevenOffsetPercent,
             @DefaultValue("14") int atrPeriod,
-            @DefaultValue("0.02") double atrReferencePercent
+            @DefaultValue("0.02") double atrReferencePercent,
+            @DefaultValue("40") int riskScoreThreshold,
+            @DefaultValue("false") boolean emaFilterEnabled
     ) {
         this.maxLayers = maxLayers;
         this.stepPercent = stepPercent;
@@ -68,5 +74,7 @@ public class MartingaleStrategyConfig {
         this.breakevenOffsetPercent = breakevenOffsetPercent;
         this.atrPeriod = atrPeriod;
         this.atrReferencePercent = atrReferencePercent;
+        this.riskScoreThreshold = riskScoreThreshold;
+        this.emaFilterEnabled = emaFilterEnabled;
     }
 }

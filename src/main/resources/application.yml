@@ -30,6 +30,8 @@ trading:
       breakeven-offset-percent: ${MARTINGALE_BREAKEVEN_OFFSET_PERCENT:0.002}
       atr-period: ${MARTINGALE_ATR_PERIOD:14}
       atr-reference-percent: ${MARTINGALE_ATR_REFERENCE_PERCENT:0.02}
+      risk-score-threshold: ${MARTINGALE_RISK_SCORE_THRESHOLD:40}  # 多因子評分閾值（0~100），0 = 停用
+      ema-filter-enabled: ${MARTINGALE_EMA_FILTER_ENABLED:false}   # 舊版 EMA 過濾（建議加密貨幣關閉）
 
 server:
   port: ${SERVER_PORT:8080}

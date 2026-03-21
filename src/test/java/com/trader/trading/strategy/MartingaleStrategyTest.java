@@ -2,7 +2,9 @@ package com.trader.trading.strategy;
 
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.model.Order;
+import com.trader.trading.risk.MarketRiskScorer;
 import com.trader.trading.risk.RiskManager;
+import com.trader.trading.risk.RiskScoreResult;
 import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
 import com.trader.trading.service.BinanceFuturesService;
@@ -143,6 +145,8 @@ class MartingaleStrategyTest {
         MartingaleSessionManager sessionManager = new MartingaleSessionManager();
         SymbolLockRegistry symbolLockRegistry = new SymbolLockRegistry();
         LayerFillTracker layerFillTracker = new LayerFillTracker();
+        MarketRiskScorer marketRiskScorer = mock(MarketRiskScorer.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
 
         when(binanceFuturesService.getAvailableBalance()).thenReturn(balance);
         when(binanceFuturesService.getCurrentPositionAmount(ArgumentMatchers.anyString())).thenReturn(0.0);
@@ -150,8 +154,9 @@ class MartingaleStrategyTest {
         when(tradeRecordService.getTodayRealizedLoss()).thenReturn(todayLoss);
         when(startOfDayBalanceCache.getOrCompute(ArgumentMatchers.anyString(), ArgumentMatchers.any()))
                 .thenReturn(balance);
-        when(marketIndicatorService.getEMA(ArgumentMatchers.anyString(), ArgumentMatchers.eq(50))).thenReturn(ENTRY_PRICE + 1);
-        when(marketIndicatorService.getEMA(ArgumentMatchers.anyString(), ArgumentMatchers.eq(200))).thenReturn(ENTRY_PRICE);
+        // MarketRiskScorer 回傳高分 → 確保市場過濾通過
+        when(marketRiskScorer.evaluate(ArgumentMatchers.anyString(), ArgumentMatchers.any(), ArgumentMatchers.any()))
+                .thenReturn(new RiskScoreResult(80, 20, 20, 20, 20, "test"));
         when(tradeConfigResolver.resolve(ArgumentMatchers.anyString())).thenReturn(new EffectiveTradeConfig(
                 RISK_PERCENT, MAX_POSITION_USDT, 0, 0, 0, 3, 2.0, LEVERAGE, List.of("BTCUSDT"), true, "BTCUSDT"
         ));
@@ -175,7 +180,9 @@ class MartingaleStrategyTest {
                 0.008,
                 0.002,
                 0,      // atrPeriod = 0 → 停用 ATR，測試用固定 stepPercent
-                0.02
+                0.02,
+                40,     // riskScoreThreshold = 40 → 啟用多因子評分
+                false   // emaFilterEnabled = false
         );
 
         return new MartingaleStrategy(
@@ -190,7 +197,8 @@ class MartingaleStrategyTest {
                 positionSizer,
                 sessionManager,
                 symbolLockRegistry,
-                layerFillTracker
+                layerFillTracker,
+                marketRiskScorer
         );
     }
 

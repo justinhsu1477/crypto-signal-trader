@@ -395,6 +395,281 @@
 
 ---
 
+## Phase 2F — 已知限制與後續優化方向（Known Limitations & Roadmap）
+
+> 基於 2026-03-21 端到端系統審查產出。每項記錄問題本質與建議修復方向，供後續逐一排期。
+
+---
+
+### 2F-1 狀態無持久化 — 重啟遺失所有 Session
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 高
+- **類型：** 架構限制
+- **影響檔案：** `MartingaleSessionManager.java`、`LayerFillTracker.java`
+- **問題描述：**
+  Session、LayerFillTracker、breakevenActivated 等所有運行狀態存在 ConcurrentHashMap / AtomicInteger 中。
+  應用重啟 = 全部狀態遺失，但 Binance 端的掛單和持倉仍然存在。
+  Phase 2B-3 的 RecoveryTask 能從 Binance 反推部分狀態，但無法恢復：
+  - 各層成交的加權均價（LayerFillTracker 資料）
+  - 保本是否已觸發（breakevenActivated）
+  - Session 的原始計劃層數
+- **實際影響：**
+  - SL Watcher 重啟後用 baseEntryPrice 而非正確的加權均價 → SL 位置偏差
+  - 保本機制重啟後重置 → 可能重複觸發或遺漏
+- **修復方向：**
+  1. **方案 A（推薦）：Redis 快取**
+     - Session + LayerFillTracker 寫入 Redis（JSON 序列化）
+     - 每次狀態變更同步寫入，啟動時從 Redis 恢復
+     - 優點：低延遲、現有 Redis 基礎設施可復用
+     - 缺點：Redis 本身重啟也會遺失（可用 RDB/AOF 緩解）
+  2. **方案 B：PostgreSQL 持久化**
+     - 新增 `martingale_session` 和 `martingale_layer_fill` 表
+     - 狀態變更寫入 DB，啟動時查詢恢復
+     - 優點：持久可靠、可做歷史分析
+     - 缺點：寫入延遲較高，需考慮高頻更新場景
+  3. **建議優先級：** 與 2E-1 合併實作，先用 Redis 做熱快取 + DB 做冷持久化
+- **關聯項目：** 2E-1
+
+---
+
+### 2F-2 EMA 趨勢過濾不適用於加密貨幣市場
+
+- [x] **狀態：已完成（2026-03-21）**
+- **嚴重度：** 高
+- **類型：** 風控邏輯缺陷
+- **影響檔案：** `RiskManager.java`、`MarketIndicatorService.java`
+- **問題描述：**
+  目前使用 EMA50/EMA200 黃金交叉/死亡交叉作為趨勢過濾。這在傳統股票市場有一定參考價值，但在加密貨幣市場存在嚴重問題：
+
+  **1. 嚴重滯後性：**
+  EMA200 需要 200 根 K 線才能穩定。在 1 分鐘 K 線下，黃金交叉形成時行情往往已走完一大半。
+  BTC 常見的 V 型反轉（閃崩後快速恢復）中，EMA 交叉信號會在反彈結束後才出現。
+
+  **2. 24/7 市場特性：**
+  加密貨幣無休市，不像股票有開盤/收盤的均值回歸效應。EMA 在週末低流動性期間容易產生假信號。
+
+  **3. 敘事驅動而非技術驅動：**
+  加密貨幣價格高度受新聞、監管政策、鏈上事件影響。EMA 交叉無法反映這些外部因素。
+
+  **4. 馬丁策略的矛盾：**
+  馬丁策略本質是「逆勢加倉 → 等待均值回歸」，但 EMA 過濾要求「順勢才開倉」。
+  這意味著：趨勢明確向下時（EMA 死亡交叉），系統拒絕 LONG 馬丁，但這恰恰是馬丁策略最有機會的場景（超跌反彈）。
+
+- **修復方向（多指標風控體系）：**
+
+  **取代 EMA 的候選指標（依加密貨幣適用性排序）：**
+
+  | 指標 | 適用原因 | 實作難度 | 數據來源 |
+  |------|---------|---------|---------|
+  | **Funding Rate** | 永續合約獨有指標，直接反映多空情緒。極端正值 = 過度看多（做空機會），極端負值 = 過度看空（做多機會）。與馬丁逆勢邏輯天然契合 | 低 | Binance `/fapi/v1/fundingRate` |
+  | **Open Interest 變化** | OI 急增 + 價格下跌 = 大量空頭開倉（可能超賣），OI 急減 = 平倉潮（趨勢可能反轉）。能捕捉 EMA 無法反映的倉位變化 | 低 | Binance `/fapi/v1/openInterest` |
+  | **RSI (14)** | 超買超賣判斷。RSI < 30 做多馬丁、RSI > 70 做空馬丁，與均值回歸策略邏輯一致 | 低 | 現有 K 線計算 |
+  | **Bollinger Band %B** | 價格在布林帶下軌以下 = 統計上的超賣。用 %B 替代 EMA 判斷入場時機 | 中 | 現有 K 線計算 |
+  | **清算熱力圖 / 大額清算** | 大量清算後通常伴隨反彈（流動性缺口被填補）。作為馬丁入場的加分條件 | 高 | 第三方 API (Coinglass) |
+  | **成交量異常** | 恐慌性拋售（量能激增 + 價格暴跌）後的反彈概率高。作為馬丁入場的確認信號 | 中 | 現有 K 線計算 |
+
+  **建議實作方案：**
+  ```
+  RiskManager v2 — 多因子評分制（取代二元 EMA 過濾）
+
+  分數 = fundingRateScore + oiScore + rsiScore + volatilityScore
+  閾值 = configurable（建議 60/100 以上才允許）
+
+  fundingRateScore (0~30):
+    LONG: funding < -0.01% → 30分, [-0.01%, 0] → 15分, > 0 → 0分
+    SHORT: funding > 0.03% → 30分, [0, 0.03%] → 15分, < 0 → 0分
+
+  oiScore (0~20):
+    近 4 小時 OI 變化 > 5% 且方向與入場方向相反 → 20分
+    OI 平穩 → 10分
+    OI 與入場方向同向 → 0分
+
+  rsiScore (0~30):
+    LONG: RSI < 25 → 30分, [25, 35] → 20分, [35, 50] → 10分, > 50 → 0分
+    SHORT: RSI > 75 → 30分, [65, 75] → 20分, [50, 65] → 10分, < 50 → 0分
+
+  volatilityScore (0~20):
+    ATR% 在 [1x, 2x] 參考值 → 20分（適度波動最佳）
+    ATR% < 0.5x → 5分（太平靜，馬丁難成交）
+    ATR% > 3x → 5分（太劇烈，風險過高）
+  ```
+
+  **實作步驟：**
+  1. `MarketIndicatorService` 新增 `getFundingRate()`、`getOpenInterest()`、`getRSI()` 方法
+  2. 新增 `RiskScoreCalculator`，取代 `RiskManager` 中的 EMA 邏輯
+  3. Config 新增各指標權重和閾值
+  4. 保留 EMA 作為可選的額外過濾（`emaFilterEnabled: false` 預設關閉）
+
+---
+
+### 2F-3 單幣種單 Session 限制
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 中
+- **類型：** 策略限制
+- **影響檔案：** `MartingaleStrategy.java`、`MartingaleSessionManager.java`
+- **問題描述：**
+  同一幣種同時只能有一個 Martingale session。當 session 在第 3 層等待回歸時，新的入場訊號會被直接丟棄。
+  在高波動市場中，這可能錯過更好的入場點。
+- **實際影響：**
+  - 行情持續下跌 → Layer 3 成交後盤整 → 新訊號指出更低的入場點 → 被拒絕
+  - 無法利用新訊號動態調整尚未成交的掛單
+- **修復方向：**
+  1. **方案 A（推薦）：動態調整未成交掛單**
+     - 收到新訊號時，不開新 session，而是：
+     - 取消尚未成交的 ENTRY 掛單
+     - 以新訊號價格重新計算並掛出剩餘層
+     - 保留已成交層的狀態不變
+  2. **方案 B：允許同幣種多 Session**
+     - 每個 session 獨立追蹤，但共享倉位上限
+     - 複雜度高，容易導致 TP/SL 互相干擾
+  3. **建議優先級：** 方案 A 較安全，先實作 A
+
+---
+
+### 2F-4 TP 更新窗口風險
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 中
+- **類型：** 競爭條件
+- **影響檔案：** `MartingaleTpManager.java`
+- **問題描述：**
+  Layer 成交 → 取消舊 TP → 掛新 TP 之間存在數百毫秒窗口。
+  此窗口內無 TP 保護。若價格在此期間觸及 TP 位置，會錯過獲利機會。
+- **實際影響：**
+  極端快速行情（如 BTC 瞬間拉升 2%）中，可能錯過 TP 出場。
+  SL Watcher（5 秒間隔）提供兜底保護，但無法捕捉毫秒級的價格觸及。
+- **修復方向：**
+  1. **方案 A（推薦）：先掛新 TP 再取消舊 TP**
+     - 短暫同時存在兩張 TP，但保證不存在無保護窗口
+     - 需處理 Binance 可能拒絕重複 TP 的情況
+  2. **方案 B：使用 Binance 的 contingent order**
+     - 利用 Binance 的 OCO / conditional order 機制
+     - 取消和掛單原子化
+  3. **方案 C：接受風險，加強 SL Watcher 頻率**
+     - SL Watcher 頻率從 5 秒改為 1 秒
+     - 加入「若無 TP 掛單且有持倉，立即補掛」的邏輯
+  4. **建議優先級：** 方案 A 最可行
+
+---
+
+### 2F-5 無 Trailing Stop（追蹤止盈）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 中
+- **類型：** 策略限制
+- **影響檔案：** `MartingaleStopLossWatcher.java`、`MartingaleTpManager.java`
+- **問題描述：**
+  保本機制（breakeven）只觸發一次，觸發後 TP 固定在 breakeven 位置。
+  若價格持續上漲（例如 BTC 從均價 58,000 漲到 62,000），系統仍然在 58,116（breakeven + 0.2%）出場。
+  大行情下只能獲得微利，完全無法捕捉趨勢行情的超額收益。
+- **實際影響：**
+  - 馬丁策略的勝率應該靠「小賺多次」累積，但目前每次只能賺 1%
+  - 趨勢行情時 1% 的 TP 與潛在的 15% SL 不成比例
+- **修復方向：**
+  1. **方案 A（推薦）：階梯式 Trailing TP**
+     ```
+     階段 1: 價格達 avgPrice × 1.008 → TP 移至 avgPrice × 1.002（保本）
+     階段 2: 價格達 avgPrice × 1.015 → TP 移至 avgPrice × 1.008（鎖定 0.8%）
+     階段 3: 價格達 avgPrice × 1.025 → TP 移至 avgPrice × 1.015（鎖定 1.5%）
+     階段 4: 價格達 avgPrice × 1.040 → TP 移至 avgPrice × 1.025（鎖定 2.5%）
+     ```
+     - 每個階段觸發後不可回退，持續追蹤上漲
+     - 漲越多鎖利越多，同時容許合理回調空間
+  2. **方案 B：百分比 Trailing Stop**
+     - 價格超過 breakeven 後，TP = 最高價 × (1 - trailingPercent)
+     - 簡單但在震盪市容易被掃出
+  3. **建議優先級：** 方案 A（階梯式）更穩健，不易被假突破掃出
+
+---
+
+### 2F-6 固定層數與倍率
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 低
+- **類型：** 策略限制
+- **影響檔案：** `MartingaleStrategyConfig.java`、`PositionSizer.java`
+- **問題描述：**
+  `maxLayers=5` 和 `sizeMultiplier=2.0` 是全域設定，所有幣種共用。
+  但不同幣種的波動性、流動性、價格區間差異極大：
+  - BTC：日振幅 2-5%，流動性極佳 → 5 層 2x 適合
+  - 山寨幣：日振幅 10-20%，可能需要更多層、更寬間距
+  - 穩定幣對：日振幅 < 0.5%，5 層完全多餘
+- **修復方向：**
+  1. **方案 A（推薦）：per-symbol 配置覆寫**
+     - Config 新增 `symbol-overrides` map
+     ```yaml
+     trading.strategy.martingale:
+       max-layers: 5           # 全域預設
+       size-multiplier: 2.0
+       symbol-overrides:
+         ETHUSDT:
+           max-layers: 7
+           size-multiplier: 1.5
+           step-percent: 0.03
+         SOLUSDT:
+           max-layers: 3
+           step-percent: 0.05
+     ```
+     - `MartingaleStrategy` 在 `execute()` 時查詢 symbol-specific 配置，無則用全域預設
+  2. **方案 B：基於 ATR 動態調整層數**
+     - ATR 已用於調整層距，可擴展到層數：ATR% > 3% → 減少至 3 層，ATR% < 1% → 增至 7 層
+  3. **建議優先級：** 方案 A 先做（明確可控），方案 B 後續疊加
+
+---
+
+### 2F-7 SHORT 方向未充分驗證
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 低
+- **類型：** 測試覆蓋不足
+- **影響檔案：** `MartingaleStrategyTest.java`、`MartingaleStopLossWatcher.java`
+- **問題描述：**
+  所有單元測試和情境分析均基於 LONG 方向。SHORT 的邏輯（層價格向上、SL 向上、TP 向下）理論上由程式碼中的 `side == LONG ? ... : ...` 處理，但缺乏專門測試。
+  - `buildLayerPrices` 的 SHORT 路徑（`1 + effectiveStep`）未測試
+  - `isGlobalStopLossTriggered` 的 SHORT 路徑未測試
+  - `buildOrders` 的 SHORT TP 計算（`1 - tpPercent`）未測試
+  - 保本機制在 SHORT 方向的觸發邏輯未測試
+- **修復方向：**
+  1. 為 `MartingaleStrategyTest` 新增完整的 SHORT 測試套件（mirror 現有 LONG 測試）
+  2. `MartingaleStopLossWatcher` 加入 SHORT 方向的 SL 和 breakeven 測試
+  3. 端對端測試：SHORT 訊號 → 層級建立 → 成交 → TP 動態更新 → 出場
+
+---
+
+### 2F-8 無動態出場策略
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 低
+- **類型：** 策略限制
+- **影響檔案：** `MartingaleStrategy.java`、`MartingaleTpManager.java`
+- **問題描述：**
+  TP 只有固定百分比（1%）和保本兩種出場方式。無法根據：
+  - 技術面支撐/阻力位
+  - 成交量變化
+  - 持倉時間長短
+  - 市場結構（區間震盪 vs 趨勢行情）
+  來動態調整出場策略。
+- **實際影響：**
+  - 震盪市中 1% TP 可能合適
+  - 趨勢行情中 1% TP 過早出場，錯失大幅獲利
+  - 低波動盤整中 1% TP 可能數小時都不會觸及
+- **修復方向：**
+  1. **與 2F-5 (Trailing Stop) 結合**
+     - Trailing 處理趨勢行情，固定 TP 處理震盪行情
+  2. **基於持倉時間的 TP 衰減**
+     - 持倉超過 N 小時後，逐步降低 TP 目標（避免長時間浮虧）
+     ```
+     0~2h:  TP = avgPrice × 1.01（正常）
+     2~4h:  TP = avgPrice × 1.005（降低預期）
+     4~6h:  TP = avgPrice × 1.002（接近保本）
+     6h+:   TP = avgPrice × 1.0（保本出場）
+     ```
+  3. **建議優先級：** 先完成 2F-5 (Trailing)，再疊加時間衰減
+
+---
+
 ## 附錄：快速索引
 
 | 編號 | 標題 | 優先級 | 狀態 | 類型 |
@@ -418,3 +693,11 @@
 | 2E-1 | Session 持久化到 DB | Future | 未開始 | 架構改善 |
 | 2E-2 | 回測框架 | Future | 未開始 | 工具 |
 | 2E-3 | 多用戶事件分發 | Future | 未開始 | 功能缺口 |
+| 2F-1 | 狀態無持久化 | 高 | 未開始 | 架構限制 |
+| 2F-2 | EMA 不適用加密貨幣 | 高 | ✅ 完成 | 風控缺陷 |
+| 2F-3 | 單幣種單 Session 限制 | 中 | 未開始 | 策略限制 |
+| 2F-4 | TP 更新窗口風險 | 中 | 未開始 | 競爭條件 |
+| 2F-5 | 無 Trailing Stop | 中 | 未開始 | 策略限制 |
+| 2F-6 | 固定層數與倍率 | 低 | 未開始 | 策略限制 |
+| 2F-7 | SHORT 方向未充分驗證 | 低 | 未開始 | 測試覆蓋 |
+| 2F-8 | 無動態出場策略 | 低 | 未開始 | 策略限制 |

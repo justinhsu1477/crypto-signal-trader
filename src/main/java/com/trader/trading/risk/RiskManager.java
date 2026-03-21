@@ -10,7 +10,11 @@ public class RiskManager {
 
     /**
      * Evaluate Martingale risk constraints and decide how many layers are allowed.
-     * This is intentionally deterministic and reusable for any layered-entry strategy.
+     * Supports two market filter modes:
+     * 1. Multi-factor risk score (recommended for crypto): riskScore + threshold
+     * 2. Legacy EMA trend filter: ema50/ema200 crossover
+     *
+     * Mode is determined by the caller based on config (emaFilterEnabled / riskScoreThreshold).
      */
     public RiskDecision evaluateMartingale(
             TradeSignal.Side side,
@@ -22,20 +26,17 @@ public class RiskManager {
             int leverage,
             double currentDrawdownPercent,
             double maxDrawdownPercent,
-            double ema50,
-            double ema200,
+            MarketFilter marketFilter,
             List<LayerPlan> layers
     ) {
         if (accountBalance <= 0) {
             return RiskDecision.reject("balance-unavailable");
         }
 
-        // Trend filter: LONG 需要黃金交叉（EMA50 > EMA200），SHORT 需要死亡交叉（EMA50 < EMA200）
-        if (side == TradeSignal.Side.LONG && ema50 < ema200) {
-            return RiskDecision.reject("trend-filter-blocked");
-        }
-        if (side == TradeSignal.Side.SHORT && ema50 > ema200) {
-            return RiskDecision.reject("trend-filter-blocked");
+        // Market condition filter (EMA or multi-factor score)
+        RiskDecision filterResult = marketFilter.evaluate(side);
+        if (filterResult != null && !filterResult.allowed()) {
+            return filterResult;
         }
 
         // Drawdown protection: stop if drawdown exceeds the configured threshold.
@@ -83,5 +84,31 @@ public class RiskManager {
         }
 
         return RiskDecision.allow(allowedLayers);
+    }
+
+    /**
+     * 向下相容：舊版 EMA 參數簽名，內部轉換為 MarketFilter。
+     */
+    public RiskDecision evaluateMartingale(
+            TradeSignal.Side side,
+            double accountBalance,
+            double maxCapitalUsage,
+            int maxLayers,
+            double currentPositionSize,
+            double maxPositionSize,
+            int leverage,
+            double currentDrawdownPercent,
+            double maxDrawdownPercent,
+            double ema50,
+            double ema200,
+            List<LayerPlan> layers
+    ) {
+        MarketFilter emaFilter = MarketFilter.ema(ema50, ema200);
+        return evaluateMartingale(
+                side, accountBalance, maxCapitalUsage, maxLayers,
+                currentPositionSize, maxPositionSize, leverage,
+                currentDrawdownPercent, maxDrawdownPercent,
+                emaFilter, layers
+        );
     }
 }
