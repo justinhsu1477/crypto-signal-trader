@@ -124,7 +124,10 @@ public class MartingaleStrategy implements TradingStrategy {
 
         if (position != null && position.isOpen()) {
             double markPrice = binanceFuturesService.getMarkPrice(signal.getSymbol());
-            boolean stopLossTriggered = isGlobalStopLossTriggered(side, markPrice, baseEntryPrice);
+            // SL 基準：有成交用加權均價，無成交用 baseEntryPrice
+            var fill = layerFillTracker.getAggregatedFill(signal.getSymbol());
+            double slBase = fill.avgPrice() > 0 ? fill.avgPrice() : baseEntryPrice;
+            boolean stopLossTriggered = isGlobalStopLossTriggered(side, markPrice, slBase);
             if (stopLossTriggered) {
                 return List.of(Order.builder()
                         .symbol(signal.getSymbol())
