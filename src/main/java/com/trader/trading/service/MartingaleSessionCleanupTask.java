@@ -44,7 +44,6 @@ public class MartingaleSessionCleanupTask {
 
     @Scheduled(fixedDelayString = "${trading.strategy.martingale.session-cleanup-interval-millis:60000}")
     public void cleanupSessions() {
-        Duration idleTimeout = Duration.ofMinutes(config.getSessionIdleTimeoutMinutes());
         Instant now = Instant.now();
 
         for (MartingaleSession session : sessionManager.getSessionsSnapshot()) {
@@ -62,39 +61,90 @@ public class MartingaleSessionCleanupTask {
                 continue;
             }
 
-            Instant lastFillAt = layerFillTracker.getLastFillAt(symbol);
-            Instant lastActivity = lastFillAt != null ? lastFillAt : session.getCreatedAt();
+            boolean hasFills = session.getFilledLayers() > 0;
 
-            if (Duration.between(lastActivity, now).compareTo(idleTimeout) <= 0) {
-                continue;
-            }
-
-            ReentrantLock lock = symbolLockRegistry.getLock(symbol);
-            if (!lock.tryLock()) {
-                continue;
-            }
-            try {
-                Optional<MartingaleSession> active = sessionManager.getActiveSession(symbol);
-                if (active.isEmpty() || active.get().getStatus() != MartingaleSession.Status.ACTIVE) {
+            if (hasFills) {
+                // 有成交的 session：用 sessionMaxDurationMinutes（從 session 建立時間算起）
+                Duration elapsed = Duration.between(session.getCreatedAt(), now);
+                Duration maxDuration = Duration.ofMinutes(config.getSessionMaxDurationMinutes());
+                if (elapsed.compareTo(maxDuration) <= 0) {
                     continue;
                 }
-
-                sessionManager.markExiting(symbol);
-                binanceFuturesService.cancelAllOrders(symbol);
-
-                boolean closed = closePosition(symbol);
-                if (closed) {
-                    layerFillTracker.clearSymbol(symbol);
-                    sessionManager.endSession(symbol);
-                    log.warn("Martingale session timeout cleanup: symbol={} lastActivity={} timeoutMinutes={}",
-                            symbol, lastActivity, config.getSessionIdleTimeoutMinutes());
-                    notifier.notifySessionTimeout(symbol);
-                } else {
-                    log.error("Martingale session timeout cleanup 平倉失敗，保留 EXITING: symbol={}", symbol);
+                handleTimeout(session, "session-max-duration", elapsed.toMinutes());
+            } else {
+                // 無成交的純掛單 session：用 entryIdleTimeoutMinutes（從建立時間算起）
+                Duration elapsed = Duration.between(session.getCreatedAt(), now);
+                Duration idleTimeout = Duration.ofMinutes(config.getEntryIdleTimeoutMinutes());
+                if (elapsed.compareTo(idleTimeout) <= 0) {
+                    continue;
                 }
-            } finally {
-                lock.unlock();
+                handleIdleEntryTimeout(session, elapsed.toMinutes());
             }
+        }
+    }
+
+    /**
+     * 有成交的 session 超過最大持續時間：取消掛單 + 市價平倉 + 清理。
+     */
+    private void handleTimeout(MartingaleSession session, String reason, long elapsedMinutes) {
+        String symbol = session.getSymbol();
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+        if (!lock.tryLock()) {
+            return;
+        }
+        try {
+            Optional<MartingaleSession> active = sessionManager.getActiveSession(symbol);
+            if (active.isEmpty() || active.get().getStatus() != MartingaleSession.Status.ACTIVE) {
+                return;
+            }
+
+            sessionManager.markExiting(symbol);
+            binanceFuturesService.cancelAllOrders(symbol);
+
+            boolean closed = closePosition(symbol);
+            if (closed) {
+                layerFillTracker.clearSymbol(symbol);
+                sessionManager.endSession(symbol);
+                log.warn("Martingale session 超時平倉: symbol={} reason={} elapsed={}min maxDuration={}min",
+                        symbol, reason, elapsedMinutes, config.getSessionMaxDurationMinutes());
+                notifier.notifySessionTimeout(symbol);
+            } else {
+                log.error("Martingale session 超時平倉失敗，保留 EXITING: symbol={}", symbol);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * 無成交的純掛單 session 超時：只取消掛單 + 清理 session，不需平倉。
+     */
+    private void handleIdleEntryTimeout(MartingaleSession session, long elapsedMinutes) {
+        String symbol = session.getSymbol();
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+        if (!lock.tryLock()) {
+            return;
+        }
+        try {
+            Optional<MartingaleSession> active = sessionManager.getActiveSession(symbol);
+            if (active.isEmpty() || active.get().getStatus() != MartingaleSession.Status.ACTIVE) {
+                return;
+            }
+
+            // 再次確認無成交（避免 race condition：在取得 lock 期間有新的 fill）
+            if (active.get().getFilledLayers() > 0) {
+                return;
+            }
+
+            binanceFuturesService.cancelAllOrders(symbol);
+            layerFillTracker.clearSymbol(symbol);
+            sessionManager.endSession(symbol);
+
+            log.info("Martingale 純掛單 session 閒置超時，取消掛單: symbol={} elapsed={}min idleTimeout={}min",
+                    symbol, elapsedMinutes, config.getEntryIdleTimeoutMinutes());
+            notifier.notifySessionTimeout(symbol);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -127,7 +177,7 @@ public class MartingaleSessionCleanupTask {
     private boolean closePosition(String symbol) {
         Optional<PositionInfo> posOpt = positionService.getPosition(symbol);
         if (posOpt.isEmpty() || !posOpt.get().isOpen()) {
-            return true; // 無持倉，視為成功
+            return true;
         }
         PositionInfo position = posOpt.get();
         double qty = Math.abs(position.quantity());

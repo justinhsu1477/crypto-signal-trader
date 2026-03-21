@@ -16,7 +16,10 @@ public class MartingaleStrategyConfig {
     private final double maxCapitalUsage;
     private final double maxPositionSize;
     private final double stopLossPercent;
-    private final int sessionIdleTimeoutMinutes;
+    /** 有成交（filledLayers > 0）的 session 最大持續時間（分鐘） */
+    private final int sessionMaxDurationMinutes;
+    /** 無成交（純掛單）的 session 閒置超時（分鐘），超時後取消掛單但不平倉 */
+    private final int entryIdleTimeoutMinutes;
     private final long sessionCleanupIntervalMillis;
     private final long stopLossCheckIntervalMillis;
     private final int maxConcurrentSessions;
@@ -30,7 +33,8 @@ public class MartingaleStrategyConfig {
             @DefaultValue("0.30") double maxCapitalUsage,
             @DefaultValue("10000") double maxPositionSize,
             @DefaultValue("0.15") double stopLossPercent,
-            @DefaultValue("30") int sessionIdleTimeoutMinutes,
+            @DefaultValue("480") int sessionMaxDurationMinutes,
+            @DefaultValue("60") int entryIdleTimeoutMinutes,
             @DefaultValue("60000") long sessionCleanupIntervalMillis,
             @DefaultValue("5000") long stopLossCheckIntervalMillis,
             @DefaultValue("3") int maxConcurrentSessions
@@ -43,7 +47,8 @@ public class MartingaleStrategyConfig {
         this.maxCapitalUsage = maxCapitalUsage;
         this.maxPositionSize = maxPositionSize;
         this.stopLossPercent = stopLossPercent;
-        this.sessionIdleTimeoutMinutes = sessionIdleTimeoutMinutes;
+        this.sessionMaxDurationMinutes = sessionMaxDurationMinutes;
+        this.entryIdleTimeoutMinutes = entryIdleTimeoutMinutes;
         this.sessionCleanupIntervalMillis = sessionCleanupIntervalMillis;
         this.stopLossCheckIntervalMillis = stopLossCheckIntervalMillis;
         this.maxConcurrentSessions = maxConcurrentSessions;
