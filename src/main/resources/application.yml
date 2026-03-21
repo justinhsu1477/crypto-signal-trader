@@ -24,6 +24,7 @@ trading:
       session-idle-timeout-minutes: ${MARTINGALE_SESSION_IDLE_TIMEOUT_MINUTES:30}
       session-cleanup-interval-millis: ${MARTINGALE_SESSION_CLEANUP_INTERVAL_MILLIS:60000}
       stop-loss-check-interval-millis: ${MARTINGALE_STOP_LOSS_CHECK_INTERVAL_MILLIS:5000}
+      max-concurrent-sessions: ${MARTINGALE_MAX_CONCURRENT_SESSIONS:3}
 
 server:
   port: ${SERVER_PORT:8080}

@@ -3,25 +3,31 @@ package com.trader.trading.service;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.model.Order;
+import com.trader.trading.service.martingale.MartingaleNotifier;
 import com.trader.trading.strategy.StrategyType;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Component
 public class OrderExecutor {
 
     private final BinanceFuturesService binanceFuturesService;
     private final MartingaleSessionManager sessionManager;
     private final LayerFillTracker layerFillTracker;
+    private final MartingaleNotifier notifier;
 
     public OrderExecutor(BinanceFuturesService binanceFuturesService,
                          MartingaleSessionManager sessionManager,
-                         LayerFillTracker layerFillTracker) {
+                         LayerFillTracker layerFillTracker,
+                         MartingaleNotifier notifier) {
         this.binanceFuturesService = binanceFuturesService;
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
+        this.notifier = notifier;
     }
 
     public List<OrderResult> execute(TradeSignal signal, StrategyType strategyType, List<Order> orders) {
@@ -51,6 +57,10 @@ public class OrderExecutor {
         }
 
         List<OrderResult> results = new ArrayList<>(orders.size());
+        int entryTotal = 0;
+        int entrySuccess = 0;
+        String trackedSymbol = null;
+
         for (Order order : orders) {
             String symbol = resolveSymbol(signal, order);
             TradeSignal.Side side = resolveSide(signal, order);
@@ -61,6 +71,8 @@ public class OrderExecutor {
 
             switch (order.getType()) {
                 case ENTRY -> {
+                    entryTotal++;
+                    trackedSymbol = symbol;
                     String entrySide = side == TradeSignal.Side.SHORT ? "SELL" : "BUY";
                     OrderResult result = binanceFuturesService.placeLimitOrder(
                             symbol,
@@ -71,6 +83,7 @@ public class OrderExecutor {
                     results.add(result);
                     if (result != null && result.isSuccess() && result.getOrderId() != null) {
                         layerFillTracker.registerOrder(result.getOrderId(), symbol, order.getLayer());
+                        entrySuccess++;
                     }
                     if (result != null && result.isSuccess()
                             && result.getQuantity() > 0 && result.getPrice() > 0) {
@@ -93,6 +106,7 @@ public class OrderExecutor {
                 }
                 case CLOSE -> {
                     binanceFuturesService.cancelAllOrders(symbol);
+                    sessionManager.markExiting(symbol);
                     String closeSide = side == TradeSignal.Side.SHORT ? "BUY" : "SELL";
                     OrderResult result = binanceFuturesService.placeMarketOrder(
                             symbol,
@@ -100,12 +114,29 @@ public class OrderExecutor {
                             order.getQuantity()
                     );
                     results.add(result);
-                    sessionManager.markExiting(symbol);
-                    sessionManager.endSession(symbol);
-                    layerFillTracker.clearSymbol(symbol);
+                    if (result != null && result.isSuccess()) {
+                        sessionManager.endSession(symbol);
+                        layerFillTracker.clearSymbol(symbol);
+                    } else {
+                        // 市價平倉失敗：保留 EXITING 狀態，由 CleanupTask 重試
+                        log.error("Martingale CLOSE 市價平倉失敗，保留 EXITING 狀態: symbol={} err={}",
+                                symbol, result != null ? result.getErrorMessage() : "null");
+                    }
                 }
                 case MOVE_SL -> results.add(OrderResult.fail("unsupported-order-type"));
             }
+        }
+
+        // 送單結果檢查：全部 ENTRY 失敗 → 清理 session
+        if (entryTotal > 0 && entrySuccess == 0 && trackedSymbol != null) {
+            log.error("Martingale 全部 ENTRY 送單失敗，清理 session: symbol={}", trackedSymbol);
+            sessionManager.markExiting(trackedSymbol);
+            sessionManager.endSession(trackedSymbol);
+            layerFillTracker.clearSymbol(trackedSymbol);
+            notifier.notifyAllEntryFailed(trackedSymbol);
+        } else if (entryTotal > 0 && entrySuccess < entryTotal) {
+            log.warn("Martingale 部分 ENTRY 送單失敗: symbol={} success={}/{} — TP 將由動態更新修正",
+                    trackedSymbol, entrySuccess, entryTotal);
         }
 
         return results;

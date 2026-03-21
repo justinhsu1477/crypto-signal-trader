@@ -4,6 +4,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.model.MartingaleSession;
 import com.trader.trading.model.PositionInfo;
+import com.trader.trading.service.martingale.MartingaleNotifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -23,33 +24,41 @@ public class MartingaleSessionCleanupTask {
     private final PositionService positionService;
     private final SymbolLockRegistry symbolLockRegistry;
     private final MartingaleStrategyConfig config;
+    private final MartingaleNotifier notifier;
 
     public MartingaleSessionCleanupTask(MartingaleSessionManager sessionManager,
                                         LayerFillTracker layerFillTracker,
                                         BinanceFuturesService binanceFuturesService,
                                         PositionService positionService,
                                         SymbolLockRegistry symbolLockRegistry,
-                                        MartingaleStrategyConfig config) {
+                                        MartingaleStrategyConfig config,
+                                        MartingaleNotifier notifier) {
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
         this.binanceFuturesService = binanceFuturesService;
         this.positionService = positionService;
         this.symbolLockRegistry = symbolLockRegistry;
         this.config = config;
+        this.notifier = notifier;
     }
 
     @Scheduled(fixedDelayString = "${trading.strategy.martingale.session-cleanup-interval-millis:60000}")
-    public void cleanupIdleSessions() {
+    public void cleanupSessions() {
         Duration idleTimeout = Duration.ofMinutes(config.getSessionIdleTimeoutMinutes());
         Instant now = Instant.now();
 
         for (MartingaleSession session : sessionManager.getSessionsSnapshot()) {
-            if (session.getStatus() != MartingaleSession.Status.ACTIVE) {
+            String symbol = session.getSymbol();
+            if (symbol == null || symbol.isBlank()) {
                 continue;
             }
 
-            String symbol = session.getSymbol();
-            if (symbol == null || symbol.isBlank()) {
+            if (session.getStatus() == MartingaleSession.Status.EXITING) {
+                retryExitingSession(session);
+                continue;
+            }
+
+            if (session.getStatus() != MartingaleSession.Status.ACTIVE) {
                 continue;
             }
 
@@ -73,24 +82,65 @@ public class MartingaleSessionCleanupTask {
                 sessionManager.markExiting(symbol);
                 binanceFuturesService.cancelAllOrders(symbol);
 
-                positionService.getPosition(symbol)
-                        .filter(PositionInfo::isOpen)
-                        .ifPresent(position -> {
-                            double qty = Math.abs(position.quantity());
-                            if (qty > 0) {
-                                String closeSide = position.side() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
-                                binanceFuturesService.placeMarketOrder(symbol, closeSide, qty);
-                            }
-                        });
-
-                layerFillTracker.clearSymbol(symbol);
-                sessionManager.endSession(symbol);
-
-                log.warn("Martingale session timeout cleanup: symbol={} lastActivity={} timeoutMinutes={}",
-                        symbol, lastActivity, config.getSessionIdleTimeoutMinutes());
+                boolean closed = closePosition(symbol);
+                if (closed) {
+                    layerFillTracker.clearSymbol(symbol);
+                    sessionManager.endSession(symbol);
+                    log.warn("Martingale session timeout cleanup: symbol={} lastActivity={} timeoutMinutes={}",
+                            symbol, lastActivity, config.getSessionIdleTimeoutMinutes());
+                    notifier.notifySessionTimeout(symbol);
+                } else {
+                    log.error("Martingale session timeout cleanup 平倉失敗，保留 EXITING: symbol={}", symbol);
+                }
             } finally {
                 lock.unlock();
             }
+        }
+    }
+
+    /**
+     * 重試 EXITING 狀態的 session（上次平倉失敗留下的）。
+     */
+    private void retryExitingSession(MartingaleSession session) {
+        String symbol = session.getSymbol();
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+        if (!lock.tryLock()) {
+            return;
+        }
+        try {
+            boolean closed = closePosition(symbol);
+            if (closed) {
+                layerFillTracker.clearSymbol(symbol);
+                sessionManager.endSession(symbol);
+                log.info("Martingale EXITING session 重試平倉成功: symbol={}", symbol);
+            } else {
+                log.warn("Martingale EXITING session 重試平倉仍失敗: symbol={}", symbol);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * 嘗試市價平倉，回傳是否成功（無持倉也算成功）。
+     */
+    private boolean closePosition(String symbol) {
+        Optional<PositionInfo> posOpt = positionService.getPosition(symbol);
+        if (posOpt.isEmpty() || !posOpt.get().isOpen()) {
+            return true; // 無持倉，視為成功
+        }
+        PositionInfo position = posOpt.get();
+        double qty = Math.abs(position.quantity());
+        if (qty <= 0) {
+            return true;
+        }
+        try {
+            String closeSide = position.side() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
+            binanceFuturesService.placeMarketOrder(symbol, closeSide, qty);
+            return true;
+        } catch (Exception e) {
+            log.error("市價平倉失敗: symbol={} err={}", symbol, e.getMessage());
+            return false;
         }
     }
 }

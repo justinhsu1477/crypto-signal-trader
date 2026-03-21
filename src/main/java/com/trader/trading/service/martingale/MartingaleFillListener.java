@@ -2,6 +2,7 @@ package com.trader.trading.service.martingale;
 
 import com.google.gson.JsonObject;
 import com.trader.trading.service.LayerFillTracker;
+import com.trader.trading.service.MartingaleSessionManager;
 import com.trader.trading.service.UserDataEventObserver;
 import org.springframework.stereotype.Component;
 
@@ -15,10 +16,14 @@ public class MartingaleFillListener implements UserDataEventObserver {
 
     private final LayerFillTracker layerFillTracker;
     private final MartingaleTpManager tpManager;
+    private final MartingaleSessionManager sessionManager;
 
-    public MartingaleFillListener(LayerFillTracker layerFillTracker, MartingaleTpManager tpManager) {
+    public MartingaleFillListener(LayerFillTracker layerFillTracker,
+                                   MartingaleTpManager tpManager,
+                                   MartingaleSessionManager sessionManager) {
         this.layerFillTracker = layerFillTracker;
         this.tpManager = tpManager;
+        this.sessionManager = sessionManager;
     }
 
     @Override
@@ -61,6 +66,12 @@ public class MartingaleFillListener implements UserDataEventObserver {
             String symbol = order.has("s") ? order.get("s").getAsString() : null;
             if (symbol != null) {
                 tpManager.updateTakeProfit(symbol);
+
+                // ENTRY 單完全成交 → 更新 session 的 filledLayers
+                if ("FILLED".equals(status)) {
+                    sessionManager.getActiveSession(symbol)
+                            .ifPresent(s -> s.markFilledLayer());
+                }
             }
         }
     }

@@ -2,6 +2,7 @@ package com.trader.trading.service.martingale;
 
 import com.google.gson.JsonObject;
 import com.trader.trading.service.LayerFillTracker;
+import com.trader.trading.service.MartingaleSessionManager;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,7 +16,7 @@ class MartingaleFillListenerTest {
         // tpManager 為 null 時，FillListener 中觸發 TP 更新會 NPE
         // 因此用 test-friendly 的方式：直接用 tracker 驗證 fill，TP 觸發另行測試
         // 這裡改為不依賴 tpManager 的測試路徑：未註冊的 orderId 不會觸發 TP
-        return new MartingaleFillListener(tracker, noOpTpManager);
+        return new MartingaleFillListener(tracker, noOpTpManager, null);
     }
 
     @Test
@@ -25,7 +26,7 @@ class MartingaleFillListenerTest {
 
         // 因為 recorded=true 會呼叫 tpManager，我們需要一個可用的 tpManager
         // 直接建構一個 stub
-        MartingaleFillListener listener = new MartingaleFillListener(tracker, new NoOpTpManager());
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, new NoOpTpManager(), new MartingaleSessionManager());
 
         listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.01, 60000));
         listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.02, 59000));
@@ -44,7 +45,7 @@ class MartingaleFillListenerTest {
         tracker.registerOrder("1002", "BTCUSDT", 1);
 
         // NEW execution type → recorded=false → tpManager 不被呼叫，null 安全
-        MartingaleFillListener listener = new MartingaleFillListener(tracker, noOpTpManager);
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, noOpTpManager, null);
 
         listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1002", "NEW", "NEW", 0.01, 60000));
 
@@ -75,7 +76,7 @@ class MartingaleFillListenerTest {
     /** 測試用 stub — 繼承 MartingaleTpManager 但 override updateTakeProfit 為 no-op */
     private static class NoOpTpManager extends MartingaleTpManager {
         NoOpTpManager() {
-            super(null, null, null, null, null);
+            super(null, null, null, null, null, null);
         }
 
         @Override
