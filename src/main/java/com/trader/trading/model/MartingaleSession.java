@@ -24,6 +24,7 @@ public class MartingaleSession {
     private final Instant createdAt;
     private volatile Instant updatedAt;
     private volatile String currentTpOrderId;
+    private volatile boolean breakevenActivated;
 
     public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
         this.sessionId = sessionId;
@@ -82,6 +83,15 @@ public class MartingaleSession {
 
     public void markFilledLayer() {
         filledLayers.incrementAndGet();
+        touch();
+    }
+
+    public boolean isBreakevenActivated() {
+        return breakevenActivated;
+    }
+
+    public void setBreakevenActivated(boolean breakevenActivated) {
+        this.breakevenActivated = breakevenActivated;
         touch();
     }
 

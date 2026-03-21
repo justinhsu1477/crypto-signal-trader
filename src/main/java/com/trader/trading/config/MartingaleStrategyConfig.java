@@ -23,6 +23,10 @@ public class MartingaleStrategyConfig {
     private final long sessionCleanupIntervalMillis;
     private final long stopLossCheckIntervalMillis;
     private final int maxConcurrentSessions;
+    /** 保本觸發閾值：markPrice 超過 avgPrice × (1 + trigger) 時啟動。0 = 停用 */
+    private final double breakevenTriggerPercent;
+    /** 保本 TP 偏移：觸發後 TP 移到 avgPrice × (1 + offset)（微利出場） */
+    private final double breakevenOffsetPercent;
 
     public MartingaleStrategyConfig(
             @DefaultValue("5") int maxLayers,
@@ -37,7 +41,9 @@ public class MartingaleStrategyConfig {
             @DefaultValue("60") int entryIdleTimeoutMinutes,
             @DefaultValue("60000") long sessionCleanupIntervalMillis,
             @DefaultValue("5000") long stopLossCheckIntervalMillis,
-            @DefaultValue("3") int maxConcurrentSessions
+            @DefaultValue("3") int maxConcurrentSessions,
+            @DefaultValue("0.008") double breakevenTriggerPercent,
+            @DefaultValue("0.002") double breakevenOffsetPercent
     ) {
         this.maxLayers = maxLayers;
         this.stepPercent = stepPercent;
@@ -52,5 +58,7 @@ public class MartingaleStrategyConfig {
         this.sessionCleanupIntervalMillis = sessionCleanupIntervalMillis;
         this.stopLossCheckIntervalMillis = stopLossCheckIntervalMillis;
         this.maxConcurrentSessions = maxConcurrentSessions;
+        this.breakevenTriggerPercent = breakevenTriggerPercent;
+        this.breakevenOffsetPercent = breakevenOffsetPercent;
     }
 }
