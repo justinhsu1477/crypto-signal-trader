@@ -58,11 +58,17 @@ public class MartingaleStopLossWatcher {
                     continue;
                 }
 
-                if (!isStopLossTriggered(session.getSide(), markPrice, session.getBaseEntryPrice())) {
+                // 有成交時用加權均價做 SL 基準，確保不同成交深度的風險比一致
+                double slBasePrice = resolveSlBasePrice(session);
+                if (slBasePrice <= 0) {
                     continue;
                 }
 
-                executeStopLoss(session, markPrice);
+                if (!isStopLossTriggered(session.getSide(), markPrice, slBasePrice)) {
+                    continue;
+                }
+
+                executeStopLoss(session, markPrice, slBasePrice);
             } catch (Exception e) {
                 log.error("Stop loss check failed: symbol={} err={}", symbol, e.getMessage(), e);
             }
@@ -79,7 +85,21 @@ public class MartingaleStopLossWatcher {
         return markPrice >= baseEntryPrice * (1.0 + config.getStopLossPercent());
     }
 
-    private void executeStopLoss(MartingaleSession session, double markPrice) {
+    /**
+     * SL 基準價：有成交用加權均價，無成交用 baseEntryPrice。
+     * 確保無論幾層成交，SL 距離均價的比例一致。
+     */
+    private double resolveSlBasePrice(MartingaleSession session) {
+        if (session.getFilledLayers() > 0) {
+            LayerFillTracker.AggregatedFill fill = layerFillTracker.getAggregatedFill(session.getSymbol());
+            if (fill.avgPrice() > 0) {
+                return fill.avgPrice();
+            }
+        }
+        return session.getBaseEntryPrice();
+    }
+
+    private void executeStopLoss(MartingaleSession session, double markPrice, double slBasePrice) {
         String symbol = session.getSymbol();
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         if (!lock.tryLock()) {
@@ -107,9 +127,9 @@ public class MartingaleStopLossWatcher {
             layerFillTracker.clearSymbol(symbol);
             sessionManager.endSession(symbol);
 
-            log.warn("Martingale stop loss triggered: symbol={} side={} baseEntry={} markPrice={} stopLossPercent={}",
-                    symbol, session.getSide(), session.getBaseEntryPrice(), markPrice, config.getStopLossPercent());
-            notifier.notifyStopLossTriggered(symbol, session.getSide(), session.getBaseEntryPrice(), markPrice);
+            log.warn("Martingale stop loss triggered: symbol={} side={} slBase={} markPrice={} stopLossPercent={}",
+                    symbol, session.getSide(), slBasePrice, markPrice, config.getStopLossPercent());
+            notifier.notifyStopLossTriggered(symbol, session.getSide(), slBasePrice, markPrice);
         } finally {
             lock.unlock();
         }
