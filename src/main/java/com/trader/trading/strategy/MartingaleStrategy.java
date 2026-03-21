@@ -225,27 +225,36 @@ public class MartingaleStrategy implements TradingStrategy {
                     .build());
         }
 
-        // Compute weighted average entry price.
-        double plannedAvg = totalQuantity > 0.0 ? (weightedNotional / totalQuantity) : baseEntryPrice;
-        double averagePrice;
+        // 初始 TP 只用 Layer 1（或已有成交）的數據計算。
+        // Layer 1 LIMIT 掛在當前市價附近，幾乎立即成交；若用全部層的 totalQty，
+        // 在動態 TP 更新前的窗口期 TP 數量會大於實際持倉，造成風險。
+        // 後續層成交後由 MartingaleTpManager.updateTakeProfit() 動態修正。
+        double tpQty;
+        double tpAvgPrice;
         if (filledQty > 0.0 && filledAvg > 0.0) {
-            averagePrice = filledAvg;
-            totalQuantity = filledQty;
+            // 已有成交（Recovery 等場景）→ 用實際成交數據
+            tpQty = filledQty;
+            tpAvgPrice = filledAvg;
+        } else if (!layers.isEmpty()) {
+            // 新 session → 只用 Layer 1
+            LayerPlan firstLayer = layers.get(0);
+            tpQty = firstLayer.quantity();
+            tpAvgPrice = firstLayer.price();
         } else {
-            averagePrice = plannedAvg;
+            tpQty = totalQuantity;
+            tpAvgPrice = totalQuantity > 0.0 ? (weightedNotional / totalQuantity) : baseEntryPrice;
         }
 
-        // Set take-profit above the weighted average price.
         double takeProfitPrice = side == TradeSignal.Side.LONG
-                ? averagePrice * (1.0 + config.getTakeProfitPercent())
-                : averagePrice * (1.0 - config.getTakeProfitPercent());
+                ? tpAvgPrice * (1.0 + config.getTakeProfitPercent())
+                : tpAvgPrice * (1.0 - config.getTakeProfitPercent());
 
         orders.add(Order.builder()
                 .symbol(signal != null ? signal.getSymbol() : null)
                 .side(side)
                 .type(Order.OrderType.TAKE_PROFIT)
                 .price(takeProfitPrice)
-                .quantity(totalQuantity)
+                .quantity(tpQty)
                 .layer(null)
                 .build());
 
