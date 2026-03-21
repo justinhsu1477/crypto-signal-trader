@@ -168,7 +168,8 @@ class MartingaleStrategyTest {
                 0.15,
                 30,
                 60000,
-                5000
+                5000,
+                3
         );
 
         return new MartingaleStrategy(

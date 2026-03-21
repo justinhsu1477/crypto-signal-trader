@@ -42,6 +42,12 @@ public class MartingaleSessionManager {
         sessions.remove(symbol);
     }
 
+    public int getActiveSessionCount() {
+        return (int) sessions.values().stream()
+                .filter(s -> s.getStatus() == MartingaleSession.Status.ACTIVE)
+                .count();
+    }
+
     public Collection<MartingaleSession> getSessionsSnapshot() {
         return sessions.values();
     }

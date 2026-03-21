@@ -82,6 +82,9 @@ public class MartingaleStrategy implements TradingStrategy {
             if (sessionManager.getActiveSession(signal.getSymbol()).isPresent()) {
                 return List.of();
             }
+            if (sessionManager.getActiveSessionCount() >= config.getMaxConcurrentSessions()) {
+                return List.of();
+            }
 
         PositionInfo position = positionService.getPosition(signal.getSymbol()).orElse(null);
         TradeSignal.Side side = position != null ? position.side() : signal.getSide();
@@ -100,14 +103,13 @@ public class MartingaleStrategy implements TradingStrategy {
         List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side);
 
         // 2) Gather runtime risk context.
-        //    - accountBalance: current available balance
-        //    - drawdownPercent: proxy using today's realized loss vs SOD balance
-        //    - ema50/ema200: placeholder values (must be wired to real indicators)
         double accountBalance = binanceFuturesService.getAvailableBalance();
         String userId = tradeRecordService.getActiveUserId();
         double sodBalance = startOfDayBalanceCache.getOrCompute(userId, () -> accountBalance);
         double todayLoss = tradeRecordService.getTodayRealizedLoss();
-        double drawdownPercent = (sodBalance > 0) ? Math.abs(todayLoss) / sodBalance : 0.0;
+        double unrealizedLoss = getUnrealizedLoss();
+        double totalLoss = Math.abs(todayLoss) + Math.abs(unrealizedLoss);
+        double drawdownPercent = (sodBalance > 0) ? totalLoss / sodBalance : 0.0;
 
         double ema50 = marketIndicatorService.getEMA(signal.getSymbol(), 50);
         double ema200 = marketIndicatorService.getEMA(signal.getSymbol(), 200);
@@ -255,5 +257,23 @@ public class MartingaleStrategy implements TradingStrategy {
             return markPrice <= baseEntryPrice * (1.0 - config.getStopLossPercent());
         }
         return markPrice >= baseEntryPrice * (1.0 + config.getStopLossPercent());
+    }
+
+    /**
+     * 取得所有持倉的未實現虧損總和（只計入虧損部分，獲利不計）。
+     */
+    private double getUnrealizedLoss() {
+        try {
+            double totalLoss = 0.0;
+            for (var session : sessionManager.getSessionsSnapshot()) {
+                var posOpt = positionService.getPosition(session.getSymbol());
+                if (posOpt.isPresent() && posOpt.get().unrealizedPnl() < 0) {
+                    totalLoss += posOpt.get().unrealizedPnl();
+                }
+            }
+            return totalLoss;
+        } catch (Exception e) {
+            return 0.0;
+        }
     }
 }

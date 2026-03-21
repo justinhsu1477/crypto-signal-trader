@@ -4,6 +4,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.model.MartingaleSession;
 import com.trader.trading.model.PositionInfo;
+import com.trader.trading.service.martingale.MartingaleNotifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -21,19 +22,22 @@ public class MartingaleStopLossWatcher {
     private final LayerFillTracker layerFillTracker;
     private final SymbolLockRegistry symbolLockRegistry;
     private final MartingaleStrategyConfig config;
+    private final MartingaleNotifier notifier;
 
     public MartingaleStopLossWatcher(MartingaleSessionManager sessionManager,
                                      BinanceFuturesService binanceFuturesService,
                                      PositionService positionService,
                                      LayerFillTracker layerFillTracker,
                                      SymbolLockRegistry symbolLockRegistry,
-                                     MartingaleStrategyConfig config) {
+                                     MartingaleStrategyConfig config,
+                                     MartingaleNotifier notifier) {
         this.sessionManager = sessionManager;
         this.binanceFuturesService = binanceFuturesService;
         this.positionService = positionService;
         this.layerFillTracker = layerFillTracker;
         this.symbolLockRegistry = symbolLockRegistry;
         this.config = config;
+        this.notifier = notifier;
     }
 
     @Scheduled(fixedDelayString = "${trading.strategy.martingale.stop-loss-check-interval-millis:5000}")
@@ -105,6 +109,7 @@ public class MartingaleStopLossWatcher {
 
             log.warn("Martingale stop loss triggered: symbol={} side={} baseEntry={} markPrice={} stopLossPercent={}",
                     symbol, session.getSide(), session.getBaseEntryPrice(), markPrice, config.getStopLossPercent());
+            notifier.notifyStopLossTriggered(symbol, session.getSide(), session.getBaseEntryPrice(), markPrice);
         } finally {
             lock.unlock();
         }

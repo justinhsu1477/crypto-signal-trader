@@ -23,17 +23,20 @@ public class MartingaleTpManager {
     private final BinanceFuturesService binanceFuturesService;
     private final SymbolLockRegistry symbolLockRegistry;
     private final MartingaleStrategyConfig config;
+    private final MartingaleNotifier notifier;
 
     public MartingaleTpManager(MartingaleSessionManager sessionManager,
                                LayerFillTracker layerFillTracker,
                                BinanceFuturesService binanceFuturesService,
                                SymbolLockRegistry symbolLockRegistry,
-                               MartingaleStrategyConfig config) {
+                               MartingaleStrategyConfig config,
+                               MartingaleNotifier notifier) {
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
         this.binanceFuturesService = binanceFuturesService;
         this.symbolLockRegistry = symbolLockRegistry;
         this.config = config;
+        this.notifier = notifier;
     }
 
     /**
@@ -74,6 +77,8 @@ public class MartingaleTpManager {
                 session.setCurrentTpOrderId(result.getOrderId());
                 log.info("Martingale TP updated: symbol={} side={} avgPrice={} tpPrice={} qty={}",
                         symbol, session.getSide(), fill.avgPrice(), tpPrice, fill.totalQty());
+                notifier.notifyTpUpdated(symbol, tpPrice, fill.totalQty());
+                notifier.notifyLayerFilled(symbol, fill.avgPrice(), fill.totalQty(), fill.avgPrice(), fill.totalQty());
             } else {
                 String err = result != null ? result.getErrorMessage() : "null result";
                 log.error("Martingale TP placement failed: symbol={} err={}", symbol, err);
