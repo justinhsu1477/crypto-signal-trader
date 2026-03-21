@@ -167,7 +167,8 @@ class MartingaleStrategyTest {
                 MAX_CAPITAL_USAGE,
                 MAX_POSITION_USDT,
                 0.15,
-                30,
+                480,
+                60,
                 60000,
                 5000,
                 3
