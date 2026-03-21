@@ -24,7 +24,8 @@ public class MartingaleSession {
     private final Instant createdAt;
     private volatile Instant updatedAt;
     private volatile String currentTpOrderId;
-    private volatile boolean breakevenActivated;
+    /** 階梯式 Trailing Stop 目前層級（0=未觸發，1~4=對應 Trailing 階段） */
+    private volatile int trailingLevel;
 
     public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
         this.sessionId = sessionId;
@@ -87,11 +88,25 @@ public class MartingaleSession {
     }
 
     public boolean isBreakevenActivated() {
-        return breakevenActivated;
+        return trailingLevel > 0;
     }
 
-    public void setBreakevenActivated(boolean breakevenActivated) {
-        this.breakevenActivated = breakevenActivated;
+    public int getTrailingLevel() {
+        return trailingLevel;
+    }
+
+    public void setTrailingLevel(int level) {
+        this.trailingLevel = level;
+        touch();
+    }
+
+    /** 向下相容：設 true = level 1，設 false = level 0 */
+    public void setBreakevenActivated(boolean activated) {
+        if (activated && trailingLevel == 0) {
+            this.trailingLevel = 1;
+        } else if (!activated) {
+            this.trailingLevel = 0;
+        }
         touch();
     }
 

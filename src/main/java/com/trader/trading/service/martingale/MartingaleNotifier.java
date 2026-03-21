@@ -56,6 +56,14 @@ public class MartingaleNotifier {
                 COLOR_GREEN);
     }
 
+    public void notifyTrailingStopAdvanced(String symbol, int level, double tpPrice, double qty) {
+        String[] levelNames = {"", "保本", "鎖利 Lv2", "鎖利 Lv3", "鎖利 Lv4"};
+        String levelName = level > 0 && level < levelNames.length ? levelNames[level] : "Lv" + level;
+        send("Martingale Trailing TP " + levelName,
+                String.format("%s | Level %d | TP %.4f | 數量 %.6f", symbol, level, tpPrice, qty),
+                COLOR_GREEN);
+    }
+
     public void notifyTpHit(String symbol, TradeSignal.Side side) {
         send("Martingale TP 成交",
                 String.format("%s %s | TP 觸發平倉，Session 已清理", symbol, side),

@@ -71,9 +71,9 @@ public class MartingaleStopLossWatcher {
                     continue;
                 }
 
-                // 2) Breakeven 保本檢查（只在有成交且 breakevenTriggerPercent > 0 時啟用）
+                // 2) 階梯式 Trailing Stop（只在有成交且 breakevenTriggerPercent > 0 時啟用）
                 if (session.getFilledLayers() > 0 && config.getBreakevenTriggerPercent() > 0) {
-                    checkBreakeven(session, markPrice, slBasePrice);
+                    checkTrailingStop(session, markPrice);
                 }
             } catch (Exception e) {
                 log.error("Stop loss check failed: symbol={} err={}", symbol, e.getMessage(), e);
@@ -92,29 +92,60 @@ public class MartingaleStopLossWatcher {
     }
 
     /**
-     * 保本移動 TP：當 markPrice 超過 avgPrice × (1 + trigger) 時，
-     * 將 TP 移到 avgPrice × (1 + offset)（微利出場），保護已回收利潤。
+     * 階梯式 Trailing Stop：markPrice 每突破一個階段，TP 跟隨上移鎖利。
+     * 每個階段的 offset = 上一階段的 trigger（自然階梯），保證不可回退。
+     *
+     * 以 breakevenTriggerPercent=0.008 為例（LONG）：
+     *   Tier 1: markPrice >= avg×1.008 → TP = avg×1.002（保本）
+     *   Tier 2: markPrice >= avg×1.015 → TP = avg×1.008（鎖定 0.8%）
+     *   Tier 3: markPrice >= avg×1.025 → TP = avg×1.015（鎖定 1.5%）
+     *   Tier 4: markPrice >= avg×1.040 → TP = avg×1.025（鎖定 2.5%）
      */
-    private void checkBreakeven(MartingaleSession session, double markPrice, double avgPrice) {
-        if (session.isBreakevenActivated()) {
-            return; // 已觸發過，不重複操作
-        }
+    private static final double[] TRAILING_TRIGGER_MULTIPLIERS = {1.0, 1.875, 3.125, 5.0};
 
-        double trigger = config.getBreakevenTriggerPercent();
-        double offset = config.getBreakevenOffsetPercent();
+    private void checkTrailingStop(MartingaleSession session, double markPrice) {
+        String symbol = session.getSymbol();
 
-        boolean triggered;
-        if (session.getSide() == TradeSignal.Side.LONG) {
-            triggered = markPrice >= avgPrice * (1.0 + trigger);
-        } else {
-            triggered = markPrice <= avgPrice * (1.0 - trigger);
-        }
-
-        if (!triggered) {
+        LayerFillTracker.AggregatedFill fill = layerFillTracker.getAggregatedFill(symbol);
+        if (fill.totalQty() <= 0 || fill.avgPrice() <= 0) {
             return;
         }
 
-        String symbol = session.getSymbol();
+        double avgPrice = fill.avgPrice();
+        double baseTrigger = config.getBreakevenTriggerPercent();
+        double baseOffset = config.getBreakevenOffsetPercent();
+        int currentLevel = session.getTrailingLevel();
+
+        // 找出目前 markPrice 能達到的最高階段
+        int qualifiedLevel = 0;
+        for (int i = 0; i < TRAILING_TRIGGER_MULTIPLIERS.length; i++) {
+            double triggerPercent = baseTrigger * TRAILING_TRIGGER_MULTIPLIERS[i];
+            boolean triggered;
+            if (session.getSide() == TradeSignal.Side.LONG) {
+                triggered = markPrice >= avgPrice * (1.0 + triggerPercent);
+            } else {
+                triggered = markPrice <= avgPrice * (1.0 - triggerPercent);
+            }
+            if (triggered) {
+                qualifiedLevel = i + 1;
+            } else {
+                break;
+            }
+        }
+
+        // 只在提升階段時才移動 TP（不可回退）
+        if (qualifiedLevel <= currentLevel) {
+            return;
+        }
+
+        // 計算新的 TP offset：tier 1 用 baseOffset，tier 2+ 用前一個 tier 的 trigger
+        double offsetPercent;
+        if (qualifiedLevel == 1) {
+            offsetPercent = baseOffset;
+        } else {
+            offsetPercent = baseTrigger * TRAILING_TRIGGER_MULTIPLIERS[qualifiedLevel - 2];
+        }
+
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         if (!lock.tryLock()) {
             return;
@@ -124,12 +155,8 @@ public class MartingaleStopLossWatcher {
             if (active.isEmpty() || active.get().getStatus() != MartingaleSession.Status.ACTIVE) {
                 return;
             }
-            if (active.get().isBreakevenActivated()) {
-                return;
-            }
-
-            LayerFillTracker.AggregatedFill fill = layerFillTracker.getAggregatedFill(symbol);
-            if (fill.totalQty() <= 0 || fill.avgPrice() <= 0) {
+            // 再次確認（可能在等鎖期間被其他線程更新）
+            if (active.get().getTrailingLevel() >= qualifiedLevel) {
                 return;
             }
 
@@ -139,27 +166,27 @@ public class MartingaleStopLossWatcher {
                 try {
                     binanceFuturesService.cancelAlgoOrder(symbol, Long.parseLong(oldTpId));
                 } catch (Exception e) {
-                    log.warn("Breakeven: 取消舊 TP 失敗 symbol={} err={}", symbol, e.getMessage());
+                    log.warn("Trailing: 取消舊 TP 失敗 symbol={} err={}", symbol, e.getMessage());
                 }
             }
 
-            // 掛新的保本 TP
-            double breakevenTpPrice = session.getSide() == TradeSignal.Side.LONG
-                    ? fill.avgPrice() * (1.0 + offset)
-                    : fill.avgPrice() * (1.0 - offset);
+            // 掛新 TP
+            double newTpPrice = session.getSide() == TradeSignal.Side.LONG
+                    ? avgPrice * (1.0 + offsetPercent)
+                    : avgPrice * (1.0 - offsetPercent);
 
             String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
-            OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, breakevenTpPrice, fill.totalQty());
+            OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, newTpPrice, fill.totalQty());
 
             if (result != null && result.isSuccess() && result.getOrderId() != null) {
                 active.get().setCurrentTpOrderId(result.getOrderId());
-                active.get().setBreakevenActivated(true);
-                log.info("Martingale breakeven TP activated: symbol={} avgPrice={} breakevenTp={} markPrice={}",
-                        symbol, fill.avgPrice(), breakevenTpPrice, markPrice);
-                notifier.notifyBreakevenActivated(symbol, breakevenTpPrice, fill.totalQty());
+                active.get().setTrailingLevel(qualifiedLevel);
+                log.info("Martingale trailing TP level {}: symbol={} avgPrice={} tp={} markPrice={}",
+                        qualifiedLevel, symbol, avgPrice, newTpPrice, markPrice);
+                notifier.notifyTrailingStopAdvanced(symbol, qualifiedLevel, newTpPrice, fill.totalQty());
             } else {
                 String err = result != null ? result.getErrorMessage() : "null result";
-                log.error("Martingale breakeven TP 下單失敗: symbol={} err={}", symbol, err);
+                log.error("Martingale trailing TP 下單失敗: symbol={} level={} err={}", symbol, qualifiedLevel, err);
             }
         } finally {
             lock.unlock();
