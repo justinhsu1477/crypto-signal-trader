@@ -66,18 +66,18 @@ class MartingaleStrategyTest {
     }
 
     @Test
-    void testAveragePrice() {
+    void testInitialTpUsesLayer1Only() {
         MartingaleStrategy strategy = buildStrategy(new RiskManager(), 600_000_000.0, 0.0);
 
         List<Order> orders = strategy.execute(sampleSignal());
 
-        double expectedAverage = expectedAveragePrice(MAX_LAYERS, 600_000_000.0);
-
-        // Average price is not directly returned, but we can verify it via TP calculation
+        // 初始 TP 應只用 Layer 1 的 price 和 quantity（避免數量不匹配風險）
+        // 後續層成交後由 MartingaleTpManager 動態更新
         Order tp = orders.get(orders.size() - 1);
         double actualAverage = tp.getPrice() / (1.0 + TAKE_PROFIT_PERCENT);
 
-        assertEquals(expectedAverage, actualAverage, 0.0001);
+        // Layer 1 price = ENTRY_PRICE (no step applied)
+        assertEquals(ENTRY_PRICE, actualAverage, 0.0001);
     }
 
     @Test
@@ -89,11 +89,12 @@ class MartingaleStrategyTest {
         Order tp = orders.get(orders.size() - 1);
         assertEquals(Order.OrderType.TAKE_PROFIT, tp.getType());
 
-        double expectedAverage = expectedAveragePrice(MAX_LAYERS, 600_000_000.0);
-        double expectedTp = expectedAverage * (1.0 + TAKE_PROFIT_PERCENT);
+        // 初始 TP 只用 Layer 1
+        Order layer1 = orders.get(0);
+        double expectedTp = layer1.getPrice() * (1.0 + TAKE_PROFIT_PERCENT);
 
         assertEquals(expectedTp, tp.getPrice(), 0.0001);
-        assertEquals(expectedTotalQuantity(MAX_LAYERS, 600_000_000.0), tp.getQuantity(), 0.0001);
+        assertEquals(layer1.getQuantity(), tp.getQuantity(), 0.0001);
     }
 
     @Test
