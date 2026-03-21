@@ -100,7 +100,7 @@ public class MartingaleStrategy implements TradingStrategy {
         }
 
         // 1) Build layer prices based on entry and side (LONG down, SHORT up).
-        List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side);
+        List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side, signal.getSymbol());
 
         // 2) Gather runtime risk context.
         double accountBalance = binanceFuturesService.getAvailableBalance();
@@ -192,16 +192,36 @@ public class MartingaleStrategy implements TradingStrategy {
         }
     }
 
-    private List<Double> buildLayerPrices(double baseEntryPrice, TradeSignal.Side side) {
+    private List<Double> buildLayerPrices(double baseEntryPrice, TradeSignal.Side side, String symbol) {
+        double effectiveStep = resolveStepPercent(symbol);
         List<Double> prices = new ArrayList<>(config.getMaxLayers());
         for (int layer = 1; layer <= config.getMaxLayers(); layer++) {
-            double stepFactor = Math.pow(1.0 + config.getStepPercent(), layer - 1);
             double price = side == TradeSignal.Side.LONG
-                    ? baseEntryPrice * Math.pow(1.0 - config.getStepPercent(), layer - 1)
-                    : baseEntryPrice * stepFactor;
+                    ? baseEntryPrice * Math.pow(1.0 - effectiveStep, layer - 1)
+                    : baseEntryPrice * Math.pow(1.0 + effectiveStep, layer - 1);
             prices.add(price);
         }
         return prices;
+    }
+
+    /**
+     * ATR 自適應層距：當 atrPeriod > 0 時，根據當前 ATR 動態調整 stepPercent。
+     * effectiveStep = baseStep × (currentATR% / referenceATR%)
+     * 限制範圍在 [baseStep × 0.5, baseStep × 3.0] 內，防止極端值。
+     */
+    private double resolveStepPercent(String symbol) {
+        if (config.getAtrPeriod() <= 0 || config.getAtrReferencePercent() <= 0) {
+            return config.getStepPercent();
+        }
+
+        double atrPercent = marketIndicatorService.getATRPercent(symbol, config.getAtrPeriod());
+        if (Double.isNaN(atrPercent) || atrPercent <= 0) {
+            return config.getStepPercent();
+        }
+
+        double ratio = atrPercent / config.getAtrReferencePercent();
+        ratio = Math.max(0.5, Math.min(3.0, ratio)); // clamp to [0.5x, 3x]
+        return config.getStepPercent() * ratio;
     }
 
     private List<Order> buildOrders(TradeSignal signal, TradeSignal.Side side, List<LayerPlan> layers, int allowedLayers, double baseEntryPrice, double filledQty, double filledAvg) {

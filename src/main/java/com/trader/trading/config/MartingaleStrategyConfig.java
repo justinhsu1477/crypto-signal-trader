@@ -27,6 +27,10 @@ public class MartingaleStrategyConfig {
     private final double breakevenTriggerPercent;
     /** 保本 TP 偏移：觸發後 TP 移到 avgPrice × (1 + offset)（微利出場） */
     private final double breakevenOffsetPercent;
+    /** ATR 計算週期（K 線數量），0 = 停用 ATR 自適應 */
+    private final int atrPeriod;
+    /** ATR 參考值（佔價格百分比）。ATR% = reference 時 stepPercent 不變 */
+    private final double atrReferencePercent;
 
     public MartingaleStrategyConfig(
             @DefaultValue("5") int maxLayers,
@@ -43,7 +47,9 @@ public class MartingaleStrategyConfig {
             @DefaultValue("5000") long stopLossCheckIntervalMillis,
             @DefaultValue("3") int maxConcurrentSessions,
             @DefaultValue("0.008") double breakevenTriggerPercent,
-            @DefaultValue("0.002") double breakevenOffsetPercent
+            @DefaultValue("0.002") double breakevenOffsetPercent,
+            @DefaultValue("14") int atrPeriod,
+            @DefaultValue("0.02") double atrReferencePercent
     ) {
         this.maxLayers = maxLayers;
         this.stepPercent = stepPercent;
@@ -60,5 +66,7 @@ public class MartingaleStrategyConfig {
         this.maxConcurrentSessions = maxConcurrentSessions;
         this.breakevenTriggerPercent = breakevenTriggerPercent;
         this.breakevenOffsetPercent = breakevenOffsetPercent;
+        this.atrPeriod = atrPeriod;
+        this.atrReferencePercent = atrReferencePercent;
     }
 }

@@ -28,6 +28,8 @@ trading:
       max-concurrent-sessions: ${MARTINGALE_MAX_CONCURRENT_SESSIONS:3}
       breakeven-trigger-percent: ${MARTINGALE_BREAKEVEN_TRIGGER_PERCENT:0.008}
       breakeven-offset-percent: ${MARTINGALE_BREAKEVEN_OFFSET_PERCENT:0.002}
+      atr-period: ${MARTINGALE_ATR_PERIOD:14}
+      atr-reference-percent: ${MARTINGALE_ATR_REFERENCE_PERCENT:0.02}
 
 server:
   port: ${SERVER_PORT:8080}
