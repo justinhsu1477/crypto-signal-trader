@@ -50,6 +50,12 @@ public class MartingaleNotifier {
                 COLOR_ORANGE);
     }
 
+    public void notifyTpHit(String symbol, TradeSignal.Side side) {
+        send("Martingale TP 成交",
+                String.format("%s %s | TP 觸發平倉，Session 已清理", symbol, side),
+                COLOR_GREEN);
+    }
+
     public void notifyAllEntryFailed(String symbol) {
         send("Martingale 送單全部失敗",
                 String.format("%s | 全部 ENTRY 送單失敗，Session 已清理", symbol),
