@@ -169,11 +169,13 @@ class MartingaleStrategyTest {
                 0.15,
                 480,
                 60,
-                60000,
-                5000,
+                60000L,
+                5000L,
                 3,
                 0.008,
-                0.002
+                0.002,
+                0,      // atrPeriod = 0 → 停用 ATR，測試用固定 stepPercent
+                0.02
         );
 
         return new MartingaleStrategy(

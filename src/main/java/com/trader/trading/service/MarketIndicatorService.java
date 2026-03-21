@@ -68,6 +68,102 @@ public class MarketIndicatorService {
         }
     }
 
+    /**
+     * Returns the ATR (Average True Range) as a percentage of the current price.
+     * For example: ATR = 1200, price = 60000 → returns 0.02 (2%).
+     */
+    public double getATRPercent(String symbol, int period) {
+        if (symbol == null || symbol.isBlank() || period <= 1) {
+            return Double.NaN;
+        }
+
+        String cacheKey = symbol + ":ATR:" + period;
+        CacheEntry cached = cache.get(cacheKey);
+        if (cached != null) {
+            if (cached.isExpired()) {
+                refreshATRAsync(cacheKey, symbol, period, cached);
+            }
+            return cached.value;
+        }
+
+        try {
+            double atrPercent = fetchATRPercent(symbol, period);
+            if (!Double.isNaN(atrPercent)) {
+                cache.put(cacheKey, new CacheEntry(atrPercent, System.currentTimeMillis(), new AtomicBoolean(false)));
+            }
+            return atrPercent;
+        } catch (Exception e) {
+            log.warn("ATR fetch failed: symbol={} period={} err={}", symbol, period, e.getMessage());
+            return Double.NaN;
+        }
+    }
+
+    private double fetchATRPercent(String symbol, int period) throws IOException {
+        String url = binanceConfig.getBaseUrl()
+                + "/fapi/v1/klines?symbol=" + symbol
+                + "&interval=" + DEFAULT_INTERVAL
+                + "&limit=" + KLINE_LIMIT;
+
+        Request request = new Request.Builder().url(url).get().build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                return Double.NaN;
+            }
+
+            JsonNode root = objectMapper.readTree(Objects.requireNonNull(response.body()).string());
+            if (!root.isArray() || root.size() < period + 1) {
+                return Double.NaN;
+            }
+
+            // Wilder's smoothed ATR
+            double atr = Double.NaN;
+            double prevClose = root.get(0).get(4).asDouble();
+            double lastClose = prevClose;
+
+            for (int i = 1; i < root.size(); i++) {
+                JsonNode kline = root.get(i);
+                double high = kline.get(2).asDouble();
+                double low = kline.get(3).asDouble();
+                double close = kline.get(4).asDouble();
+
+                double tr = Math.max(high - low,
+                        Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
+
+                if (Double.isNaN(atr)) {
+                    atr = tr; // seed
+                } else {
+                    atr = ((atr * (period - 1)) + tr) / period;
+                }
+
+                prevClose = close;
+                lastClose = close;
+            }
+
+            if (Double.isNaN(atr) || lastClose <= 0) {
+                return Double.NaN;
+            }
+            return atr / lastClose; // ATR as percentage of price
+        }
+    }
+
+    private void refreshATRAsync(String cacheKey, String symbol, int period, CacheEntry cached) {
+        if (!cached.refreshing.compareAndSet(false, true)) {
+            return;
+        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                double atrPercent = fetchATRPercent(symbol, period);
+                if (!Double.isNaN(atrPercent)) {
+                    cache.put(cacheKey, new CacheEntry(atrPercent, System.currentTimeMillis(), new AtomicBoolean(false)));
+                }
+            } catch (Exception e) {
+                log.debug("ATR refresh failed: symbol={} period={} err={}", symbol, period, e.getMessage());
+            } finally {
+                cached.refreshing.set(false);
+            }
+        });
+    }
+
     private double fetchEMA(String symbol, int period) throws IOException {
         String url = binanceConfig.getBaseUrl()
                 + "/fapi/v1/klines?symbol=" + symbol
