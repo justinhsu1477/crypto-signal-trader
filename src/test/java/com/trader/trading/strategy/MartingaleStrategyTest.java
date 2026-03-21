@@ -25,6 +25,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.withSettings;
 import static org.mockito.Mockito.when;
@@ -128,6 +129,68 @@ class MartingaleStrategyTest {
         assertNotNull(tp.getPrice());
     }
 
+    // ==================== SHORT 方向測試 ====================
+
+    @Test
+    void testShortLayerPricesGoUp() {
+        MartingaleStrategy strategy = buildStrategy(new RiskManager(), 600_000_000.0, 0.0);
+
+        List<Order> orders = strategy.execute(sampleShortSignal());
+
+        assertEquals(6, orders.size());
+
+        // SHORT 各層價格應向上遞增
+        for (int i = 0; i < MAX_LAYERS; i++) {
+            Order order = orders.get(i);
+            assertEquals(Order.OrderType.ENTRY, order.getType());
+            double expectedPrice = ENTRY_PRICE * Math.pow(1.0 + PRICE_STEP_PERCENT, i);
+            assertEquals(expectedPrice, order.getPrice(), 0.0001);
+        }
+
+        // 確認價格遞增
+        for (int i = 1; i < MAX_LAYERS; i++) {
+            assertTrue(orders.get(i).getPrice() > orders.get(i - 1).getPrice());
+        }
+    }
+
+    @Test
+    void testShortTpIsBelowEntryPrice() {
+        MartingaleStrategy strategy = buildStrategy(new RiskManager(), 600_000_000.0, 0.0);
+
+        List<Order> orders = strategy.execute(sampleShortSignal());
+
+        Order tp = orders.get(orders.size() - 1);
+        assertEquals(Order.OrderType.TAKE_PROFIT, tp.getType());
+
+        // SHORT TP = Layer 1 price × (1 - tpPercent) → 低於入場價
+        Order layer1 = orders.get(0);
+        double expectedTp = layer1.getPrice() * (1.0 - TAKE_PROFIT_PERCENT);
+        assertEquals(expectedTp, tp.getPrice(), 0.0001);
+        assertEquals(layer1.getQuantity(), tp.getQuantity(), 0.0001);
+        assertTrue(tp.getPrice() < layer1.getPrice());
+    }
+
+    @Test
+    void testShortLayerCount() {
+        MartingaleStrategy strategy = buildStrategy(new RiskManager(), 600_000_000.0, 0.0);
+
+        List<Order> orders = strategy.execute(sampleShortSignal());
+
+        long entryCount = orders.stream().filter(o -> o.getType() == Order.OrderType.ENTRY).count();
+        assertEquals(MAX_LAYERS, entryCount);
+    }
+
+    @Test
+    void testShortSideIsPreserved() {
+        MartingaleStrategy strategy = buildStrategy(new RiskManager(), 600_000_000.0, 0.0);
+
+        List<Order> orders = strategy.execute(sampleShortSignal());
+
+        for (Order order : orders) {
+            assertEquals(TradeSignal.Side.SHORT, order.getSide());
+        }
+    }
+
     private MartingaleStrategy buildStrategy(RiskManager riskManager, double balance, double todayLoss) {
         BinanceFuturesService binanceFuturesService = mock(BinanceFuturesService.class,
                 withSettings().mockMaker(MockMakers.SUBCLASS));
@@ -206,6 +269,16 @@ class MartingaleStrategyTest {
         return TradeSignal.builder()
                 .symbol("BTCUSDT")
                 .side(TradeSignal.Side.LONG)
+                .entryPriceLow(ENTRY_PRICE)
+                .entryPriceHigh(ENTRY_PRICE)
+                .signalType(TradeSignal.SignalType.ENTRY)
+                .build();
+    }
+
+    private TradeSignal sampleShortSignal() {
+        return TradeSignal.builder()
+                .symbol("BTCUSDT")
+                .side(TradeSignal.Side.SHORT)
                 .entryPriceLow(ENTRY_PRICE)
                 .entryPriceHigh(ENTRY_PRICE)
                 .signalType(TradeSignal.SignalType.ENTRY)
