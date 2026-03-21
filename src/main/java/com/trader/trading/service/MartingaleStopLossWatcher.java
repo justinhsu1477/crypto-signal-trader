@@ -160,17 +160,9 @@ public class MartingaleStopLossWatcher {
                 return;
             }
 
-            // 取消舊 TP
+            // 先掛新 TP → 再取消舊 TP（消除無保護窗口）
             String oldTpId = active.get().getCurrentTpOrderId();
-            if (oldTpId != null && !oldTpId.isBlank()) {
-                try {
-                    binanceFuturesService.cancelAlgoOrder(symbol, Long.parseLong(oldTpId));
-                } catch (Exception e) {
-                    log.warn("Trailing: 取消舊 TP 失敗 symbol={} err={}", symbol, e.getMessage());
-                }
-            }
 
-            // 掛新 TP
             double newTpPrice = session.getSide() == TradeSignal.Side.LONG
                     ? avgPrice * (1.0 + offsetPercent)
                     : avgPrice * (1.0 - offsetPercent);
@@ -181,12 +173,23 @@ public class MartingaleStopLossWatcher {
             if (result != null && result.isSuccess() && result.getOrderId() != null) {
                 active.get().setCurrentTpOrderId(result.getOrderId());
                 active.get().setTrailingLevel(qualifiedLevel);
+
+                // 新 TP 成功後才取消舊 TP
+                if (oldTpId != null && !oldTpId.isBlank()) {
+                    try {
+                        binanceFuturesService.cancelAlgoOrder(symbol, Long.parseLong(oldTpId));
+                    } catch (Exception e) {
+                        log.warn("Trailing: 取消舊 TP 失敗 symbol={} err={}", symbol, e.getMessage());
+                    }
+                }
+
                 log.info("Martingale trailing TP level {}: symbol={} avgPrice={} tp={} markPrice={}",
                         qualifiedLevel, symbol, avgPrice, newTpPrice, markPrice);
                 notifier.notifyTrailingStopAdvanced(symbol, qualifiedLevel, newTpPrice, fill.totalQty());
             } else {
+                // 新 TP 失敗 → 保留舊 TP，不更新 level
                 String err = result != null ? result.getErrorMessage() : "null result";
-                log.error("Martingale trailing TP 下單失敗: symbol={} level={} err={}", symbol, qualifiedLevel, err);
+                log.error("Martingale trailing TP 下單失敗（保留舊 TP）: symbol={} level={} err={}", symbol, qualifiedLevel, err);
             }
         } finally {
             lock.unlock();
