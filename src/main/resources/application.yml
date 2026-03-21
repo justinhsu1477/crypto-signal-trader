@@ -26,6 +26,8 @@ trading:
       session-cleanup-interval-millis: ${MARTINGALE_SESSION_CLEANUP_INTERVAL_MILLIS:60000}
       stop-loss-check-interval-millis: ${MARTINGALE_STOP_LOSS_CHECK_INTERVAL_MILLIS:5000}
       max-concurrent-sessions: ${MARTINGALE_MAX_CONCURRENT_SESSIONS:3}
+      breakeven-trigger-percent: ${MARTINGALE_BREAKEVEN_TRIGGER_PERCENT:0.008}
+      breakeven-offset-percent: ${MARTINGALE_BREAKEVEN_OFFSET_PERCENT:0.002}
 
 server:
   port: ${SERVER_PORT:8080}

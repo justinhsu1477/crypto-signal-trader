@@ -50,6 +50,12 @@ public class MartingaleNotifier {
                 COLOR_ORANGE);
     }
 
+    public void notifyBreakevenActivated(String symbol, double breakevenTpPrice, double qty) {
+        send("Martingale 保本 TP 啟動",
+                String.format("%s | 保本 TP %.4f | 數量 %.6f", symbol, breakevenTpPrice, qty),
+                COLOR_GREEN);
+    }
+
     public void notifyTpHit(String symbol, TradeSignal.Side side) {
         send("Martingale TP 成交",
                 String.format("%s %s | TP 觸發平倉，Session 已清理", symbol, side),
