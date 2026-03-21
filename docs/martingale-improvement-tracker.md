@@ -228,7 +228,7 @@
 
 ### 2D-1 TP 成交偵測 + Session / 掛單清理（P0 — 會直接虧錢）
 
-- [ ] **狀態：待開發**
+- [x] **狀態：已完成（2026-03-21）**
 - **類型：** 功能缺失（致命）
 - **影響檔案：** `MartingaleFillListener.java`、`MartingaleSessionManager.java`、`OrderExecutor.java`
 - **問題描述：**
@@ -255,7 +255,7 @@
 
 ### 2D-2 初始 TP 數量修正（P1 — 競爭窗口風險）
 
-- [ ] **狀態：待開發**
+- [x] **狀態：已完成（2026-03-21）**
 - **類型：** 邏輯缺陷
 - **影響檔案：** `MartingaleStrategy.java`（`buildOrders` 方法）
 - **問題描述：**
@@ -275,7 +275,7 @@
 
 ### 2D-3 Session 超時機制重新設計（P2 — 違反馬丁核心邏輯）
 
-- [ ] **狀態：待開發**
+- [x] **狀態：已完成（2026-03-21）**
 - **類型：** 策略邏輯缺陷
 - **影響檔案：** `MartingaleSessionCleanupTask.java`、`MartingaleStrategyConfig.java`
 - **問題描述：**
@@ -294,7 +294,7 @@
 
 ### 2D-4 SL 改用加權均價為基準（P2 — 風險比不一致）
 
-- [ ] **狀態：待開發**
+- [x] **狀態：已完成（2026-03-21）**
 - **類型：** 風控邏輯缺陷
 - **影響檔案：** `MartingaleStopLossWatcher.java`
 - **問題描述：**
@@ -315,7 +315,7 @@
 
 ### 2D-5 保本移動 TP — Breakeven Protection（P3 — 策略效能優化）
 
-- [ ] **狀態：待開發**
+- [x] **狀態：已完成（2026-03-21）**
 - **類型：** 策略增強
 - **影響檔案：** `MartingaleTpManager.java`、`MartingaleStrategyConfig.java`
 - **問題描述：**
@@ -337,7 +337,7 @@
 
 ### 2D-6 ATR 自適應層距（P3 — 策略效能優化）
 
-- [ ] **狀態：待開發**
+- [x] **狀態：已完成（2026-03-21）**
 - **類型：** 策略優化
 - **影響檔案：** `MartingaleStrategy.java`（`buildLayerPrices`）、`MarketIndicatorService.java`、`MartingaleStrategyConfig.java`
 - **問題描述：**
@@ -409,12 +409,12 @@
 | 2C-4 | CLOSE 流程原子性 | Important | ✅ 完成 | 異常處理 |
 | 2C-5 | 通知機制整合 | Important | ✅ 完成 | 功能缺失 |
 | 2C-6 | filledLayers 未更新 | Important | ✅ 完成 | 邏輯缺陷 |
-| 2D-1 | TP 成交偵測 + 清理 | P0 致命 | 待開發 | 功能缺失 |
-| 2D-2 | 初始 TP 數量修正 | P1 高 | 待開發 | 邏輯缺陷 |
-| 2D-3 | Session 超時重新設計 | P2 中 | 待開發 | 策略邏輯 |
-| 2D-4 | SL 改用加權均價 | P2 中 | 待開發 | 風控邏輯 |
-| 2D-5 | 保本移動 TP | P3 低 | 待開發 | 策略增強 |
-| 2D-6 | ATR 自適應層距 | P3 低 | 待開發 | 策略優化 |
+| 2D-1 | TP 成交偵測 + 清理 | P0 致命 | ✅ 完成 | 功能缺失 |
+| 2D-2 | 初始 TP 數量修正 | P1 高 | ✅ 完成 | 邏輯缺陷 |
+| 2D-3 | Session 超時重新設計 | P2 中 | ✅ 完成 | 策略邏輯 |
+| 2D-4 | SL 改用加權均價 | P2 中 | ✅ 完成 | 風控邏輯 |
+| 2D-5 | 保本移動 TP | P3 低 | ✅ 完成 | 策略增強 |
+| 2D-6 | ATR 自適應層距 | P3 低 | ✅ 完成 | 策略優化 |
 | 2E-1 | Session 持久化到 DB | Future | 未開始 | 架構改善 |
 | 2E-2 | 回測框架 | Future | 未開始 | 工具 |
 | 2E-3 | 多用戶事件分發 | Future | 未開始 | 功能缺口 |
