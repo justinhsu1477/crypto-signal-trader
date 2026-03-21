@@ -152,6 +152,7 @@ public class MartingaleStrategy implements TradingStrategy {
 
         // 3) Apply risk controls and decide how many layers are allowed.
         RiskDecision decision = riskManager.evaluateMartingale(
+                side,
                 accountBalance,
                 config.getMaxCapitalUsage(),
                 config.getMaxLayers(),
