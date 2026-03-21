@@ -1,5 +1,6 @@
 package com.trader.trading.risk;
 
+import com.trader.shared.model.TradeSignal;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -12,6 +13,7 @@ public class RiskManager {
      * This is intentionally deterministic and reusable for any layered-entry strategy.
      */
     public RiskDecision evaluateMartingale(
+            TradeSignal.Side side,
             double accountBalance,
             double maxCapitalUsage,
             int maxLayers,
@@ -28,8 +30,11 @@ public class RiskManager {
             return RiskDecision.reject("balance-unavailable");
         }
 
-        // Trend filter: reject if short-term trend is weaker than long-term trend.
-        if (ema50 < ema200) {
+        // Trend filter: LONG 需要黃金交叉（EMA50 > EMA200），SHORT 需要死亡交叉（EMA50 < EMA200）
+        if (side == TradeSignal.Side.LONG && ema50 < ema200) {
+            return RiskDecision.reject("trend-filter-blocked");
+        }
+        if (side == TradeSignal.Side.SHORT && ema50 > ema200) {
             return RiskDecision.reject("trend-filter-blocked");
         }
 
