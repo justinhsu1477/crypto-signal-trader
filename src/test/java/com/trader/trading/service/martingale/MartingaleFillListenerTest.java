@@ -73,7 +73,64 @@ class MartingaleFillListenerTest {
         return event;
     }
 
-    /** 測試用 stub — 繼承 MartingaleTpManager 但 override updateTakeProfit 為 no-op */
+    @Test
+    void detectsTpAlgoTriggeredAndCallsHandleTpFilled() {
+        LayerFillTracker tracker = new LayerFillTracker();
+        MartingaleSessionManager mgr = new MartingaleSessionManager();
+        TrackingTpManager tpMgr = new TrackingTpManager();
+
+        // 建立 active session 並設定 TP algoId
+        mgr.startSession("ETHUSDT", com.trader.shared.model.TradeSignal.Side.LONG, 3, 3000.0);
+        mgr.getActiveSession("ETHUSDT").ifPresent(s -> s.setCurrentTpOrderId("9999"));
+
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, tpMgr, mgr);
+
+        // 模擬 ALGO_UPDATE: TP TRIGGERED
+        JsonObject algoOrder = new JsonObject();
+        algoOrder.addProperty("s", "ETHUSDT");
+        algoOrder.addProperty("X", "TRIGGERED");
+        algoOrder.addProperty("o", "TAKE_PROFIT_MARKET");
+        algoOrder.addProperty("aid", 9999L);
+
+        JsonObject event = new JsonObject();
+        event.addProperty("e", "ALGO_UPDATE");
+        event.add("o", algoOrder);
+
+        listener.onEvent(event);
+
+        assertThat(tpMgr.tpFilledSymbol).isEqualTo("ETHUSDT");
+    }
+
+    @Test
+    void fallbackDetectsMarketFilledAsPositionClose() {
+        LayerFillTracker tracker = new LayerFillTracker();
+        MartingaleSessionManager mgr = new MartingaleSessionManager();
+        TrackingTpManager tpMgr = new TrackingTpManager();
+
+        mgr.startSession("BTCUSDT", com.trader.shared.model.TradeSignal.Side.LONG, 5, 60000.0);
+
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, tpMgr, mgr);
+
+        // 模擬一個非 ENTRY 的 MARKET FILLED（TP 觸發的市價平倉）
+        JsonObject order = new JsonObject();
+        order.addProperty("s", "BTCUSDT");
+        order.addProperty("i", 5555L);
+        order.addProperty("x", "TRADE");
+        order.addProperty("X", "FILLED");
+        order.addProperty("o", "MARKET");
+        order.addProperty("l", 0.1);
+        order.addProperty("L", 61000.0);
+
+        JsonObject event = new JsonObject();
+        event.addProperty("e", "ORDER_TRADE_UPDATE");
+        event.add("o", order);
+
+        listener.onEvent(event);
+
+        assertThat(tpMgr.tpFilledSymbol).isEqualTo("BTCUSDT");
+    }
+
+    /** 測試用 stub — 繼承 MartingaleTpManager 但 override 為 no-op */
     private static class NoOpTpManager extends MartingaleTpManager {
         NoOpTpManager() {
             super(null, null, null, null, null, null);
@@ -82,6 +139,30 @@ class MartingaleFillListenerTest {
         @Override
         public void updateTakeProfit(String symbol) {
             // no-op for testing
+        }
+
+        @Override
+        public void handleTpFilled(String symbol) {
+            // no-op for testing
+        }
+    }
+
+    /** 追蹤呼叫的 stub — 記錄 handleTpFilled 被呼叫的 symbol */
+    private static class TrackingTpManager extends MartingaleTpManager {
+        String tpFilledSymbol = null;
+
+        TrackingTpManager() {
+            super(null, null, null, null, null, null);
+        }
+
+        @Override
+        public void updateTakeProfit(String symbol) {
+            // no-op
+        }
+
+        @Override
+        public void handleTpFilled(String symbol) {
+            this.tpFilledSymbol = symbol;
         }
     }
 }

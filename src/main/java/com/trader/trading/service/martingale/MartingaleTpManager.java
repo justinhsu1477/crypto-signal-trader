@@ -88,6 +88,43 @@ public class MartingaleTpManager {
         }
     }
 
+    /**
+     * TP 成交後的清理流程：取消殘留 ENTRY 掛單、結束 session、清理 tracker。
+     * 由 MartingaleFillListener 偵測到 ALGO_UPDATE TRIGGERED 或 ORDER_TRADE_UPDATE 平倉成交時呼叫。
+     */
+    public void handleTpFilled(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return;
+        }
+
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+        lock.lock();
+        try {
+            Optional<MartingaleSession> sessionOpt = sessionManager.getActiveSession(symbol);
+            if (sessionOpt.isEmpty()) {
+                return;
+            }
+
+            MartingaleSession session = sessionOpt.get();
+
+            // 取消所有殘留的 ENTRY LIMIT 掛單
+            try {
+                binanceFuturesService.cancelAllOrders(symbol);
+            } catch (Exception e) {
+                log.warn("Martingale TP filled — 取消殘留掛單失敗: symbol={} err={}", symbol, e.getMessage());
+            }
+
+            // 清理 session 和 tracker
+            layerFillTracker.clearSymbol(symbol);
+            sessionManager.endSession(symbol);
+
+            log.info("Martingale TP 成交，Session 已清理: symbol={} side={}", symbol, session.getSide());
+            notifier.notifyTpHit(symbol, session.getSide());
+        } finally {
+            lock.unlock();
+        }
+    }
+
     private void cancelCurrentTp(MartingaleSession session) {
         String tpOrderId = session.getCurrentTpOrderId();
         if (tpOrderId == null || tpOrderId.isBlank()) {
