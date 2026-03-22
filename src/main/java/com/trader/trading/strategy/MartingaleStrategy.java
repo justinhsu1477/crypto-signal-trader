@@ -10,6 +10,7 @@ import com.trader.trading.risk.RiskManager;
 import com.trader.trading.risk.RiskScoreResult;
 import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
+import com.trader.trading.model.MartingaleSession;
 import com.trader.trading.model.PositionInfo;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.MarketIndicatorService;
@@ -21,11 +22,13 @@ import com.trader.trading.service.StartOfDayBalanceCache;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Component
 public class MartingaleStrategy implements TradingStrategy {
 
@@ -85,8 +88,9 @@ public class MartingaleStrategy implements TradingStrategy {
         var lock = symbolLockRegistry.getLock(signal.getSymbol());
         lock.lock();
         try {
-            if (sessionManager.getActiveSession(signal.getSymbol()).isPresent()) {
-                return List.of();
+            var existingSession = sessionManager.getActiveSession(signal.getSymbol());
+            if (existingSession.isPresent()) {
+                return adjustExistingSession(existingSession.get(), signal);
             }
             if (sessionManager.getActiveSessionCount() >= config.getMaxConcurrentSessions()) {
                 return List.of();
@@ -191,6 +195,178 @@ public class MartingaleStrategy implements TradingStrategy {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * 收到新訊號時，動態調整已有 session 的未成交掛單：
+     * - filledLayers == 0：取消全部掛單 → 結束 session → 由外層建立新 session
+     * - filledLayers > 0：取消未成交 ENTRY + 舊 TP → 以新價格重新掛出剩餘層 + 更新 TP
+     * - filledLayers == plannedLayers：全部成交，無法調整
+     */
+    private List<Order> adjustExistingSession(MartingaleSession session, TradeSignal signal) {
+        int filled = session.getFilledLayers();
+        int planned = session.getPlannedLayers();
+        String symbol = session.getSymbol();
+
+        // 全部成交 → 不需要調整，等待 TP 觸發
+        if (filled >= planned) {
+            return List.of();
+        }
+
+        // 無任何成交 → 取消全部、結束 session，讓外層重新建立
+        if (filled == 0) {
+            try {
+                binanceFuturesService.cancelAllOrders(symbol);
+            } catch (Exception e) {
+                log.warn("Adjust: 取消掛單失敗 symbol={} err={}", symbol, e.getMessage());
+                return List.of();
+            }
+            layerFillTracker.clearSymbol(symbol);
+            sessionManager.endSession(symbol);
+            // 回傳空 → 外層 execute() 會因為 session 不存在而走正常建立流程
+            // 但我們已在 lock 內，所以直接重新執行建立邏輯
+            return executeNewSession(signal);
+        }
+
+        // 有成交 → 取消未成交 ENTRY + 舊 TP，以新訊號價格重新掛出剩餘層
+        try {
+            binanceFuturesService.cancelAllOrders(symbol);
+        } catch (Exception e) {
+            log.warn("Adjust: 取消掛單失敗 symbol={} err={}", symbol, e.getMessage());
+            return List.of();
+        }
+
+        double newBasePrice = signal.getEntryPriceLow();
+        if (newBasePrice <= 0) {
+            return List.of();
+        }
+
+        TradeSignal.Side side = session.getSide();
+        int remainingLayers = planned - filled;
+
+        // 以新價格計算剩餘層的價格（從 Layer 1 開始，因為是新的佈局）
+        List<Double> newPrices = new ArrayList<>(remainingLayers);
+        double effectiveStep = resolveStepPercent(symbol);
+        for (int i = 0; i < remainingLayers; i++) {
+            double price = side == TradeSignal.Side.LONG
+                    ? newBasePrice * Math.pow(1.0 - effectiveStep, i)
+                    : newBasePrice * Math.pow(1.0 + effectiveStep, i);
+            newPrices.add(price);
+        }
+
+        // 資金分配（為剩餘層）
+        double accountBalance = binanceFuturesService.getAvailableBalance();
+        String userId = tradeRecordService.getActiveUserId();
+        EffectiveTradeConfig effectiveConfig = tradeConfigResolver.resolve(userId);
+        int leverage = Math.max(1, effectiveConfig.fixedLeverage());
+        double effectiveMaxPositionUsdt = effectiveConfig.effectiveMaxPosition(accountBalance);
+
+        List<LayerPlan> layerPlans = positionSizer.sizeLayers(
+                newPrices,
+                config.getBaseSize(),
+                config.getSizeMultiplier(),
+                accountBalance,
+                effectiveConfig.riskPercent(),
+                leverage,
+                effectiveMaxPositionUsdt,
+                config.getMaxCapitalUsage()
+        );
+
+        if (layerPlans.isEmpty()) {
+            return List.of();
+        }
+
+        int allowedLayers = Math.min(remainingLayers, layerPlans.size());
+
+        // 建立 ENTRY 訂單（層號接續已成交的層）
+        List<Order> orders = new ArrayList<>(allowedLayers + 1);
+        for (int i = 0; i < allowedLayers; i++) {
+            LayerPlan plan = layerPlans.get(i);
+            orders.add(Order.builder()
+                    .symbol(symbol)
+                    .side(side)
+                    .type(Order.OrderType.ENTRY)
+                    .price(plan.price())
+                    .quantity(plan.quantity())
+                    .layer(filled + i + 1) // 接續已成交層號
+                    .build());
+        }
+
+        // TP 基於現有成交數據
+        var fill = layerFillTracker.getAggregatedFill(symbol);
+        double tpQty = fill.totalQty();
+        double tpAvgPrice = fill.avgPrice();
+        if (tpQty <= 0 || tpAvgPrice <= 0) {
+            return List.of();
+        }
+
+        double tpPrice = side == TradeSignal.Side.LONG
+                ? tpAvgPrice * (1.0 + config.getTakeProfitPercent())
+                : tpAvgPrice * (1.0 - config.getTakeProfitPercent());
+
+        orders.add(Order.builder()
+                .symbol(symbol)
+                .side(side)
+                .type(Order.OrderType.TAKE_PROFIT)
+                .price(tpPrice)
+                .quantity(tpQty)
+                .layer(null)
+                .build());
+
+        log.info("Martingale session adjusted: symbol={} filled={} newEntries={} newBasePrice={}",
+                symbol, filled, allowedLayers, newBasePrice);
+
+        return orders;
+    }
+
+    /**
+     * 正常建立新 session 的邏輯（從 execute() 抽取，供 adjustExistingSession 重用）。
+     */
+    private List<Order> executeNewSession(TradeSignal signal) {
+        PositionInfo position = positionService.getPosition(signal.getSymbol()).orElse(null);
+        TradeSignal.Side side = position != null ? position.side() : signal.getSide();
+        if (side == null) return List.of();
+
+        double baseEntryPrice = position != null && position.avgEntryPrice() > 0
+                ? position.avgEntryPrice()
+                : signal.getEntryPriceLow();
+        if (baseEntryPrice <= 0) return List.of();
+
+        List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side, signal.getSymbol());
+
+        double accountBalance = binanceFuturesService.getAvailableBalance();
+        String userId = tradeRecordService.getActiveUserId();
+        double sodBalance = startOfDayBalanceCache.getOrCompute(userId, () -> accountBalance);
+        double todayLoss = tradeRecordService.getTodayRealizedLoss();
+        double unrealizedLoss = getUnrealizedLoss();
+        double totalLoss = Math.abs(todayLoss) + Math.abs(unrealizedLoss);
+        double drawdownPercent = (sodBalance > 0) ? totalLoss / sodBalance : 0.0;
+
+        double currentPositionSize = position != null ? position.quantity() : 0.0;
+        EffectiveTradeConfig effectiveConfig = tradeConfigResolver.resolve(userId);
+        int leverage = Math.max(1, effectiveConfig.fixedLeverage());
+        double effectiveMaxPositionUsdt = effectiveConfig.effectiveMaxPosition(accountBalance);
+
+        List<LayerPlan> layerPlans = positionSizer.sizeLayers(
+                layerPrices, config.getBaseSize(), config.getSizeMultiplier(),
+                accountBalance, effectiveConfig.riskPercent(), leverage,
+                effectiveMaxPositionUsdt, config.getMaxCapitalUsage()
+        );
+        if (layerPlans.isEmpty()) return List.of();
+
+        MarketFilter marketFilter = buildMarketFilter(signal.getSymbol(), side);
+        RiskDecision decision = riskManager.evaluateMartingale(
+                side, accountBalance, config.getMaxCapitalUsage(), config.getMaxLayers(),
+                currentPositionSize, config.getMaxPositionSize(), leverage,
+                drawdownPercent, MAX_DRAWDOWN_PERCENT, marketFilter, layerPlans
+        );
+        if (!decision.allowed()) return List.of();
+
+        int allowedLayers = decision.allowedLayers();
+        sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
+
+        var filled = layerFillTracker.getAggregatedFill(signal.getSymbol());
+        return buildOrders(signal, side, layerPlans, allowedLayers, baseEntryPrice, filled.totalQty(), filled.avgPrice());
     }
 
     private List<Double> buildLayerPrices(double baseEntryPrice, TradeSignal.Side side, String symbol) {
