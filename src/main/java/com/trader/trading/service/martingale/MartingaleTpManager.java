@@ -24,19 +24,22 @@ public class MartingaleTpManager {
     private final SymbolLockRegistry symbolLockRegistry;
     private final MartingaleStrategyConfig config;
     private final MartingaleNotifier notifier;
+    private final MartingaleStateStore stateStore;
 
     public MartingaleTpManager(MartingaleSessionManager sessionManager,
                                LayerFillTracker layerFillTracker,
                                BinanceFuturesService binanceFuturesService,
                                SymbolLockRegistry symbolLockRegistry,
                                MartingaleStrategyConfig config,
-                               MartingaleNotifier notifier) {
+                               MartingaleNotifier notifier,
+                               MartingaleStateStore stateStore) {
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
         this.binanceFuturesService = binanceFuturesService;
         this.symbolLockRegistry = symbolLockRegistry;
         this.config = config;
         this.notifier = notifier;
+        this.stateStore = stateStore;
     }
 
     /**
@@ -78,6 +81,7 @@ public class MartingaleTpManager {
                 // 新 TP 掛成功後才取消舊 TP → 確保始終有 TP 保護
                 cancelTpById(session.getSymbol(), oldTpId);
 
+                stateStore.persistSession(session);
                 log.info("Martingale TP updated: symbol={} side={} avgPrice={} tpPrice={} qty={}",
                         symbol, session.getSide(), fill.avgPrice(), tpPrice, fill.totalQty());
                 notifier.notifyTpUpdated(symbol, tpPrice, fill.totalQty());
@@ -122,6 +126,7 @@ public class MartingaleTpManager {
             layerFillTracker.clearSymbol(symbol);
             sessionManager.endSession(symbol);
 
+            stateStore.removeSession(symbol);
             log.info("Martingale TP 成交，Session 已清理: symbol={} side={}", symbol, session.getSide());
             notifier.notifyTpHit(symbol, session.getSide());
         } finally {

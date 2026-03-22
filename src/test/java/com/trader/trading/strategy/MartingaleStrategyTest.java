@@ -17,6 +17,7 @@ import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.trading.service.LayerFillTracker;
+import com.trader.trading.service.martingale.MartingaleStateStore;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.mockito.MockMakers;
@@ -325,6 +326,8 @@ class MartingaleStrategyTest {
         LayerFillTracker layerFillTracker = new LayerFillTracker();
         MarketRiskScorer marketRiskScorer = mock(MarketRiskScorer.class,
                 withSettings().mockMaker(MockMakers.SUBCLASS));
+        MartingaleStateStore stateStore = mock(MartingaleStateStore.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
 
         when(binanceFuturesService.getAvailableBalance()).thenReturn(balance);
         when(binanceFuturesService.getCurrentPositionAmount(ArgumentMatchers.anyString())).thenReturn(0.0);
@@ -351,7 +354,7 @@ class MartingaleStrategyTest {
                 riskManager, config, binanceFuturesService, tradeRecordService,
                 startOfDayBalanceCache, marketIndicatorService, tradeConfigResolver,
                 positionService, positionSizer, sessionManager, symbolLockRegistry,
-                layerFillTracker, marketRiskScorer
+                layerFillTracker, marketRiskScorer, stateStore
         );
 
         return new StrategyWithDeps(strategy, sessionManager, layerFillTracker);
@@ -375,6 +378,8 @@ class MartingaleStrategyTest {
         SymbolLockRegistry symbolLockRegistry = new SymbolLockRegistry();
         LayerFillTracker layerFillTracker = new LayerFillTracker();
         MarketRiskScorer marketRiskScorer = mock(MarketRiskScorer.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        MartingaleStateStore stateStore = mock(MartingaleStateStore.class,
                 withSettings().mockMaker(MockMakers.SUBCLASS));
 
         when(binanceFuturesService.getAvailableBalance()).thenReturn(balance);
@@ -429,7 +434,8 @@ class MartingaleStrategyTest {
                 sessionManager,
                 symbolLockRegistry,
                 layerFillTracker,
-                marketRiskScorer
+                marketRiskScorer,
+                stateStore
         );
     }
 

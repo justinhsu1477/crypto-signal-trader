@@ -16,6 +16,7 @@ import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.MarketIndicatorService;
 import com.trader.trading.service.MartingaleSessionManager;
 import com.trader.trading.service.LayerFillTracker;
+import com.trader.trading.service.martingale.MartingaleStateStore;
 import com.trader.trading.service.PositionService;
 import com.trader.trading.service.PositionSizer;
 import com.trader.trading.service.StartOfDayBalanceCache;
@@ -48,6 +49,7 @@ public class MartingaleStrategy implements TradingStrategy {
     private final SymbolLockRegistry symbolLockRegistry;
     private final LayerFillTracker layerFillTracker;
     private final MarketRiskScorer marketRiskScorer;
+    private final MartingaleStateStore stateStore;
 
     public MartingaleStrategy(
             RiskManager riskManager,
@@ -62,7 +64,8 @@ public class MartingaleStrategy implements TradingStrategy {
             MartingaleSessionManager sessionManager,
             SymbolLockRegistry symbolLockRegistry,
             LayerFillTracker layerFillTracker,
-            MarketRiskScorer marketRiskScorer
+            MarketRiskScorer marketRiskScorer,
+            MartingaleStateStore stateStore
     ) {
         this.riskManager = riskManager;
         this.config = config;
@@ -77,6 +80,7 @@ public class MartingaleStrategy implements TradingStrategy {
         this.symbolLockRegistry = symbolLockRegistry;
         this.layerFillTracker = layerFillTracker;
         this.marketRiskScorer = marketRiskScorer;
+        this.stateStore = stateStore;
     }
 
     @Override
@@ -185,7 +189,8 @@ public class MartingaleStrategy implements TradingStrategy {
         // 4) Generate actual orders only up to allowedLayers.
         //    - Compute weighted average entry price
         //    - Place a TAKE_PROFIT at averagePrice * (1 + TAKE_PROFIT_PERCENT)
-        sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
+        MartingaleSession newSession = sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
+        stateStore.persistSession(newSession);
 
         var filled = layerFillTracker.getAggregatedFill(signal.getSymbol());
         double filledQty = filled.totalQty();
@@ -223,6 +228,7 @@ public class MartingaleStrategy implements TradingStrategy {
             }
             layerFillTracker.clearSymbol(symbol);
             sessionManager.endSession(symbol);
+            stateStore.removeSession(symbol);
             // 回傳空 → 外層 execute() 會因為 session 不存在而走正常建立流程
             // 但我們已在 lock 內，所以直接重新執行建立邏輯
             return executeNewSession(signal);
@@ -363,7 +369,8 @@ public class MartingaleStrategy implements TradingStrategy {
         if (!decision.allowed()) return List.of();
 
         int allowedLayers = decision.allowedLayers();
-        sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
+        MartingaleSession newSession = sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
+        stateStore.persistSession(newSession);
 
         var filled = layerFillTracker.getAggregatedFill(signal.getSymbol());
         return buildOrders(signal, side, layerPlans, allowedLayers, baseEntryPrice, filled.totalQty(), filled.avgPrice());

@@ -89,6 +89,15 @@ public class LayerFillTracker {
         return symbol == null ? null : lastFillAt.get(symbol);
     }
 
+    /**
+     * 直接寫入聚合成交資料（用於從 Redis 恢復狀態）。
+     * 使用 layer=0 作為聚合 key。
+     */
+    public void recordFillDirect(String symbol, double totalQty, double avgPrice) {
+        if (symbol == null || totalQty <= 0 || avgPrice <= 0) return;
+        recordFill(symbol, 0, totalQty, avgPrice);
+    }
+
     public void clearSymbol(String symbol) {
         if (symbol == null) {
             return;
