@@ -4,6 +4,8 @@ import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
+import java.util.Map;
+
 @Getter
 @ConfigurationProperties(prefix = "trading.strategy.martingale")
 public class MartingaleStrategyConfig {
@@ -35,6 +37,52 @@ public class MartingaleStrategyConfig {
     private final int riskScoreThreshold;
     /** 是否啟用 EMA 趨勢過濾（建議加密貨幣市場關閉） */
     private final boolean emaFilterEnabled;
+    /** Per-symbol 配置覆寫（key = symbol，如 ETHUSDT） */
+    private final Map<String, SymbolOverride> symbolOverrides;
+
+    @Getter
+    public static class SymbolOverride {
+        private final Integer maxLayers;
+        private final Double stepPercent;
+        private final Double sizeMultiplier;
+        private final Double takeProfitPercent;
+        private final Double stopLossPercent;
+
+        public SymbolOverride(Integer maxLayers, Double stepPercent, Double sizeMultiplier,
+                              Double takeProfitPercent, Double stopLossPercent) {
+            this.maxLayers = maxLayers;
+            this.stepPercent = stepPercent;
+            this.sizeMultiplier = sizeMultiplier;
+            this.takeProfitPercent = takeProfitPercent;
+            this.stopLossPercent = stopLossPercent;
+        }
+    }
+
+    /** 取得指定 symbol 的有效 maxLayers（有覆寫用覆寫，否則用全域值） */
+    public int getEffectiveMaxLayers(String symbol) {
+        SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
+        return ov != null && ov.maxLayers != null ? ov.maxLayers : maxLayers;
+    }
+
+    public double getEffectiveStepPercent(String symbol) {
+        SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
+        return ov != null && ov.stepPercent != null ? ov.stepPercent : stepPercent;
+    }
+
+    public double getEffectiveSizeMultiplier(String symbol) {
+        SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
+        return ov != null && ov.sizeMultiplier != null ? ov.sizeMultiplier : sizeMultiplier;
+    }
+
+    public double getEffectiveTakeProfitPercent(String symbol) {
+        SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
+        return ov != null && ov.takeProfitPercent != null ? ov.takeProfitPercent : takeProfitPercent;
+    }
+
+    public double getEffectiveStopLossPercent(String symbol) {
+        SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
+        return ov != null && ov.stopLossPercent != null ? ov.stopLossPercent : stopLossPercent;
+    }
 
     public MartingaleStrategyConfig(
             @DefaultValue("5") int maxLayers,
@@ -55,7 +103,8 @@ public class MartingaleStrategyConfig {
             @DefaultValue("14") int atrPeriod,
             @DefaultValue("0.02") double atrReferencePercent,
             @DefaultValue("40") int riskScoreThreshold,
-            @DefaultValue("false") boolean emaFilterEnabled
+            @DefaultValue("false") boolean emaFilterEnabled,
+            Map<String, SymbolOverride> symbolOverrides
     ) {
         this.maxLayers = maxLayers;
         this.stepPercent = stepPercent;
@@ -76,5 +125,6 @@ public class MartingaleStrategyConfig {
         this.atrReferencePercent = atrReferencePercent;
         this.riskScoreThreshold = riskScoreThreshold;
         this.emaFilterEnabled = emaFilterEnabled;
+        this.symbolOverrides = symbolOverrides;
     }
 }

@@ -131,7 +131,7 @@ public class MartingaleStrategy implements TradingStrategy {
             // SL 基準：有成交用加權均價，無成交用 baseEntryPrice
             var fill = layerFillTracker.getAggregatedFill(signal.getSymbol());
             double slBase = fill.avgPrice() > 0 ? fill.avgPrice() : baseEntryPrice;
-            boolean stopLossTriggered = isGlobalStopLossTriggered(side, markPrice, slBase);
+            boolean stopLossTriggered = isGlobalStopLossTriggered(signal.getSymbol(), side, markPrice, slBase);
             if (stopLossTriggered) {
                 return List.of(Order.builder()
                         .symbol(signal.getSymbol())
@@ -147,7 +147,7 @@ public class MartingaleStrategy implements TradingStrategy {
         List<LayerPlan> layerPlans = positionSizer.sizeLayers(
                 layerPrices,
                 config.getBaseSize(),
-                config.getSizeMultiplier(),
+                config.getEffectiveSizeMultiplier(signal.getSymbol()),
                 accountBalance,
                 effectiveConfig.riskPercent(),
                 leverage,
@@ -166,7 +166,7 @@ public class MartingaleStrategy implements TradingStrategy {
                 side,
                 accountBalance,
                 config.getMaxCapitalUsage(),
-                config.getMaxLayers(),
+                config.getEffectiveMaxLayers(signal.getSymbol()),
                 currentPositionSize,
                 config.getMaxPositionSize(),
                 leverage,
@@ -264,7 +264,7 @@ public class MartingaleStrategy implements TradingStrategy {
         List<LayerPlan> layerPlans = positionSizer.sizeLayers(
                 newPrices,
                 config.getBaseSize(),
-                config.getSizeMultiplier(),
+                config.getEffectiveSizeMultiplier(symbol),
                 accountBalance,
                 effectiveConfig.riskPercent(),
                 leverage,
@@ -301,8 +301,8 @@ public class MartingaleStrategy implements TradingStrategy {
         }
 
         double tpPrice = side == TradeSignal.Side.LONG
-                ? tpAvgPrice * (1.0 + config.getTakeProfitPercent())
-                : tpAvgPrice * (1.0 - config.getTakeProfitPercent());
+                ? tpAvgPrice * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
+                : tpAvgPrice * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
 
         orders.add(Order.builder()
                 .symbol(symbol)
@@ -348,7 +348,7 @@ public class MartingaleStrategy implements TradingStrategy {
         double effectiveMaxPositionUsdt = effectiveConfig.effectiveMaxPosition(accountBalance);
 
         List<LayerPlan> layerPlans = positionSizer.sizeLayers(
-                layerPrices, config.getBaseSize(), config.getSizeMultiplier(),
+                layerPrices, config.getBaseSize(), config.getEffectiveSizeMultiplier(signal.getSymbol()),
                 accountBalance, effectiveConfig.riskPercent(), leverage,
                 effectiveMaxPositionUsdt, config.getMaxCapitalUsage()
         );
@@ -356,7 +356,7 @@ public class MartingaleStrategy implements TradingStrategy {
 
         MarketFilter marketFilter = buildMarketFilter(signal.getSymbol(), side);
         RiskDecision decision = riskManager.evaluateMartingale(
-                side, accountBalance, config.getMaxCapitalUsage(), config.getMaxLayers(),
+                side, accountBalance, config.getMaxCapitalUsage(), config.getEffectiveMaxLayers(signal.getSymbol()),
                 currentPositionSize, config.getMaxPositionSize(), leverage,
                 drawdownPercent, MAX_DRAWDOWN_PERCENT, marketFilter, layerPlans
         );
@@ -371,8 +371,9 @@ public class MartingaleStrategy implements TradingStrategy {
 
     private List<Double> buildLayerPrices(double baseEntryPrice, TradeSignal.Side side, String symbol) {
         double effectiveStep = resolveStepPercent(symbol);
-        List<Double> prices = new ArrayList<>(config.getMaxLayers());
-        for (int layer = 1; layer <= config.getMaxLayers(); layer++) {
+        int maxLayers = config.getEffectiveMaxLayers(symbol);
+        List<Double> prices = new ArrayList<>(maxLayers);
+        for (int layer = 1; layer <= maxLayers; layer++) {
             double price = side == TradeSignal.Side.LONG
                     ? baseEntryPrice * Math.pow(1.0 - effectiveStep, layer - 1)
                     : baseEntryPrice * Math.pow(1.0 + effectiveStep, layer - 1);
@@ -387,21 +388,23 @@ public class MartingaleStrategy implements TradingStrategy {
      * 限制範圍在 [baseStep × 0.5, baseStep × 3.0] 內，防止極端值。
      */
     private double resolveStepPercent(String symbol) {
+        double baseStep = config.getEffectiveStepPercent(symbol);
         if (config.getAtrPeriod() <= 0 || config.getAtrReferencePercent() <= 0) {
-            return config.getStepPercent();
+            return baseStep;
         }
 
         double atrPercent = marketIndicatorService.getATRPercent(symbol, config.getAtrPeriod());
         if (Double.isNaN(atrPercent) || atrPercent <= 0) {
-            return config.getStepPercent();
+            return baseStep;
         }
 
         double ratio = atrPercent / config.getAtrReferencePercent();
         ratio = Math.max(0.5, Math.min(3.0, ratio)); // clamp to [0.5x, 3x]
-        return config.getStepPercent() * ratio;
+        return baseStep * ratio;
     }
 
     private List<Order> buildOrders(TradeSignal signal, TradeSignal.Side side, List<LayerPlan> layers, int allowedLayers, double baseEntryPrice, double filledQty, double filledAvg) {
+        String symbol = signal != null ? signal.getSymbol() : null;
         List<Order> orders = new ArrayList<>(allowedLayers + 1);
 
         double totalQuantity = 0.0;
@@ -416,7 +419,7 @@ public class MartingaleStrategy implements TradingStrategy {
             weightedNotional += plan.price() * plan.quantity();
 
             orders.add(Order.builder()
-                    .symbol(signal != null ? signal.getSymbol() : null)
+                    .symbol(symbol)
                     .side(side)
                     .type(Order.OrderType.ENTRY)
                     .price(plan.price())
@@ -446,11 +449,11 @@ public class MartingaleStrategy implements TradingStrategy {
         }
 
         double takeProfitPrice = side == TradeSignal.Side.LONG
-                ? tpAvgPrice * (1.0 + config.getTakeProfitPercent())
-                : tpAvgPrice * (1.0 - config.getTakeProfitPercent());
+                ? tpAvgPrice * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
+                : tpAvgPrice * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
 
         orders.add(Order.builder()
-                .symbol(signal != null ? signal.getSymbol() : null)
+                .symbol(symbol)
                 .side(side)
                 .type(Order.OrderType.TAKE_PROFIT)
                 .price(takeProfitPrice)
@@ -486,11 +489,12 @@ public class MartingaleStrategy implements TradingStrategy {
         return MarketFilter.passThrough();
     }
 
-    private boolean isGlobalStopLossTriggered(TradeSignal.Side side, double markPrice, double baseEntryPrice) {
+    private boolean isGlobalStopLossTriggered(String symbol, TradeSignal.Side side, double markPrice, double baseEntryPrice) {
+        double sl = config.getEffectiveStopLossPercent(symbol);
         if (side == TradeSignal.Side.LONG) {
-            return markPrice <= baseEntryPrice * (1.0 - config.getStopLossPercent());
+            return markPrice <= baseEntryPrice * (1.0 - sl);
         }
-        return markPrice >= baseEntryPrice * (1.0 + config.getStopLossPercent());
+        return markPrice >= baseEntryPrice * (1.0 + sl);
     }
 
     /**

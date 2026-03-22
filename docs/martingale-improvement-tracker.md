@@ -586,10 +586,10 @@
 
 ### 2F-6 固定層數與倍率
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-03-22）**
 - **嚴重度：** 低
 - **類型：** 策略限制
-- **影響檔案：** `MartingaleStrategyConfig.java`、`PositionSizer.java`
+- **影響檔案：** `MartingaleStrategyConfig.java`、`MartingaleStrategy.java`、`MartingaleStopLossWatcher.java`、`MartingaleTpManager.java`、`MartingaleRecoveryTask.java`
 - **問題描述：**
   `maxLayers=5` 和 `sizeMultiplier=2.0` 是全域設定，所有幣種共用。
   但不同幣種的波動性、流動性、價格區間差異極大：

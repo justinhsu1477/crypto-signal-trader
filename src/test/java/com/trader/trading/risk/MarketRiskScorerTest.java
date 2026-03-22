@@ -123,7 +123,8 @@ class MarketRiskScorerTest {
                 14,     // atrPeriod = 14 → 啟用 ATR
                 0.02,   // atrReferencePercent
                 40,     // riskScoreThreshold
-                false   // emaFilterEnabled
+                false,  // emaFilterEnabled
+                null    // symbolOverrides
         );
     }
 }

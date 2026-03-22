@@ -74,7 +74,7 @@ public class MartingaleRecoveryTask {
 
         // 重建 session
         MartingaleSession session = sessionManager.startSession(
-                pos.symbol, pos.side, config.getMaxLayers(), pos.entryPrice);
+                pos.symbol, pos.side, config.getEffectiveMaxLayers(pos.symbol), pos.entryPrice);
 
         log.info("Martingale recovery: 重建 session symbol={} side={} entryPrice={} qty={}",
                 pos.symbol, pos.side, pos.entryPrice, pos.quantity);
