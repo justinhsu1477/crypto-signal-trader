@@ -16,7 +16,7 @@ class MartingaleFillListenerTest {
         // tpManager 為 null 時，FillListener 中觸發 TP 更新會 NPE
         // 因此用 test-friendly 的方式：直接用 tracker 驗證 fill，TP 觸發另行測試
         // 這裡改為不依賴 tpManager 的測試路徑：未註冊的 orderId 不會觸發 TP
-        return new MartingaleFillListener(tracker, noOpTpManager, null);
+        return new MartingaleFillListener(tracker, noOpTpManager, null, null);
     }
 
     @Test
@@ -26,7 +26,7 @@ class MartingaleFillListenerTest {
 
         // 因為 recorded=true 會呼叫 tpManager，我們需要一個可用的 tpManager
         // 直接建構一個 stub
-        MartingaleFillListener listener = new MartingaleFillListener(tracker, new NoOpTpManager(), new MartingaleSessionManager());
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, new NoOpTpManager(), new MartingaleSessionManager(), null);
 
         listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.01, 60000));
         listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.02, 59000));
@@ -45,7 +45,7 @@ class MartingaleFillListenerTest {
         tracker.registerOrder("1002", "BTCUSDT", 1);
 
         // NEW execution type → recorded=false → tpManager 不被呼叫，null 安全
-        MartingaleFillListener listener = new MartingaleFillListener(tracker, noOpTpManager, null);
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, noOpTpManager, null, null);
 
         listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1002", "NEW", "NEW", 0.01, 60000));
 
@@ -83,7 +83,7 @@ class MartingaleFillListenerTest {
         mgr.startSession("ETHUSDT", com.trader.shared.model.TradeSignal.Side.LONG, 3, 3000.0);
         mgr.getActiveSession("ETHUSDT").ifPresent(s -> s.setCurrentTpOrderId("9999"));
 
-        MartingaleFillListener listener = new MartingaleFillListener(tracker, tpMgr, mgr);
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, tpMgr, mgr, null);
 
         // 模擬 ALGO_UPDATE: TP TRIGGERED
         JsonObject algoOrder = new JsonObject();
@@ -109,7 +109,7 @@ class MartingaleFillListenerTest {
 
         mgr.startSession("BTCUSDT", com.trader.shared.model.TradeSignal.Side.LONG, 5, 60000.0);
 
-        MartingaleFillListener listener = new MartingaleFillListener(tracker, tpMgr, mgr);
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, tpMgr, mgr, null);
 
         // 模擬一個非 ENTRY 的 MARKET FILLED（TP 觸發的市價平倉）
         JsonObject order = new JsonObject();
@@ -133,7 +133,7 @@ class MartingaleFillListenerTest {
     /** 測試用 stub — 繼承 MartingaleTpManager 但 override 為 no-op */
     private static class NoOpTpManager extends MartingaleTpManager {
         NoOpTpManager() {
-            super(null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null);
         }
 
         @Override
@@ -152,7 +152,7 @@ class MartingaleFillListenerTest {
         String tpFilledSymbol = null;
 
         TrackingTpManager() {
-            super(null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null);
         }
 
         @Override

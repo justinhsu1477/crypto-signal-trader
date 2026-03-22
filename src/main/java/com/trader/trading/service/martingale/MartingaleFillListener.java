@@ -20,13 +20,16 @@ public class MartingaleFillListener implements UserDataEventObserver {
     private final LayerFillTracker layerFillTracker;
     private final MartingaleTpManager tpManager;
     private final MartingaleSessionManager sessionManager;
+    private final MartingaleStateStore stateStore;
 
     public MartingaleFillListener(LayerFillTracker layerFillTracker,
                                    MartingaleTpManager tpManager,
-                                   MartingaleSessionManager sessionManager) {
+                                   MartingaleSessionManager sessionManager,
+                                   MartingaleStateStore stateStore) {
         this.layerFillTracker = layerFillTracker;
         this.tpManager = tpManager;
         this.sessionManager = sessionManager;
+        this.stateStore = stateStore;
     }
 
     @Override
@@ -83,8 +86,12 @@ public class MartingaleFillListener implements UserDataEventObserver {
                 // ENTRY 單完全成交 → 更新 session 的 filledLayers
                 if ("FILLED".equals(status)) {
                     sessionManager.getActiveSession(symbol)
-                            .ifPresent(s -> s.markFilledLayer());
+                            .ifPresent(s -> {
+                                s.markFilledLayer();
+                                if (stateStore != null) stateStore.persistSession(s);
+                            });
                 }
+                if (stateStore != null) stateStore.persistFill(symbol);
             }
             return;
         }

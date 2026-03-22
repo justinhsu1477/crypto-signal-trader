@@ -403,10 +403,10 @@
 
 ### 2F-1 狀態無持久化 — 重啟遺失所有 Session
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-03-22）**
 - **嚴重度：** 高
 - **類型：** 架構限制
-- **影響檔案：** `MartingaleSessionManager.java`、`LayerFillTracker.java`
+- **影響檔案：** 新增 `MartingaleStateStore.java`；修改 `MartingaleStrategy.java`、`MartingaleStopLossWatcher.java`、`MartingaleTpManager.java`、`MartingaleFillListener.java`、`LayerFillTracker.java`
 - **問題描述：**
   Session、LayerFillTracker、breakevenActivated 等所有運行狀態存在 ConcurrentHashMap / AtomicInteger 中。
   應用重啟 = 全部狀態遺失，但 Binance 端的掛單和持倉仍然存在。

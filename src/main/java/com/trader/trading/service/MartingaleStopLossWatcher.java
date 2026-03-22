@@ -6,6 +6,7 @@ import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.model.MartingaleSession;
 import com.trader.trading.model.PositionInfo;
 import com.trader.trading.service.martingale.MartingaleNotifier;
+import com.trader.trading.service.martingale.MartingaleStateStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ public class MartingaleStopLossWatcher {
     private final SymbolLockRegistry symbolLockRegistry;
     private final MartingaleStrategyConfig config;
     private final MartingaleNotifier notifier;
+    private final MartingaleStateStore stateStore;
 
     public MartingaleStopLossWatcher(MartingaleSessionManager sessionManager,
                                      BinanceFuturesService binanceFuturesService,
@@ -33,7 +35,8 @@ public class MartingaleStopLossWatcher {
                                      LayerFillTracker layerFillTracker,
                                      SymbolLockRegistry symbolLockRegistry,
                                      MartingaleStrategyConfig config,
-                                     MartingaleNotifier notifier) {
+                                     MartingaleNotifier notifier,
+                                     MartingaleStateStore stateStore) {
         this.sessionManager = sessionManager;
         this.binanceFuturesService = binanceFuturesService;
         this.positionService = positionService;
@@ -41,6 +44,7 @@ public class MartingaleStopLossWatcher {
         this.symbolLockRegistry = symbolLockRegistry;
         this.config = config;
         this.notifier = notifier;
+        this.stateStore = stateStore;
     }
 
     @Scheduled(fixedDelayString = "${trading.strategy.martingale.stop-loss-check-interval-millis:5000}")
@@ -195,6 +199,7 @@ public class MartingaleStopLossWatcher {
 
                 log.info("Martingale trailing TP level {}: symbol={} avgPrice={} tp={} markPrice={}",
                         qualifiedLevel, symbol, avgPrice, newTpPrice, markPrice);
+                stateStore.persistSession(active.get());
                 notifier.notifyTrailingStopAdvanced(symbol, qualifiedLevel, newTpPrice, fill.totalQty());
             } else {
                 // 新 TP 失敗 → 保留舊 TP，不更新 level
@@ -279,6 +284,7 @@ public class MartingaleStopLossWatcher {
 
                 log.info("Martingale TP decay level {}: symbol={} holdingMin={} tpPercent={} tpPrice={}",
                         decayLevel, symbol, holdingMinutes, decayedTpPercent, newTpPrice);
+                stateStore.persistSession(active.get());
                 notifier.notifyTpDecay(symbol, decayLevel, decayedTpPercent, newTpPrice);
             } else {
                 String err = result != null ? result.getErrorMessage() : "null result";
@@ -329,6 +335,7 @@ public class MartingaleStopLossWatcher {
 
             layerFillTracker.clearSymbol(symbol);
             sessionManager.endSession(symbol);
+            stateStore.removeSession(symbol);
 
             log.warn("Martingale stop loss triggered: symbol={} side={} slBase={} markPrice={} stopLossPercent={}",
                     symbol, session.getSide(), slBasePrice, markPrice, config.getEffectiveStopLossPercent(symbol));
