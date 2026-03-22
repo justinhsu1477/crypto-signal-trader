@@ -26,6 +26,8 @@ public class MartingaleSession {
     private volatile String currentTpOrderId;
     /** 階梯式 Trailing Stop 目前層級（0=未觸發，1~4=對應 Trailing 階段） */
     private volatile int trailingLevel;
+    /** TP 時間衰減已套用的階段數（0=未衰減） */
+    private volatile int tpDecayLevel;
 
     public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
         this.sessionId = sessionId;
@@ -97,6 +99,15 @@ public class MartingaleSession {
 
     public void setTrailingLevel(int level) {
         this.trailingLevel = level;
+        touch();
+    }
+
+    public int getTpDecayLevel() {
+        return tpDecayLevel;
+    }
+
+    public void setTpDecayLevel(int level) {
+        this.tpDecayLevel = level;
         touch();
     }
 

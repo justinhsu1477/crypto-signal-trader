@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -74,6 +76,13 @@ public class MartingaleStopLossWatcher {
                 // 2) 階梯式 Trailing Stop（只在有成交且 breakevenTriggerPercent > 0 時啟用）
                 if (session.getFilledLayers() > 0 && config.getBreakevenTriggerPercent() > 0) {
                     checkTrailingStop(session, markPrice);
+                }
+
+                // 3) TP 時間衰減（只在有成交、Trailing 未啟動、衰減已開啟時）
+                if (session.getFilledLayers() > 0
+                        && session.getTrailingLevel() == 0
+                        && config.getTpDecayStartMinutes() > 0) {
+                    checkTpDecay(session);
                 }
             } catch (Exception e) {
                 log.error("Stop loss check failed: symbol={} err={}", symbol, e.getMessage(), e);
@@ -191,6 +200,89 @@ public class MartingaleStopLossWatcher {
                 // 新 TP 失敗 → 保留舊 TP，不更新 level
                 String err = result != null ? result.getErrorMessage() : "null result";
                 log.error("Martingale trailing TP 下單失敗（保留舊 TP）: symbol={} level={} err={}", symbol, qualifiedLevel, err);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * TP 時間衰減：持倉超過 tpDecayStartMinutes 後，每 tpDecayIntervalMinutes 降低一階 TP，
+     * 從 takeProfitPercent 線性衰減到 tpDecayFloorPercent，避免長時間浮虧。
+     * 只在 Trailing Stop 未啟動時生效（Trailing 啟動後由 Trailing 管理 TP）。
+     */
+    private void checkTpDecay(MartingaleSession session) {
+        String symbol = session.getSymbol();
+        long holdingMinutes = Duration.between(session.getCreatedAt(), Instant.now()).toMinutes();
+
+        if (holdingMinutes < config.getTpDecayStartMinutes()) {
+            return;
+        }
+
+        long minutesPastStart = holdingMinutes - config.getTpDecayStartMinutes();
+        int decayLevel = (int) (minutesPastStart / Math.max(1, config.getTpDecayIntervalMinutes())) + 1;
+
+        if (decayLevel <= session.getTpDecayLevel()) {
+            return;
+        }
+
+        // 計算衰減後的 TP 百分比
+        double baseTp = config.getEffectiveTakeProfitPercent(symbol);
+        double floor = config.getTpDecayFloorPercent();
+        // 每階段等量衰減，預估最多衰減到 floor
+        double decayPerStep = (baseTp - floor) / Math.max(1, 4); // 分 4 階段衰減到 floor
+        double decayedTpPercent = Math.max(floor, baseTp - decayPerStep * decayLevel);
+
+        LayerFillTracker.AggregatedFill fill = layerFillTracker.getAggregatedFill(symbol);
+        if (fill.totalQty() <= 0 || fill.avgPrice() <= 0) {
+            return;
+        }
+
+        ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+        if (!lock.tryLock()) {
+            return;
+        }
+        try {
+            Optional<MartingaleSession> active = sessionManager.getActiveSession(symbol);
+            if (active.isEmpty() || active.get().getStatus() != MartingaleSession.Status.ACTIVE) {
+                return;
+            }
+            // Trailing 已啟動 → 交由 Trailing 管理
+            if (active.get().getTrailingLevel() > 0) {
+                return;
+            }
+            if (active.get().getTpDecayLevel() >= decayLevel) {
+                return;
+            }
+
+            double avgPrice = fill.avgPrice();
+            String oldTpId = active.get().getCurrentTpOrderId();
+
+            double newTpPrice = session.getSide() == TradeSignal.Side.LONG
+                    ? avgPrice * (1.0 + decayedTpPercent)
+                    : avgPrice * (1.0 - decayedTpPercent);
+
+            String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
+            OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, newTpPrice, fill.totalQty());
+
+            if (result != null && result.isSuccess() && result.getOrderId() != null) {
+                active.get().setCurrentTpOrderId(result.getOrderId());
+                active.get().setTpDecayLevel(decayLevel);
+
+                if (oldTpId != null && !oldTpId.isBlank()) {
+                    try {
+                        binanceFuturesService.cancelAlgoOrder(symbol, Long.parseLong(oldTpId));
+                    } catch (Exception e) {
+                        log.warn("TpDecay: 取消舊 TP 失敗 symbol={} err={}", symbol, e.getMessage());
+                    }
+                }
+
+                log.info("Martingale TP decay level {}: symbol={} holdingMin={} tpPercent={} tpPrice={}",
+                        decayLevel, symbol, holdingMinutes, decayedTpPercent, newTpPrice);
+                notifier.notifyTpDecay(symbol, decayLevel, decayedTpPercent, newTpPrice);
+            } else {
+                String err = result != null ? result.getErrorMessage() : "null result";
+                log.error("Martingale TP decay 下單失敗（保留舊 TP）: symbol={} level={} err={}", symbol, decayLevel, err);
             }
         } finally {
             lock.unlock();

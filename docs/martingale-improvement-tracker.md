@@ -640,10 +640,10 @@
 
 ### 2F-8 無動態出場策略
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-03-22）**
 - **嚴重度：** 低
 - **類型：** 策略限制
-- **影響檔案：** `MartingaleStrategy.java`、`MartingaleTpManager.java`
+- **影響檔案：** `MartingaleStopLossWatcher.java`、`MartingaleSession.java`、`MartingaleStrategyConfig.java`、`MartingaleNotifier.java`
 - **問題描述：**
   TP 只有固定百分比（1%）和保本兩種出場方式。無法根據：
   - 技術面支撐/阻力位
