@@ -32,6 +32,15 @@ trading:
       atr-reference-percent: ${MARTINGALE_ATR_REFERENCE_PERCENT:0.02}
       risk-score-threshold: ${MARTINGALE_RISK_SCORE_THRESHOLD:40}  # 多因子評分閾值（0~100），0 = 停用
       ema-filter-enabled: ${MARTINGALE_EMA_FILTER_ENABLED:false}   # 舊版 EMA 過濾（建議加密貨幣關閉）
+      # Per-symbol 配置覆寫（選填，未設定的欄位沿用全域值）
+      # symbol-overrides:
+      #   ETHUSDT:
+      #     max-layers: 7
+      #     step-percent: 0.03
+      #     size-multiplier: 1.5
+      #   SOLUSDT:
+      #     max-layers: 3
+      #     step-percent: 0.05
 
 server:
   port: ${SERVER_PORT:8080}

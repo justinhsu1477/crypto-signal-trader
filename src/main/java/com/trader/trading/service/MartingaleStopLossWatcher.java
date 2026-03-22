@@ -66,7 +66,7 @@ public class MartingaleStopLossWatcher {
                 }
 
                 // 1) SL 檢查
-                if (isStopLossTriggered(session.getSide(), markPrice, slBasePrice)) {
+                if (isStopLossTriggered(symbol, session.getSide(), markPrice, slBasePrice)) {
                     executeStopLoss(session, markPrice, slBasePrice);
                     continue;
                 }
@@ -81,14 +81,15 @@ public class MartingaleStopLossWatcher {
         }
     }
 
-    private boolean isStopLossTriggered(TradeSignal.Side side, double markPrice, double baseEntryPrice) {
+    private boolean isStopLossTriggered(String symbol, TradeSignal.Side side, double markPrice, double baseEntryPrice) {
         if (baseEntryPrice <= 0) {
             return false;
         }
+        double sl = config.getEffectiveStopLossPercent(symbol);
         if (side == TradeSignal.Side.LONG) {
-            return markPrice <= baseEntryPrice * (1.0 - config.getStopLossPercent());
+            return markPrice <= baseEntryPrice * (1.0 - sl);
         }
-        return markPrice >= baseEntryPrice * (1.0 + config.getStopLossPercent());
+        return markPrice >= baseEntryPrice * (1.0 + sl);
     }
 
     /**
@@ -238,7 +239,7 @@ public class MartingaleStopLossWatcher {
             sessionManager.endSession(symbol);
 
             log.warn("Martingale stop loss triggered: symbol={} side={} slBase={} markPrice={} stopLossPercent={}",
-                    symbol, session.getSide(), slBasePrice, markPrice, config.getStopLossPercent());
+                    symbol, session.getSide(), slBasePrice, markPrice, config.getEffectiveStopLossPercent(symbol));
             notifier.notifyStopLossTriggered(symbol, session.getSide(), slBasePrice, markPrice);
         } finally {
             lock.unlock();
