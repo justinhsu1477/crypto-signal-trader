@@ -344,7 +344,7 @@ class MartingaleStrategyTest {
                 MAX_LAYERS, PRICE_STEP_PERCENT, BASE_SIZE, SIZE_MULTIPLIER,
                 TAKE_PROFIT_PERCENT, MAX_CAPITAL_USAGE, MAX_POSITION_USDT,
                 0.15, 480, 60, 60000L, 5000L, 3, 0.008, 0.002,
-                0, 0.02, 40, false, null
+                0, 0.02, 40, false, 120, 60, 0.002, null
         );
 
         MartingaleStrategy strategy = new MartingaleStrategy(
@@ -412,6 +412,7 @@ class MartingaleStrategyTest {
                 0.02,
                 40,     // riskScoreThreshold = 40 → 啟用多因子評分
                 false,  // emaFilterEnabled = false
+                120, 60, 0.002,  // tpDecay params
                 null    // symbolOverrides = null
         );
 

@@ -118,12 +118,13 @@ class MarketRiskScorerTest {
 
     private MartingaleStrategyConfig buildConfig() {
         return new MartingaleStrategyConfig(
-                5, 0.02, 100, 2.0, 0.01, 0.30, 10000, 0.15,
+                5, 0.02, 100.0, 2.0, 0.01, 0.30, 10000.0, 0.15,
                 480, 60, 60000L, 5000L, 3, 0.008, 0.002,
                 14,     // atrPeriod = 14 → 啟用 ATR
                 0.02,   // atrReferencePercent
                 40,     // riskScoreThreshold
                 false,  // emaFilterEnabled
+                120, 60, 0.002,  // tpDecay params
                 null    // symbolOverrides
         );
     }

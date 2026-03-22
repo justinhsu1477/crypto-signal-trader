@@ -64,6 +64,12 @@ public class MartingaleNotifier {
                 COLOR_GREEN);
     }
 
+    public void notifyTpDecay(String symbol, int level, double tpPercent, double tpPrice) {
+        send("Martingale TP 時間衰減",
+                String.format("%s | 衰減 Lv%d | TP%.4f%% → %.4f", symbol, level, tpPercent * 100, tpPrice),
+                COLOR_ORANGE);
+    }
+
     public void notifyTpHit(String symbol, TradeSignal.Side side) {
         send("Martingale TP 成交",
                 String.format("%s %s | TP 觸發平倉，Session 已清理", symbol, side),

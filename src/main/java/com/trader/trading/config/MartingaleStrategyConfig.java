@@ -37,6 +37,12 @@ public class MartingaleStrategyConfig {
     private final int riskScoreThreshold;
     /** 是否啟用 EMA 趨勢過濾（建議加密貨幣市場關閉） */
     private final boolean emaFilterEnabled;
+    /** TP 時間衰減：衰減開始時間（分鐘），0 = 停用。持倉超過此時間後 TP 開始逐步降低 */
+    private final int tpDecayStartMinutes;
+    /** TP 時間衰減：每個衰減階段的間隔（分鐘） */
+    private final int tpDecayIntervalMinutes;
+    /** TP 時間衰減：最低 TP 百分比（衰減到此值後不再降低） */
+    private final double tpDecayFloorPercent;
     /** Per-symbol 配置覆寫（key = symbol，如 ETHUSDT） */
     private final Map<String, SymbolOverride> symbolOverrides;
 
@@ -104,6 +110,9 @@ public class MartingaleStrategyConfig {
             @DefaultValue("0.02") double atrReferencePercent,
             @DefaultValue("40") int riskScoreThreshold,
             @DefaultValue("false") boolean emaFilterEnabled,
+            @DefaultValue("120") int tpDecayStartMinutes,
+            @DefaultValue("60") int tpDecayIntervalMinutes,
+            @DefaultValue("0.002") double tpDecayFloorPercent,
             Map<String, SymbolOverride> symbolOverrides
     ) {
         this.maxLayers = maxLayers;
@@ -125,6 +134,9 @@ public class MartingaleStrategyConfig {
         this.atrReferencePercent = atrReferencePercent;
         this.riskScoreThreshold = riskScoreThreshold;
         this.emaFilterEnabled = emaFilterEnabled;
+        this.tpDecayStartMinutes = tpDecayStartMinutes;
+        this.tpDecayIntervalMinutes = tpDecayIntervalMinutes;
+        this.tpDecayFloorPercent = tpDecayFloorPercent;
         this.symbolOverrides = symbolOverrides;
     }
 }
