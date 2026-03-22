@@ -505,10 +505,10 @@
 
 ### 2F-3 單幣種單 Session 限制
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-03-22）**
 - **嚴重度：** 中
 - **類型：** 策略限制
-- **影響檔案：** `MartingaleStrategy.java`、`MartingaleSessionManager.java`
+- **影響檔案：** `MartingaleStrategy.java`
 - **問題描述：**
   同一幣種同時只能有一個 Martingale session。當 session 在第 3 層等待回歸時，新的入場訊號會被直接丟棄。
   在高波動市場中，這可能錯過更好的入場點。

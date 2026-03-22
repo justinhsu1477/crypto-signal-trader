@@ -191,6 +191,172 @@ class MartingaleStrategyTest {
         }
     }
 
+    // ==================== Session 動態調整測試 (2F-3) ====================
+
+    @Test
+    void testAdjustSession_allFilled_returnsEmpty() {
+        // 全部層已成交 → 新訊號不應產生任何新訂單
+        StrategyWithDeps deps = buildStrategyWithDeps(new RiskManager(), 600_000_000.0, 0.0);
+
+        // 第一次建立 session
+        List<Order> initial = deps.strategy.execute(sampleSignal());
+        assertEquals(6, initial.size());
+
+        // 模擬全部 5 層成交
+        for (int i = 1; i <= MAX_LAYERS; i++) {
+            deps.sessionManager.getActiveSession("BTCUSDT")
+                    .ifPresent(s -> s.markFilledLayer());
+            Order dummyOrder = Order.builder().symbol("BTCUSDT").layer(i).build();
+            deps.layerFillTracker.recordFill("BTCUSDT", dummyOrder, 0.1, 59000.0 + i * 100);
+        }
+
+        // 再次 execute → 全部成交，應回傳空
+        List<Order> adjusted = deps.strategy.execute(sampleSignal());
+        assertEquals(0, adjusted.size());
+    }
+
+    @Test
+    void testAdjustSession_noFills_rebuildsSession() {
+        // 無成交 → 取消全部、結束 session、重新建立新 session
+        StrategyWithDeps deps = buildStrategyWithDeps(new RiskManager(), 600_000_000.0, 0.0);
+
+        // 第一次建立 session
+        List<Order> initial = deps.strategy.execute(sampleSignal());
+        assertEquals(6, initial.size());
+
+        // 不模擬任何成交，直接重新 execute（用新價格）
+        TradeSignal newSignal = TradeSignal.builder()
+                .symbol("BTCUSDT")
+                .side(TradeSignal.Side.LONG)
+                .entryPriceLow(55000.0)
+                .entryPriceHigh(55000.0)
+                .signalType(TradeSignal.SignalType.ENTRY)
+                .build();
+
+        List<Order> adjusted = deps.strategy.execute(newSignal);
+
+        // 應產生新的 5 層 + 1 TP
+        assertEquals(6, adjusted.size());
+
+        // 新的 Layer 1 價格應基於新訊號 55000
+        Order layer1 = adjusted.get(0);
+        assertEquals(55000.0, layer1.getPrice(), 0.01);
+    }
+
+    @Test
+    void testAdjustSession_partialFills_adjustsRemaining() {
+        // 部分成交 → 取消未成交掛單、重新掛出剩餘層
+        StrategyWithDeps deps = buildStrategyWithDeps(new RiskManager(), 600_000_000.0, 0.0);
+
+        // 第一次建立 session
+        List<Order> initial = deps.strategy.execute(sampleSignal());
+        assertEquals(6, initial.size());
+
+        // 模擬 2 層成交
+        for (int i = 0; i < 2; i++) {
+            deps.sessionManager.getActiveSession("BTCUSDT")
+                    .ifPresent(s -> s.markFilledLayer());
+        }
+        Order layer1Order = Order.builder().symbol("BTCUSDT").layer(1).build();
+        Order layer2Order = Order.builder().symbol("BTCUSDT").layer(2).build();
+        deps.layerFillTracker.recordFill("BTCUSDT", layer1Order, 0.1, 60000.0);
+        deps.layerFillTracker.recordFill("BTCUSDT", layer2Order, 0.2, 58800.0);
+
+        // 用新價格調整
+        TradeSignal newSignal = TradeSignal.builder()
+                .symbol("BTCUSDT")
+                .side(TradeSignal.Side.LONG)
+                .entryPriceLow(57000.0)
+                .entryPriceHigh(57000.0)
+                .signalType(TradeSignal.SignalType.ENTRY)
+                .build();
+
+        List<Order> adjusted = deps.strategy.execute(newSignal);
+
+        // 剩餘 3 層 ENTRY + 1 TP（基於已成交數據）
+        long entryCount = adjusted.stream().filter(o -> o.getType() == Order.OrderType.ENTRY).count();
+        long tpCount = adjusted.stream().filter(o -> o.getType() == Order.OrderType.TAKE_PROFIT).count();
+        assertEquals(3, entryCount);
+        assertEquals(1, tpCount);
+
+        // ENTRY 的 layer 號碼應接續已成交（3, 4, 5）
+        List<Order> entries = adjusted.stream()
+                .filter(o -> o.getType() == Order.OrderType.ENTRY)
+                .toList();
+        assertEquals(3, entries.get(0).getLayer());
+        assertEquals(4, entries.get(1).getLayer());
+        assertEquals(5, entries.get(2).getLayer());
+
+        // TP 價格應基於已成交均價
+        Order tp = adjusted.stream()
+                .filter(o -> o.getType() == Order.OrderType.TAKE_PROFIT)
+                .findFirst().orElseThrow();
+        assertTrue(tp.getPrice() > 0);
+    }
+
+    // ==================== 共用建構 ====================
+
+    /**
+     * 包含 strategy 與可操作的 sessionManager / layerFillTracker，
+     * 讓調整測試可以模擬成交狀態。
+     */
+    private record StrategyWithDeps(
+            MartingaleStrategy strategy,
+            MartingaleSessionManager sessionManager,
+            LayerFillTracker layerFillTracker
+    ) {}
+
+    private StrategyWithDeps buildStrategyWithDeps(RiskManager riskManager, double balance, double todayLoss) {
+        BinanceFuturesService binanceFuturesService = mock(BinanceFuturesService.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        TradeRecordService tradeRecordService = mock(TradeRecordService.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        StartOfDayBalanceCache startOfDayBalanceCache = mock(StartOfDayBalanceCache.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        MarketIndicatorService marketIndicatorService = mock(MarketIndicatorService.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        TradeConfigResolver tradeConfigResolver = mock(TradeConfigResolver.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        PositionService positionService = mock(PositionService.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        PositionSizer positionSizer = new PositionSizer();
+        MartingaleSessionManager sessionManager = new MartingaleSessionManager();
+        SymbolLockRegistry symbolLockRegistry = new SymbolLockRegistry();
+        LayerFillTracker layerFillTracker = new LayerFillTracker();
+        MarketRiskScorer marketRiskScorer = mock(MarketRiskScorer.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+
+        when(binanceFuturesService.getAvailableBalance()).thenReturn(balance);
+        when(binanceFuturesService.getCurrentPositionAmount(ArgumentMatchers.anyString())).thenReturn(0.0);
+        when(tradeRecordService.getActiveUserId()).thenReturn("test-user");
+        when(tradeRecordService.getTodayRealizedLoss()).thenReturn(todayLoss);
+        when(startOfDayBalanceCache.getOrCompute(ArgumentMatchers.anyString(), ArgumentMatchers.any()))
+                .thenReturn(balance);
+        when(marketRiskScorer.evaluate(ArgumentMatchers.anyString(), ArgumentMatchers.any(), ArgumentMatchers.any()))
+                .thenReturn(new RiskScoreResult(80, 20, 20, 20, 20, "test"));
+        when(tradeConfigResolver.resolve(ArgumentMatchers.anyString())).thenReturn(new EffectiveTradeConfig(
+                RISK_PERCENT, MAX_POSITION_USDT, 0, 0, 0, 3, 2.0, LEVERAGE, List.of("BTCUSDT"), true, "BTCUSDT"
+        ));
+        when(positionService.getPosition(ArgumentMatchers.anyString()))
+                .thenReturn(java.util.Optional.empty());
+
+        MartingaleStrategyConfig config = new MartingaleStrategyConfig(
+                MAX_LAYERS, PRICE_STEP_PERCENT, BASE_SIZE, SIZE_MULTIPLIER,
+                TAKE_PROFIT_PERCENT, MAX_CAPITAL_USAGE, MAX_POSITION_USDT,
+                0.15, 480, 60, 60000L, 5000L, 3, 0.008, 0.002,
+                0, 0.02, 40, false
+        );
+
+        MartingaleStrategy strategy = new MartingaleStrategy(
+                riskManager, config, binanceFuturesService, tradeRecordService,
+                startOfDayBalanceCache, marketIndicatorService, tradeConfigResolver,
+                positionService, positionSizer, sessionManager, symbolLockRegistry,
+                layerFillTracker, marketRiskScorer
+        );
+
+        return new StrategyWithDeps(strategy, sessionManager, layerFillTracker);
+    }
+
     private MartingaleStrategy buildStrategy(RiskManager riskManager, double balance, double todayLoss) {
         BinanceFuturesService binanceFuturesService = mock(BinanceFuturesService.class,
                 withSettings().mockMaker(MockMakers.SUBCLASS));
