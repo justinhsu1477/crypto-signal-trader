@@ -113,8 +113,11 @@ public class MartingaleStrategy implements TradingStrategy {
             return List.of();
         }
 
+        // 動態層數：有訊號 SL 時用 SL 距離 ÷ stepPercent，否則用 config
+        int dynamicMaxLayers = computeDynamicMaxLayers(signal, baseEntryPrice, side);
+
         // 1) Build layer prices based on entry and side (LONG down, SHORT up).
-        List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side, signal.getSymbol());
+        List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side, signal.getSymbol(), dynamicMaxLayers);
 
         // 2) Gather runtime risk context.
         double accountBalance = binanceFuturesService.getAvailableBalance();
@@ -170,7 +173,7 @@ public class MartingaleStrategy implements TradingStrategy {
                 side,
                 accountBalance,
                 config.getMaxCapitalUsage(),
-                config.getEffectiveMaxLayers(signal.getSymbol()),
+                dynamicMaxLayers,
                 currentPositionSize,
                 config.getMaxPositionSize(),
                 leverage,
@@ -190,13 +193,14 @@ public class MartingaleStrategy implements TradingStrategy {
         //    - Compute weighted average entry price
         //    - Place a TAKE_PROFIT at averagePrice * (1 + TAKE_PROFIT_PERCENT)
         MartingaleSession newSession = sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
+        applySignalTpSl(newSession, signal, side);
         stateStore.persistSession(newSession);
 
         var filled = layerFillTracker.getAggregatedFill(signal.getSymbol());
         double filledQty = filled.totalQty();
         double filledAvg = filled.avgPrice();
 
-        return buildOrders(signal, side, layerPlans, allowedLayers, baseEntryPrice, filledQty, filledAvg);
+        return buildOrders(signal, side, layerPlans, allowedLayers, baseEntryPrice, filledQty, filledAvg, newSession);
         } finally {
             lock.unlock();
         }
@@ -306,9 +310,15 @@ public class MartingaleStrategy implements TradingStrategy {
             return List.of();
         }
 
-        double tpPrice = side == TradeSignal.Side.LONG
-                ? tpAvgPrice * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
-                : tpAvgPrice * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
+        // 訊號提供絕對 TP → 直接使用；否則用 config 百分比
+        double tpPrice;
+        if (session.getSignalTakeProfit() != null && session.getSignalTakeProfit() > 0) {
+            tpPrice = session.getSignalTakeProfit();
+        } else {
+            tpPrice = side == TradeSignal.Side.LONG
+                    ? tpAvgPrice * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
+                    : tpAvgPrice * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
+        }
 
         orders.add(Order.builder()
                 .symbol(symbol)
@@ -338,7 +348,8 @@ public class MartingaleStrategy implements TradingStrategy {
                 : signal.getEntryPriceLow();
         if (baseEntryPrice <= 0) return List.of();
 
-        List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side, signal.getSymbol());
+        int dynamicMaxLayers = computeDynamicMaxLayers(signal, baseEntryPrice, side);
+        List<Double> layerPrices = buildLayerPrices(baseEntryPrice, side, signal.getSymbol(), dynamicMaxLayers);
 
         double accountBalance = binanceFuturesService.getAvailableBalance();
         String userId = tradeRecordService.getActiveUserId();
@@ -362,7 +373,7 @@ public class MartingaleStrategy implements TradingStrategy {
 
         MarketFilter marketFilter = buildMarketFilter(signal.getSymbol(), side);
         RiskDecision decision = riskManager.evaluateMartingale(
-                side, accountBalance, config.getMaxCapitalUsage(), config.getEffectiveMaxLayers(signal.getSymbol()),
+                side, accountBalance, config.getMaxCapitalUsage(), dynamicMaxLayers,
                 currentPositionSize, config.getMaxPositionSize(), leverage,
                 drawdownPercent, MAX_DRAWDOWN_PERCENT, marketFilter, layerPlans
         );
@@ -370,15 +381,15 @@ public class MartingaleStrategy implements TradingStrategy {
 
         int allowedLayers = decision.allowedLayers();
         MartingaleSession newSession = sessionManager.startSession(signal.getSymbol(), side, allowedLayers, baseEntryPrice);
+        applySignalTpSl(newSession, signal, side);
         stateStore.persistSession(newSession);
 
         var filled = layerFillTracker.getAggregatedFill(signal.getSymbol());
-        return buildOrders(signal, side, layerPlans, allowedLayers, baseEntryPrice, filled.totalQty(), filled.avgPrice());
+        return buildOrders(signal, side, layerPlans, allowedLayers, baseEntryPrice, filled.totalQty(), filled.avgPrice(), newSession);
     }
 
-    private List<Double> buildLayerPrices(double baseEntryPrice, TradeSignal.Side side, String symbol) {
+    private List<Double> buildLayerPrices(double baseEntryPrice, TradeSignal.Side side, String symbol, int maxLayers) {
         double effectiveStep = resolveStepPercent(symbol);
-        int maxLayers = config.getEffectiveMaxLayers(symbol);
         List<Double> prices = new ArrayList<>(maxLayers);
         for (int layer = 1; layer <= maxLayers; layer++) {
             double price = side == TradeSignal.Side.LONG
@@ -410,7 +421,7 @@ public class MartingaleStrategy implements TradingStrategy {
         return baseStep * ratio;
     }
 
-    private List<Order> buildOrders(TradeSignal signal, TradeSignal.Side side, List<LayerPlan> layers, int allowedLayers, double baseEntryPrice, double filledQty, double filledAvg) {
+    private List<Order> buildOrders(TradeSignal signal, TradeSignal.Side side, List<LayerPlan> layers, int allowedLayers, double baseEntryPrice, double filledQty, double filledAvg, MartingaleSession session) {
         String symbol = signal != null ? signal.getSymbol() : null;
         List<Order> orders = new ArrayList<>(allowedLayers + 1);
 
@@ -455,9 +466,15 @@ public class MartingaleStrategy implements TradingStrategy {
             tpAvgPrice = totalQuantity > 0.0 ? (weightedNotional / totalQuantity) : baseEntryPrice;
         }
 
-        double takeProfitPrice = side == TradeSignal.Side.LONG
-                ? tpAvgPrice * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
-                : tpAvgPrice * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
+        // 訊號提供絕對 TP → 直接使用；否則用 config 百分比計算
+        double takeProfitPrice;
+        if (session != null && session.getSignalTakeProfit() != null && session.getSignalTakeProfit() > 0) {
+            takeProfitPrice = session.getSignalTakeProfit();
+        } else {
+            takeProfitPrice = side == TradeSignal.Side.LONG
+                    ? tpAvgPrice * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
+                    : tpAvgPrice * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
+        }
 
         orders.add(Order.builder()
                 .symbol(symbol)
@@ -497,11 +514,50 @@ public class MartingaleStrategy implements TradingStrategy {
     }
 
     private boolean isGlobalStopLossTriggered(String symbol, TradeSignal.Side side, double markPrice, double baseEntryPrice) {
+        // 訊號提供絕對 SL → 直接比較
+        var sessionOpt = sessionManager.getActiveSession(symbol);
+        if (sessionOpt.isPresent()) {
+            Double signalSl = sessionOpt.get().getSignalStopLoss();
+            if (signalSl != null && signalSl > 0) {
+                return side == TradeSignal.Side.LONG
+                        ? markPrice <= signalSl
+                        : markPrice >= signalSl;
+            }
+        }
+        // fallback: config 百分比
         double sl = config.getEffectiveStopLossPercent(symbol);
         if (side == TradeSignal.Side.LONG) {
             return markPrice <= baseEntryPrice * (1.0 - sl);
         }
         return markPrice >= baseEntryPrice * (1.0 + sl);
+    }
+
+    /**
+     * 動態層數：訊號有 SL 時 = SL 距離 ÷ stepPercent，否則用 config.maxLayers
+     */
+    private int computeDynamicMaxLayers(TradeSignal signal, double baseEntryPrice, TradeSignal.Side side) {
+        if (signal.getStopLoss() > 0 && baseEntryPrice > 0) {
+            double slDistance = Math.abs(baseEntryPrice - signal.getStopLoss()) / baseEntryPrice;
+            double step = resolveStepPercent(signal.getSymbol());
+            if (step > 0 && slDistance > 0) {
+                int dynamic = (int) Math.floor(slDistance / step);
+                int maxAllowed = config.getEffectiveMaxLayers(signal.getSymbol());
+                return Math.max(1, Math.min(dynamic, maxAllowed));
+            }
+        }
+        return config.getEffectiveMaxLayers(signal.getSymbol());
+    }
+
+    /**
+     * 將訊號的絕對 TP/SL 存入 session，供後續 TpManager / StopLossWatcher 使用
+     */
+    private void applySignalTpSl(MartingaleSession session, TradeSignal signal, TradeSignal.Side side) {
+        if (signal.getStopLoss() > 0) {
+            session.setSignalStopLoss(signal.getStopLoss());
+        }
+        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            session.setSignalTakeProfit(signal.getTakeProfits().get(0));
+        }
     }
 
     /**

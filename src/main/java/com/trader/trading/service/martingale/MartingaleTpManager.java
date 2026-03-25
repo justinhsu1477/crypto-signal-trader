@@ -65,10 +65,15 @@ public class MartingaleTpManager {
                 return;
             }
 
-            // 按實際成交均價計算新 TP 價格
-            double tpPrice = session.getSide() == TradeSignal.Side.LONG
-                    ? fill.avgPrice() * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
-                    : fill.avgPrice() * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
+            // 訊號提供絕對 TP → 直接使用；否則按實際成交均價計算
+            double tpPrice;
+            if (session.getSignalTakeProfit() != null && session.getSignalTakeProfit() > 0) {
+                tpPrice = session.getSignalTakeProfit();
+            } else {
+                tpPrice = session.getSide() == TradeSignal.Side.LONG
+                        ? fill.avgPrice() * (1.0 + config.getEffectiveTakeProfitPercent(symbol))
+                        : fill.avgPrice() * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
+            }
 
             // 先掛新 TP → 再取消舊 TP（消除無保護窗口）
             String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";

@@ -1,5 +1,6 @@
 package com.trader.trading.config;
 
+import com.trader.trading.service.martingale.MartingaleDecisionEngine;
 import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -43,6 +44,8 @@ public class MartingaleStrategyConfig {
     private final int tpDecayIntervalMinutes;
     /** TP 時間衰減：最低 TP 百分比（衰減到此值後不再降低） */
     private final double tpDecayFloorPercent;
+    /** Martingale 決策模式：NEVER（預設）、ALWAYS、AUTO */
+    private final MartingaleDecisionEngine.DecisionMode decisionMode;
     /** Per-symbol 配置覆寫（key = symbol，如 ETHUSDT） */
     private final Map<String, SymbolOverride> symbolOverrides;
 
@@ -113,6 +116,7 @@ public class MartingaleStrategyConfig {
             @DefaultValue("120") int tpDecayStartMinutes,
             @DefaultValue("60") int tpDecayIntervalMinutes,
             @DefaultValue("0.002") double tpDecayFloorPercent,
+            @DefaultValue("NEVER") MartingaleDecisionEngine.DecisionMode decisionMode,
             Map<String, SymbolOverride> symbolOverrides
     ) {
         this.maxLayers = maxLayers;
@@ -137,6 +141,7 @@ public class MartingaleStrategyConfig {
         this.tpDecayStartMinutes = tpDecayStartMinutes;
         this.tpDecayIntervalMinutes = tpDecayIntervalMinutes;
         this.tpDecayFloorPercent = tpDecayFloorPercent;
+        this.decisionMode = decisionMode;
         this.symbolOverrides = symbolOverrides;
     }
 }

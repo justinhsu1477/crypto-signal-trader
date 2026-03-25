@@ -17,6 +17,9 @@ import com.trader.trading.service.BinanceUserDataStreamService;
 import com.trader.trading.service.SignalRecordService;
 import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeRecordService;
+import com.trader.trading.service.TradingService;
+import com.trader.trading.service.martingale.MartingaleDecisionEngine;
+import com.trader.trading.strategy.StrategyType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -51,6 +54,8 @@ public class TradeController {
     private final BinanceUserDataStreamService userDataStreamService;
     private final SignalRecordService signalRecordService;
     private final SymbolLockRegistry symbolLockRegistry;
+    private final MartingaleDecisionEngine martingaleDecisionEngine;
+    private final TradingService tradingService;
 
     /** 訊號最大容許延遲（毫秒）：5 分鐘 */
     private static final long SIGNAL_MAX_AGE_MS = 5 * 60 * 1000L;
@@ -217,6 +222,22 @@ public class TradeController {
                     DiscordWebhookService.COLOR_YELLOW);
             signalRecordService.recordSignal(signal, "REJECTED", "missing-stop-loss", null);
             return ResponseEntity.badRequest().body(Map.of("error", "ENTRY 訊號必須包含 stop_loss"));
+        }
+
+        // Martingale DecisionEngine 分流：符合條件 → 走 Martingale 分層入場
+        if (martingaleDecisionEngine.shouldUseMartingale(signal)) {
+            log.info("Martingale 決策引擎啟用: symbol={} side={}", signal.getSymbol(), signal.getSide());
+            List<OrderResult> mgResults = tradingService.execute(signal, StrategyType.MARTINGALE);
+            boolean mgSuccess = mgResults.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+            webhookService.sendNotification(
+                    mgSuccess ? "✅ MARTINGALE 分層入場成功" : "❌ MARTINGALE 入場失敗",
+                    formatEntryResults(signal, mgResults),
+                    mgSuccess ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
+            String mgTradeId = mgResults.stream()
+                    .filter(r -> r.isSuccess() && r.getOrderId() != null)
+                    .map(OrderResult::getOrderId).findFirst().orElse(null);
+            signalRecordService.recordSignal(signal, mgSuccess ? "EXECUTED" : "FAILED", "martingale", mgTradeId);
+            return ResponseEntity.ok(Map.of("action", "ENTRY", "strategy", "MARTINGALE", "results", mgResults));
         }
 
         List<OrderResult> results = binanceFuturesService.executeSignal(signal);

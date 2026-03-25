@@ -35,6 +35,7 @@ trading:
       tp-decay-start-minutes: ${MARTINGALE_TP_DECAY_START_MINUTES:120}   # TP 時間衰減起始（分鐘），0=停用
       tp-decay-interval-minutes: ${MARTINGALE_TP_DECAY_INTERVAL_MINUTES:60}  # 每階段衰減間隔
       tp-decay-floor-percent: ${MARTINGALE_TP_DECAY_FLOOR_PERCENT:0.002}  # 衰減最低 TP%
+      decision-mode: ${MARTINGALE_DECISION_MODE:NEVER}  # NEVER=停用 / ALWAYS=全用 / AUTO=自動判斷
       # Per-symbol 配置覆寫（選填，未設定的欄位沿用全域值）
       # symbol-overrides:
       #   ETHUSDT:
