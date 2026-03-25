@@ -28,6 +28,10 @@ public class MartingaleSession {
     private volatile int trailingLevel;
     /** TP 時間衰減已套用的階段數（0=未衰減） */
     private volatile int tpDecayLevel;
+    /** 訊號提供的絕對止損價（null = 使用 config 百分比） */
+    private volatile Double signalStopLoss;
+    /** 訊號提供的絕對止盈價（null = 使用 config 百分比） */
+    private volatile Double signalTakeProfit;
 
     public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
         this.sessionId = sessionId;
@@ -108,6 +112,24 @@ public class MartingaleSession {
 
     public void setTpDecayLevel(int level) {
         this.tpDecayLevel = level;
+        touch();
+    }
+
+    public Double getSignalStopLoss() {
+        return signalStopLoss;
+    }
+
+    public void setSignalStopLoss(Double signalStopLoss) {
+        this.signalStopLoss = signalStopLoss;
+        touch();
+    }
+
+    public Double getSignalTakeProfit() {
+        return signalTakeProfit;
+    }
+
+    public void setSignalTakeProfit(Double signalTakeProfit) {
+        this.signalTakeProfit = signalTakeProfit;
         touch();
     }
 

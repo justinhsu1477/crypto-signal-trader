@@ -9,6 +9,7 @@ import com.trader.shared.model.TradeSignal;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.entity.TradeEvent;
 import com.trader.trading.service.*;
+import com.trader.trading.service.martingale.MartingaleDecisionEngine;
 import org.junit.jupiter.api.*;
 import org.springframework.http.ResponseEntity;
 
@@ -40,6 +41,8 @@ class TradeControllerTest {
     private BinanceUserDataStreamService userDataStreamService;
     private SignalRecordService signalRecordService;
     private SymbolLockRegistry symbolLockRegistry;
+    private MartingaleDecisionEngine martingaleDecisionEngine;
+    private TradingService tradingService;
 
     private TradeController controller;
 
@@ -56,12 +59,14 @@ class TradeControllerTest {
         userDataStreamService = mock(BinanceUserDataStreamService.class);
         signalRecordService = mock(SignalRecordService.class);
         symbolLockRegistry = new SymbolLockRegistry();
+        martingaleDecisionEngine = mock(MartingaleDecisionEngine.class);
+        tradingService = mock(TradingService.class);
 
         controller = new TradeController(
                 binanceFuturesService, broadcastTradeService, signalParserService,
                 riskConfig, tradeRecordService, deduplicationService,
                 webhookService, heartbeatService, userDataStreamService, signalRecordService,
-                symbolLockRegistry);
+                symbolLockRegistry, martingaleDecisionEngine, tradingService);
 
         // 預設白名單通過
         when(riskConfig.isSymbolAllowed(anyString())).thenReturn(true);

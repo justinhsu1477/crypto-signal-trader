@@ -17,6 +17,7 @@ import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.TradeConfigResolver;
 import com.trader.trading.service.TradeRecordService;
 import com.trader.trading.service.LayerFillTracker;
+import com.trader.trading.service.martingale.MartingaleDecisionEngine;
 import com.trader.trading.service.martingale.MartingaleStateStore;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
@@ -347,7 +348,8 @@ class MartingaleStrategyTest {
                 MAX_LAYERS, PRICE_STEP_PERCENT, BASE_SIZE, SIZE_MULTIPLIER,
                 TAKE_PROFIT_PERCENT, MAX_CAPITAL_USAGE, MAX_POSITION_USDT,
                 0.15, 480, 60, 60000L, 5000L, 3, 0.008, 0.002,
-                0, 0.02, 40, false, 120, 60, 0.002, null
+                0, 0.02, 40, false, 120, 60, 0.002,
+                MartingaleDecisionEngine.DecisionMode.NEVER, null
         );
 
         MartingaleStrategy strategy = new MartingaleStrategy(
@@ -418,6 +420,7 @@ class MartingaleStrategyTest {
                 40,     // riskScoreThreshold = 40 → 啟用多因子評分
                 false,  // emaFilterEnabled = false
                 120, 60, 0.002,  // tpDecay params
+                MartingaleDecisionEngine.DecisionMode.NEVER,
                 null    // symbolOverrides = null
         );
 

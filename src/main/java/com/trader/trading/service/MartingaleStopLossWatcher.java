@@ -98,6 +98,17 @@ public class MartingaleStopLossWatcher {
         if (baseEntryPrice <= 0) {
             return false;
         }
+        // 訊號提供絕對 SL → 直接比較
+        var sessionOpt = sessionManager.getActiveSession(symbol);
+        if (sessionOpt.isPresent()) {
+            Double signalSl = sessionOpt.get().getSignalStopLoss();
+            if (signalSl != null && signalSl > 0) {
+                return side == TradeSignal.Side.LONG
+                        ? markPrice <= signalSl
+                        : markPrice >= signalSl;
+            }
+        }
+        // fallback: config 百分比
         double sl = config.getEffectiveStopLossPercent(symbol);
         if (side == TradeSignal.Side.LONG) {
             return markPrice <= baseEntryPrice * (1.0 - sl);
