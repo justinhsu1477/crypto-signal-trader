@@ -20,12 +20,17 @@ public class PaperTradingConfig {
     /** TP/SL 監控間隔（毫秒） */
     private final long monitorIntervalMs;
 
+    /** 入場價與市價最大允許偏離比例（預設 0.10 = 10%） */
+    private final double maxPriceDeviationPercent;
+
     public PaperTradingConfig(
             @DefaultValue("1000") double notionalUsdt,
             @DefaultValue("10") int leverage,
-            @DefaultValue("90000") long monitorIntervalMs) {
+            @DefaultValue("90000") long monitorIntervalMs,
+            @DefaultValue("0.10") double maxPriceDeviationPercent) {
         this.notionalUsdt = notionalUsdt;
         this.leverage = leverage;
         this.monitorIntervalMs = monitorIntervalMs;
+        this.maxPriceDeviationPercent = maxPriceDeviationPercent;
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Binance 公開 API 價格查詢（不需 API Key）
@@ -29,7 +30,11 @@ public class BinancePriceClient {
 
     public BinancePriceClient(@Value("${binance.futures.base-url}") String baseUrl) {
         this.baseUrl = baseUrl;
-        this.httpClient = new OkHttpClient();
+        this.httpClient = new OkHttpClient.Builder()
+                .connectTimeout(3, TimeUnit.SECONDS)
+                .readTimeout(3, TimeUnit.SECONDS)
+                .writeTimeout(3, TimeUnit.SECONDS)
+                .build();
         this.gson = new Gson();
     }
 

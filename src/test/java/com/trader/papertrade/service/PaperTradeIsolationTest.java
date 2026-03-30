@@ -266,8 +266,11 @@ class PaperTradeIsolationTest {
     @DisplayName("模擬交易 userId 固定為 PAPER_TRADE_SYSTEM — 不會混入真實用戶")
     void paperTrade_userId_isPaperTradeSystem() {
         TradeRepository realTradeRepo = mock(TradeRepository.class);
-        PaperTradingConfig config = new PaperTradingConfig(1000, 10, 90000);
-        PaperTradeService paperService = new PaperTradeService(realTradeRepo, config, new ObjectMapper());
+        BinancePriceClient priceClient = mock(BinancePriceClient.class);
+        PaperTradingConfig config = new PaperTradingConfig(1000, 10, 90000, 0.10);
+        PaperTradeService paperService = new PaperTradeService(realTradeRepo, config, new ObjectMapper(), priceClient);
+
+        when(priceClient.getMarkPrice("BTCUSDT")).thenReturn(50500.0);
 
         when(realTradeRepo.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
 
