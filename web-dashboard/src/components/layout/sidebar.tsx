@@ -65,6 +65,7 @@ export function Sidebar() {
     { href: "/admin/prompts", label: t("nav.adminPrompts"), icon: ScrollText },
     { href: "/admin/broadcast-logs", label: t("nav.adminBroadcastLogs"), icon: Radio },
     { href: "/admin/daily-reports", label: t("nav.adminDailyReports"), icon: FileBarChart },
+    { href: "/admin/analyst-reports", label: t("nav.adminAnalystReports"), icon: ScrollText },
     { href: "/admin/notifications", label: t("nav.adminNotifications"), icon: Send },
     { href: "/admin/announcements", label: t("nav.adminAnnouncements"), icon: Megaphone },
     { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },

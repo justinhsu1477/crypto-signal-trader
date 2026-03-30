@@ -1176,6 +1176,32 @@ export async function generateAdminDailyReport(date: string): Promise<DailySigna
   });
 }
 
+// ─── Admin Analyst Report ───
+
+import type {
+  AnalystReportListResponse,
+  AnalystReportSummary,
+  AnalystMessageSummary,
+} from "@/types";
+
+export async function getAnalystReports(page = 0, size = 20): Promise<AnalystReportListResponse> {
+  return request<AnalystReportListResponse>(`/api/admin/analyst-report/list?page=${page}&size=${size}`);
+}
+
+export async function getAnalystReportByDate(date: string): Promise<AnalystReportSummary> {
+  return request<AnalystReportSummary>(`/api/admin/analyst-report?date=${date}`);
+}
+
+export async function generateAnalystReport(date: string): Promise<{ status: string; reportDate: string; analystCount: number; hasContent: boolean }> {
+  return request<{ status: string; reportDate: string; analystCount: number; hasContent: boolean }>(`/api/admin/analyst-report/generate?date=${date}`, {
+    method: "POST",
+  });
+}
+
+export async function getAnalystMessages(date: string): Promise<AnalystMessageSummary[]> {
+  return request<AnalystMessageSummary[]>(`/api/admin/analyst-report/messages?date=${date}`);
+}
+
 export async function updateGlobalMonitorSettings(
   data: { authorIds?: string[]; ignoreKeywords?: string[] }
 ): Promise<{ message: string; configVersion: number; connectedMonitors: number }> {
