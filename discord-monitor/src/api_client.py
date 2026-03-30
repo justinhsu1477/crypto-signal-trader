@@ -169,6 +169,38 @@ class ApiClient:
         except Exception:
             return False
 
+    async def append_analyst_message(
+        self, analyst_name: str, channel_id: str, content: str,
+    ) -> bool:
+        """Append a message to the analyst daily collection.
+
+        Args:
+            analyst_name: Discord author name.
+            channel_id: Discord channel ID.
+            content: Message text content.
+
+        Returns:
+            True if accepted by server, False otherwise.
+        """
+        try:
+            url = f"{self.config.base_url}/api/analyst-messages"
+            payload = {
+                "analyst_name": analyst_name,
+                "channel_id": channel_id,
+                "content": content,
+            }
+            async with self._session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    logger.debug("Analyst message appended: %s", analyst_name)
+                    return True
+                logger.warning("Analyst message response: HTTP %d", resp.status)
+                return False
+        except Exception as e:
+            logger.warning("Analyst message append failed: %s", e)
+            return False
+
     async def send_heartbeat(
         self,
         status: str = "connected",

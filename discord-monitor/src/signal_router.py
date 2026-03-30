@@ -1,6 +1,7 @@
 """Signal router — filters messages by channel, identifies signal type, forwards to API."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -141,6 +142,9 @@ class SignalRouter:
 
         if not content.strip():
             return
+
+        # 轉發所有訊息到分析師收集 API（fire-and-forget，不阻塞主流程）
+        asyncio.create_task(self._append_analyst_message(author_name, channel_id, content))
 
         # 內容黑名單過濾（一對一指導等非交易訊號）
         if self.ignore_keywords:
@@ -343,3 +347,14 @@ class SignalRouter:
         if len(self._content_hashes) > self._max_content_hash_size:
             to_keep = list(self._content_hashes)[self._max_content_hash_size // 2:]
             self._content_hashes = set(to_keep)
+
+    async def _append_analyst_message(self, author_name: str, channel_id: str, content: str) -> None:
+        """Fire-and-forget helper to forward messages to analyst collection API."""
+        try:
+            await self.api_client.append_analyst_message(
+                analyst_name=author_name,
+                channel_id=channel_id,
+                content=content,
+            )
+        except Exception as e:
+            logger.debug("Analyst message append error (ignored): %s", e)
