@@ -287,11 +287,25 @@ public class BroadcastTradeService {
                 try {
                     String action = request.getAction();
                     String srcChannelId = request.getSource() != null ? request.getSource().getChannelId() : null;
+                    if (srcChannelId == null && !"ENTRY".equalsIgnoreCase(action)) {
+                        log.warn("SHADOW 模擬交易缺少 channelId，跳過 {} 操作: {}", action, request.getSymbol());
+                    }
                     if ("ENTRY".equalsIgnoreCase(action)) {
                         paperTradeService.createPaperTrade(request, shadowScore);
                     } else if ("CLOSE".equalsIgnoreCase(action) && srcChannelId != null) {
-                        double markPrice = binancePriceClient.getMarkPrice(request.getSymbol());
-                        paperTradeService.closePaperTrade(request.getSymbol(), srcChannelId, markPrice, "SIGNAL_CLOSE");
+                        double closePrice;
+                        try {
+                            closePrice = binancePriceClient.getMarkPrice(request.getSymbol());
+                        } catch (Exception priceEx) {
+                            log.warn("SHADOW 平倉取市價失敗，使用 signal entryPrice 作為 fallback: {} — {}",
+                                    request.getSymbol(), priceEx.getMessage());
+                            closePrice = request.getEntryPrice() != null ? request.getEntryPrice() : 0;
+                        }
+                        if (closePrice > 0) {
+                            paperTradeService.closePaperTrade(request.getSymbol(), srcChannelId, closePrice, "SIGNAL_CLOSE");
+                        } else {
+                            log.error("SHADOW 平倉失敗：無法取得有效平倉價格 symbol={} channelId={}", request.getSymbol(), srcChannelId);
+                        }
                     } else if ("MOVE_SL".equalsIgnoreCase(action) && srcChannelId != null) {
                         paperTradeService.movePaperStopLoss(request.getSymbol(), srcChannelId,
                                 request.getNewStopLoss(), request.getNewTakeProfit());

@@ -26,14 +26,16 @@ class PaperTradeServiceTest {
     private TradeRepository tradeRepository;
     private PaperTradingConfig config;
     private ObjectMapper objectMapper;
+    private BinancePriceClient binancePriceClient;
     private PaperTradeService service;
 
     @BeforeEach
     void setUp() {
         tradeRepository = mock(TradeRepository.class);
-        config = new PaperTradingConfig(1000, 10, 90000);
+        config = new PaperTradingConfig(1000, 10, 90000, 0.10);
         objectMapper = new ObjectMapper();
-        service = new PaperTradeService(tradeRepository, config, objectMapper);
+        binancePriceClient = mock(BinancePriceClient.class);
+        service = new PaperTradeService(tradeRepository, config, objectMapper, binancePriceClient);
     }
 
     private TradeRequest createRequest(String symbol, String action, String side, Double entryPrice) {
@@ -61,6 +63,7 @@ class PaperTradeServiceTest {
                 .messageId("msg1")
                 .build());
 
+        when(binancePriceClient.getMarkPrice("BTCUSDT")).thenReturn(50500.0);
         when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Trade result = service.createPaperTrade(request, null);
@@ -103,6 +106,7 @@ class PaperTradeServiceTest {
                 .reasoning("Strong bearish signal")
                 .build();
 
+        when(binancePriceClient.getMarkPrice("ETHUSDT")).thenReturn(3450.0);
         when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Trade result = service.createPaperTrade(request, score);
@@ -128,6 +132,82 @@ class PaperTradeServiceTest {
 
         assertThatThrownBy(() -> service.createPaperTrade(request, null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("side 為 null 時拋出 IllegalArgumentException")
+    void createPaperTrade_nullSide_throws() {
+        TradeRequest request = createRequest("BTCUSDT", "ENTRY", null, 50000.0);
+
+        assertThatThrownBy(() -> service.createPaperTrade(request, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("模擬交易需要有效的方向");
+    }
+
+    @Test
+    @DisplayName("side 為空白字串時拋出 IllegalArgumentException")
+    void createPaperTrade_blankSide_throws() {
+        TradeRequest request = createRequest("BTCUSDT", "ENTRY", "  ", 50000.0);
+
+        assertThatThrownBy(() -> service.createPaperTrade(request, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("模擬交易需要有效的方向");
+    }
+
+    @Test
+    @DisplayName("入場價偏離市價超過 10% 時拋出 IllegalArgumentException")
+    void createPaperTrade_absurdEntryPrice_throws() {
+        TradeRequest request = createRequest("BTCUSDT", "ENTRY", "LONG", 1.48);
+
+        when(binancePriceClient.getMarkPrice("BTCUSDT")).thenReturn(70000.0);
+
+        assertThatThrownBy(() -> service.createPaperTrade(request, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("偏離市價");
+    }
+
+    @Test
+    @DisplayName("Binance API 失敗時 — 跳過偏離檢查，交易照常建立")
+    void createPaperTrade_binanceApiFails_stillCreates() {
+        TradeRequest request = createRequest("BTCUSDT", "ENTRY", "LONG", 50000.0);
+
+        when(binancePriceClient.getMarkPrice("BTCUSDT"))
+                .thenThrow(new RuntimeException("Binance API timeout"));
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Trade result = service.createPaperTrade(request, null);
+
+        assertThat(result.getSymbol()).isEqualTo("BTCUSDT");
+        assertThat(result.getEntryPrice()).isEqualTo(50000.0);
+        assertThat(result.getStatus()).isEqualTo("OPEN");
+        verify(tradeRepository).save(any(Trade.class));
+    }
+
+    @Test
+    @DisplayName("平倉時 side 為 null — profit 設為 0 不拋例外")
+    void closePaperTrade_nullSide_profitZero() {
+        Trade openTrade = Trade.builder()
+                .tradeId("t-null-side")
+                .userId("PAPER_TRADE_SYSTEM")
+                .symbol("BTCUSDT")
+                .side(null)
+                .entryPrice(50000.0)
+                .entryQuantity(0.2)
+                .entryCommission(2.0)
+                .status("OPEN")
+                .simulated(true)
+                .build();
+
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch1"))
+                .thenReturn(List.of(openTrade));
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Optional<Trade> result = service.closePaperTrade("BTCUSDT", "ch1", 52000.0, "SIGNAL_CLOSE");
+
+        assertThat(result).isPresent();
+        Trade closed = result.get();
+        assertThat(closed.getNetProfit()).isEqualTo(0.0);
+        assertThat(closed.getGrossProfit()).isEqualTo(0.0);
     }
 
     // ==================== closePaperTrade ====================

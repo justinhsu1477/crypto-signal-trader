@@ -35,6 +35,7 @@ public class PaperTradeService {
     private final TradeRepository tradeRepository;
     private final PaperTradingConfig config;
     private final ObjectMapper objectMapper;
+    private final BinancePriceClient binancePriceClient;
 
     /**
      * SHADOW ENTRY 訊號 → 建立模擬交易
@@ -45,7 +46,31 @@ public class PaperTradeService {
             throw new IllegalArgumentException("模擬交易需要有效的入場價: entryPrice=" + request.getEntryPrice());
         }
 
+        // Side 驗證：必須為 LONG 或 SHORT
+        String side = request.getSide();
+        if (side == null || side.isBlank() || (!"LONG".equals(side) && !"SHORT".equals(side))) {
+            throw new IllegalArgumentException("模擬交易需要有效的方向: side=" + side);
+        }
+
+        // 入場價偏離市價檢查
         double entryPrice = request.getEntryPrice();
+        try {
+            double markPrice = binancePriceClient.getMarkPrice(request.getSymbol());
+            if (markPrice > 0) {
+                double deviation = Math.abs(entryPrice - markPrice) / markPrice;
+                if (deviation > config.getMaxPriceDeviationPercent()) {
+                    throw new IllegalArgumentException(String.format(
+                            "入場價 %.4f 偏離市價 %.4f 超過 %.0f%% (實際 %.1f%%)",
+                            entryPrice, markPrice,
+                            config.getMaxPriceDeviationPercent() * 100,
+                            deviation * 100));
+                }
+            }
+        } catch (IllegalArgumentException e) {
+            throw e; // 偏離過大的例外直接拋出
+        } catch (Exception e) {
+            log.warn("Binance 市價查詢失敗，跳過價格偏離檢查: {}", e.getMessage());
+        }
         double notional = config.getNotionalUsdt() * config.getLeverage();
         double quantity = round6(notional / entryPrice);
         double entryCommission = round2(entryPrice * quantity * 0.0002); // maker 0.02%
@@ -168,6 +193,14 @@ public class PaperTradeService {
      * netProfit = (exitPrice - entryPrice) * qty * direction - commission
      */
     private void calculateProfit(Trade trade) {
+        if (trade.getSide() == null) {
+            log.error("交易 {} 的 side 為 null，無法計算損益，設為 0", trade.getTradeId());
+            trade.setGrossProfit(0.0);
+            trade.setCommission(0.0);
+            trade.setNetProfit(0.0);
+            return;
+        }
+
         double entry = trade.getEntryPrice();
         double exit = trade.getExitPrice();
         double qty = trade.getEntryQuantity();
