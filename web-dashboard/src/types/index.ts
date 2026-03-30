@@ -1038,6 +1038,34 @@ export interface DailySignalReportDetail {
   createdAt: string;
 }
 
+// ==================== Analyst Report ====================
+
+export interface AnalystReportSummary {
+  id: number;
+  reportDate: string;
+  analystCount: number;
+  reportContent: string | null;
+  reportData: string | null;   // JSON string
+  aiTokensUsed: number | null;
+  createdAt: string;
+}
+
+export interface AnalystReportListResponse {
+  content: AnalystReportSummary[];
+  page: number;
+  size: number;
+  totalPages: number;
+  totalElements: number;
+}
+
+export interface AnalystMessageSummary {
+  analystName: string;
+  channelId: string;
+  messageCount: number;
+  contentLength: number;
+  contentPreview: string;
+}
+
 // ==================== Payment History (User) ====================
 
 export interface UserPaymentHistoryResponse {
