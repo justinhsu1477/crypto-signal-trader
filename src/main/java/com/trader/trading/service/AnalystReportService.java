@@ -44,6 +44,7 @@ public class AnalystReportService {
         if (existing.isPresent()) {
             log.info("分析師日報已存在，覆蓋: {}", date);
             reportRepository.delete(existing.get());
+            reportRepository.flush();
         }
 
         // 收集當日所有分析師訊息
