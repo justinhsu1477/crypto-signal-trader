@@ -165,8 +165,8 @@ public class AnalystReportService {
 
             if (report.getReportContent() != null) {
                 String content = report.getReportContent().replaceAll("\n{3,}", "\n\n");
-                String preview = content.length() > 500
-                        ? content.substring(0, 500) + "..."
+                String preview = content.length() > 1800
+                        ? content.substring(0, 1800) + "..."
                         : content;
                 sb.append("\n").append(preview);
             } else {
