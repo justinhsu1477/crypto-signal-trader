@@ -106,6 +106,7 @@ public class AnalystReportService {
 
                 請用繁體中文回答，保持專業但易讀。使用 emoji 標題讓報告更易讀。
                 如果某位分析師的訊息大多是閒聊或非交易相關，可以簡要帶過。
+                格式要求：段落之間只用一個空行，不要使用連續多個空行。標題與內容之間不需要額外空行。保持緊湊排版。
                 """;
     }
 
@@ -162,9 +163,10 @@ public class AnalystReportService {
             sb.append(String.format("👥 分析師: %d 位\n", report.getAnalystCount()));
 
             if (report.getReportContent() != null) {
-                String preview = report.getReportContent().length() > 500
-                        ? report.getReportContent().substring(0, 500) + "..."
-                        : report.getReportContent();
+                String content = report.getReportContent().replaceAll("\n{3,}", "\n\n");
+                String preview = content.length() > 500
+                        ? content.substring(0, 500) + "..."
+                        : content;
                 sb.append("\n").append(preview);
             } else {
                 sb.append("\n⚠️ AI 報告生成失敗");
