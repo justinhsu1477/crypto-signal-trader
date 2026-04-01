@@ -628,8 +628,10 @@ public class DailyReportService {
         sb.append(String.format("總淨利: %s USDT | 勝率: %s\n",
                 formatProfit((double) overallStats.get("totalNetProfit")),
                 overallStats.get("winRate")));
-        sb.append(String.format("PF: %.2f | 平均每筆: %s USDT\n",
-                (double) overallStats.get("profitFactor"),
+        double pf = (double) overallStats.get("profitFactor");
+        String pfStr = pf == 0 ? "N/A" : String.format("%.2f", pf);
+        sb.append(String.format("PF: %s | 平均每筆: %s USDT\n",
+                pfStr,
                 formatProfit((double) overallStats.get("avgProfitPerTrade"))));
         sb.append(String.format("總手續費: %.2f USDT | 已平倉: %d 筆\n",
                 (double) overallStats.get("totalCommission"),
@@ -712,10 +714,11 @@ public class DailyReportService {
                     case NOT_READY -> "⏳";
                 };
                 String displayName = r.getDisplayName() != null ? r.getDisplayName() : r.getName();
-                sb.append(String.format("%s %s | %d筆 | 勝率%.1f%% | PF:%.2f | 連敗:%d | %s USDT\n",
+                String pfDisplay = r.getPaperProfitFactor() == 0 ? "N/A" : String.format("%.2f", r.getPaperProfitFactor());
+                sb.append(String.format("%s %s | %d筆 | 勝率%.1f%% | PF:%s | 連敗:%d | %s USDT\n",
                         statusEmoji, displayName,
                         r.getPaperTradeCount(), r.getPaperWinRate(),
-                        r.getPaperProfitFactor(), r.getPaperMaxConsecutiveLosses(),
+                        pfDisplay, r.getPaperMaxConsecutiveLosses(),
                         formatProfit(r.getPaperTotalPnl())));
             }
 

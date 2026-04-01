@@ -557,7 +557,8 @@ public class MarketDataService {
                 totalPnl >= 0 ? "+" : "", totalPnl,
                 avgPnl >= 0 ? "+" : "", avgPnl));
         sb.append(String.format("- 最大獲利：+%.2f | 最大虧損：%.2f\n", maxWin, maxLoss));
-        sb.append(String.format("- Profit Factor：%.2f\n", profitFactor));
+        String pfStr = profitFactor == 0 ? "N/A" : String.format("%.2f", profitFactor);
+        sb.append(String.format("- Profit Factor：%s\n", pfStr));
     }
 
     // ═══════════════════════════════════════
