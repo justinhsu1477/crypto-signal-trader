@@ -402,7 +402,7 @@ public class SignalSourceService {
         double grossWins = ((Number) row[6]).doubleValue();
         double grossLosses = ((Number) row[7]).doubleValue();
         double winRate = tradeCount > 0 ? winCount * 100.0 / tradeCount : 0;
-        double profitFactor = grossLosses > 0 ? grossWins / grossLosses : (grossWins > 0 ? Double.MAX_VALUE : 0);
+        double profitFactor = grossLosses > 0 ? grossWins / grossLosses : 0;
 
         // 連勝/連虧計算
         int[] streaks = calculateStreaks(source.getChannelId(), source.getGuildId(), simulated, since);
