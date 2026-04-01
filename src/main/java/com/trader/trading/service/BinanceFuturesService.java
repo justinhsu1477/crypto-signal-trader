@@ -1397,11 +1397,18 @@ public class BinanceFuturesService {
             // 訊號明確帶了 SL 價格
             log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
         } else {
-            // 成本保護：「做保本處理」「止損上移至成本附近」→ 用開倉價
+            // 成本保護：「做保本處理」「止損上移至成本附近」→ 開倉價 + 手續費補償
             Double entryPrice = tradeRecordService.getEntryPrice(symbol);
             if (entryPrice != null && entryPrice > 0) {
-                slValue = entryPrice;
-                log.info("成本保護: {} 舊SL={} 用開倉價做SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
+                // 手續費補償公式：SL = Entry + (名義價值 × 費率 × 2) ÷ 倉位數量
+                // Taker 費率 0.05%，來回 × 2 = 0.1%
+                double notionalValue = entryPrice * absPosition;
+                double roundTripFee = notionalValue * 0.0005 * 2;
+                double feeOffset = roundTripFee / absPosition;
+                // 多單往上加，空單往下減
+                slValue = isLong ? entryPrice + feeOffset : entryPrice - feeOffset;
+                log.info("成本保護: {} 舊SL={} 開倉價={} 手續費補償={} 新SL={} 持倉={}",
+                        symbol, oldSl, entryPrice, feeOffset, slValue, positionAmt);
             } else {
                 log.warn("成本保護但無法取得開倉價: {} 舊SL={}", symbol, oldSl);
                 // fallback: 用舊 SL 重掛，至少不裸奔

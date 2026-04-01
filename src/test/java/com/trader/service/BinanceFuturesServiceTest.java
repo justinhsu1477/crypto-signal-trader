@@ -692,8 +692,9 @@ class BinanceFuturesServiceTest {
             List<OrderResult> results = service.executeMoveSL(signal);
 
             assertThat(results).isNotEmpty();
-            // 應該用入場價 95000 而非 null
-            verify(service).placeStopLoss(eq("BTCUSDT"), anyString(), eq(95000.0), anyDouble());
+            // 成本保護：入場價 + 手續費補償（95000 × 0.5 × 0.001 ÷ 0.5 = 95）
+            // SL = 95000 + 95 = 95095（多單往上加）
+            verify(service).placeStopLoss(eq("BTCUSDT"), anyString(), eq(95095.0), anyDouble());
         }
 
         @Test
