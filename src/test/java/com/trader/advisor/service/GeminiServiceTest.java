@@ -1,6 +1,7 @@
 package com.trader.advisor.service;
 
 import com.trader.advisor.config.AdvisorConfig;
+import com.trader.shared.config.AiConfig;
 import okhttp3.*;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.*;
 class GeminiServiceTest {
 
     private OkHttpClient httpClient;
+    private AiConfig aiConfig;
     private AdvisorConfig advisorConfig;
     private GeminiService geminiService;
     private Call mockCall;
@@ -27,11 +29,9 @@ class GeminiServiceTest {
     @BeforeEach
     void setUp() {
         httpClient = mock(OkHttpClient.class);
+        aiConfig = mock(AiConfig.class);
         advisorConfig = mock(AdvisorConfig.class);
 
-        // OkHttpClient.newBuilder() 回傳真實的 Builder 無法簡單 mock
-        // 但 GeminiService constructor 呼叫 httpClient.newBuilder()
-        // 我們 mock 整條鏈
         OkHttpClient.Builder mockBuilder = mock(OkHttpClient.Builder.class);
         when(httpClient.newBuilder()).thenReturn(mockBuilder);
         when(mockBuilder.readTimeout(anyLong(), any())).thenReturn(mockBuilder);
@@ -41,12 +41,12 @@ class GeminiServiceTest {
         when(httpClient.newCall(any())).thenReturn(mockCall);
 
         // 預設 config
-        when(advisorConfig.getGeminiApiKey()).thenReturn("test-api-key");
-        when(advisorConfig.getGeminiModel()).thenReturn("gemini-2.0-flash");
+        when(aiConfig.getApiKey()).thenReturn("test-api-key");
+        when(aiConfig.getDefaultModel()).thenReturn("gemini-2.5-flash-lite");
         when(advisorConfig.getMaxResponseTokens()).thenReturn(1024);
         when(advisorConfig.getTemperatureValue()).thenReturn(0.7);
 
-        geminiService = new GeminiService(httpClient, advisorConfig);
+        geminiService = new GeminiService(httpClient, aiConfig, advisorConfig);
     }
 
     @Nested
@@ -56,8 +56,8 @@ class GeminiServiceTest {
         @Test
         @DisplayName("API Key 為 null — 回傳 empty")
         void nullApiKeyReturnsEmpty() {
-            when(advisorConfig.getGeminiApiKey()).thenReturn(null);
-            geminiService = new GeminiService(httpClient, advisorConfig);
+            when(aiConfig.getApiKey()).thenReturn(null);
+            geminiService = new GeminiService(httpClient, aiConfig, advisorConfig);
 
             Optional<String> result = geminiService.generateContent("system", "user");
 
@@ -68,8 +68,8 @@ class GeminiServiceTest {
         @Test
         @DisplayName("API Key 為空白 — 回傳 empty")
         void blankApiKeyReturnsEmpty() {
-            when(advisorConfig.getGeminiApiKey()).thenReturn("  ");
-            geminiService = new GeminiService(httpClient, advisorConfig);
+            when(aiConfig.getApiKey()).thenReturn("  ");
+            geminiService = new GeminiService(httpClient, aiConfig, advisorConfig);
 
             Optional<String> result = geminiService.generateContent("system", "user");
 
@@ -118,7 +118,7 @@ class GeminiServiceTest {
             ArgumentCaptor<Request> captor = ArgumentCaptor.forClass(Request.class);
             verify(httpClient).newCall(captor.capture());
             String url = captor.getValue().url().toString();
-            assertThat(url).contains("gemini-2.0-flash");
+            assertThat(url).contains("gemini-2.5-flash-lite");
             assertThat(url).contains("test-api-key");
             assertThat(captor.getValue().method()).isEqualTo("POST");
         }

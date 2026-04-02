@@ -10,6 +10,7 @@ import com.trader.chatbot.entity.ChatConversation;
 import com.trader.chatbot.repository.ChatConversationRepository;
 import com.trader.chatbot.service.IntentClassifier.Intent;
 import com.trader.shared.config.AppConstants;
+import com.trader.shared.config.AiConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import java.util.UUID;
 public class ChatbotService {
 
     private final ChatbotConfig chatbotConfig;
+    private final AiConfig aiConfig;
     private final GeminiService geminiService;
     private final IntentClassifier intentClassifier;
     private final UserContextGatherer userContextGatherer;
@@ -243,7 +245,7 @@ public class ChatbotService {
                 systemPrompt, history, userMessage,
                 chatbotConfig.getMaxResponseTokens(),
                 chatbotConfig.getTemperature(),
-                chatbotConfig.getGeminiModel(),
+                aiConfig.getDefaultModel(),
                 tools
         );
 
@@ -276,7 +278,7 @@ public class ChatbotService {
                     functionName, args, lastActionResult,
                     chatbotConfig.getMaxResponseTokens(),
                     chatbotConfig.getTemperature(),
-                    chatbotConfig.getGeminiModel(),
+                    aiConfig.getDefaultModel(),
                     tools
             );
 
@@ -384,7 +386,7 @@ public class ChatbotService {
                     historyText.toString(),
                     150,   // maxTokens：摘要不需要太長
                     0.2,   // temperature：越低越忠實
-                    chatbotConfig.getGeminiModel()
+                    aiConfig.getDefaultModel()
             );
 
             return result.orElse(null);

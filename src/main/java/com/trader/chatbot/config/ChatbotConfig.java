@@ -18,7 +18,6 @@ public class ChatbotConfig {
     private final double temperature;
     private final int maxConversationTurns;
     private final int conversationTtlMinutes;
-    private final String geminiModel;
     private final int rateLimitPerMinute;
     private final int rateLimitPerDay;
     private final boolean aiClassificationEnabled;
@@ -29,7 +28,6 @@ public class ChatbotConfig {
             @DefaultValue("0.3") double temperature,
             @DefaultValue("10") int maxConversationTurns,
             @DefaultValue("120") int conversationTtlMinutes,
-            @DefaultValue("gemini-3.1-pro-preview") String geminiModel,
             @DefaultValue("5") int rateLimitPerMinute,
             @DefaultValue("50") int rateLimitPerDay,
             @DefaultValue("true") boolean aiClassificationEnabled
@@ -39,7 +37,6 @@ public class ChatbotConfig {
         this.temperature = temperature;
         this.maxConversationTurns = maxConversationTurns;
         this.conversationTtlMinutes = conversationTtlMinutes;
-        this.geminiModel = geminiModel;
         this.rateLimitPerMinute = rateLimitPerMinute;
         this.rateLimitPerDay = rateLimitPerDay;
         this.aiClassificationEnabled = aiClassificationEnabled;

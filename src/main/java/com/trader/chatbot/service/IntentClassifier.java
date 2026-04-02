@@ -2,6 +2,7 @@ package com.trader.chatbot.service;
 
 import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.config.ChatbotConfig;
+import com.trader.shared.config.AiConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -23,10 +24,12 @@ public class IntentClassifier {
 
     private final GeminiService geminiService;
     private final ChatbotConfig chatbotConfig;
+    private final AiConfig aiConfig;
 
-    public IntentClassifier(GeminiService geminiService, ChatbotConfig chatbotConfig) {
+    public IntentClassifier(GeminiService geminiService, ChatbotConfig chatbotConfig, AiConfig aiConfig) {
         this.geminiService = geminiService;
         this.chatbotConfig = chatbotConfig;
+        this.aiConfig = aiConfig;
     }
 
     public enum Intent {
@@ -165,7 +168,7 @@ public class IntentClassifier {
                     message,
                     20,    // maxTokens：只需要一個類別名稱
                     0.1,   // temperature：越低越確定
-                    chatbotConfig.getGeminiModel()
+                    aiConfig.getDefaultModel()
             );
 
             if (result.isEmpty()) {

@@ -3,6 +3,7 @@ package com.trader.chatbot.service;
 import com.google.gson.JsonObject;
 import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.config.ChatbotConfig;
+import com.trader.shared.config.AiConfig;
 import com.trader.chatbot.dto.GeminiResponse;
 import com.trader.chatbot.entity.ChatConversation;
 import com.trader.chatbot.repository.ChatConversationRepository;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.*;
 class ChatbotServiceTest {
 
     @Mock private ChatbotConfig chatbotConfig;
+    @Mock private AiConfig aiConfig;
     @Mock private GeminiService geminiService;
     @Mock private IntentClassifier intentClassifier;
     @Mock private UserContextGatherer userContextGatherer;
@@ -41,7 +43,7 @@ class ChatbotServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        chatbotService = new ChatbotService(chatbotConfig, geminiService, intentClassifier,
+        chatbotService = new ChatbotService(chatbotConfig, aiConfig, geminiService, intentClassifier,
                 userContextGatherer, rateLimiter, conversationRepository, actionExecutor);
         // actionExecutor 預設回傳空 tools schema
         when(actionExecutor.buildToolsSchema()).thenReturn(new JsonObject());

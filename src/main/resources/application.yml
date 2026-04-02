@@ -188,12 +188,16 @@ grpc:
     security:
       enabled: false
 
+# ========== AI 模型共用設定 ==========
+ai:
+  api-key: ${GEMINI_API_KEY:}
+  default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+
 # ========== AI 客服 Agent ==========
 chatbot:
   enabled: ${CHATBOT_ENABLED:false}
   max-response-tokens: 1024
   temperature: 0.3
-  gemini-model: ${CHATBOT_GEMINI_MODEL:gemini-2.0-flash}
   max-conversation-turns: 10
   conversation-ttl-minutes: 30
   rate-limit-per-minute: 5
@@ -202,8 +206,6 @@ chatbot:
 # AI 交易顧問
 advisor:
   enabled: ${ADVISOR_ENABLED:false}
-  gemini-api-key: ${GEMINI_API_KEY:}
-  gemini-model: gemini-2.0-flash
   cron-expression: "0 0 9,21 * * *"              # 每日 09:00 + 21:00（亞洲盤前 + 美盤開始）
   max-response-tokens: 1024
   recent-trades-count: 10

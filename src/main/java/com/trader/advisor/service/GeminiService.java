@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.trader.advisor.config.AdvisorConfig;
+import com.trader.shared.config.AiConfig;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -31,14 +32,16 @@ public class GeminiService {
     private static final MediaType JSON_MEDIA = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient aiHttpClient;
+    private final AiConfig aiConfig;
     private final AdvisorConfig advisorConfig;
     private final Gson gson = new Gson();
 
-    public GeminiService(OkHttpClient httpClient, AdvisorConfig advisorConfig) {
+    public GeminiService(OkHttpClient httpClient, AiConfig aiConfig, AdvisorConfig advisorConfig) {
         // AI 回應較慢，延長 readTimeout 到 30 秒
         this.aiHttpClient = httpClient.newBuilder()
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build();
+        this.aiConfig = aiConfig;
         this.advisorConfig = advisorConfig;
     }
 
@@ -50,13 +53,13 @@ public class GeminiService {
      * @return AI 回覆文字，失敗時回傳 empty
      */
     public Optional<String> generateContent(String systemPrompt, String userContent) {
-        String apiKey = advisorConfig.getGeminiApiKey();
+        String apiKey = aiConfig.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Gemini API Key 未設定，跳過 AI 分析");
             return Optional.empty();
         }
 
-        String model = advisorConfig.getGeminiModel();
+        String model = aiConfig.getDefaultModel();
         String url = GEMINI_API_BASE + model + ":generateContent?key=" + apiKey;
 
         // 建構 request body
@@ -101,13 +104,13 @@ public class GeminiService {
                                                         int maxTokens,
                                                         double temperature,
                                                         String model) {
-        String apiKey = advisorConfig.getGeminiApiKey();
+        String apiKey = aiConfig.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Gemini API Key 未設定，跳過 AI 客服回覆");
             return Optional.empty();
         }
 
-        String effectiveModel = (model != null && !model.isBlank()) ? model : advisorConfig.getGeminiModel();
+        String effectiveModel = (model != null && !model.isBlank()) ? model : aiConfig.getDefaultModel();
         String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
 
         String requestBody = buildMultiTurnRequestBody(systemPrompt, history, userMessage, maxTokens, temperature);
@@ -154,13 +157,13 @@ public class GeminiService {
                                                                double temperature,
                                                                String model,
                                                                JsonObject tools) {
-        String apiKey = advisorConfig.getGeminiApiKey();
+        String apiKey = aiConfig.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Gemini API Key 未設定");
             return Optional.empty();
         }
 
-        String effectiveModel = (model != null && !model.isBlank()) ? model : advisorConfig.getGeminiModel();
+        String effectiveModel = (model != null && !model.isBlank()) ? model : aiConfig.getDefaultModel();
         String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
 
         String requestBody = buildMultiTurnRequestBodyWithTools(systemPrompt, history, userMessage, maxTokens, temperature, tools);
@@ -200,10 +203,10 @@ public class GeminiService {
                                                  double temperature,
                                                  String model,
                                                  JsonObject tools) {
-        String apiKey = advisorConfig.getGeminiApiKey();
+        String apiKey = aiConfig.getApiKey();
         if (apiKey == null || apiKey.isBlank()) return Optional.empty();
 
-        String effectiveModel = (model != null && !model.isBlank()) ? model : advisorConfig.getGeminiModel();
+        String effectiveModel = (model != null && !model.isBlank()) ? model : aiConfig.getDefaultModel();
         String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
 
         String requestBody = buildFunctionResultRequestBody(
@@ -244,10 +247,10 @@ public class GeminiService {
                                                                      double temperature,
                                                                      String model,
                                                                      JsonObject tools) {
-        String apiKey = advisorConfig.getGeminiApiKey();
+        String apiKey = aiConfig.getApiKey();
         if (apiKey == null || apiKey.isBlank()) return Optional.empty();
 
-        String effectiveModel = (model != null && !model.isBlank()) ? model : advisorConfig.getGeminiModel();
+        String effectiveModel = (model != null && !model.isBlank()) ? model : aiConfig.getDefaultModel();
         String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
 
         String requestBody = buildFunctionResultRequestBody(
@@ -583,7 +586,7 @@ public class GeminiService {
      * @return 向量陣列（768 維），失敗時回傳 empty
      */
     public Optional<float[]> getEmbedding(String text) {
-        String apiKey = advisorConfig.getGeminiApiKey();
+        String apiKey = aiConfig.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Gemini API Key 未設定，無法生成 embedding");
             return Optional.empty();
