@@ -2,6 +2,7 @@ package com.trader.chatbot.service;
 
 import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.config.ChatbotConfig;
+import com.trader.shared.config.AiConfig;
 import com.trader.chatbot.service.IntentClassifier.Intent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,13 +22,14 @@ class IntentClassifierTest {
 
     @Mock private GeminiService geminiService;
     @Mock private ChatbotConfig chatbotConfig;
+    @Mock private AiConfig aiConfig;
 
     private IntentClassifier classifier;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        classifier = new IntentClassifier(geminiService, chatbotConfig);
+        classifier = new IntentClassifier(geminiService, chatbotConfig, aiConfig);
         // 預設 AI 分類關閉（keyword-only 測試）
         when(chatbotConfig.isAiClassificationEnabled()).thenReturn(false);
     }
@@ -120,7 +122,7 @@ class IntentClassifierTest {
         @BeforeEach
         void enableAI() {
             when(chatbotConfig.isAiClassificationEnabled()).thenReturn(true);
-            when(chatbotConfig.getGeminiModel()).thenReturn("gemini-2.0-flash");
+            when(aiConfig.getDefaultModel()).thenReturn("gemini-2.5-flash-lite");
         }
 
         @Test
@@ -142,7 +144,7 @@ class IntentClassifierTest {
 
             assertThat(result).isEqualTo(Intent.TRADE_QUERY);
             verify(geminiService).generateContentWithHistory(
-                    anyString(), anyList(), anyString(), eq(20), eq(0.1), eq("gemini-2.0-flash"));
+                    anyString(), anyList(), anyString(), eq(20), eq(0.1), eq("gemini-2.5-flash-lite"));
         }
 
         @Test
