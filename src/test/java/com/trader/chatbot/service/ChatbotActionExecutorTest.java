@@ -40,10 +40,10 @@ class ChatbotActionExecutorTest {
     private static final String ADMIN_ID = "admin-user";
 
     @Test
-    void buildToolsSchema_包含十五個函式定義() {
+    void buildToolsSchema_包含十六個函式定義() {
         JsonObject tools = executor.buildToolsSchema();
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(15);
+        assertThat(declarations).hasSize(16);
     }
 
     @Test
