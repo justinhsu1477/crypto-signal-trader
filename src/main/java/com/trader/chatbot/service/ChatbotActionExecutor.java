@@ -31,6 +31,7 @@ public class ChatbotActionExecutor {
 
     private final UserTradeSettingsService userTradeSettingsService;
     private final MarketDataService marketDataService;
+    private final TradingNlqService tradingNlqService;
     private final UserRepository userRepository;
     private final Gson gson = new Gson();
 
@@ -166,6 +167,15 @@ public class ChatbotActionExecutor {
                 Map.of("date", Map.of("type", "STRING", "description", "日期描述：yesterday（昨天）、today（今天）、7d（近7天）、30d（近30天）、或 YYYY-MM-DD 格式"))
         ));
 
+        declarations.add(buildFunction(
+                "query_trading_data",
+                "使用自然語言查詢交易數據庫。可以問任何關於交易紀錄、損益統計、勝率分析、幣種表現、廣播紀錄等數據分析問題。" +
+                "例如：「我這個月賺了多少」「哪個幣種勝率最高」「最近 10 筆交易明細」「做多和做空哪個表現好」。" +
+                "當其他工具無法回答用戶的數據查詢需求時使用此工具。",
+                Map.of("question", Map.of("type", "STRING", "description", "用戶的自然語言數據查詢問題")),
+                List.of("question")
+        ));
+
         tools.add("function_declarations", declarations);
         return tools;
     }
@@ -225,6 +235,10 @@ public class ChatbotActionExecutor {
                     }
                     String date = args.has("date") ? args.get("date").getAsString() : "today";
                     yield marketDataService.getTradesByDate(date);
+                }
+                case "query_trading_data" -> {
+                    String question = args.has("question") ? args.get("question").getAsString() : "";
+                    yield tradingNlqService.executeNlq(effectiveUserId, isAdmin, question);
                 }
                 default -> {
                     log.warn("Chatbot 收到未知 function: {} userId={}", functionName, userId);
