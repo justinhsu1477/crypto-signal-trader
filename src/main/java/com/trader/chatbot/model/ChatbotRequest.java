@@ -21,6 +21,7 @@ public class ChatbotRequest implements Serializable {
     private String channelUserId;  // LINE userId 或 Discord userId
     private String message;
     private String replyChannelId; // Discord 頻道回覆用（null = DM / LINE）
+    private String lineReplyToken; // LINE Reply API token（30 秒過期，優先使用）
 
     /**
      * @deprecated 使用 {@link #getChannelUserId()} 取代

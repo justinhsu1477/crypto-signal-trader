@@ -116,10 +116,10 @@ public class LineLinkingService {
                 replyText(replyToken, buildSupportMessage());
                 return;
             }
-            // 已綁定用戶：其他訊息 → AI 客服
-            replyText(replyToken, "正在為您查詢，請稍候... ⏳");
+            // 已綁定用戶：其他訊息 → AI 客服（傳 replyToken 讓 Consumer 用 Reply API 免費回覆）
             eventPublisher.publishEvent(new ChatMessageEvent(this,
-                    existing.get().getUserId(), "LINE", lineUserId, trimmed));
+                    existing.get().getUserId(), "LINE", lineUserId,
+                    trimmed, null, replyToken));
             return;
         }
 
