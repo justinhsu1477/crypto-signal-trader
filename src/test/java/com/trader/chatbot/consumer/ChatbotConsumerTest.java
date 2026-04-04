@@ -85,6 +85,51 @@ class ChatbotConsumerTest {
         }
 
         @Test
+        @DisplayName("有 replyToken → 不呼叫 Push API（Reply API 預設成功因為 OkHttpClient 是 real instance 會失敗，所以 fallback 到 Push）")
+        void withReplyToken_fallbackToPush() {
+            ChatbotRequest request = ChatbotRequest.builder()
+                    .userId("u1").channel("LINE").channelUserId("line1")
+                    .lineReplyToken("reply-token-abc")
+                    .message("你好").build();
+            when(chatbotService.handleUserMessage("u1", "LINE", "line1", "你好"))
+                    .thenReturn(resp("回覆內容"));
+
+            consumer.consume(request);
+
+            // Reply API 會失敗（OkHttpClient 真實呼叫會 401），fallback 到 Push
+            verify(lineNotificationService).pushTextMessage("line1", "回覆內容");
+        }
+
+        @Test
+        @DisplayName("無 replyToken → 直接走 Push API")
+        void withoutReplyToken_directPush() {
+            ChatbotRequest request = ChatbotRequest.builder()
+                    .userId("u1").channel("LINE").channelUserId("line1")
+                    .message("你好").build();
+            when(chatbotService.handleUserMessage("u1", "LINE", "line1", "你好"))
+                    .thenReturn(resp("回覆內容"));
+
+            consumer.consume(request);
+
+            verify(lineNotificationService).pushTextMessage("line1", "回覆內容");
+        }
+
+        @Test
+        @DisplayName("replyToken 為空白 → 直接走 Push API")
+        void blankReplyToken_directPush() {
+            ChatbotRequest request = ChatbotRequest.builder()
+                    .userId("u1").channel("LINE").channelUserId("line1")
+                    .lineReplyToken("   ")
+                    .message("你好").build();
+            when(chatbotService.handleUserMessage("u1", "LINE", "line1", "你好"))
+                    .thenReturn(resp("回覆內容"));
+
+            consumer.consume(request);
+
+            verify(lineNotificationService).pushTextMessage("line1", "回覆內容");
+        }
+
+        @Test
         @DisplayName("Service 和錯誤回覆都失敗 → 不拋異常")
         void bothFailureHandled() {
             ChatbotRequest request = ChatbotRequest.builder()
