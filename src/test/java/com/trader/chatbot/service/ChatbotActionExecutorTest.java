@@ -189,72 +189,84 @@ class ChatbotActionExecutorTest {
     }
 
     @Test
-    void executeGetAllUsersSummary_委派給MarketDataService() {
+    void executeGetAllUsersSummary_Admin委派給MarketDataService() {
         when(marketDataService.getAllUsersSummary()).thenReturn("全用戶概覽");
 
-        String result = executor.executeFunction(USER_ID, false, "get_all_users_summary", new JsonObject());
+        String result = executor.executeFunction(ADMIN_ID, true, "get_all_users_summary", new JsonObject());
 
         assertThat(result).isEqualTo("全用戶概覽");
         verify(marketDataService).getAllUsersSummary();
     }
 
     @Test
-    void executeGetSourceList_委派給MarketDataService() {
+    void executeGetAllUsersSummary_非Admin被拒絕() {
+        String result = executor.executeFunction(USER_ID, false, "get_all_users_summary", new JsonObject());
+        assertThat(result).isEqualTo("此操作僅限管理員使用。");
+    }
+
+    @Test
+    void executeGetSourceList_Admin委派給MarketDataService() {
         when(marketDataService.getSourceList()).thenReturn("來源清單");
 
-        String result = executor.executeFunction(USER_ID, false, "get_source_list", new JsonObject());
+        String result = executor.executeFunction(ADMIN_ID, true, "get_source_list", new JsonObject());
 
         assertThat(result).isEqualTo("來源清單");
         verify(marketDataService).getSourceList();
     }
 
     @Test
-    void executeGetSourcePerformance_傳遞參數並委派() {
+    void executeGetSourceList_非Admin被拒絕() {
+        String result = executor.executeFunction(USER_ID, false, "get_source_list", new JsonObject());
+        assertThat(result).isEqualTo("此操作僅限管理員使用。");
+    }
+
+    @Test
+    void executeGetSourcePerformance_Admin傳遞參數並委派() {
         JsonObject args = new JsonObject();
         args.addProperty("source_name", "比特幣飛揚");
         args.addProperty("period", "30d");
         when(marketDataService.getSourcePerformance("比特幣飛揚", "30d")).thenReturn("績效數據");
 
-        String result = executor.executeFunction(USER_ID, false, "get_source_performance", args);
+        String result = executor.executeFunction(ADMIN_ID, true, "get_source_performance", args);
 
         assertThat(result).isEqualTo("績效數據");
         verify(marketDataService).getSourcePerformance("比特幣飛揚", "30d");
     }
 
     @Test
-    void executeGetSourceRecentTrades_傳遞參數並委派() {
+    void executeGetSourceRecentTrades_Admin傳遞參數並委派() {
         JsonObject args = new JsonObject();
         args.addProperty("source_name", "陳哥");
         args.addProperty("count", 3);
         when(marketDataService.getSourceRecentTrades("陳哥", 3)).thenReturn("交易明細");
 
-        String result = executor.executeFunction(USER_ID, false, "get_source_recent_trades", args);
+        String result = executor.executeFunction(ADMIN_ID, true, "get_source_recent_trades", args);
 
         assertThat(result).isEqualTo("交易明細");
         verify(marketDataService).getSourceRecentTrades("陳哥", 3);
     }
 
     @Test
-    void executeGetRecentBroadcasts_傳遞參數並委派() {
+    void executeGetRecentBroadcasts_Admin傳遞參數並委派() {
         JsonObject args = new JsonObject();
         args.addProperty("source_name", "飛揚");
         args.addProperty("count", 5);
         when(marketDataService.getRecentBroadcasts("飛揚", 5)).thenReturn("廣播紀錄");
 
-        String result = executor.executeFunction(USER_ID, false, "get_recent_broadcasts", args);
+        String result = executor.executeFunction(ADMIN_ID, true, "get_recent_broadcasts", args);
 
         assertThat(result).isEqualTo("廣播紀錄");
         verify(marketDataService).getRecentBroadcasts("飛揚", 5);
     }
 
     @Test
-    void executeGetRecentBroadcasts_無sourceName時傳空字串() {
+    void executeGetRecentBroadcasts_Admin無sourceName時傳空字串() {
         JsonObject args = new JsonObject();
         args.addProperty("source_name", "");
         args.addProperty("count", 5);
         when(marketDataService.getRecentBroadcasts("", 5)).thenReturn("全部廣播");
 
-        String result = executor.executeFunction(USER_ID, false, "get_recent_broadcasts", args);
+        String result = executor.executeFunction(ADMIN_ID, true, "get_recent_broadcasts", args);
 
         assertThat(result).isEqualTo("全部廣播");
     }

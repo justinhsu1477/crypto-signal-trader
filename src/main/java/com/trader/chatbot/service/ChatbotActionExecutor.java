@@ -204,19 +204,38 @@ public class ChatbotActionExecutor {
                 case "get_market_data" -> marketDataService.getMarketOverview();
                 case "get_my_positions" -> marketDataService.getUserPositions(userId);
                 case "get_signal_report" -> marketDataService.getSignalReportSummary();
-                case "get_all_users_summary" -> marketDataService.getAllUsersSummary();
-                case "get_source_list" -> marketDataService.getSourceList();
+                case "get_all_users_summary" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
+                    yield marketDataService.getAllUsersSummary();
+                }
+                case "get_source_list" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
+                    yield marketDataService.getSourceList();
+                }
                 case "get_source_performance" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
                     String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
                     String period = args.has("period") ? args.get("period").getAsString() : "all";
                     yield marketDataService.getSourcePerformance(sourceName, period);
                 }
                 case "get_source_recent_trades" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
                     String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
                     int count = args.has("count") ? args.get("count").getAsInt() : 5;
                     yield marketDataService.getSourceRecentTrades(sourceName, count);
                 }
                 case "get_recent_broadcasts" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
                     String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
                     int count = args.has("count") ? args.get("count").getAsInt() : 5;
                     yield marketDataService.getRecentBroadcasts(sourceName, count);
