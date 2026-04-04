@@ -108,17 +108,13 @@ public class ChatbotConsumer {
      * 呼叫 LINE Reply API（同步，因為需要知道是否成功以決定 fallback）
      */
     private boolean sendLineReplyApi(String replyToken, String text) {
-        String escapedText = text
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r");
+        String escapedText = escapeJson(text);
 
         String json = """
                 {
                   "replyToken": "%s",
                   "messages": [{"type": "text", "text": "%s"}]
-                }""".formatted(replyToken, escapedText);
+                }""".formatted(escapeJson(replyToken), escapedText);
 
         Request request = new Request.Builder()
                 .url(LINE_REPLY_API_URL)
@@ -137,5 +133,15 @@ public class ChatbotConsumer {
             log.warn("LINE Reply API 呼叫失敗: {}", e.getMessage());
             return false;
         }
+    }
+
+    private String escapeJson(String text) {
+        if (text == null) return "";
+        return text
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 }
