@@ -44,10 +44,10 @@ class ChatbotActionExecutorTest {
     private static final String ADMIN_ID = "admin-user";
 
     @Test
-    void buildToolsSchema_ACCOUNT_STATUS_一般用戶只有2個函式() {
+    void buildToolsSchema_ACCOUNT_STATUS_一般用戶有3個函式() {
         JsonObject tools = executor.buildToolsSchema(Intent.ACCOUNT_STATUS, false);
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(2);
+        assertThat(declarations).hasSize(3);
     }
 
     @Test

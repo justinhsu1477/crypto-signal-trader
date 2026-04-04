@@ -92,8 +92,11 @@ public class TradingNlqService {
             }
 
             // 6. 執行（@Transactional 在 executeNlq 層級，確保 read replica 生效）
+            // 如果 SQL 已有 LIMIT，不再設 setMaxResults（避免 LIMIT + FETCH FIRST 衝突）
             Query query = entityManager.createNativeQuery(sql);
-            query.setMaxResults(MAX_ROWS);
+            if (!sql.toUpperCase().contains("LIMIT")) {
+                query.setMaxResults(MAX_ROWS);
+            }
             List<?> results = query.getResultList();
 
             // 7. 格式化

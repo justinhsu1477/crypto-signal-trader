@@ -40,7 +40,7 @@ public class ChatbotActionExecutor {
      */
     private static final Map<Intent, Set<String>> INTENT_FUNCTIONS = new EnumMap<>(Intent.class);
     static {
-        INTENT_FUNCTIONS.put(Intent.ACCOUNT_STATUS, Set.of("get_trade_settings", "get_my_positions"));
+        INTENT_FUNCTIONS.put(Intent.ACCOUNT_STATUS, Set.of("get_trade_settings", "get_my_positions", "query_trading_data"));
         INTENT_FUNCTIONS.put(Intent.TRADE_QUERY, Set.of("query_trading_data", "get_signal_report"));
         INTENT_FUNCTIONS.put(Intent.SIGNAL_EXPLAIN, Set.of("query_trading_data"));
         INTENT_FUNCTIONS.put(Intent.SETTING_CHANGE, Set.of("get_trade_settings", "update_risk_percent", "update_max_leverage", "update_max_dca_layers", "toggle_auto_sl_tp"));
