@@ -1,6 +1,7 @@
 package com.trader.chatbot.service;
 
 import com.google.gson.JsonObject;
+import com.trader.chatbot.service.IntentClassifier.Intent;
 import com.trader.user.dto.UpdateTradeSettingsRequest;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserTradeSettings;
@@ -31,6 +32,9 @@ class ChatbotActionExecutorTest {
     private MarketDataService marketDataService;
 
     @Mock
+    private TradingNlqService tradingNlqService;
+
+    @Mock
     private UserRepository userRepository;
 
     @InjectMocks
@@ -40,10 +44,37 @@ class ChatbotActionExecutorTest {
     private static final String ADMIN_ID = "admin-user";
 
     @Test
-    void buildToolsSchema_包含十六個函式定義() {
-        JsonObject tools = executor.buildToolsSchema();
+    void buildToolsSchema_ACCOUNT_STATUS_一般用戶只有2個函式() {
+        JsonObject tools = executor.buildToolsSchema(Intent.ACCOUNT_STATUS, false);
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(16);
+        assertThat(declarations).hasSize(2);
+    }
+
+    @Test
+    void buildToolsSchema_SETTING_CHANGE_一般用戶有5個函式() {
+        JsonObject tools = executor.buildToolsSchema(Intent.SETTING_CHANGE, false);
+        var declarations = tools.getAsJsonArray("function_declarations");
+        assertThat(declarations).hasSize(5);
+    }
+
+    @Test
+    void buildToolsSchema_ACCOUNT_STATUS_Admin有10個函式() {
+        // 2 (intent) + 8 (admin, including query_trading_data) = 10
+        JsonObject tools = executor.buildToolsSchema(Intent.ACCOUNT_STATUS, true);
+        var declarations = tools.getAsJsonArray("function_declarations");
+        assertThat(declarations).hasSize(10);
+    }
+
+    @Test
+    void buildToolsSchema_OPERATION_GUIDE_一般用戶回傳null() {
+        JsonObject tools = executor.buildToolsSchema(Intent.OPERATION_GUIDE, false);
+        assertThat(tools).isNull();
+    }
+
+    @Test
+    void buildToolsSchema_OPERATION_GUIDE_Admin仍有tools() {
+        JsonObject tools = executor.buildToolsSchema(Intent.OPERATION_GUIDE, true);
+        assertThat(tools).isNotNull();
     }
 
     @Test
@@ -283,18 +314,14 @@ class ChatbotActionExecutorTest {
     }
 
     @Test
-    void buildToolsSchema_包含所有必要的函式名稱() {
-        JsonObject tools = executor.buildToolsSchema();
+    void buildToolsSchema_Admin_GENERAL_包含所有Admin函式() {
+        JsonObject tools = executor.buildToolsSchema(Intent.GENERAL, true);
         String json = tools.toString();
 
-        assertThat(json).contains("get_trade_settings");
-        assertThat(json).contains("update_risk_percent");
-        assertThat(json).contains("update_max_leverage");
-        assertThat(json).contains("update_max_dca_layers");
-        assertThat(json).contains("toggle_auto_sl_tp");
+        // GENERAL user functions
         assertThat(json).contains("get_market_data");
-        assertThat(json).contains("get_my_positions");
-        assertThat(json).contains("get_signal_report");
+        assertThat(json).contains("query_trading_data");
+        // Admin functions
         assertThat(json).contains("get_all_users_summary");
         assertThat(json).contains("get_source_list");
         assertThat(json).contains("get_source_performance");
@@ -305,8 +332,8 @@ class ChatbotActionExecutorTest {
     }
 
     @Test
-    void buildToolsSchema_修改類工具包含target_user_name參數() {
-        JsonObject tools = executor.buildToolsSchema();
+    void buildToolsSchema_SETTING_CHANGE_修改類工具包含target_user_name參數() {
+        JsonObject tools = executor.buildToolsSchema(Intent.SETTING_CHANGE, false);
         String json = tools.toString();
 
         assertThat(json).contains("target_user_name");

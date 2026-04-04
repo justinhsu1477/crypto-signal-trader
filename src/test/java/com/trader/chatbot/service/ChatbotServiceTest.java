@@ -45,8 +45,8 @@ class ChatbotServiceTest {
         MockitoAnnotations.openMocks(this);
         chatbotService = new ChatbotService(chatbotConfig, aiConfig, geminiService, intentClassifier,
                 userContextGatherer, rateLimiter, conversationRepository, actionExecutor);
-        // actionExecutor 預設回傳空 tools schema
-        when(actionExecutor.buildToolsSchema()).thenReturn(new JsonObject());
+        // actionExecutor 預設回傳空 tools schema（任意 Intent + isAdmin 組合）
+        when(actionExecutor.buildToolsSchema(any(), anyBoolean())).thenReturn(new JsonObject());
     }
 
     @Test

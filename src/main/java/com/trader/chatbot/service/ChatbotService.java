@@ -214,8 +214,8 @@ public class ChatbotService {
         // 7. 組裝 system prompt
         String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context;
 
-        // 8. 呼叫 Gemini（一般用戶 + Admin 都啟用 Function Calling）
-        String response = handleWithFunctionCalling(userId, isAdmin, fullSystemPrompt, history, cleanMessage);
+        // 8. 呼叫 Gemini（根據 intent 過濾可用 tools — GenBI 式 intent-based routing）
+        String response = handleWithFunctionCalling(userId, isAdmin, intent, fullSystemPrompt, history, cleanMessage);
 
         // 9. 後處理：不確定回覆自動加人工客服引導
         response = postProcessResponse(response);
@@ -237,9 +237,21 @@ public class ChatbotService {
      * 3. 若 Gemini 繼續回傳 functionCall → 再執行 → 再回傳（最多 5 輪）
      * 4. 直到 Gemini 回傳 text → 作為最終回覆
      */
-    private String handleWithFunctionCalling(String userId, boolean isAdmin, String systemPrompt,
-                                               List<ChatTurn> history, String userMessage) {
-        JsonObject tools = actionExecutor.buildToolsSchema();
+    private String handleWithFunctionCalling(String userId, boolean isAdmin, Intent intent,
+                                               String systemPrompt, List<ChatTurn> history,
+                                               String userMessage) {
+        JsonObject tools = actionExecutor.buildToolsSchema(intent, isAdmin);
+
+        // 該 intent 不需要 tools（如 OPERATION_GUIDE、ANOMALY_REPORT）→ 純 context 回答
+        if (tools == null) {
+            Optional<String> textResponse = geminiService.generateContentWithHistory(
+                    systemPrompt, history, userMessage,
+                    chatbotConfig.getMaxResponseTokens(),
+                    chatbotConfig.getTemperature(),
+                    aiConfig.getDefaultModel()
+            );
+            return textResponse.orElse(FALLBACK_MESSAGE);
+        }
 
         Optional<GeminiResponse> geminiResponse = geminiService.generateContentWithTools(
                 systemPrompt, history, userMessage,

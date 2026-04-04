@@ -11,9 +11,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import com.trader.chatbot.service.IntentClassifier.Intent;
+
+import java.util.*;;
 
 /**
  * Chatbot 動作執行器 — 安全白名單制
@@ -36,21 +36,76 @@ public class ChatbotActionExecutor {
     private final Gson gson = new Gson();
 
     /**
-     * 定義 Gemini Function Calling 的 tools schema
-     * 用於 API 請求中的 tools 欄位
+     * Intent → 該意圖可用的 function 名稱（GenBI 式 intent-based routing）
      */
-    public JsonObject buildToolsSchema() {
-        JsonObject tools = new JsonObject();
-        var declarations = new com.google.gson.JsonArray();
+    private static final Map<Intent, Set<String>> INTENT_FUNCTIONS = new EnumMap<>(Intent.class);
+    static {
+        INTENT_FUNCTIONS.put(Intent.ACCOUNT_STATUS, Set.of("get_trade_settings", "get_my_positions"));
+        INTENT_FUNCTIONS.put(Intent.TRADE_QUERY, Set.of("query_trading_data", "get_signal_report"));
+        INTENT_FUNCTIONS.put(Intent.SIGNAL_EXPLAIN, Set.of("query_trading_data"));
+        INTENT_FUNCTIONS.put(Intent.SETTING_CHANGE, Set.of("get_trade_settings", "update_risk_percent", "update_max_leverage", "update_max_dca_layers", "toggle_auto_sl_tp"));
+        INTENT_FUNCTIONS.put(Intent.MARKET_DATA, Set.of("get_market_data", "get_my_positions"));
+        INTENT_FUNCTIONS.put(Intent.OPERATION_GUIDE, Set.of());
+        INTENT_FUNCTIONS.put(Intent.ANOMALY_REPORT, Set.of());
+        INTENT_FUNCTIONS.put(Intent.GENERAL, Set.of("get_market_data", "query_trading_data"));
+    }
 
-        declarations.add(buildFunction(
+    private static final Set<String> ADMIN_FUNCTIONS = Set.of(
+            "get_all_users_summary", "get_source_list", "get_source_performance",
+            "get_source_recent_trades", "get_recent_broadcasts", "update_source_mode",
+            "get_trades_by_date", "query_trading_data"
+    );
+
+    /**
+     * 根據 intent + isAdmin 過濾 Gemini Function Calling 的 tools schema
+     *
+     * @return 過濾後的 tools JsonObject，若該 intent 不需要 tools 則回傳 null
+     */
+    public JsonObject buildToolsSchema(Intent intent, boolean isAdmin) {
+        // 計算允許的 function 名稱
+        Set<String> allowed = new HashSet<>(INTENT_FUNCTIONS.getOrDefault(intent, Set.of()));
+        if (isAdmin) {
+            allowed.addAll(ADMIN_FUNCTIONS);
+        }
+
+        if (allowed.isEmpty()) {
+            return null;
+        }
+
+        // 建構所有 function declarations，只保留 allowed 的
+        Map<String, JsonObject> allDeclarations = buildAllDeclarations();
+
+        var declarations = new com.google.gson.JsonArray();
+        for (String name : allowed) {
+            JsonObject decl = allDeclarations.get(name);
+            if (decl != null) {
+                declarations.add(decl);
+            }
+        }
+
+        if (declarations.isEmpty()) {
+            return null;
+        }
+
+        JsonObject tools = new JsonObject();
+        tools.add("function_declarations", declarations);
+        return tools;
+    }
+
+    /**
+     * 建構全部 function declarations（name → JsonObject）
+     */
+    private Map<String, JsonObject> buildAllDeclarations() {
+        Map<String, JsonObject> map = new LinkedHashMap<>();
+
+        map.put("get_trade_settings", buildFunction(
                 "get_trade_settings",
                 "查詢用戶當前的交易設定（風險比例、槓桿、DCA 層數等）。Admin 可指定 target_user_name 查詢特定用戶。",
                 Map.of("target_user_name", Map.of("type", "STRING", "description", "（Admin 專用，可選）目標用戶名稱，如「Edward Lin」。不填則查自己。")),
                 List.of()
         ));
 
-        declarations.add(buildFunction(
+        map.put("update_risk_percent", buildFunction(
                 "update_risk_percent",
                 "修改用戶的風險比例。值為小數，例如 0.3 代表 30%。範圍：0.01 ~ 1.0。Admin 可指定 target_user_name 修改特定用戶。",
                 Map.of(
@@ -60,7 +115,7 @@ public class ChatbotActionExecutor {
                 List.of("risk_percent")
         ));
 
-        declarations.add(buildFunction(
+        map.put("update_max_leverage", buildFunction(
                 "update_max_leverage",
                 "修改用戶的最大槓桿倍數。範圍：1 ~ 125。Admin 可指定 target_user_name 修改特定用戶。",
                 Map.of(
@@ -70,7 +125,7 @@ public class ChatbotActionExecutor {
                 List.of("max_leverage")
         ));
 
-        declarations.add(buildFunction(
+        map.put("update_max_dca_layers", buildFunction(
                 "update_max_dca_layers",
                 "修改用戶的最大 DCA（加倉/補倉）層數。範圍：0 ~ 10。Admin 可指定 target_user_name 修改特定用戶。",
                 Map.of(
@@ -80,7 +135,7 @@ public class ChatbotActionExecutor {
                 List.of("max_dca_layers")
         ));
 
-        declarations.add(buildFunction(
+        map.put("toggle_auto_sl_tp", buildFunction(
                 "toggle_auto_sl_tp",
                 "開啟或關閉自動止損（SL）和自動止盈（TP）。Admin 可指定 target_user_name 修改特定用戶。",
                 Map.of(
@@ -93,19 +148,19 @@ public class ChatbotActionExecutor {
 
         // === 市場數據查詢（唯讀） ===
 
-        declarations.add(buildFunction(
+        map.put("get_market_data", buildFunction(
                 "get_market_data",
                 "查詢 BTC 即時行情：價格、24h漲跌幅、成交量、資金費率（Funding Rate）、恐懼貪婪指數。用戶問到行情、市場、BTC 多少錢、適不適合做多時呼叫此函式。",
                 Map.of()
         ));
 
-        declarations.add(buildFunction(
+        map.put("get_my_positions", buildFunction(
                 "get_my_positions",
                 "查詢用戶目前的持倉狀況，包含入場價、止損、槓桿、未實現損益。用戶問到持倉、倉位、我的單時呼叫此函式。",
                 Map.of()
         ));
 
-        declarations.add(buildFunction(
+        map.put("get_signal_report", buildFunction(
                 "get_signal_report",
                 "查詢最近的訊號日報摘要：每日訊號數量、多空比例、AI 平均信心分數。用戶問到最近訊號表現、日報時呼叫此函式。",
                 Map.of()
@@ -113,19 +168,19 @@ public class ChatbotActionExecutor {
 
         // === Admin 專屬工具 ===
 
-        declarations.add(buildFunction(
+        map.put("get_all_users_summary", buildFunction(
                 "get_all_users_summary",
                 "查詢全部用戶的持倉與交易概覽，包含每位用戶的持倉數、總損益、勝率。僅限 Admin 使用。管理員問到全部用戶、所有用戶、餘額、持倉概覽時呼叫。",
                 Map.of()
         ));
 
-        declarations.add(buildFunction(
+        map.put("get_source_list", buildFunction(
                 "get_source_list",
                 "查詢所有訊號來源清單，包含名稱、交易模式（AUTO/SHADOW）、啟用狀態。管理員問到「有哪些頻道」「訊號來源」「來源清單」時呼叫。",
                 Map.of()
         ));
 
-        declarations.add(buildFunction(
+        map.put("get_source_performance", buildFunction(
                 "get_source_performance",
                 "查詢指定訊號來源的績效統計：交易數、勝率、總損益、平均損益、最大獲利/虧損、Profit Factor。當管理員提到任何頻道/來源名稱並搭配「表現」「績效」「勝率」等字眼時，直接將名稱作為 source_name 呼叫。",
                 Map.of(
@@ -134,7 +189,7 @@ public class ChatbotActionExecutor {
                 )
         ));
 
-        declarations.add(buildFunction(
+        map.put("get_source_recent_trades", buildFunction(
                 "get_source_recent_trades",
                 "查詢指定訊號來源最近的交易紀錄明細（入場價、出場價、PnL、AI 信心分數）。當管理員提到任何頻道/來源名稱並搭配「最近交易」「最近的單」「紀錄」等字眼時，直接將名稱作為 source_name 呼叫，工具支援模糊匹配。",
                 Map.of(
@@ -143,7 +198,7 @@ public class ChatbotActionExecutor {
                 )
         ));
 
-        declarations.add(buildFunction(
+        map.put("get_recent_broadcasts", buildFunction(
                 "get_recent_broadcasts",
                 "查詢最近的廣播跟單紀錄，包含訊號動作、成功/失敗/跳過人數。可按來源篩選。管理員問到「最近廣播」「跟單紀錄」「廣播歷史」時呼叫。",
                 Map.of(
@@ -152,7 +207,7 @@ public class ChatbotActionExecutor {
                 )
         ));
 
-        declarations.add(buildFunction(
+        map.put("update_source_mode", buildFunction(
                 "update_source_mode",
                 "修改訊號來源的交易模式。僅限 Admin 使用。管理員說「把 XX 改成影子模式」「XX 切換到 AUTO」時呼叫。直接將名稱作為 source_name 呼叫，工具支援模糊匹配。",
                 Map.of(
@@ -161,13 +216,13 @@ public class ChatbotActionExecutor {
                 )
         ));
 
-        declarations.add(buildFunction(
+        map.put("get_trades_by_date", buildFunction(
                 "get_trades_by_date",
                 "查詢指定日期範圍的所有會員交易紀錄，包含每位用戶的交易明細和損益統計。管理員問到「昨天交易」「今天成交」「給我某天的資料」「本週交易」時呼叫。",
                 Map.of("date", Map.of("type", "STRING", "description", "日期描述：yesterday（昨天）、today（今天）、7d（近7天）、30d（近30天）、或 YYYY-MM-DD 格式"))
         ));
 
-        declarations.add(buildFunction(
+        map.put("query_trading_data", buildFunction(
                 "query_trading_data",
                 "使用自然語言查詢交易數據庫。可以問任何關於交易紀錄、損益統計、勝率分析、幣種表現、廣播紀錄等數據分析問題。" +
                 "例如：「我這個月賺了多少」「哪個幣種勝率最高」「最近 10 筆交易明細」「做多和做空哪個表現好」。" +
@@ -176,8 +231,7 @@ public class ChatbotActionExecutor {
                 List.of("question")
         ));
 
-        tools.add("function_declarations", declarations);
-        return tools;
+        return map;
     }
 
     /**
