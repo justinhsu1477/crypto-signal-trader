@@ -5,6 +5,8 @@ import com.trader.chatbot.model.ChatbotRequest;
 import com.trader.chatbot.service.ChatbotService;
 import com.trader.chatbot.service.DiscordBotService;
 import com.trader.notification.service.LineNotificationService;
+import com.trader.shared.config.LineConfig;
+import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -21,13 +23,15 @@ class ChatbotConsumerTest {
     @Mock private ChatbotService chatbotService;
     @Mock private LineNotificationService lineNotificationService;
     @Mock private DiscordBotService discordBotService;
+    @Mock private LineConfig lineConfig;
 
     private ChatbotConsumer consumer;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        consumer = new ChatbotConsumer(chatbotService, lineNotificationService, discordBotService);
+        consumer = new ChatbotConsumer(chatbotService, lineNotificationService,
+                discordBotService, lineConfig, new OkHttpClient());
     }
 
     private ChatbotResponse resp(String text) {
