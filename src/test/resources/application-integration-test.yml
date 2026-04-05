@@ -1,0 +1,65 @@
+# Integration Test profile — Testcontainers PostgreSQL + Flyway migrations
+# DB URL 由 @DynamicPropertySource 覆蓋
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/test  # overridden by Testcontainers
+    username: test
+    password: test
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cache:
+    type: none
+  rabbitmq:
+    host: localhost
+    port: 5672
+    listener:
+      simple:
+        auto-startup: false
+
+# JWT
+jwt:
+  secret: integration-test-secret-key-minimum-256-bits-long-enough-for-hmac
+  expiration-ms: 1800000
+  refresh-expiration-ms: 259200000
+  cookie-secure: false
+
+# Encryption
+encryption:
+  aes-key: 0123456789abcdef0123456789abcdef
+
+# Monitor
+monitor:
+  api-key: test-monitor-key
+
+# AI
+ai:
+  api-key: ""
+  default-model: gemini-2.5-flash-lite
+
+# 停用所有外部服務
+discord:
+  webhook:
+    enabled: false
+  bot:
+    enabled: false
+
+chatbot:
+  enabled: false
+
+advisor:
+  enabled: false
+
+line:
+  enabled: false
+
+email:
+  enabled: false
