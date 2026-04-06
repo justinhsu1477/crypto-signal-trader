@@ -72,7 +72,7 @@ public class MartingaleStopLossWatcher {
                 }
 
                 // 1) SL 檢查
-                if (isStopLossTriggered(symbol, session.getSide(), markPrice, slBasePrice)) {
+                if (isStopLossTriggered(session, markPrice, slBasePrice)) {
                     executeStopLoss(session, markPrice, slBasePrice);
                     continue;
                 }
@@ -94,19 +94,18 @@ public class MartingaleStopLossWatcher {
         }
     }
 
-    private boolean isStopLossTriggered(String symbol, TradeSignal.Side side, double markPrice, double baseEntryPrice) {
+    private boolean isStopLossTriggered(MartingaleSession session, double markPrice, double baseEntryPrice) {
         if (baseEntryPrice <= 0) {
             return false;
         }
-        // 訊號提供絕對 SL → 直接比較
-        var sessionOpt = sessionManager.getActiveSession(symbol);
-        if (sessionOpt.isPresent()) {
-            Double signalSl = sessionOpt.get().getSignalStopLoss();
-            if (signalSl != null && signalSl > 0) {
-                return side == TradeSignal.Side.LONG
-                        ? markPrice <= signalSl
-                        : markPrice >= signalSl;
-            }
+        String symbol = session.getSymbol();
+        TradeSignal.Side side = session.getSide();
+        // 直接用 iterator 的 session 參考讀取 signalStopLoss，避免重新取 session 讀到不同 session 的 SL
+        Double signalSl = session.getSignalStopLoss();
+        if (signalSl != null && signalSl > 0) {
+            return side == TradeSignal.Side.LONG
+                    ? markPrice <= signalSl
+                    : markPrice >= signalSl;
         }
         // fallback: config 百分比
         double sl = config.getEffectiveStopLossPercent(symbol);

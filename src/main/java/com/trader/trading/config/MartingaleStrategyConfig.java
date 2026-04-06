@@ -71,30 +71,31 @@ public class MartingaleStrategyConfig {
         }
     }
 
-    /** 取得指定 symbol 的有效 maxLayers（有覆寫用覆寫，否則用全域值） */
+    /** 取得指定 symbol 的有效 maxLayers（有覆寫用覆寫，否則用全域值；無效值 fallback 全域） */
     public int getEffectiveMaxLayers(String symbol) {
         SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
-        return ov != null && ov.maxLayers != null ? ov.maxLayers : maxLayers;
+        return ov != null && ov.maxLayers != null && ov.maxLayers >= 1 ? ov.maxLayers : maxLayers;
     }
 
     public double getEffectiveStepPercent(String symbol) {
         SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
-        return ov != null && ov.stepPercent != null ? ov.stepPercent : stepPercent;
+        return ov != null && ov.stepPercent != null && ov.stepPercent > 0 ? ov.stepPercent : stepPercent;
     }
 
     public double getEffectiveSizeMultiplier(String symbol) {
         SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
-        return ov != null && ov.sizeMultiplier != null ? ov.sizeMultiplier : sizeMultiplier;
+        return ov != null && ov.sizeMultiplier != null && ov.sizeMultiplier > 0 ? ov.sizeMultiplier : sizeMultiplier;
     }
 
     public double getEffectiveTakeProfitPercent(String symbol) {
         SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
-        return ov != null && ov.takeProfitPercent != null ? ov.takeProfitPercent : takeProfitPercent;
+        return ov != null && ov.takeProfitPercent != null && ov.takeProfitPercent > 0 && ov.takeProfitPercent < 1.0
+                ? ov.takeProfitPercent : takeProfitPercent;
     }
 
     public double getEffectiveStopLossPercent(String symbol) {
         SymbolOverride ov = symbolOverrides != null ? symbolOverrides.get(symbol) : null;
-        return ov != null && ov.stopLossPercent != null ? ov.stopLossPercent : stopLossPercent;
+        return ov != null && ov.stopLossPercent != null && ov.stopLossPercent > 0 ? ov.stopLossPercent : stopLossPercent;
     }
 
     public MartingaleStrategyConfig(

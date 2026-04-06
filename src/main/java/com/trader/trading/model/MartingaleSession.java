@@ -25,9 +25,9 @@ public class MartingaleSession {
     private volatile Instant updatedAt;
     private volatile String currentTpOrderId;
     /** 階梯式 Trailing Stop 目前層級（0=未觸發，1~4=對應 Trailing 階段） */
-    private volatile int trailingLevel;
+    private final AtomicInteger trailingLevel = new AtomicInteger(0);
     /** TP 時間衰減已套用的階段數（0=未衰減） */
-    private volatile int tpDecayLevel;
+    private final AtomicInteger tpDecayLevel = new AtomicInteger(0);
     /** 訊號提供的絕對止損價（null = 使用 config 百分比） */
     private volatile Double signalStopLoss;
     /** 訊號提供的絕對止盈價（null = 使用 config 百分比） */
@@ -101,24 +101,24 @@ public class MartingaleSession {
     }
 
     public boolean isBreakevenActivated() {
-        return trailingLevel > 0;
+        return trailingLevel.get() > 0;
     }
 
     public int getTrailingLevel() {
-        return trailingLevel;
+        return trailingLevel.get();
     }
 
     public void setTrailingLevel(int level) {
-        this.trailingLevel = level;
+        this.trailingLevel.set(level);
         touch();
     }
 
     public int getTpDecayLevel() {
-        return tpDecayLevel;
+        return tpDecayLevel.get();
     }
 
     public void setTpDecayLevel(int level) {
-        this.tpDecayLevel = level;
+        this.tpDecayLevel.set(level);
         touch();
     }
 
@@ -148,12 +148,12 @@ public class MartingaleSession {
         return exitRetryCount.incrementAndGet();
     }
 
-    /** 向下相容：設 true = level 1，設 false = level 0 */
+    /** 向下相容：設 true = level 1，設 false = level 0（不會覆蓋更高 trailing level） */
     public void setBreakevenActivated(boolean activated) {
-        if (activated && trailingLevel == 0) {
-            this.trailingLevel = 1;
-        } else if (!activated) {
-            this.trailingLevel = 0;
+        if (activated && trailingLevel.get() == 0) {
+            this.trailingLevel.set(1);
+        } else if (!activated && trailingLevel.get() <= 1) {
+            this.trailingLevel.set(0);
         }
         touch();
     }

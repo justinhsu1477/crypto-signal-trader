@@ -127,6 +127,7 @@ class MartingaleFillListenerTest {
         TrackingTpManager tpMgr = new TrackingTpManager();
 
         mgr.startSession("BTCUSDT", com.trader.shared.model.TradeSignal.Side.LONG, 5, 60000.0);
+        mgr.getActiveSession("BTCUSDT").ifPresent(s -> s.markFilledLayer()); // 至少一層成交才會觸發 fallback
 
         MartingaleFillListener listener = new MartingaleFillListener(tracker, tpMgr, mgr, null, null);
 

@@ -28,7 +28,7 @@ public class UserDataEventDispatcher {
             try {
                 observer.onEvent(event);
             } catch (Exception e) {
-                log.debug("UserDataEventObserver failed: {}", e.getMessage());
+                log.warn("UserDataEventObserver failed: {}", e.getMessage());
             }
         }
     }
