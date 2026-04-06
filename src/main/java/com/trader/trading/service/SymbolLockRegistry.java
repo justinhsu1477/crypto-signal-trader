@@ -27,4 +27,12 @@ public class SymbolLockRegistry {
     public ReentrantLock getLock(String symbol) {
         return locks.computeIfAbsent(symbol, k -> new ReentrantLock());
     }
+
+    /**
+     * 移除不再使用的 lock（Session 結束後呼叫，防止記憶體洩漏）。
+     * 只在 lock 未被持有時才移除，避免影響正在使用的 lock。
+     */
+    public void removeLockIfIdle(String symbol) {
+        locks.computeIfPresent(symbol, (k, lock) -> lock.isLocked() ? lock : null);
+    }
 }

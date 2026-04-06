@@ -275,11 +275,13 @@ public class MartingaleStopLossWatcher {
             double avgPrice = fill.avgPrice();
             String oldTpId = active.get().getCurrentTpOrderId();
 
+            // 在 lock 內讀取 signalTakeProfit，避免 lock 外 snapshot 與 lock 內狀態不一致
+            MartingaleSession locked = active.get();
             double newTpPrice;
-            Double signalTp = session.getSignalTakeProfit();
+            Double signalTp = locked.getSignalTakeProfit();
             if (signalTp != null && signalTp > 0) {
                 // signalTP 存在：從 signalTP 向 floor 方向衰減
-                double floorPrice = session.getSide() == TradeSignal.Side.LONG
+                double floorPrice = locked.getSide() == TradeSignal.Side.LONG
                         ? avgPrice * (1.0 + config.getTpDecayFloorPercent())
                         : avgPrice * (1.0 - config.getTpDecayFloorPercent());
                 double decayRatio = Math.min(1.0, decayLevel / 4.0); // 4 階段衰減完
@@ -290,17 +292,17 @@ public class MartingaleStopLossWatcher {
                 double floor = config.getTpDecayFloorPercent();
                 double decayPerStep = (baseTp - floor) / Math.max(1, 4);
                 double decayedTpPercent = Math.max(floor, baseTp - decayPerStep * decayLevel);
-                newTpPrice = session.getSide() == TradeSignal.Side.LONG
+                newTpPrice = locked.getSide() == TradeSignal.Side.LONG
                         ? avgPrice * (1.0 + decayedTpPercent)
                         : avgPrice * (1.0 - decayedTpPercent);
             }
 
-            String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
+            String closeSide = locked.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
             OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, newTpPrice, fill.totalQty());
 
             if (result != null && result.isSuccess() && result.getOrderId() != null) {
-                active.get().setCurrentTpOrderId(result.getOrderId());
-                active.get().setTpDecayLevel(decayLevel);
+                locked.setCurrentTpOrderId(result.getOrderId());
+                locked.setTpDecayLevel(decayLevel);
 
                 if (oldTpId != null && !oldTpId.isBlank()) {
                     try {
@@ -313,7 +315,7 @@ public class MartingaleStopLossWatcher {
                 double tpPercent = Math.abs(newTpPrice - avgPrice) / avgPrice;
                 log.info("Martingale TP decay level {}: symbol={} holdingMin={} tpPercent={} tpPrice={}",
                         decayLevel, symbol, holdingMinutes, tpPercent, newTpPrice);
-                stateStore.persistSession(active.get());
+                stateStore.persistSession(locked);
                 notifier.notifyTpDecay(symbol, decayLevel, tpPercent, newTpPrice);
             } else {
                 String err = result != null ? result.getErrorMessage() : "null result";
