@@ -988,10 +988,10 @@
 
 ### 4-3 Redis 持久化失敗靜默吞掉 → 重啟後狀態錯亂（P0 — 狀態一致性）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 致命
 - **類型：** 異常處理缺失
-- **影響檔案：** `MartingaleStateStore.java`（`persistSession`、`persistFill`）
+- **影響檔案：** `MartingaleStateStore.java`（`persistSession`、`persistFill`）、`MartingaleNotifier.java`
 - **問題描述：**
   `persistSession()` 和 `persistFill()` 的 `catch` 區塊只 `log.warn()`，不重試也不拋出。
   若 Redis 連線短暫中斷（GC pause、網路抖動）：

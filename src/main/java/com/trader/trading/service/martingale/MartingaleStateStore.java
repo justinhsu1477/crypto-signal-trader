@@ -26,43 +26,62 @@ public class MartingaleStateStore {
     private static final String SESSION_KEY_PREFIX = "martingale:session:";
     private static final String FILL_KEY_PREFIX = "martingale:fill:";
 
+    private static final int MAX_PERSIST_ATTEMPTS = 3;
+
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final MartingaleSessionManager sessionManager;
     private final LayerFillTracker layerFillTracker;
+    private final MartingaleNotifier notifier;
 
     public MartingaleStateStore(StringRedisTemplate redisTemplate,
                                 MartingaleSessionManager sessionManager,
-                                LayerFillTracker layerFillTracker) {
+                                LayerFillTracker layerFillTracker,
+                                MartingaleNotifier notifier) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = new ObjectMapper();
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
+        this.notifier = notifier;
     }
 
     // ========== Persist ==========
 
-    public void persistSession(MartingaleSession session) {
-        if (session == null || session.getSymbol() == null) return;
-        try {
-            SessionSnapshot snap = SessionSnapshot.from(session);
-            String json = objectMapper.writeValueAsString(snap);
-            redisTemplate.opsForValue().set(SESSION_KEY_PREFIX + session.getSymbol(), json);
-        } catch (Exception e) {
-            log.warn("Persist session failed: symbol={} err={}", session.getSymbol(), e.getMessage());
+    public boolean persistSession(MartingaleSession session) {
+        if (session == null || session.getSymbol() == null) return false;
+        for (int attempt = 1; attempt <= MAX_PERSIST_ATTEMPTS; attempt++) {
+            try {
+                SessionSnapshot snap = SessionSnapshot.from(session);
+                String json = objectMapper.writeValueAsString(snap);
+                redisTemplate.opsForValue().set(SESSION_KEY_PREFIX + session.getSymbol(), json);
+                return true;
+            } catch (Exception e) {
+                log.warn("Persist session attempt {}/{} failed: symbol={} err={}",
+                        attempt, MAX_PERSIST_ATTEMPTS, session.getSymbol(), e.getMessage());
+            }
         }
+        log.error("Persist session FAILED after {} attempts: symbol={}", MAX_PERSIST_ATTEMPTS, session.getSymbol());
+        notifier.notifyPersistFailure(session.getSymbol(), "session");
+        return false;
     }
 
-    public void persistFill(String symbol) {
-        if (symbol == null) return;
-        try {
-            LayerFillTracker.AggregatedFill fill = layerFillTracker.getAggregatedFill(symbol);
-            FillSnapshot snap = new FillSnapshot(fill.totalQty(), fill.avgPrice());
-            String json = objectMapper.writeValueAsString(snap);
-            redisTemplate.opsForValue().set(FILL_KEY_PREFIX + symbol, json);
-        } catch (Exception e) {
-            log.warn("Persist fill failed: symbol={} err={}", symbol, e.getMessage());
+    public boolean persistFill(String symbol) {
+        if (symbol == null) return false;
+        for (int attempt = 1; attempt <= MAX_PERSIST_ATTEMPTS; attempt++) {
+            try {
+                LayerFillTracker.AggregatedFill fill = layerFillTracker.getAggregatedFill(symbol);
+                FillSnapshot snap = new FillSnapshot(fill.totalQty(), fill.avgPrice());
+                String json = objectMapper.writeValueAsString(snap);
+                redisTemplate.opsForValue().set(FILL_KEY_PREFIX + symbol, json);
+                return true;
+            } catch (Exception e) {
+                log.warn("Persist fill attempt {}/{} failed: symbol={} err={}",
+                        attempt, MAX_PERSIST_ATTEMPTS, symbol, e.getMessage());
+            }
         }
+        log.error("Persist fill FAILED after {} attempts: symbol={}", MAX_PERSIST_ATTEMPTS, symbol);
+        notifier.notifyPersistFailure(symbol, "fill");
+        return false;
     }
 
     public void removeSession(String symbol) {
