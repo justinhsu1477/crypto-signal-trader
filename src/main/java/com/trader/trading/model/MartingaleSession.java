@@ -32,6 +32,8 @@ public class MartingaleSession {
     private volatile Double signalStopLoss;
     /** 訊號提供的絕對止盈價（null = 使用 config 百分比） */
     private volatile Double signalTakeProfit;
+    /** EXITING 狀態下的重試次數 */
+    private final AtomicInteger exitRetryCount = new AtomicInteger(0);
 
     public MartingaleSession(String sessionId, String symbol, TradeSignal.Side side, int plannedLayers, double baseEntryPrice) {
         this.sessionId = sessionId;
@@ -131,6 +133,14 @@ public class MartingaleSession {
     public void setSignalTakeProfit(Double signalTakeProfit) {
         this.signalTakeProfit = signalTakeProfit;
         touch();
+    }
+
+    public int getExitRetryCount() {
+        return exitRetryCount.get();
+    }
+
+    public int incrementExitRetry() {
+        return exitRetryCount.incrementAndGet();
     }
 
     /** 向下相容：設 true = level 1，設 false = level 0 */

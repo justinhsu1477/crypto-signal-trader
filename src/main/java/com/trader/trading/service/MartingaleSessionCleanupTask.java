@@ -5,6 +5,7 @@ import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.model.MartingaleSession;
 import com.trader.trading.model.PositionInfo;
 import com.trader.trading.service.martingale.MartingaleNotifier;
+import com.trader.trading.service.martingale.MartingaleStateStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,8 @@ import java.util.concurrent.locks.ReentrantLock;
 @Component
 public class MartingaleSessionCleanupTask {
 
+    private static final int MAX_EXIT_RETRIES = 5;
+
     private final MartingaleSessionManager sessionManager;
     private final LayerFillTracker layerFillTracker;
     private final BinanceFuturesService binanceFuturesService;
@@ -25,6 +28,7 @@ public class MartingaleSessionCleanupTask {
     private final SymbolLockRegistry symbolLockRegistry;
     private final MartingaleStrategyConfig config;
     private final MartingaleNotifier notifier;
+    private final MartingaleStateStore stateStore;
 
     public MartingaleSessionCleanupTask(MartingaleSessionManager sessionManager,
                                         LayerFillTracker layerFillTracker,
@@ -32,7 +36,8 @@ public class MartingaleSessionCleanupTask {
                                         PositionService positionService,
                                         SymbolLockRegistry symbolLockRegistry,
                                         MartingaleStrategyConfig config,
-                                        MartingaleNotifier notifier) {
+                                        MartingaleNotifier notifier,
+                                        MartingaleStateStore stateStore) {
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
         this.binanceFuturesService = binanceFuturesService;
@@ -40,6 +45,7 @@ public class MartingaleSessionCleanupTask {
         this.symbolLockRegistry = symbolLockRegistry;
         this.config = config;
         this.notifier = notifier;
+        this.stateStore = stateStore;
     }
 
     @Scheduled(fixedDelayString = "${trading.strategy.martingale.session-cleanup-interval-millis:60000}")
@@ -104,6 +110,7 @@ public class MartingaleSessionCleanupTask {
             boolean closed = closePosition(symbol);
             if (closed) {
                 layerFillTracker.clearSymbol(symbol);
+                stateStore.removeSession(symbol);
                 sessionManager.endSession(symbol);
                 log.warn("Martingale session 超時平倉: symbol={} reason={} elapsed={}min maxDuration={}min",
                         symbol, reason, elapsedMinutes, config.getSessionMaxDurationMinutes());
@@ -150,9 +157,23 @@ public class MartingaleSessionCleanupTask {
 
     /**
      * 重試 EXITING 狀態的 session（上次平倉失敗留下的）。
+     * 完整鏈路：平倉 → Redis 清理 → endSession。
+     * 超過 MAX_EXIT_RETRIES 次後強制結束 + 告警。
      */
     private void retryExitingSession(MartingaleSession session) {
         String symbol = session.getSymbol();
+        int retryCount = session.incrementExitRetry();
+
+        // 超過最大重試次數 → 強制結束 session + 告警
+        if (retryCount > MAX_EXIT_RETRIES) {
+            log.error("Martingale EXITING 超過 {} 次重試，強制��束: symbol={}", MAX_EXIT_RETRIES, symbol);
+            layerFillTracker.clearSymbol(symbol);
+            stateStore.removeSession(symbol);
+            sessionManager.endSession(symbol);
+            notifier.notifyExitingStuck(symbol, retryCount);
+            return;
+        }
+
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         if (!lock.tryLock()) {
             return;
@@ -161,10 +182,11 @@ public class MartingaleSessionCleanupTask {
             boolean closed = closePosition(symbol);
             if (closed) {
                 layerFillTracker.clearSymbol(symbol);
+                stateStore.removeSession(symbol);
                 sessionManager.endSession(symbol);
-                log.info("Martingale EXITING session 重試平倉成功: symbol={}", symbol);
+                log.info("Martingale EXITING session 重試平倉成功: symbol={} retries={}", symbol, retryCount);
             } else {
-                log.warn("Martingale EXITING session 重試平倉仍失敗: symbol={}", symbol);
+                log.warn("Martingale EXITING session 重試平倉仍失敗: symbol={} retries={}/{}", symbol, retryCount, MAX_EXIT_RETRIES);
             }
         } finally {
             lock.unlock();
