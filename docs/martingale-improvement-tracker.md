@@ -913,6 +913,247 @@
 
 ---
 
+## Phase 4 — 實盤前最終審查（Production Readiness）
+
+> 基於 2026-04-06 三路並行深度審查（核心流程 / 止損清理復原 / 下單風控），過濾誤報後的真實風險。
+> 全部 P0 修復前不可進入實盤。
+
+### 4-1 平倉市價單部分成交 → 幽靈倉位（P0 — 資金風險）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 致命
+- **類型：** 異常處理缺失
+- **影響檔案：** `MartingaleStopLossWatcher.java`（`executeStopLoss`）、`MartingaleSessionCleanupTask.java`（`closePosition`）、`OrderExecutor.java`（`CLOSE` case）
+- **問題描述：**
+  止損 / 超時 / TP 成交後的平倉流程使用 `placeMarketOrder()` 送出市價單。程式碼以 `result.isSuccess()` 判定平倉完成，隨即呼叫 `endSession()` + `clearSymbol()`。
+  但 Binance 市價單在低流動性情況下**可以部分成交**（例如只成交 80%）。此時：
+  - Session 已結束、Tracker 已清空
+  - 20% 倉位仍在交易所，**無止損保護**
+  - 成為完全不受管控的「幽靈倉位」
+- **風險場景：**
+  BTCUSDT LONG 5 層全部成交，總持倉 0.05 BTC。觸發止損後 `placeMarketOrder(SELL, 0.05)` 只成交 0.04。Session 清理完畢，0.01 BTC 倉位無人管理，若 BTC 續跌 10% 就是無保護虧損。
+- **修復方案：**
+  平倉後輪詢驗證實際持倉量：
+  ```java
+  binanceFuturesService.placeMarketOrder(symbol, closeSide, qty);
+  // 等 1~2 秒讓成交回報到位
+  double remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+  if (remaining > minQty) {
+      log.error("平倉不完全: symbol={} remaining={}", symbol, remaining);
+      // 重試一次市價單
+      binanceFuturesService.placeMarketOrder(symbol, closeSide, remaining);
+      // 再驗證，仍有殘餘 → 告警通知，保留 EXITING 狀態不清理
+  }
+  ```
+- **驗收條件：**
+  - 平倉後確認實際持倉 = 0（或 < minQty）才呼叫 `endSession()`
+  - 部分成交時自動補送市價單
+  - 兩次仍未完全平倉 → Discord 告警 + 保留 EXITING 狀態
+  - 有對應單元測試
+
+---
+
+### 4-2 WebSocket 重複 fill 事件 → 成交量 double count（P0 — 價格計算錯誤）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 致命
+- **類型：** 冪等性缺失
+- **影響檔案：** `LayerFillTracker.java`（`recordFillByOrderId`）、`MartingaleFillListener.java`
+- **問題描述：**
+  Binance UserDataStream WebSocket 在網路不穩時可能重送同一筆 fill 事件。
+  `LayerFillTracker.recordFillByOrderId()` 沒有記錄已處理的 `(orderId, tradeId)` 組合，同一筆 fill 會被重複累加到 `totalQty` 和 `weightedNotional`。
+- **風險場景：**
+  Layer 1 成交 0.01 BTC @ 60000，WebSocket 送出兩次。Tracker 記錄 totalQty=0.02、notional=1200000。
+  avgPrice 計算正確（60000），但 totalQty 翻倍 → TP 數量掛 0.02 而非 0.01 → Binance reject 或過量成交。
+- **修復方案：**
+  在 `LayerFillTracker` 中加入已處理 fill 的去重 Set：
+  ```java
+  private final Set<String> processedFills = ConcurrentHashMap.newKeySet();
+
+  public void recordFillByOrderId(String orderId, double filledQty, double avgPrice, String tradeId) {
+      String dedupeKey = orderId + ":" + tradeId;
+      if (!processedFills.add(dedupeKey)) {
+          log.debug("重複 fill 事件已忽略: {}", dedupeKey);
+          return;
+      }
+      // ... 原邏輯
+  }
+  ```
+- **驗收條件：**
+  - 相同 (orderId, tradeId) 只處理一次
+  - 去重 Set 在 `clearSymbol()` 時一併清理
+  - 有對應單元測試
+
+---
+
+### 4-3 Redis 持久化失敗靜默吞掉 → 重啟後狀態錯亂（P0 — 狀態一致性）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 致命
+- **類型：** 異常處理缺失
+- **影響檔案：** `MartingaleStateStore.java`（`persistSession`、`persistFill`）
+- **問題描述：**
+  `persistSession()` 和 `persistFill()` 的 `catch` 區塊只 `log.warn()`，不重試也不拋出。
+  若 Redis 連線短暫中斷（GC pause、網路抖動）：
+  - 記憶體中 `currentTpOrderId = "NEW_123"`
+  - Redis 仍存 `currentTpOrderId = "OLD_456"`
+  - 重啟後從 Redis 恢復舊狀態 → 新 TP 單成為孤兒單（Binance 上存在但無 session 追蹤）
+- **修復方案：**
+  加入重試（最多 2 次）+ 失敗告警：
+  ```java
+  public boolean persistSession(MartingaleSession session) {
+      for (int attempt = 1; attempt <= 3; attempt++) {
+          try {
+              String json = objectMapper.writeValueAsString(SessionSnapshot.from(session));
+              redisTemplate.opsForValue().set(SESSION_KEY_PREFIX + session.getSymbol(), json);
+              return true;
+          } catch (Exception e) {
+              log.warn("Persist session attempt {}/3 failed: symbol={} err={}", attempt, session.getSymbol(), e.getMessage());
+          }
+      }
+      log.error("Persist session FAILED after 3 attempts: symbol={}", session.getSymbol());
+      notifier.notifyPersistFailure(session.getSymbol());
+      return false;
+  }
+  ```
+  呼叫端（如 Trailing Stop）可根據 `return false` 決定是否回滾記憶體狀態。
+- **驗收條件：**
+  - 持久化最多重試 3 次
+  - 全部失敗 → Discord 告警通知
+  - 方法回傳 boolean，呼叫端可據此決策
+  - 有對應單元測試
+
+---
+
+### 4-4 下單數量未對齊 Binance lotSize → 訂單被 reject（P0 — 下單失敗）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 致命
+- **類型：** 相容性缺陷
+- **影響檔案：** `BinanceFuturesService.java`（`formatQuantity`）
+- **問題描述：**
+  `formatQuantity()` 用硬編碼小數位（BTC/ETH = 3 位，其他 = 2 位），而非從 Binance Exchange Info 取 `stepSize` / `minQty`。
+  實際各幣種的 lotSize 規則差異大：
+  - DOGEUSDT: stepSize=1（整數）
+  - LINKUSDT: stepSize=0.01
+  - SOLUSDT: stepSize=0.1
+  - 1000PEPEUSDT: stepSize=1
+
+  用 2 位小數格式化 DOGEUSDT 數量（如 `150.00`）會被 Binance reject，因為 stepSize=1 只接受整數。
+- **修復方案：**
+  啟動時快取 Exchange Info，用 `stepSize` 做正確的數量對齊：
+  ```java
+  private double alignToStepSize(String symbol, double quantity) {
+      double stepSize = exchangeInfoCache.getStepSize(symbol);
+      if (stepSize <= 0) return quantity;
+      return Math.floor(quantity / stepSize) * stepSize;
+  }
+  ```
+- **驗收條件：**
+  - 所有幣種的下單數量對齊其 stepSize
+  - 數量 < minQty 時跳過該層（不送單）
+  - 啟動時自動載入 Exchange Info
+  - 有對應單元測試
+
+---
+
+### 4-5 Session EXITING 狀態永久卡住（P1 — 需手動介入）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 高
+- **類型：** 狀態機缺陷
+- **影響檔案：** `MartingaleStopLossWatcher.java`、`MartingaleSessionCleanupTask.java`
+- **問題描述：**
+  `executeStopLoss()` 流程：`markExiting()` → `cancelAllOrders()` → `closePosition()` → `removeSession()` → `endSession()`。
+  若中間步驟失敗（API timeout、Redis down），session 停留在 EXITING 且不會自動重試完整鏈路。
+  `CleanupTask.retryExitingSession()` 只重試平倉，不重試 Redis 清理和 session 結束。
+- **修復方案：**
+  1. `retryExitingSession()` 補上完整鏈路（平倉 → Redis 清理 → endSession）
+  2. 加入最大重試計數器（例如 5 次），超過後強制 `endSession()` + 告警
+  3. 保留 EXITING 持續超過 10 分鐘 → Discord 告警
+- **驗收條件：**
+  - EXITING session 不會永久卡住
+  - 超過 N 次重試後強制結束 + 告警
+  - 有對應單元測試
+
+---
+
+### 4-6 TP Decay 在 lock 外讀取 signalTakeProfit（P1 — 價格微偏）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 中
+- **類型：** 競爭條件
+- **影響檔案：** `MartingaleStopLossWatcher.java`（`checkTpDecay` 方法）
+- **問題描述：**
+  `checkTpDecay()` 在 `tryLock()` 之前讀取 `session.getSignalTakeProfit()`（透過 session 引用），但在取鎖後才使用該值計算新 TP。期間其他線程可能透過 `setSignalTakeProfit()` 修改了值。
+- **修復方案：**
+  將 `signalTakeProfit` 的讀取移到 lock 內部，使用 `active.get().getSignalTakeProfit()` 而非 `session.getSignalTakeProfit()`。
+- **驗收條件：**
+  - signalTakeProfit 在 lock 保護下讀取
+  - 無功能變更，純安全性修復
+
+---
+
+### 4-7 DecisionEngine R:R 用 avg TP 判斷，Strategy 用第一個 TP 執行（P1 — 決策偏差）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 中
+- **類型：** 邏輯不一致
+- **影響檔案：** `MartingaleDecisionEngine.java`（`computeRiskRewardRatio`）、`MartingaleStrategy.java`（`applySignalTpSl`）
+- **問題描述：**
+  3-7 將 R:R 計算改為所有 TP 的加權平均，但 `applySignalTpSl()` 在 session 上設定的是 `signal.getTakeProfits().get(0)`（第一個 TP）。
+  多 TP 訊號（TP1=62000 近、TP2=66000 遠）的 avgTP=64000，R:R 基於 64000 判斷。但實際 TP 掛在 62000。
+  **決策與執行不一致。**
+- **修復方案：**
+  兩者統一：
+  - 方案 A：DecisionEngine 也只用第一個 TP（回退 3-7，保守）
+  - 方案 B：Strategy 也用 avgTP 作為 signalTakeProfit（激進）
+  - **推薦方案 A**（DecisionEngine 用第一個 TP），因為實際掛單是第一個 TP
+- **驗收條件：**
+  - 決策和執行使用相同的 TP 值
+  - 更新對應單元測試
+
+---
+
+### 4-8 baseEntryPrice 未驗證 > 0（P2 — 防禦性）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 低
+- **類型：** 輸入驗證缺失
+- **影響檔案：** `MartingaleSessionManager.java`（`startSession`）、`MartingaleStrategy.java`
+- **問題描述：**
+  `sessionManager.startSession(symbol, side, layers, baseEntryPrice)` 不驗證 `baseEntryPrice > 0`。
+  若傳入 0（例如 `position.avgEntryPrice()` 在無持倉時回傳 0），SL 計算 `basePrice × (1 - 15%) = 0`，止損形同虛設。
+- **修復方案：**
+  在 `startSession()` 加入前置檢查：
+  ```java
+  if (baseEntryPrice <= 0) {
+      throw new IllegalArgumentException("baseEntryPrice must be > 0, got: " + baseEntryPrice);
+  }
+  ```
+- **驗收條件：**
+  - baseEntryPrice <= 0 時拋出異常
+  - 有對應單元測試
+
+---
+
+### 4-9 SymbolLockRegistry 不清理舊 lock（P2 — 記憶體）
+
+- [ ] **狀態：未開始**
+- **嚴重度：** 低
+- **類型：** 資源洩漏
+- **影響檔案：** `SymbolLockRegistry.java`
+- **問題描述：**
+  `computeIfAbsent()` 建立的 lock 永遠不會被移除。長期運行（交易數百種幣對後）ConcurrentHashMap 持續增長。
+  單個 ReentrantLock ≈ 100 bytes，1000 幣種 ≈ 100KB，不致命但不乾淨。
+- **修復方案：**
+  在 `MartingaleSessionManager.endSession()` 後清理對應 lock，或定期清理無 active session 的 lock。
+- **驗收條件：**
+  - Session 結束後 lock 被移除
+  - 不影響正在使用的 lock
+
+---
+
 ## 附錄：快速索引
 
 | 編號 | 標題 | 優先級 | 狀態 | 類型 |
@@ -953,3 +1194,12 @@
 | 3-7 | R:R 多 TP 加權計算 | P2 | ✅ 完成 | 策略精度 |
 | 3-8 | Controller symbol lock | P2 | ✅ 完成 | 並行安全 |
 | 3-9 | DecisionEngine 常數可配置 | P2 | ✅ 完成 | 可配置性 |
+| 4-1 | 平倉部分成交 → 幽靈倉位 | P0 | 未開始 | 異常處理 |
+| 4-2 | WebSocket fill 冪等性 | P0 | 未開始 | 冪等性 |
+| 4-3 | Redis 持久化重試 + 告警 | P0 | 未開始 | 異常處理 |
+| 4-4 | 下單數量對齊 lotSize | P0 | 未開始 | 相容性 |
+| 4-5 | EXITING 狀態永久卡住 | P1 | 未開始 | 狀態機 |
+| 4-6 | TP Decay lock 外讀取 | P1 | 未開始 | 競爭條件 |
+| 4-7 | R:R 決策與執行 TP 不一致 | P1 | 未開始 | 邏輯不一致 |
+| 4-8 | baseEntryPrice 未驗證 | P2 | 未開始 | 輸入驗證 |
+| 4-9 | SymbolLockRegistry 記憶體洩漏 | P2 | 未開始 | 資源洩漏 |
