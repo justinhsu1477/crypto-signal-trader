@@ -88,6 +88,12 @@ public class MartingaleNotifier {
                 COLOR_RED);
     }
 
+    public void notifyExitingStuck(String symbol, int retryCount) {
+        send("⚠ Martingale EXITING 卡住",
+                String.format("%s | 重試 %d 次仍無法平倉，已強制���束 Session，請檢查交易所倉位", symbol, retryCount),
+                COLOR_RED);
+    }
+
     public void notifyPersistFailure(String symbol, String type) {
         send("⚠ Martingale Redis 持久化失敗",
                 String.format("%s | %s 寫入 Redis 失敗（重試 3 次），重啟可能狀態錯亂", symbol, type),

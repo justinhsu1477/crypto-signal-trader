@@ -1059,10 +1059,10 @@
 
 ### 4-5 Session EXITING 狀態永久卡住（P1 — 需手動介入）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 高
 - **類型：** 狀態機缺陷
-- **影響檔案：** `MartingaleStopLossWatcher.java`、`MartingaleSessionCleanupTask.java`
+- **影響檔案：** `MartingaleSession.java`、`MartingaleSessionCleanupTask.java`、`MartingaleNotifier.java`
 - **問題描述：**
   `executeStopLoss()` 流程：`markExiting()` → `cancelAllOrders()` → `closePosition()` → `removeSession()` → `endSession()`。
   若中間步驟失敗（API timeout、Redis down），session 停留在 EXITING 且不會自動重試完整鏈路。
