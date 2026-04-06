@@ -88,6 +88,12 @@ public class MartingaleNotifier {
                 COLOR_RED);
     }
 
+    public void notifyPersistFailure(String symbol, String type) {
+        send("⚠ Martingale Redis 持久化失敗",
+                String.format("%s | %s 寫入 Redis 失敗（重試 3 次），重啟可能狀態錯亂", symbol, type),
+                COLOR_RED);
+    }
+
     private void send(String title, String message, int color) {
         try {
             discordWebhookService.sendNotification(title, message, color);
