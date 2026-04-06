@@ -36,6 +36,8 @@ trading:
       tp-decay-interval-minutes: ${MARTINGALE_TP_DECAY_INTERVAL_MINUTES:60}  # 每階段衰減間隔
       tp-decay-floor-percent: ${MARTINGALE_TP_DECAY_FLOOR_PERCENT:0.002}  # 衰減最低 TP%
       decision-mode: ${MARTINGALE_DECISION_MODE:NEVER}  # NEVER=停用 / ALWAYS=全用 / AUTO=自動判斷
+      decision-min-layers: ${MARTINGALE_DECISION_MIN_LAYERS:2}   # AUTO: SL 空間至少能放幾層
+      decision-rr-threshold: ${MARTINGALE_DECISION_RR_THRESHOLD:3.0}  # AUTO: R:R 低於此值才啟用
       # Per-symbol 配置覆寫（選填，未設定的欄位沿用全域值）
       # symbol-overrides:
       #   ETHUSDT:

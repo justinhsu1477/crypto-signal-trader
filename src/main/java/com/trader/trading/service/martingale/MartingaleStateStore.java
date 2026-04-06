@@ -9,6 +9,7 @@ import com.trader.trading.service.MartingaleSessionManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -74,9 +75,26 @@ public class MartingaleStateStore {
         }
     }
 
+    /**
+     * 讀取 Redis 快照中的 signalTpSl（供 RecoveryTask 在 Binance 反推時補回）
+     * @return snapshot if exists, null otherwise
+     */
+    public SessionSnapshot readSnapshot(String symbol) {
+        try {
+            String json = redisTemplate.opsForValue().get(SESSION_KEY_PREFIX + symbol);
+            if (json != null) {
+                return objectMapper.readValue(json, SessionSnapshot.class);
+            }
+        } catch (Exception e) {
+            log.warn("Read snapshot failed: symbol={} err={}", symbol, e.getMessage());
+        }
+        return null;
+    }
+
     // ========== Restore on startup ==========
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(1) // 優先於 MartingaleRecoveryTask（Order=2），確保 signalTpSl 從 Redis 恢復
     public void restoreFromRedis() {
         try {
             var keys = redisTemplate.keys(SESSION_KEY_PREFIX + "*");
@@ -119,6 +137,8 @@ public class MartingaleStateStore {
                     if (snap.tpOrderId != null) {
                         session.setCurrentTpOrderId(snap.tpOrderId);
                     }
+                    session.setSignalStopLoss(snap.signalStopLoss);
+                    session.setSignalTakeProfit(snap.signalTakeProfit);
 
                     // 恢復 fill tracker（用聚合快照寫回）
                     String fillJson = redisTemplate.opsForValue().get(FILL_KEY_PREFIX + symbol);
@@ -154,6 +174,8 @@ public class MartingaleStateStore {
         public int trailingLevel;
         public int tpDecayLevel;
         public String tpOrderId;
+        public Double signalStopLoss;
+        public Double signalTakeProfit;
 
         public SessionSnapshot() {} // for Jackson
 
@@ -168,6 +190,8 @@ public class MartingaleStateStore {
             snap.trailingLevel = s.getTrailingLevel();
             snap.tpDecayLevel = s.getTpDecayLevel();
             snap.tpOrderId = s.getCurrentTpOrderId();
+            snap.signalStopLoss = s.getSignalStopLoss();
+            snap.signalTakeProfit = s.getSignalTakeProfit();
             return snap;
         }
     }

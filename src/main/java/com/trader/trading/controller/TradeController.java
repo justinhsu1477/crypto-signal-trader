@@ -226,18 +226,46 @@ public class TradeController {
 
         // Martingale DecisionEngine 分流：符合條件 → 走 Martingale 分層入場
         if (martingaleDecisionEngine.shouldUseMartingale(signal)) {
-            log.info("Martingale 決策引擎啟用: symbol={} side={}", signal.getSymbol(), signal.getSide());
-            List<OrderResult> mgResults = tradingService.execute(signal, StrategyType.MARTINGALE);
-            boolean mgSuccess = mgResults.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
-            webhookService.sendNotification(
-                    mgSuccess ? "✅ MARTINGALE 分層入場成功" : "❌ MARTINGALE 入場失敗",
-                    formatEntryResults(signal, mgResults),
-                    mgSuccess ? DiscordWebhookService.COLOR_GREEN : DiscordWebhookService.COLOR_RED);
-            String mgTradeId = mgResults.stream()
-                    .filter(r -> r.isSuccess() && r.getOrderId() != null)
-                    .map(OrderResult::getOrderId).findFirst().orElse(null);
-            signalRecordService.recordSignal(signal, mgSuccess ? "EXECUTED" : "FAILED", "martingale", mgTradeId);
-            return ResponseEntity.ok(Map.of("action", "ENTRY", "strategy", "MARTINGALE", "results", mgResults));
+            // 同幣種 tryLock：避免並行 signal 互相阻塞
+            ReentrantLock mgLock = symbolLockRegistry.getLock(signal.getSymbol());
+            if (!mgLock.tryLock()) {
+                log.info("Martingale symbol lock 競爭，fallback Signal: symbol={}", signal.getSymbol());
+                // fallback Signal 路徑
+            } else try {
+                List<OrderResult> mgResults = tradingService.execute(signal, StrategyType.MARTINGALE);
+                boolean mgSuccess = mgResults.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+
+                if (mgSuccess) {
+                    webhookService.sendNotification(
+                            "✅ MARTINGALE 分層入場成功",
+                            formatEntryResults(signal, mgResults),
+                            DiscordWebhookService.COLOR_GREEN);
+                    String mgTradeId = mgResults.stream()
+                            .filter(r -> r.isSuccess() && r.getOrderId() != null)
+                            .map(OrderResult::getOrderId).findFirst().orElse(null);
+                    signalRecordService.recordSignal(signal, "EXECUTED", "martingale", mgTradeId);
+                    return ResponseEntity.ok(Map.of("action", "ENTRY", "strategy", "MARTINGALE", "results", mgResults));
+                }
+
+                // Martingale 下單全部失敗 → fallback Signal
+                log.warn("Martingale 全部失敗，fallback Signal: symbol={} errors={}",
+                        signal.getSymbol(),
+                        mgResults.stream().filter(r -> !r.isSuccess()).map(OrderResult::getErrorMessage).toList());
+                webhookService.sendNotification(
+                        "⚠️ MARTINGALE 失敗，Fallback Signal 入場",
+                        formatEntryResults(signal, mgResults),
+                        DiscordWebhookService.COLOR_YELLOW);
+            } catch (Exception e) {
+                // Martingale 拋異常 → fallback Signal
+                log.error("Martingale 異常，fallback Signal: symbol={}", signal.getSymbol(), e);
+                webhookService.sendNotification(
+                        "⚠️ MARTINGALE 異常，Fallback Signal 入場",
+                        signal.getSymbol() + " " + signal.getSide() + "\n" + e.getMessage(),
+                        DiscordWebhookService.COLOR_YELLOW);
+            } finally {
+                mgLock.unlock();
+            }
+            // fallback: 繼續往下走 Signal 路徑
         }
 
         List<OrderResult> results = binanceFuturesService.executeSignal(signal);
