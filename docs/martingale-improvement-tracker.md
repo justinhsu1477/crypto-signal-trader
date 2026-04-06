@@ -1080,7 +1080,7 @@
 
 ### 4-6 TP Decay 在 lock 外讀取 signalTakeProfit（P1 — 價格微偏）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 中
 - **類型：** 競爭條件
 - **影響檔案：** `MartingaleStopLossWatcher.java`（`checkTpDecay` 方法）
@@ -1096,10 +1096,10 @@
 
 ### 4-7 DecisionEngine R:R 用 avg TP 判斷，Strategy 用第一個 TP 執行（P1 — 決策偏差）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 中
 - **類型：** 邏輯不一致
-- **影響檔案：** `MartingaleDecisionEngine.java`（`computeRiskRewardRatio`）、`MartingaleStrategy.java`（`applySignalTpSl`）
+- **影響檔案：** `MartingaleDecisionEngine.java`（`computeRiskRewardRatio`）
 - **問題描述：**
   3-7 將 R:R 計算改為所有 TP 的加權平均，但 `applySignalTpSl()` 在 session 上設定的是 `signal.getTakeProfits().get(0)`（第一個 TP）。
   多 TP 訊號（TP1=62000 近、TP2=66000 遠）的 avgTP=64000，R:R 基於 64000 判斷。但實際 TP 掛在 62000。
@@ -1117,10 +1117,10 @@
 
 ### 4-8 baseEntryPrice 未驗證 > 0（P2 — 防禦性）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 低
 - **類型：** 輸入驗證缺失
-- **影響檔案：** `MartingaleSessionManager.java`（`startSession`）、`MartingaleStrategy.java`
+- **影響檔案：** `MartingaleSessionManager.java`（`startSession`）
 - **問題描述：**
   `sessionManager.startSession(symbol, side, layers, baseEntryPrice)` 不驗證 `baseEntryPrice > 0`。
   若傳入 0（例如 `position.avgEntryPrice()` 在無持倉時回傳 0），SL 計算 `basePrice × (1 - 15%) = 0`，止損形同虛設。
@@ -1139,10 +1139,10 @@
 
 ### 4-9 SymbolLockRegistry 不清理舊 lock（P2 — 記憶體）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 低
 - **類型：** 資源洩漏
-- **影響檔案：** `SymbolLockRegistry.java`
+- **影響檔案：** `SymbolLockRegistry.java`、`MartingaleSessionManager.java`
 - **問題描述：**
   `computeIfAbsent()` 建立的 lock 永遠不會被移除。長期運行（交易數百種幣對後）ConcurrentHashMap 持續增長。
   單個 ReentrantLock ≈ 100 bytes，1000 幣種 ≈ 100KB，不致命但不乾淨。

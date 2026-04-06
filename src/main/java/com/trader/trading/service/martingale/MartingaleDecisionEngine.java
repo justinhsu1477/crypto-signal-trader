@@ -147,7 +147,7 @@ public class MartingaleDecisionEngine {
     }
 
     /**
-     * R:R = reward / risk（用所有 TP 的加權平均計算）
+     * R:R = reward / risk（用第一個 TP 計算，與 Strategy 實際掛單一致）
      */
     double computeRiskRewardRatio(TradeSignal signal) {
         double entryPrice = signal.getEntryPriceLow();
@@ -160,8 +160,8 @@ public class MartingaleDecisionEngine {
         if (signal.getTakeProfits() == null || signal.getTakeProfits().isEmpty()) {
             return 0;
         }
-        double avgTp = signal.getTakeProfits().stream().mapToDouble(d -> d).average().orElse(0);
-        double reward = Math.abs(avgTp - entryPrice);
+        double tp1 = signal.getTakeProfits().get(0);
+        double reward = Math.abs(tp1 - entryPrice);
         return reward / risk;
     }
 
