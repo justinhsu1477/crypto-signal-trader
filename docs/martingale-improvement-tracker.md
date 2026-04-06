@@ -1027,10 +1027,10 @@
 
 ### 4-4 下單數量未對齊 Binance lotSize → 訂單被 reject（P0 — 下單失敗）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 致命
 - **類型：** 相容性缺陷
-- **影響檔案：** `BinanceFuturesService.java`（`formatQuantity`）
+- **影響檔案：** `BinanceFuturesService.java`（`formatQuantity`、`getLotSize`、`getMinQty`）、`OrderExecutor.java`
 - **問題描述：**
   `formatQuantity()` 用硬編碼小數位（BTC/ETH = 3 位，其他 = 2 位），而非從 Binance Exchange Info 取 `stepSize` / `minQty`。
   實際各幣種的 lotSize 規則差異大：
