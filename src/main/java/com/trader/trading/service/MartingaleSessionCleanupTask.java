@@ -162,23 +162,25 @@ public class MartingaleSessionCleanupTask {
      */
     private void retryExitingSession(MartingaleSession session) {
         String symbol = session.getSymbol();
-        int retryCount = session.incrementExitRetry();
-
-        // 超過最大重試次數 → 強制結束 session + 告警
-        if (retryCount > MAX_EXIT_RETRIES) {
-            log.error("Martingale EXITING 超過 {} 次重試，強制��束: symbol={}", MAX_EXIT_RETRIES, symbol);
-            layerFillTracker.clearSymbol(symbol);
-            stateStore.removeSession(symbol);
-            sessionManager.endSession(symbol);
-            notifier.notifyExitingStuck(symbol, retryCount);
-            return;
-        }
 
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         if (!lock.tryLock()) {
             return;
         }
         try {
+            // 在 lock 內遞增，避免 lock 失敗也計數導致提前強制結束
+            int retryCount = session.incrementExitRetry();
+
+            // 超過最大重試次數 → 強制結束 session + 告警
+            if (retryCount > MAX_EXIT_RETRIES) {
+                log.error("Martingale EXITING 超過 {} 次重試，強制結束: symbol={}", MAX_EXIT_RETRIES, symbol);
+                layerFillTracker.clearSymbol(symbol);
+                stateStore.removeSession(symbol);
+                sessionManager.endSession(symbol);
+                notifier.notifyExitingStuck(symbol, retryCount);
+                return;
+            }
+
             boolean closed = closePosition(symbol);
             if (closed) {
                 layerFillTracker.clearSymbol(symbol);

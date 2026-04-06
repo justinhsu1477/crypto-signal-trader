@@ -1462,7 +1462,7 @@ public class BinanceFuturesService {
 
     private String formatQuantity(String symbol, double quantity) {
         double[] lotSize = getLotSize(symbol);
-        if (lotSize != null) {
+        if (lotSize != null && lotSize[0] > 0) {
             double stepSize = lotSize[0];
             double aligned = Math.floor(quantity / stepSize) * stepSize;
             // 計算 stepSize 的小數位數來格式化

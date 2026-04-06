@@ -466,6 +466,12 @@ public class MartingaleStrategy implements TradingStrategy {
             tpAvgPrice = totalQuantity > 0.0 ? (weightedNotional / totalQuantity) : baseEntryPrice;
         }
 
+        // 防禦：TP 數量或均價無效時不送 TP 單
+        if (tpQty <= 0 || tpAvgPrice <= 0) {
+            log.warn("Martingale TP 數量或均價無效，跳過 TP: symbol={} tpQty={} tpAvgPrice={}", symbol, tpQty, tpAvgPrice);
+            return orders;
+        }
+
         // 訊號提供絕對 TP → 直接使用；否則用 config 百分比計算
         double takeProfitPrice;
         if (session != null && session.getSignalTakeProfit() != null && session.getSignalTakeProfit() > 0) {

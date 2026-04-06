@@ -161,6 +161,7 @@ public class MartingaleDecisionEngine {
             return 0;
         }
         double tp1 = signal.getTakeProfits().get(0);
+        if (tp1 <= 0) return 0;
         double reward = Math.abs(tp1 - entryPrice);
         return reward / risk;
     }
