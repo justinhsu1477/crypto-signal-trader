@@ -115,8 +115,20 @@ public class OrderExecutor {
                     );
                     results.add(result);
                     if (result != null && result.isSuccess()) {
-                        sessionManager.endSession(symbol);
-                        layerFillTracker.clearSymbol(symbol);
+                        // 驗證倉位是否完全平倉
+                        double remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+                        if (remaining > 0) {
+                            log.warn("CLOSE 部分成交，剩餘倉位重試: symbol={} remaining={}", symbol, remaining);
+                            binanceFuturesService.placeMarketOrder(symbol, closeSide, remaining);
+                            remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+                        }
+                        if (remaining > 0) {
+                            log.error("CLOSE 重試後仍有剩餘倉位（幽靈倉位），保留 EXITING: symbol={} remaining={}", symbol, remaining);
+                            notifier.notifyGhostPosition(symbol, remaining);
+                        } else {
+                            sessionManager.endSession(symbol);
+                            layerFillTracker.clearSymbol(symbol);
+                        }
                     } else {
                         // 市價平倉失敗：保留 EXITING 狀態，由 CleanupTask 重試
                         log.error("Martingale CLOSE 市價平倉失敗，保留 EXITING 狀態: symbol={} err={}",

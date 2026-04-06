@@ -173,6 +173,7 @@ public class MartingaleSessionCleanupTask {
 
     /**
      * 嘗試市價平倉，回傳是否成功（無持倉也算成功）。
+     * 下單後驗證實際倉位，部分成交時重試一次，仍有殘留則告警。
      */
     private boolean closePosition(String symbol) {
         Optional<PositionInfo> posOpt = positionService.getPosition(symbol);
@@ -187,6 +188,19 @@ public class MartingaleSessionCleanupTask {
         try {
             String closeSide = position.side() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
             binanceFuturesService.placeMarketOrder(symbol, closeSide, qty);
+
+            // 驗證倉位是否完全平倉
+            double remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+            if (remaining > 0) {
+                log.warn("平倉部分成交，剩餘倉位重試: symbol={} remaining={}", symbol, remaining);
+                binanceFuturesService.placeMarketOrder(symbol, closeSide, remaining);
+                remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+            }
+            if (remaining > 0) {
+                log.error("平倉重試後仍有剩餘倉位（幽靈倉位）: symbol={} remaining={}", symbol, remaining);
+                notifier.notifyGhostPosition(symbol, remaining);
+                return false;
+            }
             return true;
         } catch (Exception e) {
             log.error("市價平倉失敗: symbol={} err={}", symbol, e.getMessage());
