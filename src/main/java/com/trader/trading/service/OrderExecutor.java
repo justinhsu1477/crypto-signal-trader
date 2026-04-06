@@ -73,6 +73,14 @@ public class OrderExecutor {
                 case ENTRY -> {
                     entryTotal++;
                     trackedSymbol = symbol;
+                    // minQty ���查：數量低於交易所最小下單量則跳過此層
+                    double minQty = binanceFuturesService.getMinQty(symbol);
+                    if (minQty > 0 && order.getQuantity() < minQty) {
+                        log.warn("Martingale ENTRY 數量低於 minQty，跳過: symbol={} layer={} qty={} minQty={}",
+                                symbol, order.getLayer(), order.getQuantity(), minQty);
+                        results.add(OrderResult.fail("qty-below-minQty"));
+                        break;
+                    }
                     String entrySide = side == TradeSignal.Side.SHORT ? "SELL" : "BUY";
                     OrderResult result = binanceFuturesService.placeLimitOrder(
                             symbol,
