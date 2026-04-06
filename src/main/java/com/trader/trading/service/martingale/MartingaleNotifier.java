@@ -104,7 +104,7 @@ public class MartingaleNotifier {
         try {
             discordWebhookService.sendNotification(title, message, color);
         } catch (Exception e) {
-            log.debug("Martingale 通知發送失敗: {}", e.getMessage());
+            log.warn("Martingale 通知發送失敗: {}", e.getMessage());
         }
     }
 }

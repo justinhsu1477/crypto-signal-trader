@@ -271,13 +271,13 @@ public class BinanceFuturesService {
      * ⚠️ API 失敗時拋出 RuntimeException，避免回傳 0 導致偏離檢查失效
      */
     public double getMarkPrice(String symbol) {
-        String endpoint = "/fapi/v1/ticker/price";
+        String endpoint = "/fapi/v1/premiumIndex";
         String response = sendPublicGet(endpoint + "?symbol=" + symbol);
         try {
             JsonObject json = gson.fromJson(response, JsonObject.class);
-            return json.get("price").getAsDouble();
+            return json.get("markPrice").getAsDouble();
         } catch (Exception e) {
-            throw new RuntimeException("取得市價失敗，拒絕交易: " + e.getMessage(), e);
+            throw new RuntimeException("取得 markPrice 失敗，拒絕交易: " + e.getMessage(), e);
         }
     }
 

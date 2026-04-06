@@ -82,6 +82,11 @@ public class MartingaleRecoveryTask {
         MartingaleSession session = sessionManager.startSession(
                 pos.symbol, pos.side, config.getEffectiveMaxLayers(pos.symbol), pos.entryPrice);
 
+        // 有持倉代表至少一層已成交：設定 filledLayers 和 fill tracker
+        // 確保 SL 基準價用成交均價、超時策略用 sessionMaxDuration、trailing/decay 可啟動
+        session.markFilledLayer();
+        layerFillTracker.recordFillDirect(pos.symbol, pos.quantity, pos.entryPrice);
+
         log.info("Martingale recovery: 重建 session symbol={} side={} entryPrice={} qty={}",
                 pos.symbol, pos.side, pos.entryPrice, pos.quantity);
 

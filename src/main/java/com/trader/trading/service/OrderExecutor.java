@@ -73,6 +73,19 @@ public class OrderExecutor {
                 continue;
             }
 
+            // 防禦 boxed Double NPE：ENTRY/TP 需要 qty+price，CLOSE 只需 qty
+            if (order.getType() != Order.OrderType.CLOSE) {
+                if (order.getQuantity() == null || order.getPrice() == null) {
+                    log.warn("Order qty 或 price 為 null，跳過: symbol={} type={}", symbol, order.getType());
+                    results.add(OrderResult.fail("null-qty-or-price"));
+                    continue;
+                }
+            } else if (order.getQuantity() == null) {
+                log.warn("CLOSE order qty 為 null，跳過: symbol={}", symbol);
+                results.add(OrderResult.fail("null-qty"));
+                continue;
+            }
+
             switch (order.getType()) {
                 case ENTRY -> {
                     entryTotal++;

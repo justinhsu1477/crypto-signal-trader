@@ -111,13 +111,18 @@ public class MartingaleFillListener implements UserDataEventObserver {
         }
 
         // Fallback：非 ENTRY 的 FILLED MARKET 訂單 → 可能是 TP 觸發的市價平倉
+        // 額外條件：session 必須 ACTIVE 且有成交層，排除 CLOSE 流程和純掛單 session
         if ("FILLED".equals(status)) {
             String orderType = order.has("o") ? order.get("o").getAsString() : "";
             if ("MARKET".equals(orderType)) {
                 String symbol = order.has("s") ? order.get("s").getAsString() : null;
-                if (symbol != null && sessionManager.getActiveSession(symbol).isPresent()) {
-                    log.info("Martingale fallback 偵測到非 ENTRY 的 MARKET FILLED: symbol={} orderId={}", symbol, orderId);
-                    tpManager.handleTpFilled(symbol);
+                if (symbol != null) {
+                    sessionManager.getActiveSession(symbol)
+                            .filter(s -> s.getFilledLayers() > 0)
+                            .ifPresent(s -> {
+                                log.info("Martingale fallback 偵測到非 ENTRY 的 MARKET FILLED: symbol={} orderId={}", symbol, orderId);
+                                tpManager.handleTpFilled(symbol);
+                            });
                 }
             }
         }

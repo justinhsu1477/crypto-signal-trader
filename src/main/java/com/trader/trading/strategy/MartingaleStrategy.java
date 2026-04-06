@@ -339,6 +339,12 @@ public class MartingaleStrategy implements TradingStrategy {
      * 正常建立新 session 的邏輯（從 execute() 抽取，供 adjustExistingSession 重用）。
      */
     private List<Order> executeNewSession(TradeSignal signal) {
+        // 併發 session 上限檢查（adjustExistingSession 重建 session 時也需要）
+        if (sessionManager.getActiveSessionCount() >= config.getMaxConcurrentSessions()) {
+            log.info("Martingale executeNewSession 超過併發上限，跳過: symbol={} active={} max={}",
+                    signal.getSymbol(), sessionManager.getActiveSessionCount(), config.getMaxConcurrentSessions());
+            return List.of();
+        }
         PositionInfo position = positionService.getPosition(signal.getSymbol()).orElse(null);
         TradeSignal.Side side = position != null ? position.side() : signal.getSide();
         if (side == null) return List.of();
