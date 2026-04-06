@@ -25,11 +25,11 @@ class MartingaleFillListenerTest {
         tracker.registerOrder("1001", "BTCUSDT", 2);
 
         // 因為 recorded=true 會呼叫 tpManager，我們需要一個可用的 tpManager
-        // 直接建構一個 stub
+        // 直接建構���個 stub
         MartingaleFillListener listener = new MartingaleFillListener(tracker, new NoOpTpManager(), new MartingaleSessionManager(), null);
 
-        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.01, 60000));
-        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.02, 59000));
+        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.01, 60000, "T1"));
+        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1001", "TRADE", "PARTIALLY_FILLED", 0.02, 59000, "T2"));
 
         double totalQty = tracker.getFilledQty("BTCUSDT", 2);
         double avgPrice = tracker.getWeightedAvgPrice("BTCUSDT", 2);
@@ -40,6 +40,22 @@ class MartingaleFillListenerTest {
     }
 
     @Test
+    void duplicateFillEventsAreIdempotent() {
+        LayerFillTracker tracker = new LayerFillTracker();
+        tracker.registerOrder("2001", "BTCUSDT", 1);
+
+        MartingaleFillListener listener = new MartingaleFillListener(tracker, new NoOpTpManager(), new MartingaleSessionManager(), null);
+
+        // 同一筆 fill 送兩次（WebSocket 重送）
+        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "2001", "TRADE", "PARTIALLY_FILLED", 0.01, 60000, "T100"));
+        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "2001", "TRADE", "PARTIALLY_FILLED", 0.01, 60000, "T100"));
+
+        // 只應計算一次
+        assertThat(tracker.getFilledQty("BTCUSDT", 1)).isEqualTo(0.01);
+        assertThat(tracker.getWeightedAvgPrice("BTCUSDT", 1)).isEqualTo(60000.0);
+    }
+
+    @Test
     void ignoresNonTradeExecutions() {
         LayerFillTracker tracker = new LayerFillTracker();
         tracker.registerOrder("1002", "BTCUSDT", 1);
@@ -47,7 +63,7 @@ class MartingaleFillListenerTest {
         // NEW execution type → recorded=false → tpManager 不被呼叫，null 安全
         MartingaleFillListener listener = new MartingaleFillListener(tracker, noOpTpManager, null, null);
 
-        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1002", "NEW", "NEW", 0.01, 60000));
+        listener.onEvent(buildOrderTradeUpdate("BTCUSDT", "1002", "NEW", "NEW", 0.01, 60000, "T1"));
 
         assertThat(tracker.getFilledQty("BTCUSDT", 1)).isEqualTo(0.0);
         assertThat(tracker.getLastFillAt("BTCUSDT")).isNull();
@@ -58,10 +74,12 @@ class MartingaleFillListenerTest {
                                              String executionType,
                                              String status,
                                              double lastQty,
-                                             double lastPrice) {
+                                             double lastPrice,
+                                             String tradeId) {
         JsonObject order = new JsonObject();
         order.addProperty("s", symbol);
         order.addProperty("i", Long.parseLong(orderId));
+        order.addProperty("t", Long.parseLong(tradeId.replace("T", "")));
         order.addProperty("x", executionType);
         order.addProperty("X", status);
         order.addProperty("l", lastQty);

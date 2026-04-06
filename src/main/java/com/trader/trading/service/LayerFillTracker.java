@@ -4,6 +4,7 @@ import com.trader.trading.model.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.time.Instant;
 
@@ -28,6 +29,8 @@ public class LayerFillTracker {
     private final ConcurrentHashMap<String, FillState> fills = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, OrderRef> orderRefs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> lastFillAt = new ConcurrentHashMap<>();
+    /** 冪等去重：key = "symbol:orderId:tradeId"，防止 WebSocket 重送造成 double count */
+    private final Set<String> processedFills = ConcurrentHashMap.newKeySet();
 
     public void registerOrder(String orderId, String symbol, Integer layer) {
         if (orderId == null || orderId.isBlank() || symbol == null || symbol.isBlank()) {
@@ -43,13 +46,20 @@ public class LayerFillTracker {
         recordFill(symbol, order.getLayer(), filledQty, avgPrice);
     }
 
-    public boolean recordFillByOrderId(String orderId, double filledQty, double avgPrice) {
+    public boolean recordFillByOrderId(String orderId, double filledQty, double avgPrice, String tradeId) {
         if (orderId == null || filledQty <= 0 || avgPrice <= 0) {
             return false;
         }
         OrderRef ref = orderRefs.get(orderId);
         if (ref == null) {
             return false;
+        }
+        // 冪等性：同一 (orderId, tradeId) 只處理一次，防止 WebSocket 重送
+        if (tradeId != null && !tradeId.isBlank()) {
+            String dedupeKey = ref.symbol + ":" + orderId + ":" + tradeId;
+            if (!processedFills.add(dedupeKey)) {
+                return false;
+            }
         }
         recordFill(ref.symbol, ref.layer, filledQty, avgPrice);
         return true;
@@ -104,6 +114,7 @@ public class LayerFillTracker {
         }
         fills.keySet().removeIf(k -> k.startsWith(symbol + ":"));
         orderRefs.entrySet().removeIf(e -> symbol.equals(e.getValue().symbol));
+        processedFills.removeIf(k -> k.startsWith(symbol + ":"));
         lastFillAt.remove(symbol);
     }
 
