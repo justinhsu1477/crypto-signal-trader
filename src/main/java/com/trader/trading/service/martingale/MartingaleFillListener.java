@@ -62,6 +62,7 @@ public class MartingaleFillListener implements UserDataEventObserver {
         }
 
         String orderId = order.has("i") ? String.valueOf(order.get("i").getAsLong()) : null;
+        String tradeId = order.has("t") ? String.valueOf(order.get("t").getAsLong()) : null;
         double lastQty = order.has("l") ? order.get("l").getAsDouble() : 0.0;
         double lastPrice = order.has("L") ? order.get("L").getAsDouble() : 0.0;
 
@@ -70,7 +71,8 @@ public class MartingaleFillListener implements UserDataEventObserver {
         }
 
         // 只有已註冊的 ENTRY 單才會在 orderRefs 中，recordFillByOrderId 對未註冊的 orderId 直接跳過
-        boolean recorded = layerFillTracker.recordFillByOrderId(orderId, lastQty, lastPrice);
+        // tradeId 用於冪等去重，防止 WebSocket 重送同一筆 fill
+        boolean recorded = layerFillTracker.recordFillByOrderId(orderId, lastQty, lastPrice, tradeId);
 
         String status = order.has("X") ? order.get("X").getAsString() : "";
         if ("FILLED".equals(status) || "CANCELED".equals(status) || "EXPIRED".equals(status) || "REJECTED".equals(status)) {

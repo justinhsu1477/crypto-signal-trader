@@ -955,7 +955,7 @@
 
 ### 4-2 WebSocket 重複 fill 事件 → 成交量 double count（P0 — 價格計算錯誤）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 致命
 - **類型：** 冪等性缺失
 - **影響檔案：** `LayerFillTracker.java`（`recordFillByOrderId`）、`MartingaleFillListener.java`
