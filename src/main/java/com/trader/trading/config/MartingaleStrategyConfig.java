@@ -151,5 +151,28 @@ public class MartingaleStrategyConfig {
         this.decisionMinLayers = decisionMinLayers;
         this.decisionRrThreshold = decisionRrThreshold;
         this.symbolOverrides = symbolOverrides;
+
+        // 關鍵參數驗證：防止危險的錯誤配置
+        validate();
+    }
+
+    private void validate() {
+        if (maxLayers < 1) throw new IllegalArgumentException("maxLayers must be >= 1, got: " + maxLayers);
+        if (stepPercent <= 0) throw new IllegalArgumentException("stepPercent must be > 0, got: " + stepPercent);
+        if (baseSize <= 0) throw new IllegalArgumentException("baseSize must be > 0, got: " + baseSize);
+        if (sizeMultiplier <= 0) throw new IllegalArgumentException("sizeMultiplier must be > 0, got: " + sizeMultiplier);
+        if (takeProfitPercent <= 0) throw new IllegalArgumentException("takeProfitPercent must be > 0, got: " + takeProfitPercent);
+        if (takeProfitPercent >= 1.0) throw new IllegalArgumentException("takeProfitPercent must be < 1.0 (100%), got: " + takeProfitPercent);
+        if (stopLossPercent <= 0) throw new IllegalArgumentException("stopLossPercent must be > 0, got: " + stopLossPercent);
+        if (maxPositionSize <= 0) throw new IllegalArgumentException("maxPositionSize must be > 0, got: " + maxPositionSize);
+        if (maxCapitalUsage <= 0 || maxCapitalUsage > 1.0) throw new IllegalArgumentException("maxCapitalUsage must be (0, 1.0], got: " + maxCapitalUsage);
+        if (maxConcurrentSessions < 1) throw new IllegalArgumentException("maxConcurrentSessions must be >= 1, got: " + maxConcurrentSessions);
+        if (tpDecayStartMinutes > 0 && tpDecayIntervalMinutes <= 0) {
+            throw new IllegalArgumentException("tpDecayIntervalMinutes must be > 0 when tpDecayStartMinutes > 0, got: " + tpDecayIntervalMinutes);
+        }
+        if (tpDecayFloorPercent < 0) throw new IllegalArgumentException("tpDecayFloorPercent must be >= 0, got: " + tpDecayFloorPercent);
+        if (tpDecayFloorPercent >= takeProfitPercent) {
+            throw new IllegalArgumentException("tpDecayFloorPercent must be < takeProfitPercent, got floor=" + tpDecayFloorPercent + " tp=" + takeProfitPercent);
+        }
     }
 }

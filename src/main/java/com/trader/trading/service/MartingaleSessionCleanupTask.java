@@ -143,8 +143,10 @@ public class MartingaleSessionCleanupTask {
                 return;
             }
 
+            sessionManager.markExiting(symbol);
             binanceFuturesService.cancelAllOrders(symbol);
             layerFillTracker.clearSymbol(symbol);
+            stateStore.removeSession(symbol);
             sessionManager.endSession(symbol);
 
             log.info("Martingale 純掛單 session 閒置超時，取消掛單: symbol={} elapsed={}min idleTimeout={}min",

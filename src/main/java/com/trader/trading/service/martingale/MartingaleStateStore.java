@@ -158,6 +158,16 @@ public class MartingaleStateStore {
                     }
                     session.setSignalStopLoss(snap.signalStopLoss);
                     session.setSignalTakeProfit(snap.signalTakeProfit);
+                    // 還原原始建立時間，避免超時時鐘重設
+                    if (snap.createdAt != null) {
+                        try {
+                            session.setCreatedAt(java.time.Instant.parse(snap.createdAt));
+                        } catch (Exception ignored) {}
+                    }
+                    // 還原 EXITING 重試次數
+                    for (int r = 0; r < snap.exitRetryCount; r++) {
+                        session.incrementExitRetry();
+                    }
 
                     // 恢復 fill tracker（用聚合快照寫回）
                     String fillJson = redisTemplate.opsForValue().get(FILL_KEY_PREFIX + symbol);
@@ -195,6 +205,8 @@ public class MartingaleStateStore {
         public String tpOrderId;
         public Double signalStopLoss;
         public Double signalTakeProfit;
+        public String createdAt;  // ISO-8601 字串，避免 ObjectMapper 需要 JavaTimeModule
+        public int exitRetryCount;
 
         public SessionSnapshot() {} // for Jackson
 
@@ -211,6 +223,8 @@ public class MartingaleStateStore {
             snap.tpOrderId = s.getCurrentTpOrderId();
             snap.signalStopLoss = s.getSignalStopLoss();
             snap.signalTakeProfit = s.getSignalTakeProfit();
+            snap.createdAt = s.getCreatedAt() != null ? s.getCreatedAt().toString() : null;
+            snap.exitRetryCount = s.getExitRetryCount();
             return snap;
         }
     }

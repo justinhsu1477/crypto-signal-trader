@@ -200,6 +200,11 @@ public class MartingaleStopLossWatcher {
                         : Math.min(newTpPrice, signalTp);
             }
 
+            if (newTpPrice <= 0) {
+                log.error("Trailing TP 價格無效（≤0），跳過: symbol={} newTpPrice={}", symbol, newTpPrice);
+                return;
+            }
+
             String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
             OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, newTpPrice, fill.totalQty());
 
@@ -297,6 +302,11 @@ public class MartingaleStopLossWatcher {
                         : avgPrice * (1.0 - decayedTpPercent);
             }
 
+            if (newTpPrice <= 0) {
+                log.error("TP Decay 價格無效（≤0），跳過: symbol={} newTpPrice={}", symbol, newTpPrice);
+                return;
+            }
+
             String closeSide = locked.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
             OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, newTpPrice, fill.totalQty());
 
@@ -358,8 +368,8 @@ public class MartingaleStopLossWatcher {
 
             if (positionClosed) {
                 layerFillTracker.clearSymbol(symbol);
-                sessionManager.endSession(symbol);
                 stateStore.removeSession(symbol);
+                sessionManager.endSession(symbol);
             } else {
                 log.error("Martingale SL 平倉後仍有剩餘倉位，保留 EXITING: symbol={}", symbol);
             }

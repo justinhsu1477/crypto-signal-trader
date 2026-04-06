@@ -13,16 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MartingaleSessionManager {
 
     private final ConcurrentHashMap<String, MartingaleSession> sessions = new ConcurrentHashMap<>();
-    private final SymbolLockRegistry symbolLockRegistry;
-
-    public MartingaleSessionManager(SymbolLockRegistry symbolLockRegistry) {
-        this.symbolLockRegistry = symbolLockRegistry;
-    }
-
-    /** 無參建構子（測試用） */
-    public MartingaleSessionManager() {
-        this.symbolLockRegistry = null;
-    }
 
     public Optional<MartingaleSession> getActiveSession(String symbol) {
         MartingaleSession session = sessions.get(symbol);
@@ -40,8 +30,13 @@ public class MartingaleSessionManager {
             throw new IllegalArgumentException("baseEntryPrice must be > 0, got: " + baseEntryPrice);
         }
         MartingaleSession newSession = new MartingaleSession(UUID.randomUUID().toString(), symbol, side, plannedLayers, baseEntryPrice);
-        MartingaleSession existing = sessions.putIfAbsent(symbol, newSession);
-        return existing != null ? existing : newSession;
+        // 用 compute 取代 putIfAbsent：如果舊 session 是 EXITING 殭屍，直接覆蓋
+        return sessions.compute(symbol, (k, existing) -> {
+            if (existing == null || existing.getStatus() == MartingaleSession.Status.EXITING) {
+                return newSession;
+            }
+            return existing;
+        });
     }
 
     public void markExiting(String symbol) {
@@ -53,9 +48,6 @@ public class MartingaleSessionManager {
 
     public void endSession(String symbol) {
         sessions.remove(symbol);
-        if (symbolLockRegistry != null) {
-            symbolLockRegistry.removeLockIfIdle(symbol);
-        }
     }
 
     public int getActiveSessionCount() {

@@ -482,6 +482,12 @@ public class MartingaleStrategy implements TradingStrategy {
                     : tpAvgPrice * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
         }
 
+        // 防禦：TP 價格無效（misconfigured percent ≥ 100% 導致負數）
+        if (takeProfitPrice <= 0) {
+            log.error("Martingale TP 價格無效（≤0），跳過 TP: symbol={} tpPrice={}", symbol, takeProfitPrice);
+            return orders;
+        }
+
         orders.add(Order.builder()
                 .symbol(symbol)
                 .side(side)
