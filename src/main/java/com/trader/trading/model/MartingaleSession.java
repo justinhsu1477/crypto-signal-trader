@@ -21,7 +21,7 @@ public class MartingaleSession {
     private final double baseEntryPrice;
     private final AtomicInteger filledLayers = new AtomicInteger(0);
     private final AtomicReference<Status> status = new AtomicReference<>(Status.ACTIVE);
-    private final Instant createdAt;
+    private Instant createdAt;
     private volatile Instant updatedAt;
     private volatile String currentTpOrderId;
     /** 階梯式 Trailing Stop 目前層級（0=未觸發，1~4=對應 Trailing 階段） */
@@ -75,6 +75,11 @@ public class MartingaleSession {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    /** 僅供 Redis 恢復使用，還原原始建立時間 */
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 
     public Instant getUpdatedAt() {

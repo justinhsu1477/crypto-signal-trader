@@ -75,6 +75,11 @@ public class MartingaleTpManager {
                         : fill.avgPrice() * (1.0 - config.getEffectiveTakeProfitPercent(symbol));
             }
 
+            if (tpPrice <= 0) {
+                log.error("Martingale TP 價格無效（≤0），跳過 TP 更新: symbol={} tpPrice={}", symbol, tpPrice);
+                return;
+            }
+
             // 先掛新 TP → 再取消舊 TP（消除無保護窗口）
             String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
             String oldTpId = session.getCurrentTpOrderId();
@@ -127,11 +132,20 @@ public class MartingaleTpManager {
                 log.warn("Martingale TP filled — 取消殘留掛單失敗: symbol={} err={}", symbol, e.getMessage());
             }
 
+            // 驗證倉位是否已完全平倉
+            double remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+            if (remaining > 0) {
+                log.warn("Martingale TP 觸發但倉位未完全平倉，保留 EXITING: symbol={} remaining={}", symbol, remaining);
+                sessionManager.markExiting(symbol);
+                notifier.notifyGhostPosition(symbol, remaining);
+                return;
+            }
+
             // 清理 session 和 tracker
             layerFillTracker.clearSymbol(symbol);
+            stateStore.removeSession(symbol);
             sessionManager.endSession(symbol);
 
-            stateStore.removeSession(symbol);
             log.info("Martingale TP 成交，Session 已清理: symbol={} side={}", symbol, session.getSide());
             notifier.notifyTpHit(symbol, session.getSide());
         } finally {

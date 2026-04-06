@@ -3,9 +3,12 @@ package com.trader.trading.service.martingale;
 import com.google.gson.JsonObject;
 import com.trader.trading.service.LayerFillTracker;
 import com.trader.trading.service.MartingaleSessionManager;
+import com.trader.trading.service.SymbolLockRegistry;
 import com.trader.trading.service.UserDataEventObserver;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Martingale 專用的 User Data Stream 旁路監聽器
@@ -21,15 +24,18 @@ public class MartingaleFillListener implements UserDataEventObserver {
     private final MartingaleTpManager tpManager;
     private final MartingaleSessionManager sessionManager;
     private final MartingaleStateStore stateStore;
+    private final SymbolLockRegistry symbolLockRegistry;
 
     public MartingaleFillListener(LayerFillTracker layerFillTracker,
                                    MartingaleTpManager tpManager,
                                    MartingaleSessionManager sessionManager,
-                                   MartingaleStateStore stateStore) {
+                                   MartingaleStateStore stateStore,
+                                   SymbolLockRegistry symbolLockRegistry) {
         this.layerFillTracker = layerFillTracker;
         this.tpManager = tpManager;
         this.sessionManager = sessionManager;
         this.stateStore = stateStore;
+        this.symbolLockRegistry = symbolLockRegistry;
     }
 
     @Override
@@ -79,21 +85,27 @@ public class MartingaleFillListener implements UserDataEventObserver {
             layerFillTracker.clearOrder(orderId);
         }
 
-        // ENTRY 層有新成交 → 觸發 TP 動態更新
+        // ENTRY 層有新成交 → 取得 symbol lock 後更新 fill + TP（與 adjustExistingSession 互斥）
         if (recorded) {
             String symbol = order.has("s") ? order.get("s").getAsString() : null;
             if (symbol != null) {
-                tpManager.updateTakeProfit(symbol);
-
-                // ENTRY 單完全成交 → 更新 session 的 filledLayers
-                if ("FILLED".equals(status)) {
-                    sessionManager.getActiveSession(symbol)
-                            .ifPresent(s -> {
-                                s.markFilledLayer();
-                                if (stateStore != null) stateStore.persistSession(s);
-                            });
+                ReentrantLock lock = symbolLockRegistry.getLock(symbol);
+                lock.lock();
+                try {
+                    // ENTRY 單完全成交 → 先更新 session 的 filledLayers（在 lock 內，避免與 adjustExistingSession 競爭）
+                    if ("FILLED".equals(status)) {
+                        sessionManager.getActiveSession(symbol)
+                                .ifPresent(s -> {
+                                    s.markFilledLayer();
+                                    if (stateStore != null) stateStore.persistSession(s);
+                                });
+                    }
+                    if (stateStore != null) stateStore.persistFill(symbol);
+                    // updateTakeProfit 內部也用 lock.lock()，ReentrantLock 支持同 thread 重入
+                    tpManager.updateTakeProfit(symbol);
+                } finally {
+                    lock.unlock();
                 }
-                if (stateStore != null) stateStore.persistFill(symbol);
             }
             return;
         }

@@ -4,6 +4,7 @@ import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.model.Order;
 import com.trader.trading.service.martingale.MartingaleNotifier;
+import com.trader.trading.service.martingale.MartingaleStateStore;
 import com.trader.trading.strategy.StrategyType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -19,15 +20,18 @@ public class OrderExecutor {
     private final MartingaleSessionManager sessionManager;
     private final LayerFillTracker layerFillTracker;
     private final MartingaleNotifier notifier;
+    private final MartingaleStateStore stateStore;
 
     public OrderExecutor(BinanceFuturesService binanceFuturesService,
                          MartingaleSessionManager sessionManager,
                          LayerFillTracker layerFillTracker,
-                         MartingaleNotifier notifier) {
+                         MartingaleNotifier notifier,
+                         MartingaleStateStore stateStore) {
         this.binanceFuturesService = binanceFuturesService;
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
         this.notifier = notifier;
+        this.stateStore = stateStore;
     }
 
     public List<OrderResult> execute(TradeSignal signal, StrategyType strategyType, List<Order> orders) {
@@ -93,10 +97,8 @@ public class OrderExecutor {
                         layerFillTracker.registerOrder(result.getOrderId(), symbol, order.getLayer());
                         entrySuccess++;
                     }
-                    if (result != null && result.isSuccess()
-                            && result.getQuantity() > 0 && result.getPrice() > 0) {
-                        layerFillTracker.recordFill(symbol, order, result.getQuantity(), result.getPrice());
-                    }
+                    // 不在此處 eager 記錄 fill：LIMIT 單不一定立刻成交，
+                    // 實際成交由 WebSocket MartingaleFillListener 處理，避免雙倍計算
                 }
                 case TAKE_PROFIT -> {
                     String closeSide = side == TradeSignal.Side.SHORT ? "BUY" : "SELL";
@@ -134,6 +136,7 @@ public class OrderExecutor {
                             log.error("CLOSE 重試後仍有剩餘倉位（幽靈倉位），保留 EXITING: symbol={} remaining={}", symbol, remaining);
                             notifier.notifyGhostPosition(symbol, remaining);
                         } else {
+                            stateStore.removeSession(symbol);
                             sessionManager.endSession(symbol);
                             layerFillTracker.clearSymbol(symbol);
                         }
@@ -151,6 +154,7 @@ public class OrderExecutor {
         if (entryTotal > 0 && entrySuccess == 0 && trackedSymbol != null) {
             log.error("Martingale 全部 ENTRY 送單失敗，清理 session: symbol={}", trackedSymbol);
             sessionManager.markExiting(trackedSymbol);
+            stateStore.removeSession(trackedSymbol);
             sessionManager.endSession(trackedSymbol);
             layerFillTracker.clearSymbol(trackedSymbol);
             notifier.notifyAllEntryFailed(trackedSymbol);
