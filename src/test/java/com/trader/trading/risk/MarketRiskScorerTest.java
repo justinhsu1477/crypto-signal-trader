@@ -126,6 +126,7 @@ class MarketRiskScorerTest {
                 false,  // emaFilterEnabled
                 120, 60, 0.002,  // tpDecay params
                 null,   // decisionMode
+                2, 3.0, // decisionMinLayers, decisionRrThreshold
                 null    // symbolOverrides
         );
     }

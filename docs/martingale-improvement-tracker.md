@@ -670,6 +670,249 @@
 
 ---
 
+## Phase 3 — Signal + Martingale 融合後審查（Post-Integration Review）
+
+> 基於 2026-04-06 完整系統審查產出。DecisionEngine + 訊號 TP/SL + 動態層數整合後發現的問題。
+> P0 = 不改會出事（訊號丟失 / 風控失效）；P1 = 行為不一致；P2 = 可後續優化。
+
+---
+
+### 3-1 Martingale 失敗無 Fallback 到 Signal（P0 — 訊號丟失）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 致命
+- **類型：** 邏輯缺陷
+- **影響檔案：** `TradeController.java`
+- **問題描述：**
+  `DecisionEngine.shouldUseMartingale()` 返回 `true` 後，`tradingService.execute(signal, MARTINGALE)` 可能因以下原因回傳空 orders：
+  - `MarketRiskScorer` 評分 < threshold（市場環境不適合）
+  - `maxConcurrentSessions` 已滿
+  - `RiskManager` 拒絕（drawdown / capital usage 超限）
+  - 已有 active session 且全部層已成交
+
+  此時 Controller 只收到空 List / 全部失敗的 results，回傳「MARTINGALE 入場失敗」，**但沒有 fallback 到原始 `binanceFuturesService.executeSignal(signal)` 路徑**。
+- **風險場景：**
+  每天只有 1 個 Discord 訊號。DecisionEngine 認為該用 Martingale，但 RiskScorer 因波動過高拒絕。結果：這筆訊號完全沒有被執行，錯過唯一的交易機會。
+- **修復方案：**
+  ```java
+  // TradeController.executeSignal() — Martingale 分流後
+  List<OrderResult> mgResults = tradingService.execute(signal, StrategyType.MARTINGALE);
+  boolean mgSuccess = mgResults.stream().anyMatch(r -> r.isSuccess() && r.getOrderId() != null);
+  if (!mgSuccess) {
+      log.warn("Martingale 失敗，fallback Signal: {}", signal.getSymbol());
+      mgResults = binanceFuturesService.executeSignal(signal);  // fallback
+      // 通知改為 fallback 提示
+  }
+  ```
+- **驗收條件：**
+  - MartingaleStrategy 回傳空 orders 時，自動 fallback 到 Signal 路徑
+  - Fallback 後通知包含「MARTINGALE → SIGNAL fallback」提示
+  - 有對應單元測試
+
+---
+
+### 3-2 Trailing Stop 覆蓋 signalTakeProfit（P0 — 獲利空間被削弱）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 高
+- **類型：** 邏輯衝突
+- **影響檔案：** `MartingaleStopLossWatcher.java`（`checkTrailingStop` 方法）
+- **問題描述：**
+  `checkTrailingStop()` 計算新 TP 基於 `avgPrice × (1 + offsetPercent)`。
+  當 session 有 `signalTakeProfit`（例如 64000）時：
+  - avgPrice = 59200, Trailing Tier 1 offset = 0.2%
+  - 新 TP = 59200 × 1.002 = 59318
+  - **TP 從 64000 被拉低到 59318** — 嚴重削弱原始訊號的獲利空間
+
+  MartingaleStopLossWatcher.java:191-193：
+  ```java
+  double newTpPrice = avgPrice * (1.0 + offsetPercent);  // 不管 signalTakeProfit
+  ```
+- **修復方案：**
+  當 `session.getSignalTakeProfit() != null` 時，Trailing 行為調整：
+  1. Trailing 只在 markPrice **超過** signalTakeProfit 後才啟動
+  2. 或者 Trailing 計算的 newTpPrice 不得低於 signalTakeProfit（以 signalTP 作為 TP floor）
+  推薦方案 2（較保守）：
+  ```java
+  double newTpPrice = ...;  // 原 trailing 計算
+  Double signalTp = session.getSignalTakeProfit();
+  if (signalTp != null && signalTp > 0) {
+      // LONG: TP 不得低於 signalTP; SHORT: TP 不得高於 signalTP
+      newTpPrice = session.getSide() == LONG
+          ? Math.max(newTpPrice, signalTp)
+          : Math.min(newTpPrice, signalTp);
+  }
+  ```
+- **驗收條件：**
+  - 有 signalTakeProfit 的 session，Trailing TP 不低於（LONG）/ 不高於（SHORT）signalTP
+  - 無 signalTakeProfit 的 session，行為與現在一致
+  - 有對應單元測試
+
+---
+
+### 3-3 signalTpSl 未持久化到 Redis（P0 — 重啟後風控失效）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 高
+- **類型：** 持久化缺失
+- **影響檔案：** `MartingaleStateStore.java`（`SessionSnapshot` 內部類別）
+- **問題描述：**
+  `MartingaleStateStore.SessionSnapshot` 序列化到 Redis 時，可能未包含 `signalStopLoss` 和 `signalTakeProfit` 欄位。
+  重啟後 `restoreFromRedis()` 恢復 session，但這兩個欄位為 `null` → SL 從訊號的絕對價格（例如 56000）fallback 到 config 百分比（15%）。
+
+  若 avgPrice = 59200，config SL = 59200 × 0.85 = 50320，訊號 SL 原本是 56000。
+  **SL 從 56000 擴大到 50320 — 多承擔 10% 的風險。**
+- **修復方案：**
+  1. `SessionSnapshot` 新增 `signalStopLoss` 和 `signalTakeProfit` 欄位
+  2. `persistSession()` 時序列化這兩個值
+  3. `restoreFromRedis()` 時恢復到 session 物件
+- **驗收條件：**
+  - 有 signalTpSl 的 session 寫入 Redis 後，重啟恢復值正確
+  - 無 signalTpSl 的 session 不受影響（null 保持 null）
+
+---
+
+### 3-4 MartingaleRecoveryTask 不恢復 signalTpSl（P0 — 重啟後風控失效）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 高
+- **類型：** 復原邏輯缺失
+- **影響檔案：** `MartingaleRecoveryTask.java`（`recoverSymbol` 方法）
+- **問題描述：**
+  `recoverSymbol()` 重建 session 時呼叫 `sessionManager.startSession(symbol, side, maxLayers, entryPrice)`，不設定 signalStopLoss / signalTakeProfit。
+  即使 3-3 修復了 Redis 持久化，RecoveryTask 從 Binance 掃描重建的 session 仍然沒有 signalTpSl。
+  此問題只在 Redis 也遺失的情況下觸發（Redis 重啟 + 服務重啟），但影響嚴重。
+- **修復方案：**
+  1. RecoveryTask 先嘗試從 Redis 恢復（MartingaleStateStore.restoreFromRedis 已存在）
+  2. 只有 Redis 也無資料時才從 Binance 反推
+  3. 從 Binance 反推的 session 標記為 `signalTpSl = null`（使用 config fallback），並發送告警通知
+- **驗收條件：**
+  - Redis 有資料 → 從 Redis 恢復（含 signalTpSl）
+  - Redis 無資料 → 從 Binance 反推 + 告警通知
+  - 有對應單元測試
+
+---
+
+### 3-5 DecisionEngine 缺少市場環境前置過濾（P1 — 決策與執行不同步）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 中
+- **類型：** 邏輯缺陷
+- **影響檔案：** `MartingaleDecisionEngine.java`
+- **問題描述：**
+  `shouldUseMartingale()` 只評估訊號品質（R:R、entry deviation、layer 可行性），不查詢市場環境。
+  但 `MartingaleStrategy` 內部使用 `MarketRiskScorer` 評分，分數 < threshold 會拒絕入場。
+
+  結果：DecisionEngine 說 Yes → Strategy 說 No → 空 orders → 若 3-1 未修，訊號丟失。
+  即使 3-1 已修（fallback），仍造成不必要的延遲和 log 噪音。
+- **修復方案：**
+  DecisionEngine 在 AUTO 模式的前置條件中加入：
+  ```java
+  if (config.getRiskScoreThreshold() > 0) {
+      RiskScoreResult score = marketRiskScorer.evaluate(symbol, side, config);
+      if (!score.meetsThreshold(config.getRiskScoreThreshold())) {
+          return false;  // 市場環境不適合
+      }
+  }
+  ```
+  需注入 `MarketRiskScorer` 依賴。
+- **驗收條件：**
+  - AUTO 模式下，市場評分 < threshold 直接跳過 Martingale（不進入 Strategy）
+  - ALWAYS 模式不受影響（強制啟用）
+  - NEVER 模式不受影響
+
+---
+
+### 3-6 TP Decay 不感知 signalTakeProfit（P1 — TP 行為不一致）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 中
+- **類型：** 邏輯缺陷
+- **影響檔案：** `MartingaleStopLossWatcher.java`（`checkTpDecay` 方法）
+- **問題描述：**
+  MartingaleStopLossWatcher.java:246-250：
+  ```java
+  double baseTp = config.getEffectiveTakeProfitPercent(symbol);  // 永遠用 config %
+  double decayedTpPercent = Math.max(floor, baseTp - decayPerStep * decayLevel);
+  ```
+  若 session 有 `signalTakeProfit = 64000`，衰減應從 64000 向 avgPrice 方向遞減。
+  但目前忽略 signalTakeProfit，直接用 config % 計算 → 衰減後的 TP 可能與 signalTP 完全不同。
+- **修復方案：**
+  當 `session.getSignalTakeProfit() != null` 時：
+  - 從 signalTP 開始衰減，floor = avgPrice × (1 + tpDecayFloorPercent)
+  - 衰減公式：`newTpPrice = signalTP - (signalTP - floorPrice) × decayRatio`
+  無 signalTakeProfit 時維持現有百分比邏輯。
+- **驗收條件：**
+  - 有 signalTP 的 session，decay 從 signalTP 向 floor 方向衰減
+  - 無 signalTP 的 session，行為與現在一致
+
+---
+
+### 3-7 R:R 計算只用第一個 TP（P2 — 判斷精度不足）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 低
+- **類型：** 策略精度
+- **影響檔案：** `MartingaleDecisionEngine.java`（`computeRiskRewardRatio` 方法）
+- **問題描述：**
+  `computeRiskRewardRatio()` 只取 `signal.getTakeProfits().get(0)`。
+  多目標訊號（TP1=62000 近、TP2=66000 遠）可能因 TP1 偏近導致 R:R 偏低而誤啟用 Martingale。
+  用加權平均 TP 或最遠 TP 會更準確。
+- **修復方案：**
+  使用所有 TP 的加權平均（假設每個 TP 平倉比例相等）：
+  ```java
+  double avgTp = signal.getTakeProfits().stream().mapToDouble(d -> d).average().orElse(0);
+  double reward = Math.abs(avgTp - entryPrice);
+  ```
+- **驗收條件：**
+  - 多 TP 訊號的 R:R 計算反映整體獲利預期
+  - 有對應單元測試
+
+---
+
+### 3-8 同幣種並行 Signal 的 Controller 層競爭（P2 — 理論上的並行風險）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 低
+- **類型：** 並行安全
+- **影響檔案：** `TradeController.java`
+- **問題描述：**
+  兩個 Discord signal 同時進入同一幣種的 ENTRY。SymbolLock 在 MartingaleStrategy 內部有保護，
+  但 TradeController 層面沒有 lock。可能兩個 request 都通過 DecisionEngine → 第一個建立 session，
+  第二個在 Strategy 內被 existingSession 擋住並 adjust。
+
+  **目前行為其實是安全的**（Strategy 內有 lock + adjust 邏輯），但 Controller 層若能早期攔截會更乾淨。
+- **修復方案：**
+  在 TradeController 的 Martingale 分流前，用 `symbolLockRegistry.getLock(symbol).tryLock()` 嘗試取鎖：
+  - 取到 → 執行 Martingale
+  - 取不到 → fallback Signal（避免等待）
+- **驗收條件：**
+  - 同幣種並行 signal 不會互相阻塞
+  - 有對應單元測試
+
+---
+
+### 3-9 DecisionEngine 常數不可配置（P2 — 靈活度不足）
+
+- [x] **狀態：已完成（2026-04-06）**
+- **嚴重度：** 低
+- **類型：** 可配置性
+- **影響檔案：** `MartingaleDecisionEngine.java`、`MartingaleStrategyConfig.java`
+- **問題描述：**
+  `MIN_LAYERS_FOR_AUTO = 2`、`RR_THRESHOLD = 3.0` 為硬編碼常數。
+  不同市場環境和策略風格可能需要不同閾值（例如保守型可能要 RR < 2.0 才啟用）。
+- **修復方案：**
+  移到 `MartingaleStrategyConfig`：
+  ```yaml
+  decision-min-layers: 2
+  decision-rr-threshold: 3.0
+  ```
+- **驗收條件：**
+  - 閾值可透過 config / 環境變數調整
+  - 有對應單元測試驗證不同閾值行為
+
+---
+
 ## 附錄：快速索引
 
 | 編號 | 標題 | 優先級 | 狀態 | 類型 |
@@ -701,3 +944,12 @@
 | 2F-6 | 固定層數與倍率 | 低 | 未開始 | 策略限制 |
 | 2F-7 | SHORT 方向未充分驗證 | 低 | ✅ 完成 | 測試覆蓋 |
 | 2F-8 | 無動態出場策略 | 低 | 未開始 | 策略限制 |
+| 3-1 | Martingale 失敗 Fallback Signal | P0 | ✅ 完成 | 邏輯缺陷 |
+| 3-2 | Trailing Stop 覆寫 signalTP | P0 | ✅ 完成 | 邏輯衝突 |
+| 3-3 | signalTpSl Redis 持久化 | P0 | ✅ 完成 | 持久化缺失 |
+| 3-4 | RecoveryTask 恢復 signalTpSl | P0 | ✅ 完成 | 復原缺失 |
+| 3-5 | DecisionEngine 市場前置過濾 | P1 | ✅ 完成 | 邏輯缺陷 |
+| 3-6 | TP Decay 感知 signalTP | P1 | ✅ 完成 | 邏輯缺陷 |
+| 3-7 | R:R 多 TP 加權計算 | P2 | ✅ 完成 | 策略精度 |
+| 3-8 | Controller symbol lock | P2 | ✅ 完成 | 並行安全 |
+| 3-9 | DecisionEngine 常數可配置 | P2 | ✅ 完成 | 可配置性 |

@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.config.MartingaleStrategyConfig;
 import com.trader.trading.model.MartingaleSession;
+import com.trader.trading.service.martingale.MartingaleStateStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -27,20 +29,24 @@ public class MartingaleRecoveryTask {
     private final LayerFillTracker layerFillTracker;
     private final MartingaleStrategyConfig config;
     private final ObjectMapper objectMapper;
+    private final MartingaleStateStore stateStore;
 
     public MartingaleRecoveryTask(BinanceFuturesService binanceFuturesService,
                                   MartingaleSessionManager sessionManager,
                                   LayerFillTracker layerFillTracker,
                                   MartingaleStrategyConfig config,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  MartingaleStateStore stateStore) {
         this.binanceFuturesService = binanceFuturesService;
         this.sessionManager = sessionManager;
         this.layerFillTracker = layerFillTracker;
         this.config = config;
         this.objectMapper = objectMapper;
+        this.stateStore = stateStore;
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(2) // 在 MartingaleStateStore（Order=1）之後執行，優先從 Redis ��復 signalTpSl
     public void recover() {
         try {
             List<PositionSnapshot> positions = scanOpenPositions();
@@ -78,6 +84,17 @@ public class MartingaleRecoveryTask {
 
         log.info("Martingale recovery: 重建 session symbol={} side={} entryPrice={} qty={}",
                 pos.symbol, pos.side, pos.entryPrice, pos.quantity);
+
+        // 嘗試從 Redis 快照恢復 signalTpSl（即使 StateStore 已先跑過，此 session 是新建的）
+        MartingaleStateStore.SessionSnapshot snap = stateStore.readSnapshot(pos.symbol);
+        if (snap != null && (snap.signalStopLoss != null || snap.signalTakeProfit != null)) {
+            session.setSignalStopLoss(snap.signalStopLoss);
+            session.setSignalTakeProfit(snap.signalTakeProfit);
+            log.info("Martingale recovery: 從 Redis 恢復 signalTpSl symbol={} sl={} tp={}",
+                    pos.symbol, snap.signalStopLoss, snap.signalTakeProfit);
+        } else {
+            log.warn("Martingale recovery: symbol={} 無 Redis signalTpSl 快照，使用 config 百分比 fallback", pos.symbol);
+        }
 
         // 掃描並註冊現有 LIMIT 掛單
         registerOpenLimitOrders(pos.symbol);

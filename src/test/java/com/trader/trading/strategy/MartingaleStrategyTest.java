@@ -349,7 +349,7 @@ class MartingaleStrategyTest {
                 TAKE_PROFIT_PERCENT, MAX_CAPITAL_USAGE, MAX_POSITION_USDT,
                 0.15, 480, 60, 60000L, 5000L, 3, 0.008, 0.002,
                 0, 0.02, 40, false, 120, 60, 0.002,
-                MartingaleDecisionEngine.DecisionMode.NEVER, null
+                MartingaleDecisionEngine.DecisionMode.NEVER, 2, 3.0, null
         );
 
         MartingaleStrategy strategy = new MartingaleStrategy(
@@ -421,6 +421,7 @@ class MartingaleStrategyTest {
                 false,  // emaFilterEnabled = false
                 120, 60, 0.002,  // tpDecay params
                 MartingaleDecisionEngine.DecisionMode.NEVER,
+                2, 3.0, // decisionMinLayers, decisionRrThreshold
                 null    // symbolOverrides = null
         );
 

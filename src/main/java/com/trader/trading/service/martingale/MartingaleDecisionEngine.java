@@ -2,6 +2,8 @@ package com.trader.trading.service.martingale;
 
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.config.MartingaleStrategyConfig;
+import com.trader.trading.risk.MarketRiskScorer;
+import com.trader.trading.risk.RiskScoreResult;
 import com.trader.trading.service.BinanceFuturesService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -23,18 +25,17 @@ public class MartingaleDecisionEngine {
         AUTO
     }
 
-    /** AUTO 模式下，SL 空間至少能放幾層才啟用 Martingale */
-    private static final int MIN_LAYERS_FOR_AUTO = 2;
-    /** AUTO 模式下，R:R 低於此值 → Martingale 補強入場 */
-    private static final double RR_THRESHOLD = 3.0;
 
     private final MartingaleStrategyConfig config;
     private final BinanceFuturesService binanceFuturesService;
+    private final MarketRiskScorer marketRiskScorer;
 
     public MartingaleDecisionEngine(MartingaleStrategyConfig config,
-                                     BinanceFuturesService binanceFuturesService) {
+                                     BinanceFuturesService binanceFuturesService,
+                                     MarketRiskScorer marketRiskScorer) {
         this.config = config;
         this.binanceFuturesService = binanceFuturesService;
+        this.marketRiskScorer = marketRiskScorer;
     }
 
     /**
@@ -57,7 +58,7 @@ public class MartingaleDecisionEngine {
         }
 
         if (mode == DecisionMode.ALWAYS) {
-            return computeDynamicLayers(signal) >= MIN_LAYERS_FOR_AUTO;
+            return computeDynamicLayers(signal) >= config.getDecisionMinLayers();
         }
 
         // AUTO mode
@@ -66,22 +67,33 @@ public class MartingaleDecisionEngine {
 
     /**
      * AUTO 模式評估邏輯：
-     * 1. SL 空間能容納 >= MIN_LAYERS_FOR_AUTO 層
-     * 2. R:R < RR_THRESHOLD（品質不夠好 → Martingale 補強）
+     * 1. SL 空間能容納 >= config.getDecisionMinLayers() 層
+     * 2. R:R < config.getDecisionRrThreshold()（品質不夠好 → Martingale 補強）
      *    或 entry deviation > stepPercent（市價離入場較遠 → 分層有利）
      */
     private boolean evaluateAutoDecision(TradeSignal signal) {
         int dynamicLayers = computeDynamicLayers(signal);
-        if (dynamicLayers < MIN_LAYERS_FOR_AUTO) {
-            log.debug("Martingale AUTO skip: {} layers < {} minimum", dynamicLayers, MIN_LAYERS_FOR_AUTO);
+        if (dynamicLayers < config.getDecisionMinLayers()) {
+            log.debug("Martingale AUTO skip: {} layers < {} minimum", dynamicLayers, config.getDecisionMinLayers());
             return false;
+        }
+
+        // 市場環境前置過濾：與 MartingaleStrategy 使用相同的 MarketRiskScorer
+        int threshold = config.getRiskScoreThreshold();
+        if (threshold > 0) {
+            RiskScoreResult score = marketRiskScorer.evaluate(signal.getSymbol(), signal.getSide(), config);
+            if (!score.meetsThreshold(threshold)) {
+                log.info("Martingale AUTO skip for {}: riskScore={} < threshold={}",
+                        signal.getSymbol(), score.totalScore(), threshold);
+                return false;
+            }
         }
 
         // R:R ratio check — poor R:R benefits more from Martingale
         double rr = computeRiskRewardRatio(signal);
-        if (rr > 0 && rr < RR_THRESHOLD) {
+        if (rr > 0 && rr < config.getDecisionRrThreshold()) {
             log.info("Martingale AUTO enabled for {}: R:R={} < {}, layers={}",
-                    signal.getSymbol(), String.format("%.2f", rr), RR_THRESHOLD, dynamicLayers);
+                    signal.getSymbol(), String.format("%.2f", rr), config.getDecisionRrThreshold(), dynamicLayers);
             return true;
         }
 
@@ -135,7 +147,7 @@ public class MartingaleDecisionEngine {
     }
 
     /**
-     * R:R = reward / risk（用第一個 TP 計算）
+     * R:R = reward / risk（用所有 TP 的加權平均計算）
      */
     double computeRiskRewardRatio(TradeSignal signal) {
         double entryPrice = signal.getEntryPriceLow();
@@ -148,8 +160,8 @@ public class MartingaleDecisionEngine {
         if (signal.getTakeProfits() == null || signal.getTakeProfits().isEmpty()) {
             return 0;
         }
-        double tp = signal.getTakeProfits().get(0);
-        double reward = Math.abs(tp - entryPrice);
+        double avgTp = signal.getTakeProfits().stream().mapToDouble(d -> d).average().orElse(0);
+        double reward = Math.abs(avgTp - entryPrice);
         return reward / risk;
     }
 

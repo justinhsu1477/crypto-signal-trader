@@ -10,6 +10,7 @@ import com.trader.trading.entity.Trade;
 import com.trader.trading.entity.TradeEvent;
 import com.trader.trading.service.*;
 import com.trader.trading.service.martingale.MartingaleDecisionEngine;
+import com.trader.trading.strategy.StrategyType;
 import org.junit.jupiter.api.*;
 import org.springframework.http.ResponseEntity;
 
@@ -281,6 +282,70 @@ class TradeControllerTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = (Map<String, Object>) response.getBody();
             assertThat(body).containsEntry("action", "ENTRY");
+        }
+
+        @Test
+        @DisplayName("Martingale 成功 — 返回 MARTINGALE 策略")
+        void martingaleSuccess() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .side(TradeSignal.Side.LONG).entryPriceLow(60000).stopLoss(56000)
+                    .takeProfits(List.of(64000.0)).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(martingaleDecisionEngine.shouldUseMartingale(signal)).thenReturn(true);
+            when(tradingService.execute(signal, StrategyType.MARTINGALE)).thenReturn(
+                    List.of(OrderResult.builder().success(true).orderId("MG001").quantity(0.01).price(60000).build()));
+
+            ResponseEntity<?> response = controller.executeSignal(Map.of("message", "buy btc"));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("strategy", "MARTINGALE");
+            verify(binanceFuturesService, never()).executeSignal(any());
+        }
+
+        @Test
+        @DisplayName("Martingale 失敗 — Fallback Signal 入場")
+        void martingaleFallbackToSignal() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .side(TradeSignal.Side.LONG).entryPriceLow(60000).stopLoss(56000)
+                    .takeProfits(List.of(64000.0)).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(martingaleDecisionEngine.shouldUseMartingale(signal)).thenReturn(true);
+            when(tradingService.execute(signal, StrategyType.MARTINGALE)).thenReturn(
+                    List.of(OrderResult.builder().success(false).errorMessage("Insufficient balance").build()));
+            when(binanceFuturesService.executeSignal(any())).thenReturn(
+                    List.of(OrderResult.builder().success(true).orderId("SIG001").quantity(0.01).price(60000).build()));
+
+            ResponseEntity<?> response = controller.executeSignal(Map.of("message", "buy btc"));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("action", "ENTRY");
+            // 確認 fallback 到 Signal
+            verify(binanceFuturesService).executeSignal(signal);
+        }
+
+        @Test
+        @DisplayName("Martingale 拋異常 — Fallback Signal 入場")
+        void martingaleExceptionFallbackToSignal() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .side(TradeSignal.Side.LONG).entryPriceLow(60000).stopLoss(56000)
+                    .takeProfits(List.of(64000.0)).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(martingaleDecisionEngine.shouldUseMartingale(signal)).thenReturn(true);
+            when(tradingService.execute(signal, StrategyType.MARTINGALE))
+                    .thenThrow(new RuntimeException("Binance API timeout"));
+            when(binanceFuturesService.executeSignal(any())).thenReturn(
+                    List.of(OrderResult.builder().success(true).orderId("SIG002").quantity(0.01).price(60000).build()));
+
+            ResponseEntity<?> response = controller.executeSignal(Map.of("message", "buy btc"));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(binanceFuturesService).executeSignal(signal);
         }
     }
 

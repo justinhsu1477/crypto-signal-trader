@@ -192,6 +192,14 @@ public class MartingaleStopLossWatcher {
                     ? avgPrice * (1.0 + offsetPercent)
                     : avgPrice * (1.0 - offsetPercent);
 
+            // signalTakeProfit 作為 TP floor（LONG）/ ceiling（SHORT），防止 Trailing 削弱原始訊號獲利空間
+            Double signalTp = session.getSignalTakeProfit();
+            if (signalTp != null && signalTp > 0) {
+                newTpPrice = session.getSide() == TradeSignal.Side.LONG
+                        ? Math.max(newTpPrice, signalTp)
+                        : Math.min(newTpPrice, signalTp);
+            }
+
             String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
             OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, newTpPrice, fill.totalQty());
 
@@ -242,13 +250,6 @@ public class MartingaleStopLossWatcher {
             return;
         }
 
-        // 計算衰減後的 TP 百分比
-        double baseTp = config.getEffectiveTakeProfitPercent(symbol);
-        double floor = config.getTpDecayFloorPercent();
-        // 每階段等量衰減，預估最多衰減到 floor
-        double decayPerStep = (baseTp - floor) / Math.max(1, 4); // 分 4 階段衰減到 floor
-        double decayedTpPercent = Math.max(floor, baseTp - decayPerStep * decayLevel);
-
         LayerFillTracker.AggregatedFill fill = layerFillTracker.getAggregatedFill(symbol);
         if (fill.totalQty() <= 0 || fill.avgPrice() <= 0) {
             return;
@@ -274,9 +275,25 @@ public class MartingaleStopLossWatcher {
             double avgPrice = fill.avgPrice();
             String oldTpId = active.get().getCurrentTpOrderId();
 
-            double newTpPrice = session.getSide() == TradeSignal.Side.LONG
-                    ? avgPrice * (1.0 + decayedTpPercent)
-                    : avgPrice * (1.0 - decayedTpPercent);
+            double newTpPrice;
+            Double signalTp = session.getSignalTakeProfit();
+            if (signalTp != null && signalTp > 0) {
+                // signalTP 存在：從 signalTP 向 floor 方向衰減
+                double floorPrice = session.getSide() == TradeSignal.Side.LONG
+                        ? avgPrice * (1.0 + config.getTpDecayFloorPercent())
+                        : avgPrice * (1.0 - config.getTpDecayFloorPercent());
+                double decayRatio = Math.min(1.0, decayLevel / 4.0); // 4 階段衰減完
+                newTpPrice = signalTp + (floorPrice - signalTp) * decayRatio;
+            } else {
+                // 無 signalTP：原邏輯，用 config 百分比衰減
+                double baseTp = config.getEffectiveTakeProfitPercent(symbol);
+                double floor = config.getTpDecayFloorPercent();
+                double decayPerStep = (baseTp - floor) / Math.max(1, 4);
+                double decayedTpPercent = Math.max(floor, baseTp - decayPerStep * decayLevel);
+                newTpPrice = session.getSide() == TradeSignal.Side.LONG
+                        ? avgPrice * (1.0 + decayedTpPercent)
+                        : avgPrice * (1.0 - decayedTpPercent);
+            }
 
             String closeSide = session.getSide() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
             OrderResult result = binanceFuturesService.placeTakeProfit(symbol, closeSide, newTpPrice, fill.totalQty());
@@ -293,10 +310,11 @@ public class MartingaleStopLossWatcher {
                     }
                 }
 
+                double tpPercent = Math.abs(newTpPrice - avgPrice) / avgPrice;
                 log.info("Martingale TP decay level {}: symbol={} holdingMin={} tpPercent={} tpPrice={}",
-                        decayLevel, symbol, holdingMinutes, decayedTpPercent, newTpPrice);
+                        decayLevel, symbol, holdingMinutes, tpPercent, newTpPrice);
                 stateStore.persistSession(active.get());
-                notifier.notifyTpDecay(symbol, decayLevel, decayedTpPercent, newTpPrice);
+                notifier.notifyTpDecay(symbol, decayLevel, tpPercent, newTpPrice);
             } else {
                 String err = result != null ? result.getErrorMessage() : "null result";
                 log.error("Martingale TP decay 下單失敗（保留舊 TP）: symbol={} level={} err={}", symbol, decayLevel, err);

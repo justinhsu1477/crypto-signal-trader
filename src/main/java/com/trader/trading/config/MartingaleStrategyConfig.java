@@ -46,6 +46,10 @@ public class MartingaleStrategyConfig {
     private final double tpDecayFloorPercent;
     /** Martingale 決策模式：NEVER（預設）、ALWAYS、AUTO */
     private final MartingaleDecisionEngine.DecisionMode decisionMode;
+    /** AUTO 模式下，SL 空間至少能放幾層才啟用 Martingale */
+    private final int decisionMinLayers;
+    /** AUTO 模式下，R:R 低於此值才啟用 Martingale */
+    private final double decisionRrThreshold;
     /** Per-symbol 配置覆寫（key = symbol，如 ETHUSDT） */
     private final Map<String, SymbolOverride> symbolOverrides;
 
@@ -117,6 +121,8 @@ public class MartingaleStrategyConfig {
             @DefaultValue("60") int tpDecayIntervalMinutes,
             @DefaultValue("0.002") double tpDecayFloorPercent,
             @DefaultValue("NEVER") MartingaleDecisionEngine.DecisionMode decisionMode,
+            @DefaultValue("2") int decisionMinLayers,
+            @DefaultValue("3.0") double decisionRrThreshold,
             Map<String, SymbolOverride> symbolOverrides
     ) {
         this.maxLayers = maxLayers;
@@ -142,6 +148,8 @@ public class MartingaleStrategyConfig {
         this.tpDecayIntervalMinutes = tpDecayIntervalMinutes;
         this.tpDecayFloorPercent = tpDecayFloorPercent;
         this.decisionMode = decisionMode;
+        this.decisionMinLayers = decisionMinLayers;
+        this.decisionRrThreshold = decisionRrThreshold;
         this.symbolOverrides = symbolOverrides;
     }
 }

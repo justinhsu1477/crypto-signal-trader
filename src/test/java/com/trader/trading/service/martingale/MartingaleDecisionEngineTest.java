@@ -2,6 +2,8 @@ package com.trader.trading.service.martingale;
 
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.config.MartingaleStrategyConfig;
+import com.trader.trading.risk.MarketRiskScorer;
+import com.trader.trading.risk.RiskScoreResult;
 import com.trader.trading.service.BinanceFuturesService;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockMakers;
@@ -9,7 +11,7 @@ import org.mockito.MockMakers;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
@@ -117,20 +119,47 @@ class MartingaleDecisionEngineTest {
         assertThat(engine.computeDynamicLayers(signal)).isEqualTo(3);
     }
 
+    @Test
+    void autoMode_disabledWhenRiskScoreBelowThreshold() {
+        // 低 riskScore=20 < threshold=40 → 即使 R:R 差也跳過 Martingale
+        MartingaleDecisionEngine engine = buildEngine(MartingaleDecisionEngine.DecisionMode.AUTO, 60000, 20);
+        TradeSignal signal = buildSignal("BTCUSDT", TradeSignal.Side.LONG, 60000, 56000, List.of(62000.0));
+
+        assertThat(engine.shouldUseMartingale(signal)).isFalse();
+    }
+
+    @Test
+    void alwaysMode_notAffectedByRiskScore() {
+        // ALWAYS 模式不受 riskScore 影響
+        MartingaleDecisionEngine engine = buildEngine(MartingaleDecisionEngine.DecisionMode.ALWAYS, 60000, 20);
+        TradeSignal signal = buildSignal("BTCUSDT", TradeSignal.Side.LONG, 60000, 56000, List.of(64000.0));
+
+        assertThat(engine.shouldUseMartingale(signal)).isTrue();
+    }
+
     // === helpers ===
 
     private MartingaleDecisionEngine buildEngine(MartingaleDecisionEngine.DecisionMode mode, double markPrice) {
+        return buildEngine(mode, markPrice, 100); // 預設 riskScore=100 通過 threshold
+    }
+
+    private MartingaleDecisionEngine buildEngine(MartingaleDecisionEngine.DecisionMode mode, double markPrice, int riskScore) {
         MartingaleStrategyConfig config = new MartingaleStrategyConfig(
                 5, 0.02, 100.0, 2.0, 0.01, 0.30, 10000.0, 0.15,
                 480, 60, 60000L, 5000L, 3, 0.008, 0.002,
                 0, 0.02, 40, false, 120, 60, 0.002,
-                mode, null
+                mode, 2, 3.0, null
         );
         BinanceFuturesService binanceFuturesService = mock(BinanceFuturesService.class,
                 withSettings().mockMaker(MockMakers.SUBCLASS));
         when(binanceFuturesService.getMarkPrice(anyString())).thenReturn(markPrice);
 
-        return new MartingaleDecisionEngine(config, binanceFuturesService);
+        MarketRiskScorer marketRiskScorer = mock(MarketRiskScorer.class,
+                withSettings().mockMaker(MockMakers.SUBCLASS));
+        when(marketRiskScorer.evaluate(anyString(), any(), any())).thenReturn(
+                new RiskScoreResult(riskScore, 25, 20, 25, 20, "mock"));
+
+        return new MartingaleDecisionEngine(config, binanceFuturesService, marketRiskScorer);
     }
 
     private TradeSignal buildSignal(String symbol, TradeSignal.Side side, double entry, double sl, List<Double> tps) {
