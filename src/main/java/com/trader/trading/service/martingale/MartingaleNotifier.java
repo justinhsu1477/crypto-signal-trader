@@ -82,6 +82,12 @@ public class MartingaleNotifier {
                 COLOR_RED);
     }
 
+    public void notifyGhostPosition(String symbol, double remainingQty) {
+        send("⚠ Martingale 幽靈倉位",
+                String.format("%s | 平倉後仍有剩餘倉位 %.6f，需人工處理", symbol, remainingQty),
+                COLOR_RED);
+    }
+
     private void send(String title, String message, int color) {
         try {
             discordWebhookService.sendNotification(title, message, color);

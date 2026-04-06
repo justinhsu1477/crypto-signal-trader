@@ -920,10 +920,10 @@
 
 ### 4-1 平倉市價單部分成交 → 幽靈倉位（P0 — 資金風險）
 
-- [ ] **狀態：未開始**
+- [x] **狀態：已完成（2026-04-06）**
 - **嚴重度：** 致命
 - **類型：** 異常處理缺失
-- **影響檔案：** `MartingaleStopLossWatcher.java`（`executeStopLoss`）、`MartingaleSessionCleanupTask.java`（`closePosition`）、`OrderExecutor.java`（`CLOSE` case）
+- **影響檔案：** `MartingaleStopLossWatcher.java`（`executeStopLoss`）、`MartingaleSessionCleanupTask.java`（`closePosition`）、`OrderExecutor.java`（`CLOSE` case）、`MartingaleNotifier.java`
 - **問題描述：**
   止損 / 超時 / TP 成交後的平倉流程使用 `placeMarketOrder()` 送出市價單。程式碼以 `result.isSuccess()` 判定平倉完成，隨即呼叫 `endSession()` + `clearSymbol()`。
   但 Binance 市價單在低流動性情況下**可以部分成交**（例如只成交 80%）。此時：

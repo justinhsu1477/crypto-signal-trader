@@ -352,25 +352,56 @@ public class MartingaleStopLossWatcher {
             sessionManager.markExiting(symbol);
             binanceFuturesService.cancelAllOrders(symbol);
 
-            positionService.getPosition(symbol)
-                    .filter(PositionInfo::isOpen)
-                    .ifPresent(position -> {
-                        double qty = Math.abs(position.quantity());
-                        if (qty > 0) {
-                            String closeSide = position.side() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
-                            binanceFuturesService.placeMarketOrder(symbol, closeSide, qty);
-                        }
-                    });
+            boolean positionClosed = closeAndVerifyPosition(symbol);
 
-            layerFillTracker.clearSymbol(symbol);
-            sessionManager.endSession(symbol);
-            stateStore.removeSession(symbol);
+            if (positionClosed) {
+                layerFillTracker.clearSymbol(symbol);
+                sessionManager.endSession(symbol);
+                stateStore.removeSession(symbol);
+            } else {
+                log.error("Martingale SL 平倉後仍有剩餘倉位，保留 EXITING: symbol={}", symbol);
+            }
 
             log.warn("Martingale stop loss triggered: symbol={} side={} slBase={} markPrice={} stopLossPercent={}",
                     symbol, session.getSide(), slBasePrice, markPrice, config.getEffectiveStopLossPercent(symbol));
             notifier.notifyStopLossTriggered(symbol, session.getSide(), slBasePrice, markPrice);
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * 市價平倉 + 驗證：下單後確認倉位歸零，部分成交時重試一次。
+     */
+    private boolean closeAndVerifyPosition(String symbol) {
+        Optional<PositionInfo> posOpt = positionService.getPosition(symbol);
+        if (posOpt.isEmpty() || !posOpt.get().isOpen()) {
+            return true;
+        }
+        PositionInfo position = posOpt.get();
+        double qty = Math.abs(position.quantity());
+        if (qty <= 0) {
+            return true;
+        }
+        try {
+            String closeSide = position.side() == TradeSignal.Side.SHORT ? "BUY" : "SELL";
+            binanceFuturesService.placeMarketOrder(symbol, closeSide, qty);
+
+            double remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+            if (remaining > 0) {
+                log.warn("SL 平倉部分成交，剩餘倉位重試: symbol={} remaining={}", symbol, remaining);
+                binanceFuturesService.placeMarketOrder(symbol, closeSide, remaining);
+                remaining = Math.abs(binanceFuturesService.getCurrentPositionAmount(symbol));
+            }
+            if (remaining > 0) {
+                log.error("SL 平倉重試後仍有剩餘（幽靈倉位）: symbol={} remaining={}", symbol, remaining);
+                notifier.notifyGhostPosition(symbol, remaining);
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("SL 市價平倉失敗: symbol={} err={}", symbol, e.getMessage());
+            return false;
         }
     }
 }
