@@ -62,6 +62,9 @@ dependencies {
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
+    // JDA（Discord Bot — AI 客服）
+    implementation 'net.dv8tion:JDA:5.2.2'
+
     // gRPC（Python Monitor 即時配置推送）
     implementation 'net.devh:grpc-spring-boot-starter:3.1.0.RELEASE'
     implementation 'io.grpc:grpc-protobuf:1.62.2'
@@ -69,6 +72,9 @@ dependencies {
     compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:testcontainers'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'org.testcontainers:junit-jupiter'
 }
 
 // ─── Protobuf / gRPC Code Generation ───

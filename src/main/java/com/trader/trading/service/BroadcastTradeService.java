@@ -8,6 +8,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.TradeRequest;
 import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.model.TradeContext;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.repository.TradeRepository;
@@ -20,6 +21,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.trader.papertrade.service.BinancePriceClient;
+import com.trader.papertrade.service.PaperTradeService;
 import com.trader.shared.config.AppConstants;
 
 import java.time.Duration;
@@ -45,10 +48,13 @@ public class BroadcastTradeService {
     private final UserApiKeyService userApiKeyService;
     private final SubscriptionRepository subscriptionRepository;
     private final SignalScoringService signalScoringService;
+    private final SignalSourceService signalSourceService;
     private final TradeRepository tradeRepository;
     private final BroadcastLogRepository broadcastLogRepository;
     private final ObjectMapper objectMapper;
     private final ExecutorService broadcastExecutor;
+    private final PaperTradeService paperTradeService;
+    private final BinancePriceClient binancePriceClient;
     private final int batchSize;
     private final long batchDelayMs;
 
@@ -64,10 +70,13 @@ public class BroadcastTradeService {
             UserApiKeyService userApiKeyService,
             SubscriptionRepository subscriptionRepository,
             SignalScoringService signalScoringService,
+            SignalSourceService signalSourceService,
             TradeRepository tradeRepository,
             BroadcastLogRepository broadcastLogRepository,
             ObjectMapper objectMapper,
             @Qualifier("broadcastExecutor") ExecutorService broadcastExecutor,
+            PaperTradeService paperTradeService,
+            BinancePriceClient binancePriceClient,
             @Value("${broadcast.executor.batch-size:15}") int batchSize,
             @Value("${broadcast.executor.batch-delay-ms:200}") long batchDelayMs) {
         this.userRepository = userRepository;
@@ -76,10 +85,13 @@ public class BroadcastTradeService {
         this.userApiKeyService = userApiKeyService;
         this.subscriptionRepository = subscriptionRepository;
         this.signalScoringService = signalScoringService;
+        this.signalSourceService = signalSourceService;
         this.tradeRepository = tradeRepository;
         this.broadcastLogRepository = broadcastLogRepository;
         this.objectMapper = objectMapper;
         this.broadcastExecutor = broadcastExecutor;
+        this.paperTradeService = paperTradeService;
+        this.binancePriceClient = binancePriceClient;
         this.batchSize = batchSize;
         this.batchDelayMs = batchDelayMs;
     }
@@ -137,6 +149,85 @@ public class BroadcastTradeService {
             log.warn("廣播跟單: 跳過 {} 個用戶 (無 API Key)", skippedNoApiKey);
         }
 
+        // 訊號來源路由：按來源綁定過濾用戶
+        // 防禦性設計：如果有 targetUserIds（緊急廣播），跳過來源路由（targetUserIds 優先）
+        int skippedNotAssigned = 0;
+        Long resolvedSourceId = null;
+        boolean hasTargetUsers = request.getTargetUserIds() != null && !request.getTargetUserIds().isEmpty();
+
+        SignalSourceConfig.TradeMode resolvedTradeMode = null;
+        SignalSourceConfig resolvedSourceConfig = null;
+
+        if (!hasTargetUsers && request.getSource() != null && request.getSource().getChannelId() != null) {
+            String channelId = request.getSource().getChannelId();
+            String guildId = request.getSource().getGuildId();
+
+            Optional<SignalSourceConfig> resolvedSource = signalSourceService.resolveSource(channelId, guildId);
+            resolvedSourceConfig = resolvedSource.orElse(null);
+            resolvedSourceId = resolvedSource.map(SignalSourceConfig::getId).orElse(null);
+            resolvedTradeMode = resolvedSource.map(SignalSourceConfig::getTradeMode).orElse(null);
+
+            Optional<Set<String>> sourceUserIds = signalSourceService.resolveTargetUserIds(channelId, guildId);
+
+            if (sourceUserIds.isPresent()) {
+                // ASSIGNED 模式 → 只保留綁定用戶
+                Set<String> assigned = sourceUserIds.get();
+                int beforeSize = activeUsers.size();
+                activeUsers = activeUsers.stream()
+                        .filter(u -> assigned.contains(u.getUserId()))
+                        .toList();
+                skippedNotAssigned = beforeSize - activeUsers.size();
+                if (skippedNotAssigned > 0) {
+                    log.info("ASSIGNED 來源路由: channelId={} 符合 {} 人, 排除 {} 人",
+                            channelId, activeUsers.size(), skippedNotAssigned);
+                }
+            } else if (resolvedSourceId != null) {
+                // GLOBAL 模式 → 排除已綁定 ASSIGNED 來源的用戶（一人一源原則）
+                Set<String> boundUserIds = signalSourceService.getUserIdsBoundToAssignedSources();
+                if (!boundUserIds.isEmpty()) {
+                    int beforeSize = activeUsers.size();
+                    activeUsers = activeUsers.stream()
+                            .filter(u -> !boundUserIds.contains(u.getUserId()))
+                            .toList();
+                    skippedNotAssigned = beforeSize - activeUsers.size();
+                    if (skippedNotAssigned > 0) {
+                        log.info("GLOBAL 來源路由: 排除 {} 個已綁定 ASSIGNED 來源的用戶, 剩餘 {} 人",
+                                skippedNotAssigned, activeUsers.size());
+                    }
+                }
+            }
+            // resolvedSourceId == null → 無匹配來源 → 全量廣播（向下相容）
+        }
+
+        // enabled 控制：來源停用時跳過所有廣播（僅記錄）
+        if (resolvedSourceConfig != null && !resolvedSourceConfig.isEnabled()) {
+            log.info("來源已停用: sourceId={} 跳過廣播", resolvedSourceId);
+            saveBroadcastLog(request, 0, 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "SOURCE_DISABLED", null,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
+            Map<String, Object> disabledResult = new HashMap<>();
+            disabledResult.put("status", "SOURCE_DISABLED");
+            disabledResult.put("sourceId", resolvedSourceId);
+            disabledResult.put("message", "此訊號來源已停用，跳過廣播");
+            return disabledResult;
+        }
+
+        // trade_mode 控制：MANUAL → 跳過廣播（僅通知）；SHADOW → 記錄但不交易
+        if (resolvedTradeMode == SignalSourceConfig.TradeMode.MANUAL) {
+            log.info("MANUAL 模式: 來源 sourceId={} 跳過廣播，僅記錄", resolvedSourceId);
+            saveBroadcastLog(request, 0, 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "MANUAL_SKIPPED", null,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
+            Map<String, Object> manualResult = new HashMap<>();
+            manualResult.put("status", "MANUAL_SKIPPED");
+            manualResult.put("tradeMode", "MANUAL");
+            manualResult.put("sourceId", resolvedSourceId);
+            manualResult.put("message", "此訊號來源為手動模式，已記錄但未執行廣播");
+            return manualResult;
+        }
+
         // 指定用戶模式：從已通過篩選的 activeUsers 中，再過濾出目標用戶
         int skippedNotTargeted = 0;
         if (request.getTargetUserIds() != null && !request.getTargetUserIds().isEmpty()) {
@@ -150,17 +241,87 @@ public class BroadcastTradeService {
                     targets.size(), activeUsers.size(), skippedNotTargeted);
         }
 
-        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過無訂閱={}, 跳過無API Key={}, 非指定用戶={}), action={} symbol={}",
-                activeUsers.size(), skippedNoSubscription, skippedNoApiKey, skippedNotTargeted, request.getAction(), request.getSymbol());
+        log.info("廣播跟單: 找到 {} 個有效用戶 (跳過無訂閱={}, 跳過無API Key={}, 未綁定來源={}, 非指定用戶={}), action={} symbol={}",
+                activeUsers.size(), skippedNoSubscription, skippedNoApiKey, skippedNotAssigned, skippedNotTargeted, request.getAction(), request.getSymbol());
 
         // 廣播前 — 發訊號詳情通知給每位 Admin（per-user webhook）
-        String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size(), skippedNoSubscription, skippedNoApiKey);
-        for (User admin : adminUsers) {
-            discordWebhookService.sendNotificationToUser(
-                    admin.getUserId(),
-                    "📡 廣播訊號已發送",
-                    signalDetail,
-                    DiscordWebhookService.COLOR_BLUE);
+        // 非 GLOBAL 頻道不發 admin 通知，避免訊息過多
+        boolean isGlobalBroadcast = resolvedSourceConfig == null
+                || resolvedSourceConfig.getRoutingMode() == SignalSourceConfig.RoutingMode.GLOBAL;
+        if (isGlobalBroadcast) {
+            String signalDetail = formatBroadcastSignalForAdmin(request, activeUsers.size(), skippedNoSubscription, skippedNoApiKey);
+            for (User admin : adminUsers) {
+                discordWebhookService.sendNotificationToUser(
+                        admin.getUserId(),
+                        "📡 廣播訊號已發送",
+                        signalDetail,
+                        DiscordWebhookService.COLOR_BLUE);
+            }
+        }
+
+        // SHADOW 模式 → 記錄廣播日誌但不執行 Binance 交易（必須在 activeUsers.isEmpty() 之前，
+        // 因為 SHADOW + ASSIGNED 頻道可能沒有綁定用戶，但仍需建立模擬交易）
+        if (resolvedTradeMode == SignalSourceConfig.TradeMode.SHADOW) {
+            log.info("SHADOW 模式: 來源 sourceId={} 記錄訊號但不執行交易, 符合用戶={}", resolvedSourceId, activeUsers.size());
+
+            // 等待 AI 評分結果（SHADOW 不執行交易，可等較久）
+            SignalScore shadowScore = null;
+            try {
+                shadowScore = scoreFuture.get(6_000, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                log.warn("SHADOW AI 評分超時（6s），取消背景任務: {} {}", request.getSymbol(), request.getAction());
+                scoreFuture.cancel(true);
+            } catch (ExecutionException e) {
+                log.warn("SHADOW AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            saveBroadcastLog(request, activeUsers.size(), 0, 0,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "SHADOW_RECORDED", shadowScore,
+                    new ConcurrentLinkedQueue<>(), broadcastStartTime);
+
+            // 模擬交易（Paper Trading）— 若該來源啟用了模擬交易
+            if (resolvedSourceConfig != null && resolvedSourceConfig.isPaperTradingEnabled()) {
+                try {
+                    String action = request.getAction();
+                    String srcChannelId = request.getSource() != null ? request.getSource().getChannelId() : null;
+                    if (srcChannelId == null && !"ENTRY".equalsIgnoreCase(action)) {
+                        log.warn("SHADOW 模擬交易缺少 channelId，跳過 {} 操作: {}", action, request.getSymbol());
+                    }
+                    if ("ENTRY".equalsIgnoreCase(action)) {
+                        paperTradeService.createPaperTrade(request, shadowScore);
+                    } else if ("CLOSE".equalsIgnoreCase(action) && srcChannelId != null) {
+                        double closePrice;
+                        try {
+                            closePrice = binancePriceClient.getMarkPrice(request.getSymbol());
+                        } catch (Exception priceEx) {
+                            log.warn("SHADOW 平倉取市價失敗，使用 signal entryPrice 作為 fallback: {} — {}",
+                                    request.getSymbol(), priceEx.getMessage());
+                            closePrice = request.getEntryPrice() != null ? request.getEntryPrice() : 0;
+                        }
+                        if (closePrice > 0) {
+                            paperTradeService.closePaperTrade(request.getSymbol(), srcChannelId, closePrice, "SIGNAL_CLOSE");
+                        } else {
+                            log.error("SHADOW 平倉失敗：無法取得有效平倉價格 symbol={} channelId={}", request.getSymbol(), srcChannelId);
+                        }
+                    } else if ("MOVE_SL".equalsIgnoreCase(action) && srcChannelId != null) {
+                        paperTradeService.movePaperStopLoss(request.getSymbol(), srcChannelId,
+                                request.getNewStopLoss(), request.getNewTakeProfit());
+                    }
+                } catch (Exception e) {
+                    log.error("SHADOW 模擬交易處理失敗: {} {} — {}", request.getSymbol(), request.getAction(), e.getMessage(), e);
+                }
+            }
+
+            Map<String, Object> shadowResult = new HashMap<>();
+            shadowResult.put("status", "SHADOW_RECORDED");
+            shadowResult.put("tradeMode", "SHADOW");
+            shadowResult.put("sourceId", resolvedSourceId);
+            shadowResult.put("totalEligibleUsers", activeUsers.size());
+            shadowResult.put("message", "影子模式：訊號已記錄但未執行交易");
+            return shadowResult;
         }
 
         if (activeUsers.isEmpty()) {
@@ -175,7 +336,8 @@ public class BroadcastTradeService {
                 message = "所有用戶均未符合條件 (訂閱/API Key)";
             }
             saveBroadcastLog(request, 0, 0, 0,
-                    skippedNoSubscription, skippedNoApiKey, "COMPLETED", null,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "COMPLETED", null,
                     new ConcurrentLinkedQueue<>(), broadcastStartTime);
             Map<String, Object> emptyResult = new HashMap<>();
             emptyResult.put("status", "COMPLETED");
@@ -184,6 +346,7 @@ public class BroadcastTradeService {
             emptyResult.put("failCount", 0);
             emptyResult.put("skippedNoSubscription", skippedNoSubscription);
             emptyResult.put("skippedNoApiKey", skippedNoApiKey);
+            emptyResult.put("skippedNotAssigned", skippedNotAssigned);
             emptyResult.put("skippedNotTargeted", skippedNotTargeted);
             emptyResult.put("message", message);
             return emptyResult;
@@ -324,7 +487,8 @@ public class BroadcastTradeService {
                 log.debug("AI 評分取得成功，總耗時 {}ms（等待 {}ms）", elapsedMs + remainingMs, remainingMs);
             } catch (TimeoutException e) {
                 long totalMs = Duration.between(broadcastStartTime, LocalDateTime.now(AppConstants.ZONE_ID)).toMillis();
-                log.debug("AI 評分未及時完成（已等 {}ms），跳過", totalMs);
+                log.warn("AI 評分超時（已等 {}ms），取消背景任務: {} {}", totalMs, request.getSymbol(), request.getAction());
+                scoreFuture.cancel(true);
             } catch (ExecutionException e) {
                 log.warn("AI 評分執行失敗: {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             }
@@ -349,6 +513,9 @@ public class BroadcastTradeService {
                     request.getSymbol(), request.getAction(),
                     successCount.get(), failCount.get(), totalCancelledCount,
                     skippedNoSubscription, skippedNoApiKey, activeUsers.size()));
+            if (skippedNotAssigned > 0) {
+                summaryBuilder.append(String.format("\n未綁定來源: %d 人", skippedNotAssigned));
+            }
             if (skippedNotTargeted > 0) {
                 summaryBuilder.append(String.format("\n非指定用戶: %d 人", skippedNotTargeted));
             }
@@ -395,21 +562,28 @@ public class BroadcastTradeService {
             }
 
             String summary = summaryBuilder.toString();
+            // Discord embed description 上限 4096 字元，保守截斷於 1800 避免超限
+            if (summary.length() > 1800) {
+                summary = summary.substring(0, 1800) + "\n...（內容過長已截斷）";
+            }
             String summaryTitle = isCloseAction ? "📊 廣播平倉報告" : "📊 廣播跟單報告";
             int summaryColor = failCount.get() > 0 || totalCancelledCount > 0
                     ? DiscordWebhookService.COLOR_YELLOW
                     : DiscordWebhookService.COLOR_GREEN;
-            for (User admin : adminUsers) {
-                discordWebhookService.sendNotificationToUser(
-                        admin.getUserId(),
-                        summaryTitle,
-                        summary,
-                        summaryColor);
+            if (isGlobalBroadcast) {
+                for (User admin : adminUsers) {
+                    discordWebhookService.sendNotificationToUser(
+                            admin.getUserId(),
+                            summaryTitle,
+                            summary,
+                            summaryColor);
+                }
             }
 
             // 持久化廣播紀錄（save 失敗不影響交易主流程）
             saveBroadcastLog(request, activeUsers.size(), successCount.get(), failCount.get(),
-                    skippedNoSubscription, skippedNoApiKey, "COMPLETED", finalScore,
+                    skippedNoSubscription, skippedNoApiKey, skippedNotAssigned,
+                    resolvedSourceId, "COMPLETED", finalScore,
                     userResultsLog, broadcastStartTime);
 
             Map<String, Object> resultMap = new HashMap<>();
@@ -419,6 +593,7 @@ public class BroadcastTradeService {
             resultMap.put("failCount", failCount.get());
             resultMap.put("skippedNoSubscription", skippedNoSubscription);
             resultMap.put("skippedNoApiKey", skippedNoApiKey);
+            resultMap.put("skippedNotAssigned", skippedNotAssigned);
             resultMap.put("skippedNotTargeted", skippedNotTargeted);
             return resultMap;
         } catch (InterruptedException e) {
@@ -536,7 +711,8 @@ public class BroadcastTradeService {
      * 持久化廣播紀錄 — save 失敗只 log warning，不影響交易主流程
      */
     private void saveBroadcastLog(TradeRequest request, int totalUsers, int successCount, int failCount,
-                                   int skippedNoSub, int skippedNoKey, String status, SignalScore score,
+                                   int skippedNoSub, int skippedNoKey, int skippedNotAssigned,
+                                   Long sourceId, String status, SignalScore score,
                                    ConcurrentLinkedQueue<UserResultData> userResults, LocalDateTime startTime) {
         try {
             String userResultsJson = null;
@@ -563,6 +739,8 @@ public class BroadcastTradeService {
                     .failCount(failCount)
                     .skippedNoSub(skippedNoSub)
                     .skippedNoKey(skippedNoKey)
+                    .skippedNotAssigned(skippedNotAssigned)
+                    .sourceId(sourceId)
                     .status(status)
                     .userResults(userResultsJson)
                     .aiConfidence(score != null ? score.getConfidence() : null)

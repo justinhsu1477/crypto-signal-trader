@@ -8,6 +8,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -16,14 +19,16 @@ import java.util.Optional;
 public interface TradeRepository extends JpaRepository<Trade, String> {
 
     /**
-     * 依狀態查詢交易紀錄
+     * 依狀態查詢交易紀錄（排除模擬交易）
      */
-    List<Trade> findByStatus(String status);
+    @Query("SELECT t FROM Trade t WHERE t.status = :status AND t.simulated = false")
+    List<Trade> findByStatus(@Param("status") String status);
 
     /**
-     * 依交易對 + 狀態查詢（常用：找目前 OPEN 的持倉）
+     * 依交易對 + 狀態查詢（排除模擬交易）
      */
-    List<Trade> findBySymbolAndStatus(String symbol, String status);
+    @Query("SELECT t FROM Trade t WHERE t.symbol = :symbol AND t.status = :status AND t.simulated = false")
+    List<Trade> findBySymbolAndStatus(@Param("symbol") String symbol, @Param("status") String status);
 
     /**
      * 找某交易對目前唯一的 OPEN 交易
@@ -37,71 +42,73 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      * 找某交易對 OPEN 或 PENDING_CLOSE 的交易（供 WebSocket 更新用）
      * PENDING_CLOSE = MARKET 平倉單已送出但 exitPrice 尚未從 WebSocket 取得真實值
      */
-    @Query("SELECT t FROM Trade t WHERE t.symbol = :symbol AND t.status IN ('OPEN', 'PENDING_CLOSE') ORDER BY t.updatedAt DESC")
+    @Query("SELECT t FROM Trade t WHERE t.symbol = :symbol AND t.status IN ('OPEN', 'PENDING_CLOSE') AND t.simulated = false ORDER BY t.updatedAt DESC")
     List<Trade> findOpenOrPendingCloseTrade(@Param("symbol") String symbol);
 
     /**
      * 查詢所有 OPEN 的交易（用於無幣種訊號的 fallback）
      */
-    @Query("SELECT t FROM Trade t WHERE t.status = 'OPEN' ORDER BY t.updatedAt DESC")
+    @Query("SELECT t FROM Trade t WHERE t.status = 'OPEN' AND t.simulated = false ORDER BY t.updatedAt DESC")
     List<Trade> findAllOpenTrades();
 
     /**
-     * 依狀態查詢，依建立時間倒序
+     * 依狀態查詢，依建立時間倒序（排除模擬交易）
      */
-    List<Trade> findByStatusOrderByCreatedAtDesc(String status);
+    @Query("SELECT t FROM Trade t WHERE t.status = :status AND t.simulated = false ORDER BY t.createdAt DESC")
+    List<Trade> findByStatusOrderByCreatedAtDesc(@Param("status") String status);
 
     /**
-     * 查詢所有紀錄，依建立時間倒序
+     * 查詢所有紀錄，依建立時間倒序（排除模擬交易）
      */
+    @Query("SELECT t FROM Trade t WHERE t.simulated = false ORDER BY t.createdAt DESC")
     List<Trade> findAllByOrderByCreatedAtDesc();
 
     /**
      * 統計已平倉交易中獲利的筆數（netProfit > 0）
      */
-    @Query("SELECT COUNT(t) FROM Trade t WHERE t.status = 'CLOSED' AND t.netProfit > 0")
+    @Query("SELECT COUNT(t) FROM Trade t WHERE t.status = 'CLOSED' AND t.netProfit > 0 AND t.simulated = false")
     long countWinningTrades();
 
     /**
-     * 統計已平倉交易總筆數
+     * 統計已平倉交易總筆數（排除模擬交易）
      */
-    @Query("SELECT COUNT(t) FROM Trade t WHERE t.status = 'CLOSED'")
+    @Query("SELECT COUNT(t) FROM Trade t WHERE t.status = 'CLOSED' AND t.simulated = false")
     long countClosedTrades();
 
     /**
-     * 至少有一筆已平倉交易的不同用戶數（Funnel Stats 用）
+     * 至少有一筆已平倉交易的不同用戶數（Funnel Stats 用，排除模擬交易）
      */
-    @Query("SELECT COUNT(DISTINCT t.userId) FROM Trade t WHERE t.status = 'CLOSED'")
+    @Query("SELECT COUNT(DISTINCT t.userId) FROM Trade t WHERE t.status = 'CLOSED' AND t.simulated = false")
     long countDistinctUserIdsWithClosedTrades();
 
     /**
-     * 已平倉交易的淨利總和
+     * 已平倉交易的淨利總和（排除模擬交易）
      */
-    @Query("SELECT COALESCE(SUM(t.netProfit), 0) FROM Trade t WHERE t.status = 'CLOSED'")
+    @Query("SELECT COALESCE(SUM(t.netProfit), 0) FROM Trade t WHERE t.status = 'CLOSED' AND t.simulated = false")
     double sumNetProfit();
 
     /**
-     * 已平倉交易中，獲利交易的毛利總和（用於 Profit Factor）
+     * 已平倉交易中，獲利交易的毛利總和（用於 Profit Factor，排除模擬交易）
      */
-    @Query("SELECT COALESCE(SUM(t.grossProfit), 0) FROM Trade t WHERE t.status = 'CLOSED' AND t.grossProfit > 0")
+    @Query("SELECT COALESCE(SUM(t.grossProfit), 0) FROM Trade t WHERE t.status = 'CLOSED' AND t.grossProfit > 0 AND t.simulated = false")
     double sumGrossWins();
 
     /**
-     * 已平倉交易中，虧損交易的毛利總和（絕對值，用於 Profit Factor）
+     * 已平倉交易中，虧損交易的毛利總和（絕對值，用於 Profit Factor，排除模擬交易）
      */
-    @Query("SELECT COALESCE(SUM(ABS(t.grossProfit)), 0) FROM Trade t WHERE t.status = 'CLOSED' AND t.grossProfit < 0")
+    @Query("SELECT COALESCE(SUM(ABS(t.grossProfit)), 0) FROM Trade t WHERE t.status = 'CLOSED' AND t.grossProfit < 0 AND t.simulated = false")
     double sumGrossLosses();
 
     /**
-     * 手續費總和
+     * 手續費總和（排除模擬交易）
      */
-    @Query("SELECT COALESCE(SUM(t.commission), 0) FROM Trade t WHERE t.status = 'CLOSED'")
+    @Query("SELECT COALESCE(SUM(t.commission), 0) FROM Trade t WHERE t.status = 'CLOSED' AND t.simulated = false")
     double sumCommission();
 
     /**
      * 查詢某幣種 OPEN 交易的 DCA 補倉次數（全局，單用戶模式）
      */
-    @Query("SELECT COALESCE(t.dcaCount, 0) FROM Trade t WHERE t.symbol = :symbol AND t.status = 'OPEN'")
+    @Query("SELECT COALESCE(t.dcaCount, 0) FROM Trade t WHERE t.symbol = :symbol AND t.status = 'OPEN' AND t.simulated = false")
     Optional<Integer> findDcaCountBySymbol(@Param("symbol") String symbol);
 
     /**
@@ -118,25 +125,25 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     /**
      * 查詢指定時間後已平倉的交易（用於每日虧損熔斷）
      */
-    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :since")
+    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :since AND t.simulated = false")
     List<Trade> findClosedTradesAfter(@Param("since") LocalDateTime since);
 
     /**
      * 查詢指定時間範圍內已平倉的交易（用於每日摘要報告）
      */
-    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :from AND t.exitTime < :to")
+    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :from AND t.exitTime < :to AND t.simulated = false")
     List<Trade> findClosedTradesBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     /**
      * 查詢指定時間後已平倉的所有交易（用於績效統計）
      */
-    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :since ORDER BY t.exitTime ASC")
+    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTime >= :since AND t.simulated = false ORDER BY t.exitTime ASC")
     List<Trade> findClosedTradesAfterOrderByExitTime(@Param("since") LocalDateTime since);
 
     /**
      * 已平倉交易（倒序，用於交易歷史分頁）
      */
-    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' ORDER BY t.exitTime DESC")
+    @Query("SELECT t FROM Trade t WHERE t.status = 'CLOSED' AND t.simulated = false ORDER BY t.exitTime DESC")
     List<Trade> findAllClosedTradesDesc();
 
     /**
@@ -185,9 +192,10 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     long countByUserIdAndStatus(String userId, String status);
 
     /**
-     * 統計全局指定狀態的交易數量
+     * 統計全局指定狀態的交易數量（排除模擬交易）
      */
-    long countByStatus(String status);
+    @Query("SELECT COUNT(t) FROM Trade t WHERE t.status = :status AND t.simulated = false")
+    long countByStatus(@Param("status") String status);
 
     /**
      * 依用戶 ID 和交易對查詢
@@ -286,7 +294,7 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     @Transactional
     @Query("UPDATE Trade t SET t.aiConfidence = :confidence, t.aiReasoning = :reasoning " +
            "WHERE t.symbol = :symbol AND t.status = 'OPEN' AND t.aiConfidence IS NULL " +
-           "AND t.entryTime > :since")
+           "AND t.entryTime > :since AND t.simulated = false")
     int updateAiScore(@Param("symbol") String symbol,
                       @Param("confidence") Integer confidence,
                       @Param("reasoning") String reasoning,
@@ -310,6 +318,7 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                    COALESCE(SUM(net_profit) FILTER (WHERE status = 'CLOSED'), 0) AS total_net_profit,
                    COUNT(*) FILTER (WHERE status = 'OPEN') AS open_count
             FROM trades
+            WHERE simulated = false
             GROUP BY user_id
             """, nativeQuery = true)
     List<Object[]> aggregateStatsPerUser();
@@ -325,7 +334,7 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                    COUNT(*) AS today_trade_count,
                    COALESCE(SUM(net_profit), 0) AS today_net_profit
             FROM trades
-            WHERE status = 'CLOSED' AND exit_time >= :since
+            WHERE status = 'CLOSED' AND exit_time >= :since AND simulated = false
             GROUP BY user_id
             """, nativeQuery = true)
     List<Object[]> aggregateTodayStatsPerUser(@Param("since") LocalDateTime since);
@@ -341,12 +350,92 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                    COUNT(*) AS trade_count,
                    COALESCE(SUM(net_profit), 0) AS net_profit
             FROM trades
-            WHERE status = 'CLOSED' AND exit_time >= :since
+            WHERE status = 'CLOSED' AND exit_time >= :since AND simulated = false
             GROUP BY user_id
             """, nativeQuery = true)
     List<Object[]> aggregateStatsPerUserSince(@Param("since") LocalDateTime since);
 
     // ========== 用戶健康度查詢 ==========
+
+    // ========== 訊號來源績效查詢 ==========
+
+    /**
+     * 按訊號來源聚合績效 — 從 trades 表計算勝率/PnL（支援日期篩選）
+     *
+     * 回傳 Object[]：
+     *   [0] tradeCount(Long), [1] winCount(Long),
+     *   [2] totalPnl(Double), [3] avgPnl(Double),
+     *   [4] maxWin(Double), [5] maxLoss(Double),
+     *   [6] grossWins(Double), [7] grossLosses(Double)
+     */
+    @Query(value = """
+            SELECT
+                COUNT(*) AS trade_count,
+                COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
+                COALESCE(SUM(net_profit), 0) AS total_pnl,
+                COALESCE(AVG(net_profit), 0) AS avg_pnl,
+                COALESCE(MAX(net_profit), 0) AS max_win,
+                COALESCE(MIN(net_profit), 0) AS max_loss,
+                COALESCE(SUM(net_profit) FILTER (WHERE net_profit > 0), 0) AS gross_wins,
+                COALESCE(SUM(ABS(net_profit)) FILTER (WHERE net_profit < 0), 0) AS gross_losses
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND simulated = false
+              AND source_channel_id = :channelId
+              AND (CAST(:guildId AS VARCHAR) IS NULL OR source_guild_id = :guildId)
+              AND (CAST(:since AS TIMESTAMP) IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+            """, nativeQuery = true)
+    Object[] getSourcePerformanceStats(@Param("channelId") String channelId,
+                                       @Param("guildId") String guildId,
+                                       @Param("since") LocalDateTime since);
+
+    /**
+     * 按訊號來源聚合模擬交易績效（simulated = true，支援日期篩選）
+     *
+     * 回傳 Object[]：
+     *   [0] tradeCount(Long), [1] winCount(Long),
+     *   [2] totalPnl(Double), [3] avgPnl(Double),
+     *   [4] maxWin(Double), [5] maxLoss(Double),
+     *   [6] grossWins(Double), [7] grossLosses(Double)
+     */
+    @Query(value = """
+            SELECT
+                COUNT(*) AS trade_count,
+                COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
+                COALESCE(SUM(net_profit), 0) AS total_pnl,
+                COALESCE(AVG(net_profit), 0) AS avg_pnl,
+                COALESCE(MAX(net_profit), 0) AS max_win,
+                COALESCE(MIN(net_profit), 0) AS max_loss,
+                COALESCE(SUM(net_profit) FILTER (WHERE net_profit > 0), 0) AS gross_wins,
+                COALESCE(SUM(ABS(net_profit)) FILTER (WHERE net_profit < 0), 0) AS gross_losses
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND simulated = true
+              AND source_channel_id = :channelId
+              AND (CAST(:guildId AS VARCHAR) IS NULL OR source_guild_id = :guildId)
+              AND (CAST(:since AS TIMESTAMP) IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+            """, nativeQuery = true)
+    Object[] getSourcePaperTradeStats(@Param("channelId") String channelId,
+                                      @Param("guildId") String guildId,
+                                      @Param("since") LocalDateTime since);
+
+    /**
+     * 按訊號來源取已平倉交易序列（計算連勝/連虧用）
+     */
+    @Query(value = """
+            SELECT net_profit
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND simulated = :simulated
+              AND source_channel_id = :channelId
+              AND (CAST(:guildId AS VARCHAR) IS NULL OR source_guild_id = :guildId)
+              AND (CAST(:since AS TIMESTAMP) IS NULL OR exit_time >= CAST(:since AS TIMESTAMP))
+            ORDER BY exit_time ASC
+            """, nativeQuery = true)
+    List<Object> getSourceTradeSequence(@Param("channelId") String channelId,
+                                        @Param("guildId") String guildId,
+                                        @Param("simulated") boolean simulated,
+                                        @Param("since") LocalDateTime since);
 
     /**
      * 批次取得所有用戶已平倉交易（依 exitTime DESC 排序）
@@ -356,7 +445,48 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
      *   [0] userId(String), [1] exitTime(LocalDateTime), [2] netProfit(Double)
      */
     @Query("SELECT t.userId, t.exitTime, t.netProfit FROM Trade t " +
-           "WHERE t.status = 'CLOSED' AND t.exitTime IS NOT NULL " +
+           "WHERE t.status = 'CLOSED' AND t.exitTime IS NOT NULL AND t.simulated = false " +
            "ORDER BY t.userId, t.exitTime DESC")
     List<Object[]> findRecentClosedTradesAllUsers();
+
+    // ========== 模擬交易（Paper Trading）查詢 ==========
+
+    /**
+     * 查找所有 OPEN 的模擬交易（定時 TP/SL 監控用）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.simulated = true AND t.status = 'OPEN'")
+    List<Trade> findAllOpenSimulatedTrades();
+
+    /**
+     * 查找特定幣種 + 頻道的所有 OPEN 模擬交易（可能多筆）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.simulated = true AND t.status = 'OPEN' " +
+           "AND t.symbol = :symbol AND t.sourceChannelId = :channelId ORDER BY t.createdAt DESC")
+    List<Trade> findOpenSimulatedTrades(@Param("symbol") String symbol,
+                                        @Param("channelId") String channelId);
+
+    /**
+     * 按訊號來源查詢模擬交易明細（分頁，依建立時間倒序）
+     * 支援篩選 status（OPEN/CLOSED/全部）
+     */
+    @Query("SELECT t FROM Trade t WHERE t.simulated = true " +
+           "AND t.sourceChannelId = :channelId " +
+           "AND (:guildId IS NULL OR t.sourceGuildId = :guildId) " +
+           "AND (:status IS NULL OR t.status = :status) " +
+           "ORDER BY t.createdAt DESC")
+    Page<Trade> findSimulatedTradesBySource(@Param("channelId") String channelId,
+                                            @Param("guildId") String guildId,
+                                            @Param("status") String status,
+                                            Pageable pageable);
+
+    /**
+     * 按訊號來源查詢最近交易明細（含真實交易 + 模擬交易）
+     * Chatbot 用：「比特幣飛揚頻道最近交易」「加密大漂亮頻道最近交易」
+     */
+    @Query("SELECT t FROM Trade t WHERE t.sourceChannelId = :channelId " +
+           "AND (:guildId IS NULL OR t.sourceGuildId = :guildId) " +
+           "ORDER BY t.createdAt DESC")
+    List<Trade> findRecentTradesBySource(@Param("channelId") String channelId,
+                                         @Param("guildId") String guildId,
+                                         Pageable pageable);
 }

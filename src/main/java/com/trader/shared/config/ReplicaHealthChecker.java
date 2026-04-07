@@ -1,7 +1,7 @@
 package com.trader.shared.config;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,7 +21,7 @@ import java.sql.Statement;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "spring.datasource.replica.url")
+@ConditionalOnExpression("!'${spring.datasource.replica.url:}'.isEmpty()")
 public class ReplicaHealthChecker {
 
     private final RoutingDataSource routingDataSource;

@@ -79,7 +79,8 @@ public class AuthConfig {
                                 "/api/exchange-info", "/api/open-orders",
                                 "/api/monitor-status", "/api/stream-status",
                                 "/api/leverage", "/api/orders",
-                                "/api/heartbeat"
+                                "/api/heartbeat",
+                                "/api/analyst-messages"
                         ).authenticated()
 
                         // === WebSocket handshake（auth 在 STOMP interceptor 處理）===
@@ -88,6 +89,7 @@ public class AuthConfig {
                         // === 公告 API ===
                         .requestMatchers("/api/announcements/**").authenticated()
 
+                        .requestMatchers("/api/changelog").authenticated()
                         .requestMatchers("/api/referral/**").authenticated()
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/dashboard/**").authenticated()

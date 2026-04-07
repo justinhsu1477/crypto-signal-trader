@@ -4,6 +4,7 @@ import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.RiskConfig;
 import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.dto.EffectiveTradeConfig;
+import com.trader.trading.dto.signalsource.ShadowGraduationResult;
 import com.trader.trading.entity.Trade;
 import com.trader.trading.model.TradeContext;
 import com.trader.notification.service.DiscordWebhookService;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 每日排程服務
@@ -70,6 +72,7 @@ public class DailyReportService {
     private final UserDiscordWebhookRepository userDiscordWebhookRepository;
     private final TradeConfigResolver tradeConfigResolver;
     private final StartOfDayBalanceCache startOfDayBalanceCache;
+    private final ShadowGraduationService shadowGraduationService;
 
     public DailyReportService(TradeRecordService tradeRecordService,
                               NotificationService webhookService,
@@ -82,7 +85,8 @@ public class DailyReportService {
                               UserApiKeyService userApiKeyService,
                               UserDiscordWebhookRepository userDiscordWebhookRepository,
                               TradeConfigResolver tradeConfigResolver,
-                              StartOfDayBalanceCache startOfDayBalanceCache) {
+                              StartOfDayBalanceCache startOfDayBalanceCache,
+                              ShadowGraduationService shadowGraduationService) {
         this.tradeRecordService = tradeRecordService;
         this.webhookService = webhookService;
         this.binanceFuturesService = binanceFuturesService;
@@ -95,6 +99,7 @@ public class DailyReportService {
         this.userDiscordWebhookRepository = userDiscordWebhookRepository;
         this.tradeConfigResolver = tradeConfigResolver;
         this.startOfDayBalanceCache = startOfDayBalanceCache;
+        this.shadowGraduationService = shadowGraduationService;
     }
 
     // ==================== 排程 1: 殭屍 Trade 清理 ====================
@@ -347,6 +352,9 @@ public class DailyReportService {
         sb.append("\n");
         appendAiTokenUsage(sb);
 
+        // SHADOW 畢業評估
+        appendShadowGraduation(sb);
+
         webhookService.sendNotificationToAdmins(
                 "📊 每日彙總報告 — " + dateStr,
                 sb.toString(),
@@ -381,6 +389,9 @@ public class DailyReportService {
 
         // ===== 6. 系統狀態（單人模式 = Admin，含 AI 用量）=====
         appendSystemStatus(sb, true);
+
+        // ===== 7. SHADOW 畢業評估 =====
+        appendShadowGraduation(sb);
 
         return sb.toString();
     }
@@ -617,8 +628,10 @@ public class DailyReportService {
         sb.append(String.format("總淨利: %s USDT | 勝率: %s\n",
                 formatProfit((double) overallStats.get("totalNetProfit")),
                 overallStats.get("winRate")));
-        sb.append(String.format("PF: %.2f | 平均每筆: %s USDT\n",
-                (double) overallStats.get("profitFactor"),
+        double pf = (double) overallStats.get("profitFactor");
+        String pfStr = pf == 0 ? "N/A" : String.format("%.2f", pf);
+        sb.append(String.format("PF: %s | 平均每筆: %s USDT\n",
+                pfStr,
                 formatProfit((double) overallStats.get("avgProfitPerTrade"))));
         sb.append(String.format("總手續費: %.2f USDT | 已平倉: %d 筆\n",
                 (double) overallStats.get("totalCommission"),
@@ -679,6 +692,46 @@ public class DailyReportService {
             }
         } catch (Exception e) {
             sb.append("🤖 AI 用量: 查詢失敗\n");
+        }
+    }
+
+    // ==================== SHADOW 畢業評估 ====================
+
+    /**
+     * SHADOW 頻道畢業評估區塊 — 附加到 Admin 彙總報告
+     * 無 SHADOW 頻道時不輸出任何內容
+     */
+    private void appendShadowGraduation(StringBuilder sb) {
+        try {
+            List<ShadowGraduationResult> results = shadowGraduationService.evaluateAll();
+            if (results.isEmpty()) return;
+
+            sb.append("\n🔬 SHADOW 觀察中（").append(results.size()).append(" 個頻道）\n");
+            for (ShadowGraduationResult r : results) {
+                String statusEmoji = switch (r.getStatus()) {
+                    case READY -> "✅";
+                    case APPROACHING -> "🟡";
+                    case NOT_READY -> "⏳";
+                };
+                String displayName = r.getDisplayName() != null ? r.getDisplayName() : r.getName();
+                String pfDisplay = r.getPaperProfitFactor() == 0 ? "N/A" : String.format("%.2f", r.getPaperProfitFactor());
+                sb.append(String.format("%s %s | %d筆 | 勝率%.1f%% | PF:%s | 連敗:%d | %s USDT\n",
+                        statusEmoji, displayName,
+                        r.getPaperTradeCount(), r.getPaperWinRate(),
+                        pfDisplay, r.getPaperMaxConsecutiveLosses(),
+                        formatProfit(r.getPaperTotalPnl())));
+            }
+
+            // 有達標頻道時提示
+            List<String> readyNames = results.stream()
+                    .filter(r -> r.getStatus() == ShadowGraduationResult.GraduationStatus.READY)
+                    .map(r -> r.getDisplayName() != null ? r.getDisplayName() : r.getName())
+                    .collect(Collectors.toList());
+            if (!readyNames.isEmpty()) {
+                sb.append("💡 ").append(String.join("、", readyNames)).append(" 已達畢業門檻，建議評估轉為 AUTO\n");
+            }
+        } catch (Exception e) {
+            log.warn("SHADOW 畢業評估產生失敗: {}", e.getMessage());
         }
     }
 

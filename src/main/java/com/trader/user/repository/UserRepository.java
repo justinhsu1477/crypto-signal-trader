@@ -33,6 +33,8 @@ public interface UserRepository extends JpaRepository<User, String> {
 
     List<User> findTop10ByOrderByCreatedAtDesc();
 
+    List<User> findByNameContainingIgnoreCase(String name);
+
     @Query("SELECT CAST(u.createdAt AS date) AS d, COUNT(u) FROM User u " +
             "WHERE u.createdAt >= :since GROUP BY CAST(u.createdAt AS date) ORDER BY d")
     List<Object[]> countRegistrationsByDate(@Param("since") LocalDateTime since);

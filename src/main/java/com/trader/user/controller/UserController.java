@@ -2,11 +2,13 @@ package com.trader.user.controller;
 
 import com.trader.shared.dto.ErrorResponse;
 import com.trader.shared.util.SecurityUtil;
+import com.trader.user.dto.ApiKeyHealthResponse;
 import com.trader.user.dto.ApiKeyMetadata;
 import com.trader.user.dto.SaveApiKeyRequest;
 import com.trader.user.dto.SaveApiKeyResponse;
 import com.trader.user.dto.UserProfileResponse;
 import com.trader.user.entity.UserApiKey;
+import com.trader.user.service.ApiKeyHealthService;
 import com.trader.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+    private final ApiKeyHealthService apiKeyHealthService;
 
     /**
      * 取得當前登入用戶資訊
@@ -87,6 +90,19 @@ public class UserController {
                 .toList();
 
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 測試 API Key 連線狀態
+     * POST /api/user/api-keys/test
+     *
+     * 呼叫 Binance API 驗證 Key 是否有效、是否有合約權限
+     */
+    @PostMapping("/api-keys/test")
+    public ResponseEntity<ApiKeyHealthResponse> testApiKey() {
+        String userId = SecurityUtil.getCurrentUserId();
+        log.info("用戶 {} 執行 API Key 健康檢查", userId);
+        return ResponseEntity.ok(apiKeyHealthService.testApiKey(userId));
     }
 
     /**

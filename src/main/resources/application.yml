@@ -145,6 +145,13 @@ binance:
     allowed-symbols:              # 允許的交易對清單（可加多個）
       - BTCUSDT
 
+# ========== SHADOW 畢業門檻 ==========
+shadow-graduation:
+  min-trades: 30              # 最低模擬交易筆數
+  min-win-rate: 55.0          # 最低勝率 (%)
+  min-profit-factor: 1.3      # 最低盈虧比
+  max-consecutive-losses: 5   # 最大連敗上限
+
 # ========== 廣播跟單批次設定 ==========
 broadcast:
   executor:
@@ -159,6 +166,10 @@ discord:
     per-user:
       enabled: ${DISCORD_WEBHOOK_PER_USER_ENABLED:true}  # true = 使用用戶自定義 webhook，false = 使用全局
       fallback-to-global: ${DISCORD_WEBHOOK_FALLBACK:true}  # 用戶無自定義 webhook 時 fallback 到全局
+  bot:
+    enabled: ${DISCORD_BOT_ENABLED:false}           # Discord Bot（AI 客服）
+    token: ${DISCORD_BOT_TOKEN:}
+    admin-ids: ${DISCORD_BOT_ADMIN_IDS:}            # Admin Discord User ID（逗號分隔）
 
 # ========== LINE Messaging API ==========
 line:
@@ -213,11 +224,24 @@ grpc:
     security:
       enabled: false
 
+# ========== AI 模型共用設定 ==========
+ai:
+  api-key: ${GEMINI_API_KEY:}
+  default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+
+# ========== AI 客服 Agent ==========
+chatbot:
+  enabled: ${CHATBOT_ENABLED:false}
+  max-response-tokens: 1024
+  temperature: 0.3
+  max-conversation-turns: 10
+  conversation-ttl-minutes: 30
+  rate-limit-per-minute: 5
+  rate-limit-per-day: 50
+
 # AI 交易顧問
 advisor:
   enabled: ${ADVISOR_ENABLED:false}
-  gemini-api-key: ${GEMINI_API_KEY:}
-  gemini-model: gemini-2.0-flash
   cron-expression: "0 0 9,21 * * *"              # 每日 09:00 + 21:00（亞洲盤前 + 美盤開始）
   max-response-tokens: 1024
   recent-trades-count: 10

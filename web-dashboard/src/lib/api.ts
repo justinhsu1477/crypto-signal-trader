@@ -866,8 +866,18 @@ export async function adminBroadcastTrade(
 
 import type { BroadcastLogListResponse, BroadcastLogDetail } from "@/types";
 
-export async function getAdminBroadcastLogs(page = 0, size = 20): Promise<BroadcastLogListResponse> {
-  return request<BroadcastLogListResponse>(`/api/admin/dashboard/broadcast-logs?page=${page}&size=${size}`);
+export async function getAdminBroadcastLogs(
+  page = 0, size = 20, sourceAuthor?: string, startDate?: string, endDate?: string
+): Promise<BroadcastLogListResponse> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (sourceAuthor) params.set("sourceAuthor", sourceAuthor);
+  if (startDate) params.set("startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
+  return request<BroadcastLogListResponse>(`/api/admin/dashboard/broadcast-logs?${params}`);
+}
+
+export async function getAdminBroadcastLogSources(): Promise<string[]> {
+  return request<string[]>("/api/admin/dashboard/broadcast-logs/sources");
 }
 
 export async function getAdminBroadcastLogDetail(id: number): Promise<BroadcastLogDetail> {
@@ -927,5 +937,279 @@ export async function adminUpdateTradeSettings(
   return request<UserTradeSettings>(
     `/api/admin/users/${userId}/trade-settings`,
     { method: "PUT", body: JSON.stringify(data) }
+  );
+}
+
+// ─── Admin Signal Source Management ───
+
+import type {
+  SignalSourceResponse,
+  CreateSignalSourceRequest,
+  UpdateSignalSourceRequest,
+  UserAssignmentResponse,
+  SignalSourcePerformanceDto,
+  SignalSourceUserResponse,
+  MonitorStatusResponse,
+} from "@/types";
+
+export async function getAdminSignalSources(): Promise<SignalSourceResponse[]> {
+  return request<SignalSourceResponse[]>("/api/admin/signal-sources");
+}
+
+export async function createAdminSignalSource(data: CreateSignalSourceRequest): Promise<SignalSourceResponse> {
+  return request<SignalSourceResponse>("/api/admin/signal-sources", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getAdminSignalSource(id: number): Promise<SignalSourceResponse> {
+  return request<SignalSourceResponse>(`/api/admin/signal-sources/${id}`);
+}
+
+export async function updateAdminSignalSource(id: number, data: UpdateSignalSourceRequest): Promise<SignalSourceResponse> {
+  return request<SignalSourceResponse>(`/api/admin/signal-sources/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminSignalSource(id: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/signal-sources/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getAdminSignalSourceUsers(id: number): Promise<UserAssignmentResponse[]> {
+  return request<UserAssignmentResponse[]>(`/api/admin/signal-sources/${id}/users`);
+}
+
+export async function assignAdminSignalSourceUsers(id: number, userIds: string[]): Promise<UserAssignmentResponse[]> {
+  return request<UserAssignmentResponse[]>(`/api/admin/signal-sources/${id}/users`, {
+    method: "POST",
+    body: JSON.stringify({ userIds }),
+  });
+}
+
+export async function unassignAdminSignalSourceUser(sourceId: number, userId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/signal-sources/${sourceId}/users/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function toggleAdminSignalSourceUser(sourceId: number, userId: string, enabled: boolean): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/signal-sources/${sourceId}/users/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function getAdminSignalSourcePerformances(period = "all"): Promise<SignalSourcePerformanceDto[]> {
+  return request<SignalSourcePerformanceDto[]>(`/api/admin/signal-sources/performance?period=${period}`);
+}
+
+export async function getAdminSignalSourcePerformance(id: number, period = "all"): Promise<SignalSourcePerformanceDto> {
+  return request<SignalSourcePerformanceDto>(`/api/admin/signal-sources/${id}/performance?period=${period}`);
+}
+
+// ─── Paper Trade Detail ───
+
+import type { PaperTradeDetailResponse, PageResponse, ShadowGraduationResult } from "@/types";
+
+export async function getAdminPaperTrades(
+  sourceId: number,
+  status = "all",
+  page = 0,
+  size = 20
+): Promise<PageResponse<PaperTradeDetailResponse>> {
+  return request<PageResponse<PaperTradeDetailResponse>>(
+    `/api/admin/signal-sources/${sourceId}/paper-trades?status=${status}&page=${page}&size=${size}`
+  );
+}
+
+// ─── Shadow Graduation ───
+
+// ShadowGraduationResult imported above with PaperTradeDetailResponse
+
+export async function getAdminShadowGraduation(): Promise<ShadowGraduationResult[]> {
+  return request<ShadowGraduationResult[]>("/api/admin/shadow-graduation");
+}
+
+// ─── Prompt Version Management ───
+
+export interface PromptVersion {
+  id: number;
+  version: number;
+  content: string;
+  description: string | null;
+  active: boolean;
+  tokenCount: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getAdminPromptVersions(): Promise<PromptVersion[]> {
+  return request<PromptVersion[]>("/api/admin/prompts");
+}
+
+export async function createAdminPromptVersion(content: string, description: string): Promise<PromptVersion> {
+  return request<PromptVersion>("/api/admin/prompts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, description }),
+  });
+}
+
+export async function activateAdminPromptVersion(id: number): Promise<PromptVersion> {
+  return request<PromptVersion>(`/api/admin/prompts/${id}/activate`, { method: "POST" });
+}
+
+export async function getAdminActivePrompt(): Promise<PromptVersion | null> {
+  try {
+    return await request<PromptVersion>("/api/admin/prompts/active");
+  } catch {
+    return null;
+  }
+}
+
+// ─── Payment History (User) ───
+
+import type {
+  UserPaymentHistoryResponse,
+  ApiKeyHealthResponse,
+  ChangelogEntry,
+  TradeNoteResponse,
+  TradeNoteRequest,
+  BalanceSnapshot,
+} from "@/types";
+
+export async function getPaymentHistory(): Promise<UserPaymentHistoryResponse> {
+  return request<UserPaymentHistoryResponse>("/api/dashboard/payment-history");
+}
+
+// ─── API Key Health Check ───
+
+export async function testApiKeyHealth(): Promise<ApiKeyHealthResponse> {
+  return request<ApiKeyHealthResponse>("/api/user/api-keys/test", {
+    method: "POST",
+  });
+}
+
+// ─── Changelog ───
+
+export async function getChangelogs(): Promise<ChangelogEntry[]> {
+  return request<ChangelogEntry[]>("/api/changelog");
+}
+
+export async function getAdminChangelogs(): Promise<ChangelogEntry[]> {
+  return request<ChangelogEntry[]>("/api/admin/changelog");
+}
+
+export async function createAdminChangelog(data: Partial<ChangelogEntry>): Promise<ChangelogEntry> {
+  return request<ChangelogEntry>("/api/admin/changelog", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function publishAdminChangelog(id: number): Promise<ChangelogEntry> {
+  return request<ChangelogEntry>(`/api/admin/changelog/${id}/publish`, {
+    method: "POST",
+  });
+}
+
+export async function deleteAdminChangelog(id: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/admin/changelog/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ─── Trade Notes ───
+
+export async function getTradeNote(tradeId: string): Promise<TradeNoteResponse> {
+  return request<TradeNoteResponse>(`/api/dashboard/trades/${tradeId}/note`);
+}
+
+export async function saveTradeNote(tradeId: string, data: TradeNoteRequest): Promise<TradeNoteResponse> {
+  return request<TradeNoteResponse>(`/api/dashboard/trades/${tradeId}/note`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+// ─── Equity Curve ───
+
+export async function getEquityCurve(days: number = 90): Promise<BalanceSnapshot[]> {
+  return request<BalanceSnapshot[]>(`/api/dashboard/equity-curve?days=${days}`);
+}
+
+// ─── User Signal Sources ───
+
+export async function getUserSignalSources(): Promise<SignalSourceUserResponse[]> {
+  return request<SignalSourceUserResponse[]>("/api/dashboard/signal-sources");
+}
+
+// ─── Signal Source Monitor Status ───
+
+export async function getSignalSourceMonitorStatus(): Promise<MonitorStatusResponse> {
+  return request<MonitorStatusResponse>("/api/admin/signal-sources/monitor-status");
+}
+
+// ─── Admin Daily Signal Report ───
+
+import type {
+  DailySignalReportListResponse,
+  DailySignalReportDetail,
+} from "@/types";
+
+export async function getAdminDailyReports(page = 0, size = 20): Promise<DailySignalReportListResponse> {
+  return request<DailySignalReportListResponse>(`/api/admin/dashboard/daily-reports?page=${page}&size=${size}`);
+}
+
+export async function getAdminDailyReportDetail(id: number): Promise<DailySignalReportDetail> {
+  return request<DailySignalReportDetail>(`/api/admin/dashboard/daily-reports/${id}`);
+}
+
+export async function generateAdminDailyReport(date: string): Promise<DailySignalReportDetail> {
+  return request<DailySignalReportDetail>(`/api/admin/dashboard/daily-reports/generate?date=${date}`, {
+    method: "POST",
+  });
+}
+
+// ─── Admin Analyst Report ───
+
+import type {
+  AnalystReportListResponse,
+  AnalystReportSummary,
+  AnalystMessageSummary,
+} from "@/types";
+
+export async function getAnalystReports(page = 0, size = 20): Promise<AnalystReportListResponse> {
+  return request<AnalystReportListResponse>(`/api/admin/analyst-report/list?page=${page}&size=${size}`);
+}
+
+export async function getAnalystReportByDate(date: string): Promise<AnalystReportSummary> {
+  return request<AnalystReportSummary>(`/api/admin/analyst-report?date=${date}`);
+}
+
+export async function generateAnalystReport(date: string): Promise<{ status: string; reportDate: string; analystCount: number; hasContent: boolean }> {
+  return request<{ status: string; reportDate: string; analystCount: number; hasContent: boolean }>(`/api/admin/analyst-report/generate?date=${date}`, {
+    method: "POST",
+  });
+}
+
+export async function getAnalystMessages(date: string): Promise<AnalystMessageSummary[]> {
+  return request<AnalystMessageSummary[]>(`/api/admin/analyst-report/messages?date=${date}`);
+}
+
+export async function updateGlobalMonitorSettings(
+  data: { authorIds?: string[]; ignoreKeywords?: string[] }
+): Promise<{ message: string; configVersion: number; connectedMonitors: number }> {
+  return request<{ message: string; configVersion: number; connectedMonitors: number }>(
+    "/api/admin/signal-sources/monitor-settings",
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
   );
 }

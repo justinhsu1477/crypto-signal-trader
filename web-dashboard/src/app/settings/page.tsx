@@ -78,6 +78,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showSecretKey, setShowSecretKey] = useState(false);
+  const [apiKeyTesting, setApiKeyTesting] = useState(false);
 
   // ─── Auto Trade state ───
   const [autoTradeStatus, setAutoTradeStatus] =
@@ -607,9 +608,35 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <Button onClick={handleSaveApiKey} disabled={saving}>
-                {saving ? t("common.saving") : t("settings.saveApiKey")}
-              </Button>
+              <div className="flex gap-3">
+                <Button onClick={handleSaveApiKey} disabled={saving}>
+                  {saving ? t("common.saving") : t("settings.saveApiKey")}
+                </Button>
+                {hasBinanceKey && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      setApiKeyTesting(true);
+                      try {
+                        const { testApiKeyHealth } = await import("@/lib/api");
+                        const result = await testApiKeyHealth();
+                        if (result.valid) {
+                          toast.success(result.message);
+                        } else {
+                          toast.error(result.message);
+                        }
+                      } catch {
+                        toast.error("Health check failed");
+                      } finally {
+                        setApiKeyTesting(false);
+                      }
+                    }}
+                    disabled={apiKeyTesting}
+                  >
+                    {apiKeyTesting ? "Testing..." : "Test Connection"}
+                  </Button>
+                )}
+              </div>
             </div>
           </>
         )}

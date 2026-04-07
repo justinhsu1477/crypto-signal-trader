@@ -1,0 +1,62 @@
+# Slice Test 專用 profile
+# 使用 H2 in-memory + hibernate create-drop，不依賴外部服務
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cache:
+    type: none
+  rabbitmq:
+    host: localhost
+    port: 5672
+
+# 停用外部服務
+jwt:
+  secret: test-secret-key-for-slice-test-minimum-256-bits-long-enough
+  expiration-ms: 1800000
+  refresh-expiration-ms: 259200000
+  cookie-secure: false
+
+encryption:
+  aes-key: 0123456789abcdef0123456789abcdef
+
+monitor:
+  api-key: test-monitor-key
+
+ai:
+  api-key: ""
+  default-model: gemini-2.5-flash-lite
+
+discord:
+  webhook:
+    enabled: false
+  bot:
+    enabled: false
+
+chatbot:
+  enabled: false
+
+advisor:
+  enabled: false
+
+line:
+  enabled: false
+
+email:
+  enabled: false

@@ -74,6 +74,20 @@ public class BinanceFuturesService {
      */
     private static final ThreadLocal<BinanceKeys> CURRENT_USER_KEYS = new ThreadLocal<>();
 
+    // ==================== 監控查詢快取 ====================
+    // 30 秒本地快取，減少定期排程的 API weight（交易路徑不走快取）
+    private static final long CACHE_TTL_MS = 30_000;
+
+    private record CacheEntry(String data, long timestamp) {
+        boolean isExpired() {
+            return System.currentTimeMillis() - timestamp > CACHE_TTL_MS;
+        }
+    }
+
+    // key = apiKeyHash + ":" + endpoint
+    private final java.util.concurrent.ConcurrentHashMap<String, CacheEntry> readCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     // 下單重試配置（Market / Limit / SL / TP 共用）
     private static final int ORDER_MAX_RETRIES = 2;
     private static final long[] ORDER_RETRY_DELAYS_MS = {1000, 3000};
@@ -169,9 +183,40 @@ public class BinanceFuturesService {
 
     // ==================== 帳戶相關 ====================
 
+    /**
+     * 取得快取 key：用 API Key 前 8 碼 hash + endpoint 區分不同用戶/查詢
+     */
+    private String cacheKey(String endpoint) {
+        String apiKey = getActiveApiKey();
+        String keyHash = apiKey.length() >= 8 ? apiKey.substring(0, 8) : apiKey;
+        return keyHash + ":" + endpoint;
+    }
+
+    /**
+     * 帶快取的讀取（30 秒 TTL）— 供監控排程使用，減少 API weight
+     */
+    private String getCachedOrFetch(String endpoint, java.util.function.Supplier<String> fetcher) {
+        String key = cacheKey(endpoint);
+        CacheEntry cached = readCache.get(key);
+        if (cached != null && !cached.isExpired()) {
+            log.debug("Binance 快取命中: {}", endpoint);
+            return cached.data();
+        }
+        String result = fetcher.get();
+        readCache.put(key, new CacheEntry(result, System.currentTimeMillis()));
+        return result;
+    }
+
     public String getAccountBalance() {
         String endpoint = "/fapi/v2/balance";
         return sendSignedGet(endpoint, Map.of());
+    }
+
+    /**
+     * 帶快取的帳戶餘額查詢 — 監控排程專用
+     */
+    public String getAccountBalanceCached() {
+        return getCachedOrFetch("/fapi/v2/balance", this::getAccountBalance);
     }
 
     /**
@@ -203,6 +248,13 @@ public class BinanceFuturesService {
     public String getPositions() {
         String endpoint = "/fapi/v2/positionRisk";
         return sendSignedGet(endpoint, Map.of());
+    }
+
+    /**
+     * 帶快取的持倉查詢 — 監控排程專用
+     */
+    public String getPositionsCached() {
+        return getCachedOrFetch("/fapi/v2/positionRisk", this::getPositions);
     }
 
     @Cacheable(EXCHANGE_INFO)
@@ -242,7 +294,17 @@ public class BinanceFuturesService {
      * API weight: 5（同 getPositions）
      */
     public Map<String, Double> getAllPositionAmounts() {
-        String response = getPositions();
+        return parsePositionAmounts(getPositions());
+    }
+
+    /**
+     * 帶快取的批量持倉查詢 — 監控排程專用
+     */
+    public Map<String, Double> getAllPositionAmountsCached() {
+        return parsePositionAmounts(getPositionsCached());
+    }
+
+    private Map<String, Double> parsePositionAmounts(String response) {
         Map<String, Double> result = new HashMap<>();
         JsonArray positions = gson.fromJson(response, JsonArray.class);
         for (JsonElement elem : positions) {
@@ -279,6 +341,25 @@ public class BinanceFuturesService {
         } catch (Exception e) {
             throw new RuntimeException("取得 markPrice 失敗，拒絕交易: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 取得 24 小時行情摘要（價格、漲跌幅、成交量）
+     */
+    public JsonObject get24hTicker(String symbol) {
+        String endpoint = "/fapi/v1/ticker/24hr?symbol=" + symbol;
+        String response = sendPublicGet(endpoint);
+        return gson.fromJson(response, JsonObject.class);
+    }
+
+    /**
+     * 取得最新資金費率
+     */
+    public JsonObject getFundingRate(String symbol) {
+        String endpoint = "/fapi/v1/fundingRate?symbol=" + symbol + "&limit=1";
+        String response = sendPublicGet(endpoint);
+        JsonArray arr = gson.fromJson(response, JsonArray.class);
+        return arr.size() > 0 ? arr.get(0).getAsJsonObject() : new JsonObject();
     }
 
     /**
@@ -1320,11 +1401,18 @@ public class BinanceFuturesService {
             // 訊號明確帶了 SL 價格
             log.info("移動止損: {} 舊SL={} 新SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
         } else {
-            // 成本保護：「做保本處理」「止損上移至成本附近」→ 用開倉價
+            // 成本保護：「做保本處理」「止損上移至成本附近」→ 開倉價 + 手續費補償
             Double entryPrice = tradeRecordService.getEntryPrice(symbol);
             if (entryPrice != null && entryPrice > 0) {
-                slValue = entryPrice;
-                log.info("成本保護: {} 舊SL={} 用開倉價做SL={} 持倉={}", symbol, oldSl, slValue, positionAmt);
+                // 手續費補償公式：SL = Entry + (名義價值 × 費率 × 2) ÷ 倉位數量
+                // Taker 費率 0.05%，來回 × 2 = 0.1%
+                double notionalValue = entryPrice * absPosition;
+                double roundTripFee = notionalValue * 0.0005 * 2;
+                double feeOffset = roundTripFee / absPosition;
+                // 多單往上加，空單往下減
+                slValue = isLong ? entryPrice + feeOffset : entryPrice - feeOffset;
+                log.info("成本保護: {} 舊SL={} 開倉價={} 手續費補償={} 新SL={} 持倉={}",
+                        symbol, oldSl, entryPrice, feeOffset, slValue, positionAmt);
             } else {
                 log.warn("成本保護但無法取得開倉價: {} 舊SL={}", symbol, oldSl);
                 // fallback: 用舊 SL 重掛，至少不裸奔
@@ -1987,6 +2075,7 @@ public class BinanceFuturesService {
                         .closeRatio(request.getCloseRatio())
                         .newStopLoss(request.getNewStopLoss())
                         .newTakeProfit(request.getNewTakeProfit())
+                        .source(request.getSource())
                         .build();
 
                 List<OrderResult> results = executeClose(signal);
@@ -2004,6 +2093,7 @@ public class BinanceFuturesService {
                         .signalType(TradeSignal.SignalType.MOVE_SL)
                         .newStopLoss(request.getNewStopLoss())
                         .newTakeProfit(request.getNewTakeProfit())
+                        .source(request.getSource())
                         .build();
 
                 List<OrderResult> results = executeMoveSL(signal);
@@ -2018,14 +2108,30 @@ public class BinanceFuturesService {
                     log.warn("廣播跟單: 重複取消跳過 userId={} symbol={}", userId, symbol);
                     return List.of();  // 靜默跳過，不拋異常
                 }
+                // 檢查 Binance 是否有持倉：有持倉 → 只取消掛單，不改 DB 狀態
+                // CANCEL 語義 = 取消未成交掛單，不等於平倉
+                double cancelPositionAmt;
+                try {
+                    cancelPositionAmt = getCurrentPositionAmount(symbol);
+                } catch (Exception e) {
+                    log.error("CANCEL 查詢持倉失敗，安全起見跳過: userId={} {}", userId, e.getMessage());
+                    throw new RuntimeException("CANCEL 查詢持倉失敗: " + symbol);
+                }
                 ReentrantLock cancelLock = symbolLockRegistry.getLock(symbol);
                 cancelLock.lock();
                 try {
-                    cancelAllOrders(symbol);  // 失敗會拋出，讓 BroadcastTradeService 計為失敗
-                    try {
-                        tradeRecordService.recordCancel(symbol, userId);
-                    } catch (Exception e) {
-                        log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                    cancelAllOrders(symbol);  // 取消所有掛單（含 SL/TP）
+                    if (cancelPositionAmt == 0) {
+                        // 無持倉 → 純掛單取消，DB 標記 CANCELLED
+                        try {
+                            tradeRecordService.recordCancel(symbol, userId);
+                        } catch (Exception e) {
+                            log.error("取消紀錄寫入失敗（不影響實際取消結果）: {}", e.getMessage());
+                        }
+                    } else {
+                        // 有持倉 → 只取消掛單（SL/TP），DB 保持 OPEN（持倉仍在）
+                        log.warn("CANCEL: userId={} {} 有持倉 ({})，僅取消掛單，DB 保持 OPEN",
+                                userId, symbol, cancelPositionAmt);
                     }
                 } finally {
                     cancelLock.unlock();

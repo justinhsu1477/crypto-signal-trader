@@ -14,6 +14,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -245,7 +247,16 @@ public class StartupReconciliationService {
                     // 簡易 PnL 估算
                     calculateEstimatedProfit(trade);
 
-                    tradeRepository.save(trade);
+                    try {
+                        tradeRepository.save(trade);
+                    } catch (ObjectOptimisticLockingFailureException e) {
+                        // WebSocket 已先一步更新此 Trade → 不需再處理
+                        String detail = String.format("⏭️ %s %s PENDING_CLOSE 已被 WebSocket 更新，跳過對帳",
+                                trade.getTradeId(), trade.getSymbol());
+                        report.add(detail);
+                        log.info(detail);
+                        continue;
+                    }
                     fixed++;
 
                     String detail = String.format("✅ %s %s PENDING_CLOSE → CLOSED (估算 exitPrice=%.2f)",
@@ -323,7 +334,15 @@ public class StartupReconciliationService {
                         trade.setExitReason("STALE_CLEANUP_STARTUP");
                         trade.setExitTime(LocalDateTime.now(AppConstants.ZONE_ID));
                         trade.setUpdatedAt(LocalDateTime.now(AppConstants.ZONE_ID));
-                        tradeRepository.save(trade);
+                        try {
+                            tradeRepository.save(trade);
+                        } catch (ObjectOptimisticLockingFailureException e) {
+                            String detail2 = String.format("⏭️ %s %s OPEN 已被 WebSocket 更新，跳過清理",
+                                    trade.getTradeId(), trade.getSymbol());
+                            report.add(detail2);
+                            log.info(detail2);
+                            continue;
+                        }
                         cleaned++;
 
                         String detail = String.format("🧹 %s %s %s OPEN → CANCELLED (Binance 無持倉且無掛單)",
