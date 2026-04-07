@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.trader.shared.config.RiskConfig;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -512,7 +513,20 @@ public class TradeController {
         String aiStatus = (body != null && body.containsKey("aiStatus")) ? String.valueOf(body.get("aiStatus")) : null;
         Map<String, Object> aiTokenStats = (body != null && body.get("aiTokenStats") instanceof Map)
                 ? (Map<String, Object>) body.get("aiTokenStats") : null;
-        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus, aiTokenStats));
+
+        // 解析每頻道最後活動時間
+        Map<String, Long> channelLastSeenData = null;
+        if (body != null && body.get("channelLastSeen") instanceof Map) {
+            Map<String, Object> raw = (Map<String, Object>) body.get("channelLastSeen");
+            channelLastSeenData = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : raw.entrySet()) {
+                if (entry.getValue() instanceof Number) {
+                    channelLastSeenData.put(entry.getKey(), ((Number) entry.getValue()).longValue());
+                }
+            }
+        }
+
+        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus, aiTokenStats, channelLastSeenData));
     }
 
     /**
@@ -843,14 +857,14 @@ public class TradeController {
             }
         }
 
-        // 執行廣播
-        Map<String, Object> result = broadcastTradeService.broadcastTrade(request);
-
-        // 訊號記錄（廣播層級記一次，非 per-user）
+        // 訊號記錄（廣播前寫入，確保 message_id 去重能攔截後續重複請求）
         signalRecordService.recordFromRequest(
                 request.getAction(), symbol, request.getSide(),
                 request.getEntryPrice(), request.getStopLoss(),
                 "EXECUTED", null, null, request.getSource());
+
+        // 執行廣播
+        Map<String, Object> result = broadcastTradeService.broadcastTrade(request);
 
         return ResponseEntity.ok(result);
     }

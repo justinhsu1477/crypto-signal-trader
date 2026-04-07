@@ -61,6 +61,9 @@ public class MonitorHeartbeatService {
     private final AtomicLong dailyPromptTokens = new AtomicLong(0);
     private final AtomicLong dailyResponseTokens = new AtomicLong(0);
 
+    /** 每個頻道最後收到訊息的時間（epoch millis），由 Python heartbeat 帶入 */
+    private final AtomicReference<Map<String, Long>> channelLastSeen = new AtomicReference<>(Map.of());
+
     public MonitorHeartbeatService(NotificationService webhookService) {
         this.webhookService = webhookService;
     }
@@ -78,13 +81,16 @@ public class MonitorHeartbeatService {
     /**
      * 接收 Python monitor 的心跳
      *
-     * @param status       Python 端傳來的狀態（connected / reconnecting / connecting）
-     * @param aiStatus     AI parser 狀態（active / disabled）
-     * @param aiTokenStats AI token 用量統計（Python session 累計值，可為 null）
+     * @param status             Python 端傳來的狀態（connected / reconnecting / connecting）
+     * @param aiStatus           AI parser 狀態（active / disabled）
+     * @param aiTokenStats       AI token 用量統計（Python session 累計值，可為 null）
+     * @param channelLastSeenData 每頻道最後活動時間（channel_id → epoch millis，可為 null）
      * @return 回應資訊
      */
     @SuppressWarnings("unchecked")
-    public Map<String, Object> receiveHeartbeat(String status, String aiStatus, Map<String, Object> aiTokenStats) {
+    public Map<String, Object> receiveHeartbeat(String status, String aiStatus,
+                                                 Map<String, Object> aiTokenStats,
+                                                 Map<String, Long> channelLastSeenData) {
         Instant now = Instant.now();
         Instant previous = lastHeartbeat.getAndSet(now);
         String previousStatus = lastStatus;
@@ -98,6 +104,11 @@ public class MonitorHeartbeatService {
         // ===== 更新 AI token 用量（delta 累加）=====
         if (aiTokenStats != null) {
             updateTokenStats(aiTokenStats);
+        }
+
+        // ===== 更新每頻道最後活動時間 =====
+        if (channelLastSeenData != null && !channelLastSeenData.isEmpty()) {
+            channelLastSeen.set(Map.copyOf(channelLastSeenData));
         }
 
         // ===== 情況 1: Discord 斷了，Python 在重連 =====
@@ -212,6 +223,7 @@ public class MonitorHeartbeatService {
         status.put("monitorStatus", lastStatus);
         status.put("aiStatus", lastAiStatus);
         status.put("alertSent", alertSent);
+        status.put("channelLastSeen", channelLastSeen.get());
         return status;
     }
 

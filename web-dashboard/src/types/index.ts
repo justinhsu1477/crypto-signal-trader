@@ -786,6 +786,7 @@ export interface BroadcastLogSummary {
   signalAction: string;
   symbol: string;
   side: string | null;
+  sourceAuthor: string | null;
   totalUsers: number;
   successCount: number;
   failCount: number;
@@ -849,4 +850,290 @@ export interface BroadcastLogDetail extends BroadcastLogSummary {
   sourceAuthor: string | null;
   aiReasoning: string | null;
   userResults: BroadcastUserResult[];
+}
+
+// ─── Signal Source Management ───
+
+export type TradeMode = "AUTO" | "SHADOW" | "MANUAL";
+
+export interface SignalSourceResponse {
+  id: number;
+  name: string;
+  displayName: string;
+  channelId: string | null;
+  guildId: string | null;
+  description: string | null;
+  routingMode: "GLOBAL" | "ASSIGNED";
+  tradeMode: TradeMode;
+  riskMultiplier: number;
+  paperTradingEnabled: boolean;
+  enabled: boolean;
+  assignedUserCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSignalSourceRequest {
+  name: string;
+  displayName: string;
+  channelId?: string;
+  guildId?: string;
+  description?: string;
+  routingMode?: "GLOBAL" | "ASSIGNED";
+  tradeMode?: TradeMode;
+  riskMultiplier?: number;
+}
+
+export interface UpdateSignalSourceRequest {
+  name?: string;
+  displayName?: string;
+  description?: string;
+  enabled?: boolean;
+  routingMode?: "GLOBAL" | "ASSIGNED";
+  tradeMode?: TradeMode;
+  riskMultiplier?: number;
+  paperTradingEnabled?: boolean;
+}
+
+export interface MonitorStatusResponse {
+  channelIds: string[];
+  guildIds: string[];
+  authorIds: string[];
+  ignoreKeywords: string[];
+  configVersion: number;
+  connectedMonitors: number;
+  monitorOnline: boolean;
+  lastHeartbeat: string | null;
+  channelLastSeen: Record<string, number> | null;
+}
+
+export interface UserAssignmentResponse {
+  id: number;
+  userId: string;
+  email: string | null;
+  name: string | null;
+  enabled: boolean;
+  assignedAt: string;
+}
+
+export interface SignalSourcePerformanceDto {
+  sourceId: number;
+  name: string;
+  displayName: string;
+  tradeMode: string;
+  tradeCount: number;
+  winCount: number;
+  winRate: number;
+  totalPnl: number;
+  avgPnl: number;
+  maxWin: number;
+  maxLoss: number;
+  profitFactor: number;
+  maxConsecutiveWins: number;
+  maxConsecutiveLosses: number;
+  paperTradeCount: number;
+  paperWinCount: number;
+  paperWinRate: number;
+  paperTotalPnl: number;
+  paperAvgPnl: number;
+  paperMaxWin: number;
+  paperMaxLoss: number;
+  paperProfitFactor: number;
+  paperMaxConsecutiveWins: number;
+  paperMaxConsecutiveLosses: number;
+}
+
+export interface SignalSourceUserResponse {
+  id: number;
+  displayName: string;
+  description: string | null;
+  enabled: boolean;
+}
+
+// ─── Paper Trade Detail ───
+
+export interface PaperTradeDetailResponse {
+  tradeId: string;
+  symbol: string;
+  side: "LONG" | "SHORT";
+  status: "OPEN" | "CLOSED";
+  entryPrice: number | null;
+  entryQuantity: number | null;
+  entryTime: string | null;
+  exitPrice: number | null;
+  exitTime: string | null;
+  exitReason: string | null;
+  stopLoss: number | null;
+  takeProfits: string | null;
+  leverage: number | null;
+  grossProfit: number | null;
+  commission: number | null;
+  netProfit: number | null;
+  aiConfidence: number | null;
+  aiReasoning: string | null;
+  sourceAuthorName: string | null;
+  durationSeconds: number | null;
+}
+
+export interface PageResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
+// ─── Shadow Graduation ───
+
+export interface ShadowGraduationResult {
+  sourceId: number;
+  name: string;
+  displayName: string;
+  paperTradeCount: number;
+  paperWinRate: number;
+  paperProfitFactor: number;
+  paperMaxConsecutiveLosses: number;
+  paperTotalPnl: number;
+  tradesPass: boolean;
+  winRatePass: boolean;
+  profitFactorPass: boolean;
+  consecutiveLossesPass: boolean;
+  passedCriteria: number;
+  status: "READY" | "APPROACHING" | "NOT_READY";
+}
+
+// ─── Daily Signal Report ───
+
+export interface DailySignalReportSummary {
+  id: number;
+  reportDate: string;
+  totalSignals: number;
+  totalSources: number;
+  longCount: number;
+  shortCount: number;
+  avgConfidence: number | null;
+  hasAiAnalysis: boolean;
+  createdAt: string;
+}
+
+export interface DailySignalReportListResponse {
+  content: DailySignalReportSummary[];
+  page: number;
+  size: number;
+  totalPages: number;
+  totalElements: number;
+}
+
+export interface DailySignalReportDetail {
+  id: number;
+  reportDate: string;
+  totalSignals: number;
+  totalSources: number;
+  longCount: number;
+  shortCount: number;
+  avgConfidence: number | null;
+  reportData: string;     // JSON string
+  aiAnalysis: string | null;
+  aiTokensUsed: number | null;
+  createdAt: string;
+}
+
+// ==================== Analyst Report ====================
+
+export interface AnalystReportSummary {
+  id: number;
+  reportDate: string;
+  analystCount: number;
+  reportContent: string | null;
+  reportData: string | null;   // JSON string
+  aiTokensUsed: number | null;
+  createdAt: string;
+}
+
+export interface AnalystReportListResponse {
+  content: AnalystReportSummary[];
+  page: number;
+  size: number;
+  totalPages: number;
+  totalElements: number;
+}
+
+export interface AnalystMessageSummary {
+  analystName: string;
+  channelId: string;
+  messageCount: number;
+  contentLength: number;
+  contentPreview: string;
+}
+
+// ==================== Payment History (User) ====================
+
+export interface UserPaymentHistoryResponse {
+  payments: UserPaymentRecord[];
+  totalPayments: number;
+  totalAmountPaid: number;
+}
+
+export interface UserPaymentRecord {
+  id: number;
+  txHash: string | null;
+  network: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  planId: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+// ==================== API Key Health ====================
+
+export interface ApiKeyHealthResponse {
+  valid: boolean;
+  exchange: string;
+  message: string;
+  canTrade: boolean;
+  futuresEnabled: boolean;
+}
+
+// ==================== Changelog ====================
+
+export interface ChangelogEntry {
+  id: number;
+  version: string;
+  title: string;
+  content: string;
+  category: string;
+  published: boolean;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==================== Trade Notes ====================
+
+export interface TradeNoteResponse {
+  id: number | null;
+  tradeId: string;
+  note: string | null;
+  tags: string | null;
+  rating: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TradeNoteRequest {
+  note: string | null;
+  tags: string | null;
+  rating: number | null;
+}
+
+// ==================== Balance Snapshot ====================
+
+export interface BalanceSnapshot {
+  id: number;
+  userId: string;
+  snapshotDate: string;
+  balance: number;
+  createdAt: string;
 }

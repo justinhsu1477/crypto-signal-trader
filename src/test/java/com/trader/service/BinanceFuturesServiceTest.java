@@ -692,8 +692,9 @@ class BinanceFuturesServiceTest {
             List<OrderResult> results = service.executeMoveSL(signal);
 
             assertThat(results).isNotEmpty();
-            // 應該用入場價 95000 而非 null
-            verify(service).placeStopLoss(eq("BTCUSDT"), anyString(), eq(95000.0), anyDouble());
+            // 成本保護：入場價 + 手續費補償（95000 × 0.5 × 0.001 ÷ 0.5 = 95）
+            // SL = 95000 + 95 = 95095（多單往上加）
+            verify(service).placeStopLoss(eq("BTCUSDT"), anyString(), eq(95095.0), anyDouble());
         }
 
         @Test
@@ -990,6 +991,72 @@ class BinanceFuturesServiceTest {
             assertThat(results).isNotEmpty();
             assertThat(results.get(0).isSuccess()).isTrue();
             verify(mockTradeRecord).recordClose(anyString(), any(), anyString());
+        }
+    }
+
+    // ==================== CANCEL 語義（持倉檢查） ====================
+
+    @Nested
+    @DisplayName("CANCEL 廣播跟單")
+    class CancelBroadcastTests {
+
+        @BeforeEach
+        void setUpCancel() {
+            // 設定 per-user API Key（executeSignalForBroadcast 內部會查詢）
+            when(mockUserApiKeyService.getUserBinanceKeys(anyString()))
+                    .thenReturn(Optional.of(new UserApiKeyService.BinanceKeys("key", "secret")));
+            when(mockDedup.isCancelDuplicate(anyString(), anyString())).thenReturn(false);
+            doReturn("{}").when(service).cancelAllOrders(anyString());
+        }
+
+        @Test
+        @DisplayName("CANCEL + 無持倉 → 取消掛單 + DB 標記 CANCELLED")
+        void cancelNoPosition_recordsCancelInDb() {
+            doReturn(0.0).when(service).getCurrentPositionAmount("BTCUSDT");
+
+            com.trader.shared.model.TradeRequest request = new com.trader.shared.model.TradeRequest();
+            request.setAction("CANCEL");
+            request.setSymbol("BTCUSDT");
+
+            List<OrderResult> results = service.executeSignalForBroadcast(request, "test-user");
+
+            // 應該呼叫 cancelAllOrders
+            verify(service).cancelAllOrders("BTCUSDT");
+            // 無持倉 → DB 標記 CANCELLED
+            verify(mockTradeRecord).recordCancel("BTCUSDT", "test-user");
+        }
+
+        @Test
+        @DisplayName("CANCEL + 有持倉 → 只取消掛單，DB 保持 OPEN（不呼叫 recordCancel）")
+        void cancelWithPosition_onlyCancelsOrders_noDbChange() {
+            doReturn(0.5).when(service).getCurrentPositionAmount("BTCUSDT");
+
+            com.trader.shared.model.TradeRequest request = new com.trader.shared.model.TradeRequest();
+            request.setAction("CANCEL");
+            request.setSymbol("BTCUSDT");
+
+            List<OrderResult> results = service.executeSignalForBroadcast(request, "test-user");
+
+            // 應該呼叫 cancelAllOrders
+            verify(service).cancelAllOrders("BTCUSDT");
+            // 有持倉 → 不應呼叫 recordCancel（DB 保持 OPEN）
+            verify(mockTradeRecord, never()).recordCancel(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("CANCEL + 重複取消 → 靜默跳過")
+        void cancelDuplicate_skipped() {
+            when(mockDedup.isCancelDuplicate("BTCUSDT", "test-user")).thenReturn(true);
+
+            com.trader.shared.model.TradeRequest request = new com.trader.shared.model.TradeRequest();
+            request.setAction("CANCEL");
+            request.setSymbol("BTCUSDT");
+
+            List<OrderResult> results = service.executeSignalForBroadcast(request, "test-user");
+
+            assertThat(results).isEmpty();
+            verify(service, never()).cancelAllOrders(anyString());
+            verify(mockTradeRecord, never()).recordCancel(anyString(), anyString());
         }
     }
 }

@@ -83,6 +83,10 @@ public class Trade {
     private String sourceAuthorName;     // 訊號發送者
     private String sourceMessageId;      // 原始訊息 ID
 
+    // === 模擬交易 ===
+    @Builder.Default
+    private boolean simulated = false;   // true = 模擬交易（SHADOW 頻道 Paper Trading）
+
     // === 樂觀鎖 ===
     @Version
     private Long version;                // JPA 樂觀鎖，防止 WebSocket 事件與 API 並發更新衝突

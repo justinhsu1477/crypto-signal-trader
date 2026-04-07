@@ -2,6 +2,7 @@ package com.trader.trading.service;
 
 import com.trader.trading.grpc.generated.ConfigUpdate;
 import com.trader.trading.grpc.generated.MonitorConfig;
+import com.trader.trading.grpc.generated.SourceConfig;
 import io.grpc.stub.StreamObserver;
 import org.junit.jupiter.api.*;
 
@@ -71,7 +72,7 @@ class MonitorConfigStoreTest {
         void updateChannels() {
             store.updateConfig(
                     List.of("ch-new-1", "ch-new-2"),
-                    null, null, null,
+                    null, null, null, null,
                     "admin", "test_update"
             );
 
@@ -83,10 +84,10 @@ class MonitorConfigStoreTest {
         @Test
         @DisplayName("版本號遞增")
         void versionIncrements() {
-            store.updateConfig(List.of("ch1"), null, null, null, "a", "r");
+            store.updateConfig(List.of("ch1"), null, null, null, null, "a", "r");
             assertThat(store.getCurrentConfig().getVersion()).isEqualTo(1);
 
-            store.updateConfig(List.of("ch2"), null, null, null, "a", "r");
+            store.updateConfig(List.of("ch2"), null, null, null, null, "a", "r");
             assertThat(store.getCurrentConfig().getVersion()).isEqualTo(2);
         }
 
@@ -98,7 +99,7 @@ class MonitorConfigStoreTest {
                     List.of("guild1"),
                     List.of("author1"),
                     List.of("keyword1"),
-                    "admin", "full_update"
+                    null, "admin", "full_update"
             );
 
             MonitorConfig config = store.getCurrentConfig();
@@ -144,7 +145,7 @@ class MonitorConfigStoreTest {
             store.addObserver(observer1);
             store.addObserver(observer2);
 
-            store.updateConfig(List.of("ch1"), null, null, null, "admin", "test");
+            store.updateConfig(List.of("ch1"), null, null, null, null, "admin", "test");
 
             verify(observer1).onNext(any(ConfigUpdate.class));
             verify(observer2).onNext(any(ConfigUpdate.class));
@@ -164,10 +165,68 @@ class MonitorConfigStoreTest {
             store.addObserver(deadObserver);
             assertThat(store.getConnectedObservers()).isEqualTo(2);
 
-            store.updateConfig(List.of("ch1"), null, null, null, "admin", "test");
+            store.updateConfig(List.of("ch1"), null, null, null, null, "admin", "test");
 
             assertThat(store.getConnectedObservers()).isEqualTo(1);
             verify(aliveObserver).onNext(any(ConfigUpdate.class));
+        }
+    }
+
+    // ==================== Sources 欄位 ====================
+
+    @Nested
+    @DisplayName("sources — per-source metadata")
+    class SourcesTests {
+
+        @Test
+        @DisplayName("updateConfig 帶 sources → config 包含 SourceConfig 清單")
+        void updateWithSources() {
+            SourceConfig src1 = SourceConfig.newBuilder()
+                    .setId(1).setChannelId("ch-1").setName("s1")
+                    .setTradeMode("SHADOW").setRiskMultiplier(1.5).build();
+            SourceConfig src2 = SourceConfig.newBuilder()
+                    .setId(2).setChannelId("ch-2").setName("s2")
+                    .setTradeMode("AUTO").setRiskMultiplier(1.0).build();
+
+            store.updateConfig(List.of("ch-1", "ch-2"), null, null, null,
+                    List.of(src1, src2), "admin", "test");
+
+            MonitorConfig config = store.getCurrentConfig();
+            assertThat(config.getSourcesList()).hasSize(2);
+            assertThat(config.getSourcesList().get(0).getName()).isEqualTo("s1");
+            assertThat(config.getSourcesList().get(0).getTradeMode()).isEqualTo("SHADOW");
+            assertThat(config.getSourcesList().get(1).getRiskMultiplier()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("sources 為 null → config 中 sources 為空")
+        void nullSources_emptyList() {
+            store.updateConfig(List.of("ch-1"), null, null, null, null, "admin", "test");
+
+            MonitorConfig config = store.getCurrentConfig();
+            assertThat(config.getSourcesList()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("sources 推送到 observer 的 ConfigUpdate 中")
+        void sourcesIncludedInPush() {
+            @SuppressWarnings("unchecked")
+            StreamObserver<ConfigUpdate> observer = mock(StreamObserver.class);
+            store.addObserver(observer);
+
+            SourceConfig src = SourceConfig.newBuilder()
+                    .setId(1).setChannelId("ch-1").setName("test-source")
+                    .setTradeMode("MANUAL").setRiskMultiplier(2.0).build();
+
+            store.updateConfig(List.of("ch-1"), null, null, null,
+                    List.of(src), "admin", "test");
+
+            var captor = org.mockito.ArgumentCaptor.forClass(ConfigUpdate.class);
+            verify(observer).onNext(captor.capture());
+
+            ConfigUpdate update = captor.getValue();
+            assertThat(update.getConfig().getSourcesList()).hasSize(1);
+            assertThat(update.getConfig().getSourcesList().get(0).getTradeMode()).isEqualTo("MANUAL");
         }
     }
 }

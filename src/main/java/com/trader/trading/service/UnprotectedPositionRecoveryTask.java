@@ -127,7 +127,7 @@ public class UnprotectedPositionRecoveryTask {
 
         Map<String, Double> positionMap;
         try {
-            positionMap = binanceFuturesService.getAllPositionAmounts();
+            positionMap = binanceFuturesService.getAllPositionAmountsCached();
         } catch (Exception e) {
             log.error("查詢持倉失敗，跳過本輪 SL 檢查: {}", e.getMessage());
             return new RecoverySummary(openTrades.size(), 0, 0, openTrades.size());

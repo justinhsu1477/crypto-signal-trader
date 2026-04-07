@@ -10,8 +10,13 @@ import com.trader.notification.service.NotificationService;
 import com.trader.shared.util.SecurityUtil;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserLineBinding;
+import com.trader.subscription.dto.UserPaymentHistoryResponse;
+import com.trader.subscription.entity.PaymentHistory;
 import com.trader.subscription.entity.Plan;
+import com.trader.subscription.entity.Subscription;
+import com.trader.subscription.repository.PaymentHistoryRepository;
 import com.trader.subscription.repository.PlanRepository;
+import com.trader.subscription.repository.SubscriptionRepository;
 import com.trader.subscription.service.SubscriptionService;
 import com.trader.user.dto.TradeSettingsDefaultsResponse;
 import com.trader.user.dto.TradeSettingsResponse;
@@ -26,11 +31,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Dashboard API
@@ -55,6 +63,11 @@ public class DashboardController {
     private final LineLinkingService lineLinkingService;
     private final SubscriptionService subscriptionService;
     private final PlanRepository planRepository;
+    private final PaymentHistoryRepository paymentHistoryRepository;
+    private final SubscriptionRepository subscriptionRepository;
+    private final com.trader.trading.repository.TradeNoteRepository tradeNoteRepository;
+    private final com.trader.trading.repository.BalanceSnapshotRepository balanceSnapshotRepository;
+    private final com.trader.trading.service.SignalSourceService signalSourceService;
 
     /**
      * 首頁總覽
@@ -518,5 +531,149 @@ public class DashboardController {
                 "userId", userId,
                 "lineNotificationEnabled", enabled,
                 "message", enabled ? "已啟用 LINE 通知" : "已關閉 LINE 通知"));
+    }
+
+    // ==================== 付款紀錄 ====================
+
+    /**
+     * 查詢用戶自己的付款紀錄
+     * GET /api/dashboard/payment-history
+     */
+    @GetMapping("/payment-history")
+    public ResponseEntity<UserPaymentHistoryResponse> getPaymentHistory() {
+        String userId = SecurityUtil.getCurrentUserId();
+
+        List<PaymentHistory> payments = paymentHistoryRepository
+                .findByUserIdOrderByCreatedAtDesc(userId);
+
+        // 用 subscriptionId 反查 planId
+        Map<Long, Subscription> subMap = subscriptionRepository.findByUserId(userId)
+                .stream()
+                .collect(Collectors.toMap(Subscription::getId, Function.identity(),
+                        (a, b) -> a));
+
+        List<UserPaymentHistoryResponse.PaymentRecord> records = payments.stream()
+                .map(ph -> {
+                    String planId = null;
+                    if (ph.getSubscriptionId() != null) {
+                        Subscription sub = subMap.get(ph.getSubscriptionId());
+                        if (sub != null) planId = sub.getPlanId();
+                    }
+                    return UserPaymentHistoryResponse.PaymentRecord.builder()
+                            .id(ph.getId())
+                            .txHash(ph.getTxHash())
+                            .network(ph.getNetwork())
+                            .amount(ph.getAmount())
+                            .currency(ph.getCurrency())
+                            .status(ph.getStatus())
+                            .planId(planId)
+                            .paidAt(ph.getPaidAt())
+                            .createdAt(ph.getCreatedAt())
+                            .build();
+                })
+                .toList();
+
+        long succeededCount = payments.stream()
+                .filter(p -> "succeeded".equals(p.getStatus())).count();
+        BigDecimal totalPaid = payments.stream()
+                .filter(p -> "succeeded".equals(p.getStatus()) && p.getAmount() != null)
+                .map(PaymentHistory::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return ResponseEntity.ok(UserPaymentHistoryResponse.builder()
+                .payments(records)
+                .totalPayments((int) succeededCount)
+                .totalAmountPaid(totalPaid)
+                .build());
+    }
+
+    // ==================== 交易覆盤筆記 ====================
+
+    /**
+     * 查詢交易筆記
+     * GET /api/dashboard/trades/{tradeId}/note
+     */
+    @GetMapping("/trades/{tradeId}/note")
+    public ResponseEntity<com.trader.trading.dto.TradeNoteResponse> getTradeNote(
+            @PathVariable String tradeId) {
+        String userId = SecurityUtil.getCurrentUserId();
+        return tradeNoteRepository.findByTradeIdAndUserId(tradeId, userId)
+                .map(note -> ResponseEntity.ok(com.trader.trading.dto.TradeNoteResponse.builder()
+                        .id(note.getId())
+                        .tradeId(note.getTradeId())
+                        .note(note.getNote())
+                        .tags(note.getTags())
+                        .rating(note.getRating())
+                        .createdAt(note.getCreatedAt())
+                        .updatedAt(note.getUpdatedAt())
+                        .build()))
+                .orElse(ResponseEntity.ok(com.trader.trading.dto.TradeNoteResponse.builder()
+                        .tradeId(tradeId)
+                        .build()));
+    }
+
+    /**
+     * 新增/更新交易筆記
+     * PUT /api/dashboard/trades/{tradeId}/note
+     */
+    @PutMapping("/trades/{tradeId}/note")
+    public ResponseEntity<com.trader.trading.dto.TradeNoteResponse> saveTradeNote(
+            @PathVariable String tradeId,
+            @RequestBody com.trader.trading.dto.TradeNoteRequest request) {
+        String userId = SecurityUtil.getCurrentUserId();
+
+        // 驗證 rating 範圍
+        if (request.getRating() != null && (request.getRating() < 1 || request.getRating() > 5)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        com.trader.trading.entity.TradeNote note = tradeNoteRepository
+                .findByTradeIdAndUserId(tradeId, userId)
+                .orElse(com.trader.trading.entity.TradeNote.builder()
+                        .tradeId(tradeId)
+                        .userId(userId)
+                        .build());
+
+        note.setNote(request.getNote());
+        note.setTags(request.getTags());
+        note.setRating(request.getRating());
+
+        com.trader.trading.entity.TradeNote saved = tradeNoteRepository.save(note);
+        return ResponseEntity.ok(com.trader.trading.dto.TradeNoteResponse.builder()
+                .id(saved.getId())
+                .tradeId(saved.getTradeId())
+                .note(saved.getNote())
+                .tags(saved.getTags())
+                .rating(saved.getRating())
+                .createdAt(saved.getCreatedAt())
+                .updatedAt(saved.getUpdatedAt())
+                .build());
+    }
+
+    // ==================== 資產淨值曲線 ====================
+
+    /**
+     * 查詢資產淨值歷史
+     * GET /api/dashboard/equity-curve?days=90
+     */
+    @GetMapping("/equity-curve")
+    public ResponseEntity<List<com.trader.trading.entity.BalanceSnapshot>> getEquityCurve(
+            @RequestParam(defaultValue = "90") int days) {
+        String userId = SecurityUtil.getCurrentUserId();
+        LocalDate end = LocalDate.now(com.trader.shared.config.AppConstants.ZONE_ID);
+        LocalDate start = end.minusDays(days);
+        return ResponseEntity.ok(balanceSnapshotRepository
+                .findByUserIdAndSnapshotDateBetweenOrderBySnapshotDateAsc(userId, start, end));
+    }
+
+    // ── 訊號來源（用戶視角：只回傳 displayName） ──
+
+    /**
+     * 用戶的訊號來源列表 — 只回傳 displayName（隱私保護）
+     */
+    @GetMapping("/signal-sources")
+    public ResponseEntity<java.util.List<com.trader.trading.dto.signalsource.SignalSourceUserResponse>> getMySignalSources() {
+        String userId = SecurityUtil.getCurrentUserId();
+        return ResponseEntity.ok(signalSourceService.getSourcesForUser(userId));
     }
 }

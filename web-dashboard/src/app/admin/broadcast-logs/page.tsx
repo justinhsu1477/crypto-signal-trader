@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n/i18n-context";
-import { getAdminBroadcastLogs, getAdminBroadcastLogDetail } from "@/lib/api";
+import { getAdminBroadcastLogs, getAdminBroadcastLogDetail, getAdminBroadcastLogSources } from "@/lib/api";
 import type { BroadcastLogSummary, BroadcastLogDetail } from "@/types";
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Filter, Calendar, X } from "lucide-react";
 
 export default function BroadcastLogsPage() {
   const { t } = useT();
@@ -16,10 +16,24 @@ export default function BroadcastLogsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<BroadcastLogDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [sources, setSources] = useState<string[]>([]);
+  const [filterSource, setFilterSource] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+
+  // 載入來源清單（僅一次）
+  useEffect(() => {
+    getAdminBroadcastLogSources().then(setSources).catch(() => setSources([]));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    getAdminBroadcastLogs(page, 20)
+    getAdminBroadcastLogs(
+      page, 20,
+      filterSource || undefined,
+      startDate || undefined,
+      endDate || undefined,
+    )
       .then((res) => {
         if (!cancelled) {
           setLogs(res.content);
@@ -34,7 +48,14 @@ export default function BroadcastLogsPage() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [page]);
+  }, [page, filterSource, startDate, endDate]);
+
+  function clearFilters() {
+    setFilterSource("");
+    setStartDate("");
+    setEndDate("");
+    setPage(0);
+  }
 
   function toggleExpand(id: number) {
     if (expandedId === id) {
@@ -84,11 +105,62 @@ export default function BroadcastLogsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t("admin.broadcastLogs")}</h1>
-        <span className="text-sm text-muted-foreground">
-          {totalElements} {t("admin.rows")}
-        </span>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">{t("admin.broadcastLogs")}</h1>
+          <span className="text-sm text-muted-foreground">
+            {totalElements} {t("admin.rows")}
+          </span>
+        </div>
+
+        {/* 篩選列 */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* 來源篩選 */}
+          {sources.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={filterSource}
+                onChange={(e) => { setFilterSource(e.target.value); setPage(0); }}
+                className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">{t("admin.broadcastAllSources")}</option>
+                {sources.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* 日期篩選 */}
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setPage(0); }}
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-muted-foreground text-sm">~</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setPage(0); }}
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          {/* 清除篩選 */}
+          {(filterSource || startDate || endDate) && (
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+              {t("admin.broadcastClearFilters")}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card">
@@ -101,6 +173,7 @@ export default function BroadcastLogsPage() {
                 <th className="text-left px-4 py-3 font-medium">{t("admin.broadcastAction")}</th>
                 <th className="text-left px-4 py-3 font-medium">{t("admin.broadcastSymbol")}</th>
                 <th className="text-left px-4 py-3 font-medium">{t("admin.broadcastSide")}</th>
+                <th className="text-left px-4 py-3 font-medium">{t("admin.broadcastSource")}</th>
                 <th className="text-right px-4 py-3 font-medium">{t("admin.broadcastSuccess")}</th>
                 <th className="text-right px-4 py-3 font-medium">{t("admin.broadcastFail")}</th>
                 <th className="text-right px-4 py-3 font-medium">{t("admin.broadcastSkipped")}</th>
@@ -135,6 +208,7 @@ export default function BroadcastLogsPage() {
                     </td>
                     <td className="px-4 py-3 font-mono">{log.symbol}</td>
                     <td className="px-4 py-3">{log.side || "-"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{log.sourceAuthor || "-"}</td>
                     <td className="px-4 py-3 text-right text-green-500 font-medium">{log.successCount}</td>
                     <td className={`px-4 py-3 text-right font-medium ${log.failCount > 0 ? "text-red-500" : "text-muted-foreground"}`}>
                       {log.failCount}
@@ -150,7 +224,7 @@ export default function BroadcastLogsPage() {
                   </tr>
                   {expandedId === log.id && (
                     <tr key={`detail-${log.id}`} className="border-b border-border/50">
-                      <td colSpan={9} className="px-6 py-4 bg-accent/10">
+                      <td colSpan={10} className="px-6 py-4 bg-accent/10">
                         {detailLoading ? (
                           <div className="flex items-center gap-2 text-muted-foreground text-sm">
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
@@ -226,7 +300,7 @@ export default function BroadcastLogsPage() {
               ))}
               {logs.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
                     {t("admin.broadcastNoLogs")}
                   </td>
                 </tr>

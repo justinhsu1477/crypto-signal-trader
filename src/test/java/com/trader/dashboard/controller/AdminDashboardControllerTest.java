@@ -18,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 
 import com.trader.shared.service.MetricsService;
+import com.trader.trading.service.DailySignalReportService;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -56,7 +57,8 @@ class AdminDashboardControllerTest {
         objectMapper = new ObjectMapper();
         controller = new AdminDashboardController(
                 dashboardService, userRepository, dataSource,
-                mock(MetricsService.class), broadcastLogRepository, objectMapper);
+                mock(MetricsService.class), broadcastLogRepository, objectMapper,
+                mock(DailySignalReportService.class));
     }
 
     // ── system-overview ──
@@ -447,7 +449,7 @@ class AdminDashboardControllerTest {
             Page<BroadcastLog> page = new PageImpl<>(List.of(log1), PageRequest.of(0, 20), 1);
             when(broadcastLogRepository.findAllByOrderByCreatedAtDesc(any())).thenReturn(page);
 
-            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20);
+            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20, null, null, null);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             BroadcastLogResponse body = response.getBody();
@@ -475,7 +477,7 @@ class AdminDashboardControllerTest {
             Page<BroadcastLog> page = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
             when(broadcastLogRepository.findAllByOrderByCreatedAtDesc(any())).thenReturn(page);
 
-            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20);
+            ResponseEntity<BroadcastLogResponse> response = controller.getBroadcastLogs(0, 20, null, null, null);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody().getContent()).isEmpty();

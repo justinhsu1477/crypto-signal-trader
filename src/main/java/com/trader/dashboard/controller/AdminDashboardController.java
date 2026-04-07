@@ -16,14 +16,21 @@ import com.trader.shared.util.SortHelper;
 import com.trader.trading.dto.BroadcastLogResponse;
 import com.trader.trading.dto.BroadcastLogResponse.BroadcastLogDetail;
 import com.trader.trading.dto.BroadcastLogResponse.BroadcastLogSummary;
+import com.trader.trading.dto.DailySignalReportResponse;
+import com.trader.trading.dto.DailySignalReportResponse.ReportDetail;
+import com.trader.trading.dto.DailySignalReportResponse.ReportSummary;
 import com.trader.trading.entity.BroadcastLog;
+import com.trader.trading.entity.DailySignalReport;
 import com.trader.trading.repository.BroadcastLogRepository;
+import com.trader.trading.service.DailySignalReportService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +38,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -76,6 +84,7 @@ public class AdminDashboardController {
     private final MetricsService metricsService;
     private final BroadcastLogRepository broadcastLogRepository;
     private final ObjectMapper objectMapper;
+    private final DailySignalReportService dailySignalReportService;
 
     /**
      * 系統全域概覽 — 所有用戶匯總 + per-user 摘要
@@ -298,8 +307,30 @@ public class AdminDashboardController {
     @GetMapping("/broadcast-logs")
     public ResponseEntity<BroadcastLogResponse> getBroadcastLogs(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        Page<BroadcastLog> logs = broadcastLogRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String sourceAuthor,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+
+        boolean hasSource = sourceAuthor != null && !sourceAuthor.isBlank();
+        boolean hasDateRange = startDate != null && endDate != null;
+        LocalDateTime startDateTime = hasDateRange ? startDate.atStartOfDay() : null;
+        LocalDateTime endDateTime = hasDateRange ? endDate.plusDays(1).atStartOfDay() : null;
+        Pageable pageable = PageRequest.of(page, size);
+
+        Page<BroadcastLog> logs;
+        if (hasSource && hasDateRange) {
+            logs = broadcastLogRepository.findBySourceAuthorContainingIgnoreCaseAndCreatedAtBetweenOrderByCreatedAtDesc(
+                    sourceAuthor, startDateTime, endDateTime, pageable);
+        } else if (hasSource) {
+            logs = broadcastLogRepository.findBySourceAuthorContainingIgnoreCaseOrderByCreatedAtDesc(
+                    sourceAuthor, pageable);
+        } else if (hasDateRange) {
+            logs = broadcastLogRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(
+                    startDateTime, endDateTime, pageable);
+        } else {
+            logs = broadcastLogRepository.findAllByOrderByCreatedAtDesc(pageable);
+        }
 
         List<BroadcastLogSummary> summaries = logs.getContent().stream()
                 .map(l -> BroadcastLogSummary.builder()
@@ -307,6 +338,7 @@ public class AdminDashboardController {
                         .signalAction(l.getSignalAction())
                         .symbol(l.getSymbol())
                         .side(l.getSide())
+                        .sourceAuthor(l.getSourceAuthor())
                         .totalUsers(l.getTotalUsers())
                         .successCount(l.getSuccessCount())
                         .failCount(l.getFailCount())
@@ -326,6 +358,14 @@ public class AdminDashboardController {
                 .totalPages(logs.getTotalPages())
                 .totalElements(logs.getTotalElements())
                 .build());
+    }
+
+    /**
+     * 廣播紀錄來源清單（供篩選下拉選單用）
+     */
+    @GetMapping("/broadcast-logs/sources")
+    public ResponseEntity<List<String>> getBroadcastLogSources() {
+        return ResponseEntity.ok(broadcastLogRepository.findDistinctSourceAuthors());
     }
 
     /**
@@ -372,5 +412,83 @@ public class AdminDashboardController {
                             .build());
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // ── 每日訊號日報 ──
+
+    /**
+     * 訊號日報列表（分頁）
+     */
+    @GetMapping("/daily-reports")
+    public ResponseEntity<DailySignalReportResponse> getDailyReports(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Page<DailySignalReport> reports = dailySignalReportService.getReports(page, size);
+
+        List<ReportSummary> summaries = reports.getContent().stream()
+                .map(r -> ReportSummary.builder()
+                        .id(r.getId())
+                        .reportDate(r.getReportDate())
+                        .totalSignals(r.getTotalSignals())
+                        .totalSources(r.getTotalSources())
+                        .longCount(r.getLongCount())
+                        .shortCount(r.getShortCount())
+                        .avgConfidence(r.getAvgConfidence())
+                        .hasAiAnalysis(r.getAiAnalysis() != null)
+                        .createdAt(r.getCreatedAt())
+                        .build())
+                .toList();
+
+        return ResponseEntity.ok(DailySignalReportResponse.builder()
+                .content(summaries)
+                .page(page)
+                .size(size)
+                .totalPages(reports.getTotalPages())
+                .totalElements(reports.getTotalElements())
+                .build());
+    }
+
+    /**
+     * 訊號日報詳情（含 AI 分析全文 + reportData JSON）
+     */
+    @GetMapping("/daily-reports/{id}")
+    public ResponseEntity<ReportDetail> getDailyReportDetail(@PathVariable Long id) {
+        return dailySignalReportService.getReportById(id)
+                .map(r -> ResponseEntity.ok(ReportDetail.builder()
+                        .id(r.getId())
+                        .reportDate(r.getReportDate())
+                        .totalSignals(r.getTotalSignals())
+                        .totalSources(r.getTotalSources())
+                        .longCount(r.getLongCount())
+                        .shortCount(r.getShortCount())
+                        .avgConfidence(r.getAvgConfidence())
+                        .reportData(r.getReportData())
+                        .aiAnalysis(r.getAiAnalysis())
+                        .aiTokensUsed(r.getAiTokensUsed())
+                        .createdAt(r.getCreatedAt())
+                        .build()))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 手動產生指定日期的訊號日報
+     */
+    @PostMapping("/daily-reports/generate")
+    public ResponseEntity<ReportDetail> generateDailyReport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        DailySignalReport report = dailySignalReportService.generateReportForDate(date);
+        return ResponseEntity.ok(ReportDetail.builder()
+                .id(report.getId())
+                .reportDate(report.getReportDate())
+                .totalSignals(report.getTotalSignals())
+                .totalSources(report.getTotalSources())
+                .longCount(report.getLongCount())
+                .shortCount(report.getShortCount())
+                .avgConfidence(report.getAvgConfidence())
+                .reportData(report.getReportData())
+                .aiAnalysis(report.getAiAnalysis())
+                .aiTokensUsed(report.getAiTokensUsed())
+                .createdAt(report.getCreatedAt())
+                .build());
     }
 }

@@ -6,9 +6,11 @@ import com.trader.user.entity.LineLinkingCode;
 import com.trader.user.entity.UserLineBinding;
 import com.trader.user.repository.LineLinkingCodeRepository;
 import com.trader.user.repository.UserLineBindingRepository;
+import com.trader.chatbot.event.ChatMessageEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +45,7 @@ public class LineLinkingService {
     private final LineLinkingCodeRepository linkingCodeRepository;
     private final OkHttpClient httpClient;
     private final LineRichMenuService richMenuService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final String REPLY_API_URL = "https://api.line.me/v2/bot/message/reply";
     private static final MediaType JSON_TYPE = MediaType.get("application/json; charset=utf-8");
@@ -108,12 +111,15 @@ public class LineLinkingService {
         // 已綁定的用戶
         Optional<UserLineBinding> existing = lineBindingRepository.findByLineUserId(lineUserId);
         if (existing.isPresent() && existing.get().isEnabled()) {
-            // 已綁定用戶也可以問客服
+            // 已綁定用戶：客服關鍵字
             if (KEYWORD_SUPPORT.contains(upper)) {
                 replyText(replyToken, buildSupportMessage());
                 return;
             }
-            replyText(replyToken, "您的 LINE 已綁定帳號。\n如需解除綁定，請至網站設定頁面操作。");
+            // 已綁定用戶：其他訊息 → AI 客服（傳 replyToken 讓 Consumer 用 Reply API 免費回覆）
+            eventPublisher.publishEvent(new ChatMessageEvent(this,
+                    existing.get().getUserId(), "LINE", lineUserId,
+                    trimmed, null, replyToken));
             return;
         }
 

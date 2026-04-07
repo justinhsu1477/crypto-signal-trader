@@ -7,6 +7,7 @@ import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { RiskBudgetCard } from "@/components/dashboard/risk-budget";
 import { PositionsTable } from "@/components/dashboard/positions-table";
 import { PortfolioAllocation } from "@/components/dashboard/portfolio-allocation";
+import { EquityCurve } from "@/components/dashboard/equity-curve";
 import { SystemStatus } from "@/components/dashboard/system-status";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { TutorialOverlay } from "@/components/onboarding/tutorial-overlay";
@@ -77,6 +78,9 @@ export default function HomePage() {
           <RiskBudgetCard data={data.riskBudget} />
           <SystemStatus circuitBreakerActive={data.riskBudget.circuitBreakerActive} />
         </div>
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <EquityCurve />
       </ErrorBoundary>
       <ErrorBoundary>
         <PortfolioAllocation data={data} />

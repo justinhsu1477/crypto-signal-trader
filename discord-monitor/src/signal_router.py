@@ -1,9 +1,11 @@
 """Signal router — filters messages by channel, identifies signal type, forwards to API."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
+import time
 
 from .api_client import ApiClient
 from .config import DiscordConfig
@@ -56,6 +58,8 @@ class SignalRouter:
         self.ai_parser = ai_parser
         self.signal_queue = signal_queue
         self.ignore_keywords = discord_config.ignore_keywords or []
+        self.source_metadata_map: dict[str, dict] = {}  # channel_id → source metadata (gRPC 推送)
+        self.channel_last_seen: dict[str, float] = {}  # channel_id → epoch seconds（每頻道最後活動時間）
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
         # Content-hash dedup: prevent re-processing old signal content that appears in embeds
@@ -77,6 +81,9 @@ class SignalRouter:
         # Channel whitelist filter
         if self.channel_ids and channel_id not in self.channel_ids:
             return
+
+        # 記錄頻道活動時間（通過 channel filter 就算活躍，不管後續是否被過濾）
+        self.channel_last_seen[channel_id] = time.time()
 
         # Guild filter
         if self.guild_ids and guild_id not in self.guild_ids:
@@ -136,6 +143,9 @@ class SignalRouter:
         if not content.strip():
             return
 
+        # 轉發所有訊息到分析師收集 API（fire-and-forget，不阻塞主流程）
+        asyncio.create_task(self._append_analyst_message(author_name, channel_id, content))
+
         # 內容黑名單過濾（一對一指導等非交易訊號）
         if self.ignore_keywords:
             for kw in self.ignore_keywords:
@@ -161,6 +171,14 @@ class SignalRouter:
             "author_name": author_name,
             "message_id": message_id,
         }
+
+        # 豐富 source：從 gRPC 推送的 per-source metadata 補充資訊
+        metadata = self.source_metadata_map.get(channel_id)
+        if metadata:
+            source["source_name"] = metadata.get("name", "")
+            source["display_name"] = metadata.get("display_name", "")
+            source["trade_mode"] = metadata.get("trade_mode", "AUTO")
+            source["risk_multiplier"] = metadata.get("risk_multiplier", 1.0)
 
         if self.ai_parser:
             # AI 模式：所有訊息都丟 AI 判斷，由 AI 決定 action
@@ -259,6 +277,10 @@ class SignalRouter:
                 # TODO: Insert Agent 2 (risk assessment) here in future
                 # TODO: Insert Agent 3 (arbitration) here in future
 
+                # 附加 prompt 版本號（供後端交易追溯）
+                if self.ai_parser and self.ai_parser.prompt_version:
+                    parsed["prompt_version"] = self.ai_parser.prompt_version
+
                 result = await self.api_client.send_trade(parsed, dry_run=self.dry_run, source=source)
                 if result.success:
                     logger.info("AI trade OK: %s", result.summary[:200])
@@ -325,3 +347,14 @@ class SignalRouter:
         if len(self._content_hashes) > self._max_content_hash_size:
             to_keep = list(self._content_hashes)[self._max_content_hash_size // 2:]
             self._content_hashes = set(to_keep)
+
+    async def _append_analyst_message(self, author_name: str, channel_id: str, content: str) -> None:
+        """Fire-and-forget helper to forward messages to analyst collection API."""
+        try:
+            await self.api_client.append_analyst_message(
+                analyst_name=author_name,
+                channel_id=channel_id,
+                content=content,
+            )
+        except Exception as e:
+            logger.debug("Analyst message append error (ignored): %s", e)

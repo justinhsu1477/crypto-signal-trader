@@ -25,8 +25,9 @@ import { useT } from "@/lib/i18n/i18n-context";
 import { AiConfidenceBadge } from "@/components/ui/ai-confidence-badge";
 import { closePosition, cancelOrders } from "@/lib/api";
 import { toast } from "sonner";
-import { X, Ban, Loader2 } from "lucide-react";
+import { X, Ban, Loader2, Plus } from "lucide-react";
 import type { OpenPositionSummary } from "@/types";
+import { ManualOrderDialog } from "./manual-order-dialog";
 
 interface PositionsTableProps {
   positions: OpenPositionSummary[];
@@ -45,6 +46,7 @@ export function PositionsTable({ positions, onRefresh }: PositionsTableProps) {
   const { t } = useT();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [manualOrderOpen, setManualOrderOpen] = useState(false);
 
   async function handleConfirm() {
     if (!pendingAction) return;
@@ -71,8 +73,17 @@ export function PositionsTable({ positions, onRefresh }: PositionsTableProps) {
   return (
     <>
       <Card data-tutorial-step="positions-table">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">{t("dashboard.currentPositions")}</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setManualOrderOpen(true)}
+            className="gap-1"
+          >
+            <Plus className="h-4 w-4" />
+            Open Position
+          </Button>
         </CardHeader>
         <CardContent>
           {positions.length === 0 ? (
@@ -209,6 +220,8 @@ export function PositionsTable({ positions, onRefresh }: PositionsTableProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ManualOrderDialog open={manualOrderOpen} onOpenChange={setManualOrderOpen} />
     </>
   );
 }

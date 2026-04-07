@@ -69,7 +69,7 @@ class UnprotectedPositionRecoveryTaskTest {
 
             task.scheduledRecoveryCheck();
 
-            verify(binanceFuturesService, never()).getAllPositionAmounts();
+            verify(binanceFuturesService, never()).getAllPositionAmountsCached();
             verify(binanceFuturesService, never()).placeStopLoss(any(), any(), anyDouble(), anyDouble());
         }
 
@@ -78,7 +78,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void allTradesProtected_noRecovery() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{65000.0, 0});
 
             task.scheduledRecoveryCheck();
@@ -91,7 +91,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void noPosition_skipsRecovery() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of()); // 無持倉
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of()); // 無持倉
 
             task.scheduledRecoveryCheck();
 
@@ -104,7 +104,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void positionExistsNoSL_recoversSuccessfully() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
             when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.001);
             when(binanceFuturesService.placeStopLoss("BTCUSDT", "SELL", 65000.0, 0.001))
@@ -123,7 +123,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void positionExistsNoSL_recoveryFails() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
             when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.001);
             when(binanceFuturesService.placeStopLoss(any(), any(), anyDouble(), anyDouble()))
@@ -143,7 +143,7 @@ class UnprotectedPositionRecoveryTaskTest {
             when(userApiKeyService.getUserBinanceKeys("user-a"))
                     .thenReturn(Optional.of(new BinanceKeys("key", "secret")));
             when(tradeRepository.findByUserIdAndStatus("user-a", "OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
 
             task.scheduledRecoveryCheck();
@@ -158,7 +158,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void sideMapping_longToSell() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
             when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.001);
             when(binanceFuturesService.placeStopLoss(any(), any(), anyDouble(), anyDouble()))
@@ -174,7 +174,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void sideMapping_shortToBuy() {
             Trade trade = createTrade("t1", "ETHUSDT", "SHORT", 3000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("ETHUSDT", -0.5));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("ETHUSDT", -0.5));
             when(binanceFuturesService.getCurrentSLTPPrices("ETHUSDT")).thenReturn(new double[]{0, 0});
             when(binanceFuturesService.getCurrentPositionAmount("ETHUSDT")).thenReturn(-0.5);
             when(binanceFuturesService.placeStopLoss(any(), any(), anyDouble(), anyDouble()))
@@ -199,7 +199,7 @@ class UnprotectedPositionRecoveryTaskTest {
             task.getRecoveryAttempts().put("t1", UnprotectedPositionRecoveryTask.MAX_RECOVERY_ATTEMPTS);
 
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
 
             task.scheduledRecoveryCheck();
@@ -216,7 +216,7 @@ class UnprotectedPositionRecoveryTaskTest {
             task.getRecoveryAttempts().put("t1", 2);
 
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
             when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.001);
             when(binanceFuturesService.placeStopLoss(any(), any(), anyDouble(), anyDouble()))
@@ -232,7 +232,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void failureIncrementsCounter() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
             when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.001);
             when(binanceFuturesService.placeStopLoss(any(), any(), anyDouble(), anyDouble()))
@@ -255,7 +255,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void lockBusy_skipsGracefully() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
 
             // 模擬鎖已被占用
@@ -277,7 +277,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void doubleCheckInsideLock_slAppeared() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             // 第一次（lock 外）：無 SL
             // 第二次（lock 內 double-check via getCurrentSLTPPrices）：有 SL
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT"))
@@ -295,7 +295,7 @@ class UnprotectedPositionRecoveryTaskTest {
         void doubleCheckInsideLock_positionGone() {
             Trade trade = createTrade("t1", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
             // lock 內 double-check：持倉已歸零
             when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.0);
@@ -364,7 +364,7 @@ class UnprotectedPositionRecoveryTaskTest {
             when(tradeRepository.findByUserIdAndStatus("user-b", "OPEN")).thenReturn(List.of());
 
             // 第一次呼叫（user-a）拋異常，第二次（user-b）正常
-            when(binanceFuturesService.getAllPositionAmounts())
+            when(binanceFuturesService.getAllPositionAmountsCached())
                     .thenThrow(new RuntimeException("Binance API error"))
                     .thenReturn(Map.of());
 
@@ -383,7 +383,7 @@ class UnprotectedPositionRecoveryTaskTest {
             when(userApiKeyService.getUserBinanceKeys("user-a"))
                     .thenReturn(Optional.of(new BinanceKeys("key-a", "secret-a")));
             when(tradeRepository.findByUserIdAndStatus("user-a", "OPEN")).thenReturn(List.of(trade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of("BTCUSDT", 0.001));
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of("BTCUSDT", 0.001));
             when(binanceFuturesService.getCurrentSLTPPrices("BTCUSDT")).thenReturn(new double[]{0, 0});
             when(binanceFuturesService.getCurrentPositionAmount("BTCUSDT")).thenReturn(0.001);
             when(binanceFuturesService.placeStopLoss("BTCUSDT", "SELL", 65000.0, 0.001))
@@ -410,7 +410,7 @@ class UnprotectedPositionRecoveryTaskTest {
 
             Trade openTrade = createTrade("open-trade", "BTCUSDT", "LONG", 65000.0);
             when(tradeRepository.findByStatus("OPEN")).thenReturn(List.of(openTrade));
-            when(binanceFuturesService.getAllPositionAmounts()).thenReturn(Map.of());
+            when(binanceFuturesService.getAllPositionAmountsCached()).thenReturn(Map.of());
 
             task.scheduledRecoveryCheck();
 

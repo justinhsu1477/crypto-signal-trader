@@ -169,11 +169,44 @@ class ApiClient:
         except Exception:
             return False
 
+    async def append_analyst_message(
+        self, analyst_name: str, channel_id: str, content: str,
+    ) -> bool:
+        """Append a message to the analyst daily collection.
+
+        Args:
+            analyst_name: Discord author name.
+            channel_id: Discord channel ID.
+            content: Message text content.
+
+        Returns:
+            True if accepted by server, False otherwise.
+        """
+        try:
+            url = f"{self.config.base_url}/api/analyst-messages"
+            payload = {
+                "analyst_name": analyst_name,
+                "channel_id": channel_id,
+                "content": content,
+            }
+            async with self._session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    logger.debug("Analyst message appended: %s", analyst_name)
+                    return True
+                logger.warning("Analyst message response: HTTP %d", resp.status)
+                return False
+        except Exception as e:
+            logger.warning("Analyst message append failed: %s", e)
+            return False
+
     async def send_heartbeat(
         self,
         status: str = "connected",
         ai_status: str = "active",
         ai_token_stats: dict | None = None,
+        channel_last_seen: dict[str, float] | None = None,
     ) -> bool:
         """Send heartbeat to Spring Boot API.
 
@@ -181,6 +214,7 @@ class ApiClient:
             status: Current monitor status (connected / reconnecting).
             ai_status: AI parser status (active / disabled).
             ai_token_stats: Optional AI token usage stats from AiSignalParser.
+            channel_last_seen: Optional per-channel last activity timestamps (epoch seconds).
 
         Returns:
             True if heartbeat was acknowledged, False otherwise.
@@ -190,6 +224,11 @@ class ApiClient:
             payload: dict = {"status": status, "aiStatus": ai_status}
             if ai_token_stats:
                 payload["aiTokenStats"] = ai_token_stats
+            if channel_last_seen:
+                # 轉為 epoch millis（Java 端用 Long 存）
+                payload["channelLastSeen"] = {
+                    ch_id: int(ts * 1000) for ch_id, ts in channel_last_seen.items()
+                }
             async with self._session.post(
                 url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
             ) as resp:

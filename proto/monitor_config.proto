@@ -6,13 +6,29 @@ option java_package = "com.trader.trading.grpc.generated";
 option java_outer_classname = "MonitorConfigProto";
 option java_multiple_files = true;
 
+// 每個訊號來源的元資料（Phase 1: per-source metadata）
+message SourceConfig {
+  int64 id = 1;
+  string channel_id = 2;
+  string guild_id = 3;
+  string name = 4;               // Admin 內部名稱
+  string display_name = 5;       // 用戶可見名稱
+  string routing_mode = 6;       // GLOBAL / ASSIGNED
+  string trade_mode = 7;         // AUTO / SHADOW / MANUAL
+  double risk_multiplier = 8;    // 風險倍率（預設 1.0）
+  string custom_prompt = 9;      // AI 補充指令（Phase 2 用）
+}
+
 // Discord Monitor 頻道過濾設定
 message MonitorConfig {
-  repeated string channel_ids = 1;
-  repeated string guild_ids = 2;
-  repeated string author_ids = 3;
-  repeated string ignore_keywords = 4;
-  int64 version = 5;  // 單調遞增版本號，衝突偵測用
+  repeated string channel_ids = 1;      // 保留（向下相容）
+  repeated string guild_ids = 2;        // 保留
+  repeated string author_ids = 3;       // 保留
+  repeated string ignore_keywords = 4;  // 保留
+  int64 version = 5;                    // 單調遞增版本號，衝突偵測用
+  repeated SourceConfig sources = 6;    // 每個來源的完整元資料
+  string active_prompt = 7;             // AI system prompt 全文（gRPC 推送）
+  int32 active_prompt_version = 8;      // prompt 版本號（交易追溯用）
 }
 
 // ─── GetConfig: 啟動時取得初始設定（Unary） ───

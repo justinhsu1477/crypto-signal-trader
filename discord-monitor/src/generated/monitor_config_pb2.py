@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x14monitor_config.proto\x12\x07monitor\"u\n\rMonitorConfig\x12\x13\n\x0b\x63hannel_ids\x18\x01 \x03(\t\x12\x11\n\tguild_ids\x18\x02 \x03(\t\x12\x12\n\nauthor_ids\x18\x03 \x03(\t\x12\x17\n\x0fignore_keywords\x18\x04 \x03(\t\x12\x0f\n\x07version\x18\x05 \x01(\x03\"\x12\n\x10GetConfigRequest\";\n\x11GetConfigResponse\x12&\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x16.monitor.MonitorConfig\"\x14\n\x12WatchConfigRequest\"t\n\x0c\x43onfigUpdate\x12&\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x16.monitor.MonitorConfig\x12\x12\n\nupdated_by\x18\x02 \x01(\t\x12\x15\n\rupdate_reason\x18\x03 \x01(\t\x12\x11\n\ttimestamp\x18\x04 \x01(\x03\x32\x9f\x01\n\x14MonitorConfigService\x12\x42\n\tGetConfig\x12\x19.monitor.GetConfigRequest\x1a\x1a.monitor.GetConfigResponse\x12\x43\n\x0bWatchConfig\x12\x1b.monitor.WatchConfigRequest\x1a\x15.monitor.ConfigUpdate0\x01\x42\x39\n!com.trader.trading.grpc.generatedB\x12MonitorConfigProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x14monitor_config.proto\x12\x07monitor\"\xbe\x01\n\x0cSourceConfig\x12\n\n\x02id\x18\x01 \x01(\x03\x12\x12\n\nchannel_id\x18\x02 \x01(\t\x12\x10\n\x08guild_id\x18\x03 \x01(\t\x12\x0c\n\x04name\x18\x04 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x05 \x01(\t\x12\x14\n\x0crouting_mode\x18\x06 \x01(\t\x12\x12\n\ntrade_mode\x18\x07 \x01(\t\x12\x17\n\x0frisk_multiplier\x18\x08 \x01(\x01\x12\x15\n\rcustom_prompt\x18\t \x01(\t\"\xd3\x01\n\rMonitorConfig\x12\x13\n\x0b\x63hannel_ids\x18\x01 \x03(\t\x12\x11\n\tguild_ids\x18\x02 \x03(\t\x12\x12\n\nauthor_ids\x18\x03 \x03(\t\x12\x17\n\x0fignore_keywords\x18\x04 \x03(\t\x12\x0f\n\x07version\x18\x05 \x01(\x03\x12&\n\x07sources\x18\x06 \x03(\x0b\x32\x15.monitor.SourceConfig\x12\x15\n\ractive_prompt\x18\x07 \x01(\t\x12\x1d\n\x15\x61\x63tive_prompt_version\x18\x08 \x01(\x05\"\x12\n\x10GetConfigRequest\";\n\x11GetConfigResponse\x12&\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x16.monitor.MonitorConfig\"\x14\n\x12WatchConfigRequest\"t\n\x0c\x43onfigUpdate\x12&\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x16.monitor.MonitorConfig\x12\x12\n\nupdated_by\x18\x02 \x01(\t\x12\x15\n\rupdate_reason\x18\x03 \x01(\t\x12\x11\n\ttimestamp\x18\x04 \x01(\x03\x32\x9f\x01\n\x14MonitorConfigService\x12\x42\n\tGetConfig\x12\x19.monitor.GetConfigRequest\x1a\x1a.monitor.GetConfigResponse\x12\x43\n\x0bWatchConfig\x12\x1b.monitor.WatchConfigRequest\x1a\x15.monitor.ConfigUpdate0\x01\x42\x39\n!com.trader.trading.grpc.generatedB\x12MonitorConfigProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,16 +32,18 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'monitor_config_pb2', _globa
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n!com.trader.trading.grpc.generatedB\022MonitorConfigProtoP\001'
-  _globals['_MONITORCONFIG']._serialized_start=33
-  _globals['_MONITORCONFIG']._serialized_end=150
-  _globals['_GETCONFIGREQUEST']._serialized_start=152
-  _globals['_GETCONFIGREQUEST']._serialized_end=170
-  _globals['_GETCONFIGRESPONSE']._serialized_start=172
-  _globals['_GETCONFIGRESPONSE']._serialized_end=231
-  _globals['_WATCHCONFIGREQUEST']._serialized_start=233
-  _globals['_WATCHCONFIGREQUEST']._serialized_end=253
-  _globals['_CONFIGUPDATE']._serialized_start=255
-  _globals['_CONFIGUPDATE']._serialized_end=371
-  _globals['_MONITORCONFIGSERVICE']._serialized_start=374
-  _globals['_MONITORCONFIGSERVICE']._serialized_end=533
+  _globals['_SOURCECONFIG']._serialized_start=34
+  _globals['_SOURCECONFIG']._serialized_end=224
+  _globals['_MONITORCONFIG']._serialized_start=227
+  _globals['_MONITORCONFIG']._serialized_end=438
+  _globals['_GETCONFIGREQUEST']._serialized_start=440
+  _globals['_GETCONFIGREQUEST']._serialized_end=458
+  _globals['_GETCONFIGRESPONSE']._serialized_start=460
+  _globals['_GETCONFIGRESPONSE']._serialized_end=519
+  _globals['_WATCHCONFIGREQUEST']._serialized_start=521
+  _globals['_WATCHCONFIGREQUEST']._serialized_end=541
+  _globals['_CONFIGUPDATE']._serialized_start=543
+  _globals['_CONFIGUPDATE']._serialized_end=659
+  _globals['_MONITORCONFIGSERVICE']._serialized_start=662
+  _globals['_MONITORCONFIGSERVICE']._serialized_end=821
 # @@protoc_insertion_point(module_scope)

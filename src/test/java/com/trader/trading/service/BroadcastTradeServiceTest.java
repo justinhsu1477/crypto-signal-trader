@@ -12,6 +12,8 @@ import com.trader.trading.repository.TradeRepository;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import com.trader.subscription.repository.SubscriptionRepository;
+import com.trader.papertrade.service.BinancePriceClient;
+import com.trader.papertrade.service.PaperTradeService;
 import com.trader.user.service.UserApiKeyService;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
@@ -41,6 +43,7 @@ class BroadcastTradeServiceTest {
     private UserApiKeyService userApiKeyService;
     private SubscriptionRepository subscriptionRepository;
     private SignalScoringService signalScoringService;
+    private SignalSourceService signalSourceService;
     private TradeRepository tradeRepository;
     private BroadcastLogRepository broadcastLogRepository;
     private ObjectMapper objectMapper;
@@ -56,6 +59,7 @@ class BroadcastTradeServiceTest {
         userApiKeyService = mock(UserApiKeyService.class);
         subscriptionRepository = mock(SubscriptionRepository.class);
         signalScoringService = mock(SignalScoringService.class);
+        signalSourceService = mock(SignalSourceService.class);
         tradeRepository = mock(TradeRepository.class);
         broadcastLogRepository = mock(BroadcastLogRepository.class);
         objectMapper = new ObjectMapper(); // real ObjectMapper for JSON serialization
@@ -68,10 +72,13 @@ class BroadcastTradeServiceTest {
                 userApiKeyService,
                 subscriptionRepository,
                 signalScoringService,
+                signalSourceService,
                 tradeRepository,
                 broadcastLogRepository,
                 objectMapper,
                 broadcastExecutor,
+                mock(PaperTradeService.class),
+                mock(BinancePriceClient.class),
                 15,   // batchSize — 測試預設
                 0L);  // batchDelayMs — 測試不需延遲
 
@@ -456,8 +463,9 @@ class BroadcastTradeServiceTest {
             BroadcastTradeService batchService = new BroadcastTradeService(
                     userRepository, binanceFuturesService, discordWebhookService,
                     userApiKeyService, subscriptionRepository, signalScoringService,
-                    tradeRepository, broadcastLogRepository, objectMapper,
-                    broadcastExecutor, 2, 0L);
+                    signalSourceService, tradeRepository, broadcastLogRepository, objectMapper,
+                    broadcastExecutor, mock(PaperTradeService.class), mock(BinancePriceClient.class),
+                    2, 0L);
 
             User u1 = User.builder().userId("u1").email("a@test.com").name("A")
                     .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();
@@ -515,8 +523,9 @@ class BroadcastTradeServiceTest {
             BroadcastTradeService batchService = new BroadcastTradeService(
                     userRepository, binanceFuturesService, discordWebhookService,
                     userApiKeyService, subscriptionRepository, signalScoringService,
-                    tradeRepository, broadcastLogRepository, objectMapper,
-                    broadcastExecutor, 2, 0L);
+                    signalSourceService, tradeRepository, broadcastLogRepository, objectMapper,
+                    broadcastExecutor, mock(PaperTradeService.class), mock(BinancePriceClient.class),
+                    2, 0L);
 
             User u1 = User.builder().userId("u1").email("a@test.com").name("A")
                     .enabled(true).autoTradeEnabled(true).role(User.Role.USER).build();

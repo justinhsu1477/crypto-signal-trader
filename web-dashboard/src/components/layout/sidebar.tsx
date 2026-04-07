@@ -24,7 +24,11 @@ import {
   TrendingUp,
   Users2,
   CandlestickChart,
-  Wifi,
+  Target,
+  FileBarChart,
+  ScrollText,
+  Receipt,
+  GitBranch,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useT } from "@/lib/i18n/i18n-context";
@@ -44,6 +48,8 @@ export function Sidebar() {
     { href: "/trades", label: t("nav.trades"), icon: History },
     { href: "/referral", label: t("nav.referral"), icon: Link2 },
     { href: "/announcements", label: t("nav.announcements"), icon: Bell },
+    { href: "/payments", label: t("nav.payments"), icon: Receipt },
+    { href: "/changelog", label: t("nav.changelog"), icon: GitBranch },
     { href: "/settings", label: t("nav.settings"), icon: Settings },
   ];
 
@@ -55,10 +61,13 @@ export function Sidebar() {
     { href: "/admin/subscriptions", label: t("nav.adminSubscriptions"), icon: CreditCard },
     { href: "/admin/analytics", label: t("nav.adminAnalytics"), icon: TrendingUp },
     { href: "/admin/insights", label: t("nav.adminInsights"), icon: Users2 },
+    { href: "/admin/signal-sources", label: t("nav.adminSignalSources"), icon: Target },
+    { href: "/admin/prompts", label: t("nav.adminPrompts"), icon: ScrollText },
     { href: "/admin/broadcast-logs", label: t("nav.adminBroadcastLogs"), icon: Radio },
+    { href: "/admin/daily-reports", label: t("nav.adminDailyReports"), icon: FileBarChart },
+    { href: "/admin/analyst-reports", label: t("nav.adminAnalystReports"), icon: ScrollText },
     { href: "/admin/notifications", label: t("nav.adminNotifications"), icon: Send },
     { href: "/admin/announcements", label: t("nav.adminAnnouncements"), icon: Megaphone },
-    { href: "/admin/monitor-settings", label: t("nav.adminMonitorSettings"), icon: Wifi },
     { href: "/admin/settings", label: t("nav.adminSettings"), icon: Settings },
   ];
 

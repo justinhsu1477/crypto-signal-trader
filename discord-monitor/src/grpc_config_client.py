@@ -169,3 +169,32 @@ class GrpcConfigClient:
             if new_keywords != self.signal_router.ignore_keywords:
                 self.signal_router.ignore_keywords = new_keywords
                 logger.info("🔄 ignore_keywords 已更新: %s", new_keywords)
+
+        # per-source metadata（Phase 1: channel_id → source 元資料映射）
+        if config.sources:
+            source_map: dict[str, dict] = {}
+            for src in config.sources:
+                if src.channel_id:
+                    source_map[src.channel_id] = {
+                        "id": src.id,
+                        "name": src.name,
+                        "display_name": src.display_name,
+                        "routing_mode": src.routing_mode,
+                        "trade_mode": src.trade_mode,
+                        "risk_multiplier": src.risk_multiplier,
+                        "custom_prompt": src.custom_prompt,
+                    }
+            self.signal_router.source_metadata_map = source_map
+            logger.info("🔄 source_metadata_map 已更新: %d 個來源", len(source_map))
+
+        # AI prompt 熱更新（DB 管理的 prompt 版本，由 Admin 啟用後推送）
+        if config.active_prompt and self.signal_router.ai_parser:
+            current_ver = self.signal_router.ai_parser.prompt_version
+            if config.active_prompt_version != current_ver:
+                self.signal_router.ai_parser.update_system_prompt(
+                    config.active_prompt, config.active_prompt_version
+                )
+                logger.info(
+                    "🔄 AI prompt 已更新: v%d → v%d",
+                    current_ver, config.active_prompt_version,
+                )

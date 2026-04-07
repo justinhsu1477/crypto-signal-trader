@@ -31,6 +31,7 @@ class LineLinkingServiceTest {
     private LineLinkingCodeRepository linkingCodeRepository;
     private OkHttpClient httpClient;
     private LineRichMenuService richMenuService;
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
     private LineLinkingService service;
     private Call mockCall;
 
@@ -44,6 +45,7 @@ class LineLinkingServiceTest {
         linkingCodeRepository = mock(LineLinkingCodeRepository.class);
         httpClient = mock(OkHttpClient.class);
         richMenuService = mock(LineRichMenuService.class);
+        eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
 
         when(lineConfig.getChannelAccessToken()).thenReturn("test-token");
         when(lineConfig.getLinkingCodeExpiryMinutes()).thenReturn(10);
@@ -52,7 +54,7 @@ class LineLinkingServiceTest {
         when(httpClient.newCall(any())).thenReturn(mockCall);
 
         service = new LineLinkingService(lineConfig, lineBindingRepository,
-                linkingCodeRepository, httpClient, richMenuService);
+                linkingCodeRepository, httpClient, richMenuService, eventPublisher);
     }
 
     // ==================== generateLinkingCode ====================

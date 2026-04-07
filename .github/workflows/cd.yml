@@ -1,9 +1,12 @@
 name: CD
 
 on:
-  push:
-    branches: [main]        # push main → 自動 build + push GHCR + 部署
-  workflow_dispatch:         # 手動觸發（也會 build + 部署）
+  # CI 完成後才觸發（取代原本的 push:main，避免 CI 沒過就部署）
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:         # 手動觸發（跳過 CI 直接部署）
 
 # 同一 branch 新 push 進來 → 取消正在跑的舊 build，只保留最新
 concurrency:
@@ -17,11 +20,16 @@ env:
 
 jobs:
   # ============================================================
-  # 1. 建構 Docker images 並推到 GHCR（每次 push main 自動執行）
+  # 1. 建構 Docker images 並推到 GHCR
   # ============================================================
   build-and-push:
     name: 🏗️ 建構 & 推送 Docker Images
     runs-on: ubuntu-latest
+    # workflow_run 觸發時：只有 CI 成功才執行
+    # workflow_dispatch 觸發時：直接執行（手動部署）
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       packages: write
@@ -68,7 +76,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=web-dashboard
 
   # ============================================================
-  # 2. 部署到正式環境（只需 pull，不用 build）
+  # 2. 部署到正式環境 + Health Check
   # ============================================================
   deploy:
     name: 🚀 部署到正式環境
@@ -95,3 +103,71 @@ jobs:
 
             # 清理舊映像
             docker image prune -f
+
+      - name: ⏳ Health Check（等待服務啟動）
+        run: |
+          echo "等待 90 秒讓容器啟動..."
+          sleep 90
+
+          # 最多重試 5 次，每次間隔 15 秒
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://hook-fi.com/api/health || echo "000")
+            echo "Health check #$i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ 部署成功，服務正常運作"
+              exit 0
+            fi
+            echo "等待 15 秒後重試..."
+            sleep 15
+          done
+
+          echo "❌ Health check 失敗，服務可能未正常啟動"
+          exit 1
+
+      - name: 🔍 抓取容器 Log（Health Check 失敗時）
+        if: failure()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: root
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            echo "=== trading-api 容器狀態 ==="
+            docker inspect trading-api --format='{{.State.Status}} (ExitCode: {{.State.ExitCode}})' 2>/dev/null || echo "容器不存在"
+            echo ""
+            echo "=== trading-api 最近 100 行 Log ==="
+            docker logs trading-api --tail 100 2>&1 || echo "無法取得 log"
+            echo ""
+            echo "=== docker compose 狀態 ==="
+            cd /root/crypto-signal-trader && docker compose -f docker-compose.cloud.yml ps 2>&1
+
+  # ============================================================
+  # 3. 部署失敗通知（任一 job 失敗時觸發）
+  # ============================================================
+  notify-failure:
+    name: 🔔 部署失敗通知
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy]
+    if: failure()
+
+    steps:
+      - name: 發送 Discord 通知
+        env:
+          WEBHOOK_URL: ${{ secrets.CD_DISCORD_WEBHOOK }}
+        if: env.WEBHOOK_URL != ''
+        run: |
+          curl -sf -H "Content-Type: application/json" \
+            -d "{
+              \"content\": \"🚨 **CD 部署失敗**\n\n📦 Commit: \`${{ github.sha }}\`\n🔗 [查看 Workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n⏰ $(date -u '+%Y-%m-%d %H:%M UTC')\"
+            }" \
+            "$WEBHOOK_URL" || echo "Discord 通知發送失敗"
+
+      - name: 輸出失敗摘要
+        run: |
+          echo "## ❌ CD 部署失敗" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **時間**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **觸發**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "請檢查 [Workflow 日誌](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
