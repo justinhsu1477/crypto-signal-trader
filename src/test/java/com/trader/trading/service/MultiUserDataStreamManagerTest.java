@@ -268,6 +268,162 @@ class MultiUserDataStreamManagerTest {
         }
     }
 
+    // ==================== Give-up 狀態（達上限後） ====================
+
+    @Nested
+    @DisplayName("達上限 give-up 狀態")
+    class GiveUpStateTests {
+
+        @Test
+        @DisplayName("達上限 → context.giveUp=true + listenKey 被清掉")
+        void reachesLimitEntersGiveUp() {
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
+            context.setListenKey("old-dead-key");
+            manager.getActiveStreams().put("u1", context);
+
+            // 衝到上限 + 再呼叫觸發 give-up
+            for (int i = 0; i <= MultiUserDataStreamManager.MAX_RECONNECT_ATTEMPTS; i++) {
+                manager.scheduleReconnect("u1", context);
+            }
+
+            assertThat(context.isGiveUp()).isTrue();
+            assertThat(context.getListenKey()).isNull();
+        }
+
+        @Test
+        @DisplayName("已 giveUp 的 stream 再呼叫 scheduleReconnect → 不加計數、不重複警報")
+        void giveUpStreamIgnoresFurtherReconnects() {
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
+            context.setGiveUp(true);
+            int baseline = context.getReconnectAttempts();
+
+            // 清空先前可能的 mock 呼叫
+            clearInvocations(discordWebhookService);
+
+            manager.scheduleReconnect("u1", context);
+            manager.scheduleReconnect("u1", context);
+
+            // 計數不變、不再發送任何警報
+            assertThat(context.getReconnectAttempts()).isEqualTo(baseline);
+            verify(discordWebhookService, never()).sendNotificationToUser(
+                    anyString(), anyString(), anyString(), anyInt());
+        }
+
+        @Test
+        @DisplayName("resetOnConnected 會清除 giveUp flag")
+        void resetOnConnectedClearsGiveUp() {
+            UserStreamContext context = new UserStreamContext("u1", "User 1", "key", "secret");
+            context.setGiveUp(true);
+
+            context.resetOnConnected();
+
+            assertThat(context.isGiveUp()).isFalse();
+        }
+    }
+
+    // ==================== Recovery Scheduler ====================
+
+    @Nested
+    @DisplayName("recoverGaveUpStreams — 週期性恢復")
+    class RecoverGaveUpStreamsTests {
+
+        @Test
+        @DisplayName("沒有 give-up stream → 靜默返回不呼叫 reconnect")
+        void noGiveUpStreamsSilentReturn() {
+            UserStreamContext healthy = new UserStreamContext("u1", "User 1", "key", "secret");
+            healthy.setListenKey("healthy-key");
+            manager.getActiveStreams().put("u1", healthy);
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doNothing().when(spyManager).reconnect(anyString());
+
+            spyManager.recoverGaveUpStreams();
+
+            verify(spyManager, never()).reconnect(anyString());
+            assertThat(healthy.isGiveUp()).isFalse();
+        }
+
+        @Test
+        @DisplayName("give-up stream 會 reset giveUp+attempts 並呼叫 reconnect")
+        void recoversGiveUpStreams() {
+            UserStreamContext giveUpCtx = new UserStreamContext("u1", "User 1", "key", "secret");
+            giveUpCtx.setGiveUp(true);
+            // 模擬已累積 21 次
+            for (int i = 0; i < 21; i++) giveUpCtx.incrementReconnectAttempts();
+            manager.getActiveStreams().put("u1", giveUpCtx);
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doNothing().when(spyManager).reconnect(anyString());
+
+            spyManager.recoverGaveUpStreams();
+
+            assertThat(giveUpCtx.isGiveUp()).isFalse();
+            assertThat(giveUpCtx.getReconnectAttempts()).isEqualTo(0);
+            verify(spyManager).reconnect("u1");
+        }
+
+        @Test
+        @DisplayName("shuttingDown 時不做任何事")
+        void skipsWhenShuttingDown() {
+            UserStreamContext giveUpCtx = new UserStreamContext("u1", "User 1", "key", "secret");
+            giveUpCtx.setGiveUp(true);
+            manager.getActiveStreams().put("u1", giveUpCtx);
+
+            manager.stopAllStreams();  // sets shuttingDown = true
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doNothing().when(spyManager).reconnect(anyString());
+
+            spyManager.recoverGaveUpStreams();
+
+            verify(spyManager, never()).reconnect(anyString());
+            assertThat(giveUpCtx.isGiveUp()).isTrue();  // 未被恢復
+        }
+
+        @Test
+        @DisplayName("只處理 give-up stream，健康的 stream 不動")
+        void onlyProcessesGiveUpStreams() {
+            UserStreamContext healthy = new UserStreamContext("u1", "Healthy", "k1", "s1");
+            healthy.setListenKey("healthy-key");
+            UserStreamContext giveUp = new UserStreamContext("u2", "GiveUp", "k2", "s2");
+            giveUp.setGiveUp(true);
+
+            manager.getActiveStreams().put("u1", healthy);
+            manager.getActiveStreams().put("u2", giveUp);
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+            doNothing().when(spyManager).reconnect(anyString());
+
+            spyManager.recoverGaveUpStreams();
+
+            verify(spyManager, never()).reconnect("u1");
+            verify(spyManager).reconnect("u2");
+        }
+    }
+
+    // ==================== keepAliveAll give-up 互動 ====================
+
+    @Nested
+    @DisplayName("keepAliveAll — give-up stream 互動")
+    class KeepAliveGiveUpTests {
+
+        @Test
+        @DisplayName("give-up 的 stream 會被 keepAliveAll 跳過（不發 HTTP PUT）")
+        void keepAliveSkipsGiveUpStreams() {
+            UserStreamContext giveUpCtx = new UserStreamContext("u1", "User 1", "key", "secret");
+            giveUpCtx.setListenKey("some-key");  // 即使有 listenKey 也應跳過
+            giveUpCtx.setGiveUp(true);
+            manager.getActiveStreams().put("u1", giveUpCtx);
+
+            MultiUserDataStreamManager spyManager = spy(manager);
+
+            spyManager.keepAliveAll();
+
+            // 被跳過，不應呼叫 keepAliveListenKey
+            verify(spyManager, never()).keepAliveListenKey(anyString(), anyString());
+        }
+    }
+
     // ==================== WebSocket Admin 通知 ====================
 
     @Nested

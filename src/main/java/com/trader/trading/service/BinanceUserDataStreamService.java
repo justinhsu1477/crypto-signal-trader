@@ -181,6 +181,22 @@ public class BinanceUserDataStreamService {
     }
 
     /**
+     * Recovery scheduler（每小時一次）
+     *
+     * 嘗試恢復 give-up 狀態的 stream。用於處理：
+     * - Binance 短暫地理封鎖（HTTP 451）後的自動恢復
+     * - 任何重連達上限後的週期性重試
+     *
+     * 僅在多用戶模式下啟用（單用戶模式重連達上限時會整個服務失效，需手動重啟）。
+     */
+    @Scheduled(fixedRate = 60 * 60 * 1000, initialDelay = 60 * 60 * 1000)
+    public void recoverGaveUpStreams() {
+        if (multiUserConfig.isEnabled()) {
+            multiUserManager.recoverGaveUpStreams();
+        }
+    }
+
+    /**
      * 每 30 分鐘 PUT keepalive（listenKey 有效期 60 分鐘）
      */
     @Scheduled(fixedRate = 30 * 60 * 1000, initialDelay = 30 * 60 * 1000)

@@ -40,6 +40,10 @@ public class UserStreamContext {
     private volatile boolean selfInitiatedClose = false;
     private volatile boolean alertSent = false;
 
+    // 重連達上限後進入「放棄」狀態，等待 recovery scheduler 嘗試恢復
+    // 避免 keepalive scheduler 繼續 PUT 失效的 listenKey 造成無限 HTTP 400 循環
+    private volatile boolean giveUp = false;
+
     // 重連狀態
     private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
     private final AtomicReference<Instant> lastMessageTime = new AtomicReference<>(null);
@@ -105,6 +109,14 @@ public class UserStreamContext {
         this.alertSent = alertSent;
     }
 
+    public boolean isGiveUp() {
+        return giveUp;
+    }
+
+    public void setGiveUp(boolean giveUp) {
+        this.giveUp = giveUp;
+    }
+
     // ==================== 訊息時間 ====================
 
     public Instant getLastMessageTime() {
@@ -153,6 +165,7 @@ public class UserStreamContext {
     public void resetOnConnected() {
         connected = true;
         selfInitiatedClose = false;
+        giveUp = false;
         reconnectAttempts.set(0);
         lastMessageTime.set(Instant.now());
     }
@@ -169,7 +182,8 @@ public class UserStreamContext {
                 "lastMessageTime", lastMsg != null ? lastMsg.toString() : "never",
                 "elapsedSeconds", elapsed,
                 "reconnectAttempts", reconnectAttempts.get(),
-                "alertSent", alertSent
+                "alertSent", alertSent,
+                "giveUp", giveUp
         );
     }
 

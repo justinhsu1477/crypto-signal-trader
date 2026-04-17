@@ -265,12 +265,16 @@ public class MultiUserDataStreamManager {
     /**
      * 對所有活躍用戶 PUT keepalive
      * 任一用戶 400/401 時觸發該用戶的 reconnect
+     *
+     * 跳過條件：
+     * - listenKey == null（尚未建立或已清除）
+     * - giveUp == true（已放棄，由 recovery scheduler 處理）
      */
     public void keepAliveAll() {
         for (Map.Entry<String, UserStreamContext> entry : activeStreams.entrySet()) {
             String userId = entry.getKey();
             UserStreamContext context = entry.getValue();
-            if (context.getListenKey() == null) continue;
+            if (context.getListenKey() == null || context.isGiveUp()) continue;
 
             try {
                 int code = keepAliveListenKey(context.getApiKey(), context.getListenKey());
@@ -323,14 +327,32 @@ public class MultiUserDataStreamManager {
 
     /**
      * 排程重連某一個用戶的 stream
+     *
+     * 達上限後進入 giveUp 狀態：
+     * - 清掉 listenKey 讓 keepalive scheduler 跳過（避免 PUT 失效 listenKey 造成無限 HTTP 400）
+     * - 僅發送一次警報（giveUp 重複觸發不再轟炸）
+     * - 由 recovery scheduler（每小時）嘗試恢復
      */
     void scheduleReconnect(String userId, UserStreamContext context) {
         if (shuttingDown) return;
 
+        // 已放棄的 stream 不再累加 attempt（避免 keepalive scheduler 每次呼叫都重複執行 give-up 流程）
+        if (context.isGiveUp()) {
+            log.debug("用戶 {} 已處於 give-up 狀態，等待 recovery scheduler 恢復", userId);
+            return;
+        }
+
         int attempt = context.incrementReconnectAttempts();
         if (attempt > MAX_RECONNECT_ATTEMPTS) {
-            log.error("用戶 {} 重連次數已達上限 ({})，停止重試", userId, MAX_RECONNECT_ATTEMPTS);
-            String msg = String.format("已嘗試 %d 次重連，全部失敗\n請通知管理員檢查！", MAX_RECONNECT_ATTEMPTS);
+            log.error("用戶 {} 重連次數已達上限 ({})，進入 give-up 狀態，等待 recovery scheduler 恢復",
+                    userId, MAX_RECONNECT_ATTEMPTS);
+
+            // 標記放棄 + 清掉 dead listenKey → keepAliveAll 會自動跳過此 stream
+            context.setGiveUp(true);
+            context.setListenKey(null);
+
+            String msg = String.format("已嘗試 %d 次重連，全部失敗\n系統將每小時自動嘗試恢復，或請管理員檢查",
+                    MAX_RECONNECT_ATTEMPTS);
             discordWebhookService.sendNotificationToUser(userId,
                     "🚨 User Data Stream 重連失敗", msg,
                     DiscordWebhookService.COLOR_RED);
@@ -413,6 +435,54 @@ public class MultiUserDataStreamManager {
                 log.error("用戶 {} 重連失敗: {}", userId, e.getMessage());
                 scheduleReconnect(userId, context);
             }
+        }
+    }
+
+    // ==================== Recovery（per-user）====================
+
+    /**
+     * 掃描所有 giveUp 狀態的 stream，嘗試恢復（重建 listenKey + WebSocket）。
+     *
+     * 用途：當短暫地理封鎖（HTTP 451）或 API 異常導致重連達上限後，
+     * 本 scheduler 會在一段時間後再嘗試一次，避免用戶必須手動重啟服務。
+     *
+     * 恢復流程：
+     * 1. reset reconnectAttempts
+     * 2. 清除 giveUp flag
+     * 3. 委派 reconnect() 重建 listenKey + WebSocket
+     * 4. 若 reconnect 再次失敗，會走原本的 scheduleReconnect 流程（最多 20 次），
+     *    最終失敗會重新進入 giveUp 狀態，等下一次 recovery
+     */
+    public void recoverGaveUpStreams() {
+        if (shuttingDown) return;
+
+        int attempted = 0;
+        int recovered = 0;
+        for (Map.Entry<String, UserStreamContext> entry : activeStreams.entrySet()) {
+            String userId = entry.getKey();
+            UserStreamContext context = entry.getValue();
+            if (!context.isGiveUp()) continue;
+
+            attempted++;
+            log.info("用戶 {} 嘗試 recovery（從 give-up 狀態恢復）", userId);
+
+            // 重置重連狀態，讓 reconnect() 能重新進入流程
+            context.resetReconnectAttempts();
+            context.setGiveUp(false);
+
+            try {
+                reconnect(userId);
+                // reconnect 內部會 setListenKey + setWebSocket；若失敗會走 catch 呼叫 scheduleReconnect
+                if (context.getListenKey() != null) {
+                    recovered++;
+                }
+            } catch (Exception e) {
+                log.warn("用戶 {} recovery 失敗: {}", userId, e.getMessage());
+            }
+        }
+
+        if (attempted > 0) {
+            log.info("Recovery scheduler 完成: 嘗試 {} 個 give-up stream, 恢復 {} 個", attempted, recovered);
         }
     }
 
