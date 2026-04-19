@@ -103,8 +103,24 @@ protobuf {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // 預設排除 @Tag("integration") 測試（Testcontainers 需 Docker daemon，CI 不一定穩）
+        // 手動跑 integration tests：./gradlew integrationTest
+        excludeTags 'integration'
+    }
     finalizedBy jacocoTestReport
+}
+
+// 獨立的 integration test task — 需要 Docker daemon（Testcontainers PostgreSQL）
+tasks.register('integrationTest', Test) {
+    description = '執行 @Tag("integration") 標記的整合測試（需 Docker daemon）'
+    group = 'verification'
+    useJUnitPlatform {
+        includeTags 'integration'
+    }
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter tasks.named('test')
 }
 
 jacocoTestReport {
