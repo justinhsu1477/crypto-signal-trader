@@ -77,6 +77,50 @@ jobs:
           update-comment: true
 
   # ============================================================
+  # 2b. Integration Test（Testcontainers — PostgreSQL）
+  # ============================================================
+  integration-test:
+    name: 🔬 Integration Test
+    runs-on: ubuntu-latest
+    needs: backend  # 基本 unit test 通過後再跑 integration
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', 'gradle-wrapper.properties') }}
+
+      - name: 執行 Integration Test
+        run: ./gradlew integrationTest --no-daemon
+        env:
+          SPRING_PROFILES_ACTIVE: integration-test
+
+      - name: Integration Test 報告
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Integration Test 結果
+          path: build/test-results/integrationTest/*.xml
+          reporter: java-junit
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 失敗時上傳測試報告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: build/reports/tests/integrationTest/
+          retention-days: 7
+
+  # ============================================================
   # 3. 前端檢查、測試 & 建構（Next.js）
   # ============================================================
   frontend:
