@@ -27,4 +27,5 @@ public class SymbolLockRegistry {
     public ReentrantLock getLock(String symbol) {
         return locks.computeIfAbsent(symbol, k -> new ReentrantLock());
     }
+
 }

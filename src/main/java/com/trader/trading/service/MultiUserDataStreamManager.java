@@ -557,6 +557,7 @@ public class MultiUserDataStreamManager {
                     default:
                         log.debug("用戶 {} unknown event: {}", context.getUserId(), eventType);
                 }
+
             } catch (Exception e) {
                 log.error("用戶 {} 處理 WebSocket 訊息失敗: {}", context.getUserId(), e.getMessage(), e);
             } finally {

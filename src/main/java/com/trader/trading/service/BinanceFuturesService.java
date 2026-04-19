@@ -62,6 +62,10 @@ public class BinanceFuturesService {
     private final MetricsService metricsService;  // nullable in tests
     private final Gson gson = new Gson();
 
+    /** 快取各幣種的 LOT_SIZE 規則（stepSize, minQty），懶載入 */
+    private final java.util.concurrent.ConcurrentHashMap<String, double[]> lotSizeCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private volatile boolean lotSizeCacheLoaded = false;
+
     /**
      * ThreadLocal 暫存 per-user API Key
      * 在 executeSignalForBroadcast 開始時 set，結束時 remove。
@@ -329,13 +333,13 @@ public class BinanceFuturesService {
      * ⚠️ API 失敗時拋出 RuntimeException，避免回傳 0 導致偏離檢查失效
      */
     public double getMarkPrice(String symbol) {
-        String endpoint = "/fapi/v1/ticker/price";
+        String endpoint = "/fapi/v1/premiumIndex";
         String response = sendPublicGet(endpoint + "?symbol=" + symbol);
         try {
             JsonObject json = gson.fromJson(response, JsonObject.class);
-            return json.get("price").getAsDouble();
+            return json.get("markPrice").getAsDouble();
         } catch (Exception e) {
-            throw new RuntimeException("取得市價失敗，拒絕交易: " + e.getMessage(), e);
+            throw new RuntimeException("取得 markPrice 失敗，拒絕交易: " + e.getMessage(), e);
         }
     }
 
@@ -1545,10 +1549,69 @@ public class BinanceFuturesService {
     }
 
     private String formatQuantity(String symbol, double quantity) {
+        double[] lotSize = getLotSize(symbol);
+        if (lotSize != null && lotSize[0] > 0) {
+            double stepSize = lotSize[0];
+            double aligned = Math.floor(quantity / stepSize) * stepSize;
+            // 計算 stepSize 的小數位數來格式化
+            int decimals = Math.max(0, (int) Math.round(-Math.log10(stepSize)));
+            return String.format(Locale.US, "%." + decimals + "f", aligned);
+        }
+        // fallback: 舊邏輯（Exchange Info 不可用時）
         if (symbol.startsWith("BTC") || symbol.startsWith("ETH")) {
             return String.format(Locale.US, "%.3f", quantity);
         } else {
             return String.format(Locale.US, "%.2f", quantity);
+        }
+    }
+
+    /**
+     * 取得幣種的 minQty（LOT_SIZE 最小下單量），供 Martingale 判斷是否跳過該層。
+     * 回傳 0 表示查不到（不阻擋下單）。
+     */
+    public double getMinQty(String symbol) {
+        double[] lotSize = getLotSize(symbol);
+        return lotSize != null ? lotSize[1] : 0;
+    }
+
+    /**
+     * 懶載入 LOT_SIZE 快取：從 Exchange Info 解析各幣種的 stepSize 和 minQty。
+     * @return double[]{stepSize, minQty} or null
+     */
+    private double[] getLotSize(String symbol) {
+        if (!lotSizeCacheLoaded) {
+            loadLotSizeCache();
+        }
+        return lotSizeCache.get(symbol);
+    }
+
+    private synchronized void loadLotSizeCache() {
+        if (lotSizeCacheLoaded) return;
+        try {
+            String exchangeInfoJson = getExchangeInfo();
+            JsonObject info = gson.fromJson(exchangeInfoJson, JsonObject.class);
+            JsonArray symbols = info.getAsJsonArray("symbols");
+            if (symbols == null) return;
+            for (JsonElement elem : symbols) {
+                JsonObject sym = elem.getAsJsonObject();
+                String symName = sym.get("symbol").getAsString();
+                JsonArray filters = sym.getAsJsonArray("filters");
+                if (filters == null) continue;
+                for (JsonElement filterElem : filters) {
+                    JsonObject filter = filterElem.getAsJsonObject();
+                    if ("LOT_SIZE".equals(filter.get("filterType").getAsString())) {
+                        double stepSize = filter.get("stepSize").getAsDouble();
+                        double minQty = filter.get("minQty").getAsDouble();
+                        lotSizeCache.put(symName, new double[]{stepSize, minQty});
+                        break;
+                    }
+                }
+            }
+            log.info("LOT_SIZE 快取載入完成: {} 個幣種", lotSizeCache.size());
+        } catch (Exception e) {
+            log.warn("LOT_SIZE 快取載入失敗，使用 fallback 格式化: {}", e.getMessage());
+        } finally {
+            lotSizeCacheLoaded = true;
         }
     }
 

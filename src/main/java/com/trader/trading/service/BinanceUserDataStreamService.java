@@ -47,6 +47,7 @@ public class BinanceUserDataStreamService {
     private final MultiUserDataStreamManager multiUserManager;
     private final Gson gson = new Gson();
     private final OrderEventHandler orderEventHandler;
+    private final UserDataEventDispatcher eventDispatcher;
 
     // 連線狀態
     private volatile String listenKey;
@@ -79,12 +80,14 @@ public class BinanceUserDataStreamService {
                                          SymbolLockRegistry symbolLockRegistry,
                                          MultiUserConfig multiUserConfig,
                                          MultiUserDataStreamManager multiUserManager,
-                                         BinanceFuturesService binanceFuturesService) {
+                                         BinanceFuturesService binanceFuturesService,
+                                         UserDataEventDispatcher eventDispatcher) {
         this.httpClient = httpClient;
         this.binanceConfig = binanceConfig;
         this.discordWebhookService = discordWebhookService;
         this.multiUserConfig = multiUserConfig;
         this.multiUserManager = multiUserManager;
+        this.eventDispatcher = eventDispatcher;
 
         // 共用事件處理器（單用戶版 — 全局通知，無 Admin 通知）
         this.orderEventHandler = new OrderEventHandler(
@@ -300,6 +303,10 @@ public class BinanceUserDataStreamService {
                         break;
                     default:
                         log.debug("Unknown user data event: {}", eventType);
+                }
+
+                if (!multiUserConfig.isEnabled()) {
+                    eventDispatcher.dispatch(json);
                 }
             } catch (Exception e) {
                 log.error("處理 WebSocket 訊息失敗: {}", e.getMessage(), e);
