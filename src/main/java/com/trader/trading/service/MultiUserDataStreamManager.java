@@ -180,7 +180,7 @@ public class MultiUserDataStreamManager {
             String listenKey = createListenKey(keys.apiKey());
             context.setListenKey(listenKey);
 
-            String wsUrl = binanceConfig.getWsBaseUrl() + listenKey;
+            String wsUrl = BinanceUserDataStreamUrlBuilder.build(binanceConfig.getWsBaseUrl(), listenKey);
             Request request = new Request.Builder().url(wsUrl).build();
             WebSocket ws = wsClient.newWebSocket(request, new PerUserWebSocketListener(context));
             context.setWebSocket(ws);
@@ -422,7 +422,7 @@ public class MultiUserDataStreamManager {
                 String listenKey = createListenKey(freshKeys.apiKey());
                 context.setListenKey(listenKey);
 
-                String wsUrl = binanceConfig.getWsBaseUrl() + listenKey;
+                String wsUrl = BinanceUserDataStreamUrlBuilder.build(binanceConfig.getWsBaseUrl(), listenKey);
                 Request request = new Request.Builder().url(wsUrl).build();
                 WebSocket ws = wsClient.newWebSocket(request, new PerUserWebSocketListener(context));
                 context.setWebSocket(ws);
