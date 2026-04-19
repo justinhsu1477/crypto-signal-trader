@@ -7,7 +7,9 @@
 binance:
   futures:
     base-url: https://testnet.binancefuture.com
-    ws-base-url: wss://stream.binancefuture.com/ws/
+    # 配合 prod 遷移，testnet 使用同結構 /private/ws endpoint
+    # 若 testnet 尚未支援新 endpoint，dev 測試時可暫時 revert 為 /ws/
+    ws-base-url: wss://stream.binancefuture.com/private/ws
   risk:
     dedup-enabled: false    # dev 環境關閉重複訊號防護，方便測試
 

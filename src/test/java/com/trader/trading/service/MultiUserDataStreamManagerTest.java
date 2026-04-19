@@ -57,7 +57,7 @@ class MultiUserDataStreamManagerTest {
         when(mockBuilder.build()).thenReturn(mockWsClient);
 
         when(binanceConfig.getBaseUrl()).thenReturn("https://fapi.binance.com");
-        when(binanceConfig.getWsBaseUrl()).thenReturn("wss://fstream.binance.com/ws/");
+        when(binanceConfig.getWsBaseUrl()).thenReturn("wss://fstream.binance.com/private/ws");
 
         BinanceFuturesService binanceFuturesService = mock(BinanceFuturesService.class);
         manager = new MultiUserDataStreamManager(

@@ -151,7 +151,7 @@ public class BinanceUserDataStreamService {
         this.listenKey = createListenKey();
         log.info("ListenKey 建立成功: {}...", listenKey.substring(0, Math.min(listenKey.length(), 20)));
 
-        String wsUrl = binanceConfig.getWsBaseUrl() + listenKey;
+        String wsUrl = BinanceUserDataStreamUrlBuilder.build(binanceConfig.getWsBaseUrl(), listenKey);
         Request request = new Request.Builder().url(wsUrl).build();
         this.webSocket = wsClient.newWebSocket(request, new UserDataWebSocketListener());
     }

@@ -7,7 +7,10 @@
 binance:
   futures:
     base-url: https://fapi.binance.com
-    ws-base-url: wss://fstream.binance.com/ws/
+    # 2026-04-23 Binance WebSocket 基礎架構遷移：舊 /ws/<listenKey> 永久停用
+    # 新 endpoint: /private/ws，listenKey + events 改以 query param 傳遞
+    # ref: https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Important-WebSocket-Change-Notice
+    ws-base-url: wss://fstream.binance.com/private/ws
 
 
 

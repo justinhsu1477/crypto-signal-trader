@@ -374,7 +374,7 @@ class BinanceUserDataStreamServiceTest {
         @DisplayName("init 時 multiUser enabled → 委派給 manager.startAllStreams")
         void initDelegatesToManagerWhenMultiUserEnabled() {
             when(multiUserConfig.isEnabled()).thenReturn(true);
-            when(binanceConfig.getWsBaseUrl()).thenReturn("wss://test.com/ws/");
+            when(binanceConfig.getWsBaseUrl()).thenReturn("wss://test.com/private/ws");
 
             service.init();
 
