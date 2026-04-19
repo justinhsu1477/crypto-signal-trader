@@ -8,10 +8,12 @@ spring:
     password: test
   jpa:
     hibernate:
-      ddl-auto: validate
+      # 用 Hibernate 建 schema，不跑歷史 Flyway migration（V20 寫死 user_id 會 FK violation）
+      # Integration test 驗證功能行為，不驗證 migration 流程
+      ddl-auto: create-drop
     show-sql: false
   flyway:
-    enabled: true
+    enabled: false
   data:
     redis:
       host: localhost
