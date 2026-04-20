@@ -336,18 +336,18 @@ public class MarketDataService {
             sb.append(String.format("- 期間：%s\n\n", periodLabel));
 
             // 真實交易績效
-            Object[] stats = tradeRepository.getSourcePerformanceStats(
-                    source.getChannelId(), source.getGuildId(), since);
-            if (stats != null && stats[0] != null) {
+            Object[] stats = extractAggregateRow(tradeRepository.getSourcePerformanceStats(
+                    source.getChannelId(), source.getGuildId(), since));
+            if (stats != null) {
                 appendPerformanceStats(sb, stats, "真實交易");
             } else {
                 sb.append("**真實交易**：無資料\n");
             }
 
             // 模擬交易績效（若有）
-            Object[] paperStats = tradeRepository.getSourcePaperTradeStats(
-                    source.getChannelId(), source.getGuildId(), since);
-            if (paperStats != null && paperStats[0] != null) {
+            Object[] paperStats = extractAggregateRow(tradeRepository.getSourcePaperTradeStats(
+                    source.getChannelId(), source.getGuildId(), since));
+            if (paperStats != null) {
                 sb.append("\n");
                 appendPerformanceStats(sb, paperStats, "模擬交易");
             }
@@ -538,6 +538,22 @@ public class MarketDataService {
     /**
      * 格式化績效統計輸出
      */
+    /**
+     * 解開 Hibernate 6 aggregate 查詢的 Object[] 結果。
+     *
+     * Hibernate 6 對 Object[] 回傳型別 + 單 row aggregate 的 native query 有時會包成
+     * nested Object[][]（原本是 List<Object[]>，被外層當 Object[] 接收）。
+     * 此 helper 把 nested 結構壓平回單 row，並把 tradeCount=0 視為無資料。
+     *
+     * @return 有效 row；無資料（null / 空 / tradeCount=0）回傳 null
+     */
+    private Object[] extractAggregateRow(Object[] stats) {
+        if (stats == null || stats.length == 0 || stats[0] == null) return null;
+        Object[] row = (stats[0] instanceof Object[]) ? (Object[]) stats[0] : stats;
+        if (row[0] == null || ((Number) row[0]).longValue() == 0) return null;
+        return row;
+    }
+
     private void appendPerformanceStats(StringBuilder sb, Object[] stats, String label) {
         long tradeCount = ((Number) stats[0]).longValue();
         long winCount = ((Number) stats[1]).longValue();
