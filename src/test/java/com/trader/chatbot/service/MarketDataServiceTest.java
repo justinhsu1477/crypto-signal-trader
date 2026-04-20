@@ -455,6 +455,54 @@ class MarketDataServiceTest {
             assertThat(result).contains("找不到");
             assertThat(result).contains("陳哥頻道");
         }
+
+        @Test
+        @DisplayName("Hibernate 6 nested Object[][] 結果 — 正確解開不丟 ClassCastException")
+        void hibernate6NestedAggregateResult() {
+            // Reproduce prod issue: Hibernate 6 回傳 native aggregate 時，
+            // 可能把單 row 包成 Object[][]（外層 Object[] 包了一個 Object[] row）。
+            // 舊 code 直接 ((Number) stats[0]) 會炸 ClassCastException。
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("陳哥").channelId("ch1").guildId("g1")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(List.of(source));
+
+            Object[] row = new Object[]{5L, 3L, 100.0, 20.0, 80.0, -30.0, 150.0, -50.0};
+            Object[] nested = new Object[]{row};  // 模擬 Hibernate 6 nested wrap
+            when(tradeRepository.getSourcePerformanceStats(eq("ch1"), eq("g1"), any()))
+                    .thenReturn(nested);
+            when(tradeRepository.getSourcePaperTradeStats(eq("ch1"), eq("g1"), any()))
+                    .thenReturn(new Object[]{null});
+
+            String result = service.getSourcePerformance("陳哥", "all");
+
+            assertThat(result).contains("陳哥");
+            assertThat(result).contains("60%");         // 3/5 = 60%
+            assertThat(result).contains("+100.00");     // totalPnl
+            assertThat(result).doesNotContain("載入失敗");
+        }
+
+        @Test
+        @DisplayName("tradeCount=0 的 aggregate row → 顯示「無資料」")
+        void zeroTradeCountShowsNoData() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("新來源").channelId("ch1").guildId("g1")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(List.of(source));
+
+            // tradeCount = 0 → extractAggregateRow 應回傳 null
+            Object[] emptyStats = new Object[]{0L, 0L, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            when(tradeRepository.getSourcePerformanceStats(eq("ch1"), eq("g1"), any()))
+                    .thenReturn(emptyStats);
+            when(tradeRepository.getSourcePaperTradeStats(eq("ch1"), eq("g1"), any()))
+                    .thenReturn(new Object[]{null});
+
+            String result = service.getSourcePerformance("新來源", "all");
+
+            assertThat(result).contains("**真實交易**：無資料");
+        }
     }
 
     @Nested
