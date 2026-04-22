@@ -6,6 +6,7 @@ import com.trader.shared.model.OrderResult;
 import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeRequest;
 import com.trader.shared.model.TradeSignal;
+import com.trader.trading.config.MultiUserConfig;
 import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.BroadcastTradeService;
 import com.trader.notification.service.DiscordWebhookService;
@@ -52,6 +53,7 @@ public class TradeController {
     private final BinanceUserDataStreamService userDataStreamService;
     private final SignalRecordService signalRecordService;
     private final SymbolLockRegistry symbolLockRegistry;
+    private final MultiUserConfig multiUserConfig;
 
     /** 訊號最大容許延遲（毫秒）：5 分鐘 */
     private static final long SIGNAL_MAX_AGE_MS = 5 * 60 * 1000L;
@@ -136,6 +138,19 @@ public class TradeController {
         SignalSource source = extractSource(body);
         if (source != null) {
             signal.setSource(source);
+        }
+
+        // ===== Multi-user 模式：parse 成功的交易訊號轉廣播，避免誤用全域 API Key =====
+        // 背景：Python Monitor regex fallback 會打 /api/execute-signal（raw message），
+        //       歷史行為是用全域 Binance config（= 單用戶 BECK_TEST）執行，在多用戶
+        //       模式下會漏廣播給其他 10 個實盤用戶。
+        // INFO 類型不轉廣播（只記錄），CANCEL/CLOSE/MOVE_SL/ENTRY 都交 BroadcastTradeService 處理。
+        if (multiUserConfig.isEnabled() && signal.getSignalType() != TradeSignal.SignalType.INFO) {
+            TradeRequest broadcastRequest = buildBroadcastRequestFromSignal(signal);
+            Map<String, Object> broadcastResult = broadcastTradeService.broadcastTrade(broadcastRequest);
+            log.info("execute-signal → broadcast: action={} symbol={} result={}",
+                    broadcastRequest.getAction(), broadcastRequest.getSymbol(), broadcastResult.get("status"));
+            return ResponseEntity.ok(broadcastResult);
         }
 
         // 處理取消掛單
@@ -574,6 +589,42 @@ public class TradeController {
      * 從 request body 中提取訊號來源元資料
      */
     @SuppressWarnings("unchecked")
+    /**
+     * Parse 成功的 TradeSignal 轉為 TradeRequest 供 BroadcastTradeService 廣播。
+     *
+     * 差異對照：
+     *   - TradeSignal.entryPriceLow / entryPriceHigh → 取 entryPriceLow 當入場價（broadcast 只吃單一值）
+     *   - TradeSignal.takeProfits (List) → TradeRequest.takeProfit (取第一個 TP)
+     *   - TradeSignal.side (enum) → TradeRequest.side (string)
+     *   - 0 當 null 的 sentinel：entryPriceLow / stopLoss == 0 視為未設定
+     */
+    TradeRequest buildBroadcastRequestFromSignal(TradeSignal signal) {
+        TradeRequest request = new TradeRequest();
+        request.setAction(signal.getSignalType().name());
+        request.setSymbol(signal.getSymbol());
+        if (signal.getSide() != null) {
+            request.setSide(signal.getSide().name());
+        }
+        if (signal.getEntryPriceLow() != 0) {
+            request.setEntryPrice(signal.getEntryPriceLow());
+        }
+        if (signal.getStopLoss() != 0) {
+            request.setStopLoss(signal.getStopLoss());
+        }
+        if (signal.getTakeProfits() != null && !signal.getTakeProfits().isEmpty()) {
+            request.setTakeProfit(signal.getTakeProfits().get(0));
+        }
+        request.setCloseRatio(signal.getCloseRatio());
+        request.setNewStopLoss(signal.getNewStopLoss());
+        request.setNewTakeProfit(signal.getNewTakeProfit());
+        request.setIsDca(signal.isDca());
+        request.setSource(signal.getSource());
+        request.setPositionSizeModifier(signal.getPositionSizeModifier());
+        // 標記訊號接收時間，供 BroadcastTradeService 時效性判斷使用
+        request.setSignalTimestamp(System.currentTimeMillis());
+        return request;
+    }
+
     private SignalSource extractSource(Map<String, Object> body) {
         Object sourceObj = body.get("source");
         if (sourceObj instanceof Map) {
