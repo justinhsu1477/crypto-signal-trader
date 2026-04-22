@@ -40,6 +40,7 @@ class TradeControllerTest {
     private BinanceUserDataStreamService userDataStreamService;
     private SignalRecordService signalRecordService;
     private SymbolLockRegistry symbolLockRegistry;
+    private com.trader.trading.config.MultiUserConfig multiUserConfig;
 
     private TradeController controller;
 
@@ -56,12 +57,15 @@ class TradeControllerTest {
         userDataStreamService = mock(BinanceUserDataStreamService.class);
         signalRecordService = mock(SignalRecordService.class);
         symbolLockRegistry = new SymbolLockRegistry();
+        multiUserConfig = mock(com.trader.trading.config.MultiUserConfig.class);
+        // 預設多用戶模式關閉 — 既有測試聚焦單用戶行為
+        when(multiUserConfig.isEnabled()).thenReturn(false);
 
         controller = new TradeController(
                 binanceFuturesService, broadcastTradeService, signalParserService,
                 riskConfig, tradeRecordService, deduplicationService,
                 webhookService, heartbeatService, userDataStreamService, signalRecordService,
-                symbolLockRegistry);
+                symbolLockRegistry, multiUserConfig);
 
         // 預設白名單通過
         when(riskConfig.isSymbolAllowed(anyString())).thenReturn(true);
@@ -276,6 +280,148 @@ class TradeControllerTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = (Map<String, Object>) response.getBody();
             assertThat(body).containsEntry("action", "ENTRY");
+        }
+    }
+
+    // ==================== execute-signal × multi-user 模式 ====================
+
+    @Nested
+    @DisplayName("POST /api/execute-signal × multi-user")
+    class ExecuteSignalMultiUserTests {
+
+        @Test
+        @DisplayName("multi-user 開啟 + ENTRY → 自動轉廣播，不走單用戶 executeSignal")
+        void multiUserEntryDelegatesToBroadcast() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .side(TradeSignal.Side.LONG).entryPriceLow(95000).stopLoss(94000)
+                    .takeProfits(List.of(97000.0)).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED", "successCount", 11));
+
+            ResponseEntity<?> response = controller.executeSignal(Map.of("message", "buy btc"));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            // 不走單用戶路徑
+            verify(binanceFuturesService, never()).executeSignal(any());
+            // 走廣播，且 action 正確對應
+            org.mockito.ArgumentCaptor<TradeRequest> captor =
+                    org.mockito.ArgumentCaptor.forClass(TradeRequest.class);
+            verify(broadcastTradeService).broadcastTrade(captor.capture());
+            TradeRequest sent = captor.getValue();
+            assertThat(sent.getAction()).isEqualTo("ENTRY");
+            assertThat(sent.getSymbol()).isEqualTo("BTCUSDT");
+            assertThat(sent.getSide()).isEqualTo("LONG");
+            assertThat(sent.getEntryPrice()).isEqualTo(95000.0);
+            assertThat(sent.getStopLoss()).isEqualTo(94000.0);
+            assertThat(sent.getTakeProfit()).isEqualTo(97000.0);  // 取第一個 TP
+            assertThat(sent.getSignalTimestamp()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("multi-user 開啟 + CLOSE → 轉廣播，不走單用戶 executeClose")
+        void multiUserCloseDelegatesToBroadcast() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.CLOSE).closeRatio(1.0).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED"));
+
+            controller.executeSignal(Map.of("message", "close btc"));
+
+            verify(binanceFuturesService, never()).executeClose(any());
+            verify(broadcastTradeService).broadcastTrade(
+                    org.mockito.ArgumentMatchers.argThat(r -> "CLOSE".equals(r.getAction())
+                            && Double.valueOf(1.0).equals(r.getCloseRatio())));
+        }
+
+        @Test
+        @DisplayName("multi-user 開啟 + MOVE_SL → 轉廣播，帶 newStopLoss/newTakeProfit")
+        void multiUserMoveSlDelegatesToBroadcast() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.MOVE_SL)
+                    .newStopLoss(96000.0).newTakeProfit(99000.0).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(broadcastTradeService.broadcastTrade(any())).thenReturn(Map.of("status", "COMPLETED"));
+
+            controller.executeSignal(Map.of("message", "move sl"));
+
+            verify(binanceFuturesService, never()).executeMoveSL(any());
+            verify(broadcastTradeService).broadcastTrade(
+                    org.mockito.ArgumentMatchers.argThat(r -> "MOVE_SL".equals(r.getAction())
+                            && Double.valueOf(96000.0).equals(r.getNewStopLoss())
+                            && Double.valueOf(99000.0).equals(r.getNewTakeProfit())));
+        }
+
+        @Test
+        @DisplayName("multi-user 開啟 + CANCEL → 轉廣播，不走單用戶 cancelAllOrders")
+        void multiUserCancelDelegatesToBroadcast() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.CANCEL).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(broadcastTradeService.broadcastTrade(any())).thenReturn(Map.of("status", "COMPLETED"));
+
+            controller.executeSignal(Map.of("message", "cancel btc"));
+
+            verify(binanceFuturesService, never()).cancelAllOrders(any());
+            verify(broadcastTradeService).broadcastTrade(
+                    org.mockito.ArgumentMatchers.argThat(r -> "CANCEL".equals(r.getAction())));
+        }
+
+        @Test
+        @DisplayName("multi-user 開啟 + INFO → 記錄但不廣播（與單用戶行為一致）")
+        void multiUserInfoDoesNotBroadcast() {
+            when(multiUserConfig.isEnabled()).thenReturn(true);
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.INFO).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+
+            ResponseEntity<?> response = controller.executeSignal(Map.of("message", "info"));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("action", "INFO");
+            verify(broadcastTradeService, never()).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("multi-user 關閉 → 維持原單用戶路徑（回歸 regression 保護）")
+        void singleUserPathPreserved() {
+            when(multiUserConfig.isEnabled()).thenReturn(false);
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .side(TradeSignal.Side.LONG).entryPriceLow(95000).stopLoss(94000).build();
+            when(signalParserService.parse(any())).thenReturn(Optional.of(signal));
+            when(binanceFuturesService.executeSignal(any())).thenReturn(
+                    List.of(OrderResult.builder().success(true).orderId("x1").build()));
+
+            controller.executeSignal(Map.of("message", "buy btc"));
+
+            verify(binanceFuturesService).executeSignal(any());
+            verify(broadcastTradeService, never()).broadcastTrade(any());
+        }
+
+        @Test
+        @DisplayName("buildBroadcastRequestFromSignal — 解析失敗 sentinel 值（0）不填入 TradeRequest")
+        void converterHandlesZeroSentinels() {
+            TradeSignal signal = TradeSignal.builder()
+                    .symbol("BTCUSDT").signalType(TradeSignal.SignalType.ENTRY)
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(0).stopLoss(0)  // 0 表示未設定
+                    .build();
+
+            TradeRequest req = controller.buildBroadcastRequestFromSignal(signal);
+
+            assertThat(req.getAction()).isEqualTo("ENTRY");
+            assertThat(req.getEntryPrice()).isNull();
+            assertThat(req.getStopLoss()).isNull();
+            assertThat(req.getTakeProfit()).isNull();  // takeProfits 未設為 null
         }
     }
 
