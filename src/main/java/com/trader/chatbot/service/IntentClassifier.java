@@ -25,11 +25,14 @@ public class IntentClassifier {
     private final LlmClient geminiService;
     private final ChatbotConfig chatbotConfig;
     private final AiConfig aiConfig;
+    private final ChatbotPromptService promptService;
 
-    public IntentClassifier(LlmClient geminiService, ChatbotConfig chatbotConfig, AiConfig aiConfig) {
+    public IntentClassifier(LlmClient geminiService, ChatbotConfig chatbotConfig, AiConfig aiConfig,
+                            ChatbotPromptService promptService) {
         this.geminiService = geminiService;
         this.chatbotConfig = chatbotConfig;
         this.aiConfig = aiConfig;
+        this.promptService = promptService;
     }
 
     public enum Intent {
@@ -76,7 +79,8 @@ public class IntentClassifier {
             ))
     );
 
-    private static final String CLASSIFICATION_PROMPT = """
+    // package-private — 供 ChatbotPromptSeeder seed
+    static final String CLASSIFICATION_PROMPT = """
             你是意圖分類器。根據用戶訊息，判斷最符合的意圖類別。
             只回傳類別名稱，不要任何其他文字。
 
@@ -162,8 +166,11 @@ public class IntentClassifier {
      */
     Intent classifyWithAI(String message) {
         try {
+            // W6c: prompt 走 DB，fallback 到 code 內 default
+            String activePrompt = promptService.getActivePrompt(
+                    ChatbotService.PROMPT_NAME_INTENT_CLASSIFIER, CLASSIFICATION_PROMPT);
             Optional<String> result = geminiService.generateContentWithHistory(
-                    CLASSIFICATION_PROMPT,
+                    activePrompt,
                     Collections.emptyList(),
                     message,
                     20,    // maxTokens：只需要一個類別名稱

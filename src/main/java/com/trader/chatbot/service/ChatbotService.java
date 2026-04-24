@@ -45,9 +45,13 @@ public class ChatbotService {
     private final NerResolveService nerResolveService;
     private final ChatbotPromptService promptService;
 
-    /** Prompt 在 DB 裡的 name 常數（W6a） */
+    /** Prompt 在 DB 裡的 name 常數（W6a/W6c） */
     public static final String PROMPT_NAME_SYSTEM_USER = "system_user";
     public static final String PROMPT_NAME_SYSTEM_ADMIN = "system_admin";
+    public static final String PROMPT_NAME_INTENT_CLASSIFIER = "intent_classifier";
+    public static final String PROMPT_NAME_QUERY_REWRITE = "query_rewrite";
+    public static final String PROMPT_NAME_HISTORY_SUMMARY = "history_summary";
+    public static final String PROMPT_NAME_NLQ_SQL_GEN = "nlq_sql_gen";
 
     private static final String ADMIN_USER_ID = "ADMIN";
     private static final String FALLBACK_MESSAGE = "抱歉，AI 客服暫時無法回應。請稍後再試，或輸入「客服」聯繫人工客服。";
@@ -370,7 +374,8 @@ public class ChatbotService {
 
     private static final int RECENT_TURNS_TO_KEEP = 6;  // 保留最近 6 輪原文
 
-    private static final String SUMMARY_PROMPT = """
+    // package-private — 供 ChatbotPromptSeeder seed
+    static final String SUMMARY_PROMPT = """
             請用繁體中文，將以下客服對話歷史壓縮為一段簡短摘要（100 字以內）。
             保留：用戶問了什麼、AI 回答了什麼重點、提到的具體名稱/數據。
             移除：禮貌用語、重複內容。
@@ -429,8 +434,11 @@ public class ChatbotService {
                 historyText.append(role).append("：").append(conv.getContent()).append("\n");
             }
 
+            // W6c: prompt 走 DB，fallback 到 code 內 default
+            String activePrompt = promptService.getActivePrompt(
+                    PROMPT_NAME_HISTORY_SUMMARY, SUMMARY_PROMPT);
             Optional<String> result = geminiService.generateContentWithHistory(
-                    SUMMARY_PROMPT,
+                    activePrompt,
                     java.util.Collections.emptyList(),
                     historyText.toString(),
                     150,   // maxTokens：摘要不需要太長
