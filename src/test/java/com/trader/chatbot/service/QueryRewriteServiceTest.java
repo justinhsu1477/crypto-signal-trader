@@ -39,7 +39,9 @@ class QueryRewriteServiceTest {
         when(aiConfig.getDefaultModel()).thenReturn("gemini-2.5-flash-lite");
         when(promptService.getActivePrompt(anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(1));
-        service = new QueryRewriteService(llmClient, aiConfig, promptService);
+        ChatbotMetrics chatbotMetrics = new ChatbotMetrics(
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        service = new QueryRewriteService(llmClient, aiConfig, promptService, chatbotMetrics);
     }
 
     @Nested

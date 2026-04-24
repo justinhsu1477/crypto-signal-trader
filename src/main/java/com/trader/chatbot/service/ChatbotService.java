@@ -44,6 +44,7 @@ public class ChatbotService {
     private final QueryRewriteService queryRewriteService;
     private final NerResolveService nerResolveService;
     private final ChatbotPromptService promptService;
+    private final ChatbotMetrics chatbotMetrics;
 
     /** Prompt 在 DB 裡的 name 常數（W6a/W6c） */
     public static final String PROMPT_NAME_SYSTEM_USER = "system_user";
@@ -223,6 +224,7 @@ public class ChatbotService {
         Intent intent = intentClassifier.classify(rewrittenMessage);
         log.info("客服意圖分類: userId={} channel={} intent={} message={}", userId, channel, intent,
                 rewrittenMessage.length() > 50 ? rewrittenMessage.substring(0, 50) + "..." : rewrittenMessage);
+        chatbotMetrics.recordMessage(intent.name(), channel);  // W7: business metric
 
         // 7. 收集上下文（基於 rewritten）
         String context = isAdmin
@@ -240,6 +242,7 @@ public class ChatbotService {
             if (clarify != null) {
                 log.info("Disambiguation 觸發: userId={} query={} candidates={}",
                         userId, rewrittenMessage, nerResult.getSourceNames());
+                chatbotMetrics.recordDisambiguation();  // W7: business metric
                 Long convId = saveConversation(sessionKey, channel, channelUserId, sessionId,
                         cleanMessage, clarify, intent);
                 return ChatbotResponse.builder().text(clarify).conversationId(convId).build();

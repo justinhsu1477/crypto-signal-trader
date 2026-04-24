@@ -12,7 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ResponseGuardTest {
 
     private static final String FALLBACK = "抱歉，AI 客服暫時無法回應。";
-    private final ResponseGuard guard = new ResponseGuard();
+    private final ResponseGuard guard = new ResponseGuard(
+            new ChatbotMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
     @Nested
     @DisplayName("Raw JSON 偵測")

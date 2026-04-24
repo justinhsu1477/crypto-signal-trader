@@ -23,6 +23,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class ResponseGuard {
 
+    private final ChatbotMetrics chatbotMetrics;
+
+    public ResponseGuard(ChatbotMetrics chatbotMetrics) {
+        this.chatbotMetrics = chatbotMetrics;
+    }
+
     /**
      * 過濾 LLM / fallback 回覆，避免直接把 raw tool output 或 error message 回給用戶。
      *
@@ -32,6 +38,7 @@ public class ResponseGuard {
      */
     public String sanitize(String text, String safeFallback) {
         if (text == null || text.isBlank()) {
+            chatbotMetrics.recordGuardSanitized("empty");
             return safeFallback;
         }
         String trimmed = text.trim();
@@ -39,11 +46,13 @@ public class ResponseGuard {
         if (looksLikeRawJsonOutput(trimmed)) {
             log.warn("ResponseGuard: 偵測到 raw JSON 輸出，以 fallback 取代: snippet={}",
                     preview(trimmed));
+            chatbotMetrics.recordGuardSanitized("raw_json");
             return safeFallback;
         }
         if (looksLikeErrorMessage(trimmed)) {
             log.warn("ResponseGuard: 偵測到錯誤訊息外洩，以 fallback 取代: snippet={}",
                     preview(trimmed));
+            chatbotMetrics.recordGuardSanitized("error_message");
             return safeFallback;
         }
         return text;

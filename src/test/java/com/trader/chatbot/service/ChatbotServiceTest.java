@@ -40,6 +40,7 @@ class ChatbotServiceTest {
     @Mock private QueryRewriteService queryRewriteService;
     @Mock private NerResolveService nerResolveService;
     @Mock private ChatbotPromptService promptService;
+    @Mock private ChatbotMetrics chatbotMetrics;
 
     private ChatbotService chatbotService;
 
@@ -48,7 +49,7 @@ class ChatbotServiceTest {
         MockitoAnnotations.openMocks(this);
         chatbotService = new ChatbotService(chatbotConfig, aiConfig, geminiService, intentClassifier,
                 userContextGatherer, rateLimiter, conversationRepository, actionExecutor, responseGuard,
-                queryRewriteService, nerResolveService, promptService);
+                queryRewriteService, nerResolveService, promptService, chatbotMetrics);
         // promptService 預設：不管傳什麼都回傳 fallback（保持既有測試行為）
         when(promptService.getActivePrompt(anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(1));
@@ -64,6 +65,8 @@ class ChatbotServiceTest {
         when(nerResolveService.formatForPrompt(any())).thenReturn("");
         // actionExecutor 預設回傳空 tools schema（任意 Intent + isAdmin 組合）
         when(actionExecutor.buildToolsSchema(any(), anyBoolean())).thenReturn(new JsonObject());
+        // intentClassifier 預設回 GENERAL — 避免 chatbotMetrics.recordMessage(intent.name()) NPE
+        when(intentClassifier.classify(anyString())).thenReturn(Intent.GENERAL);
     }
 
     @Test

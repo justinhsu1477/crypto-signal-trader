@@ -39,6 +39,7 @@ public class QueryRewriteService {
     private final LlmClient llmClient;
     private final AiConfig aiConfig;
     private final ChatbotPromptService promptService;
+    private final ChatbotMetrics chatbotMetrics;
 
     /** 重寫 LLM 的生成參數：低 temperature（確定性）、低 token（回覆短） */
     private static final int REWRITE_MAX_TOKENS = 120;
@@ -92,8 +93,10 @@ public class QueryRewriteService {
         String trimmed = originalQuery.trim();
 
         if (!shouldRewrite(trimmed, history)) {
+            chatbotMetrics.recordRewrite(false);  // W7: 統計跳過的比例
             return trimmed;
         }
+        chatbotMetrics.recordRewrite(true);
 
         List<ChatTurn> recentHistory = takeRecent(history, HISTORY_LOOKBACK);
         String historyBlock = formatHistoryForPrompt(recentHistory);

@@ -42,15 +42,18 @@ public class GeminiService implements LlmClient {
     private final OkHttpClient aiHttpClient;
     private final AiConfig aiConfig;
     private final AdvisorConfig advisorConfig;
+    private final com.trader.shared.llm.LlmMetrics llmMetrics;
     private final Gson gson = new Gson();
 
-    public GeminiService(OkHttpClient httpClient, AiConfig aiConfig, AdvisorConfig advisorConfig) {
+    public GeminiService(OkHttpClient httpClient, AiConfig aiConfig, AdvisorConfig advisorConfig,
+                         com.trader.shared.llm.LlmMetrics llmMetrics) {
         // AI 回應較慢，延長 readTimeout 到 30 秒
         this.aiHttpClient = httpClient.newBuilder()
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build();
         this.aiConfig = aiConfig;
         this.advisorConfig = advisorConfig;
+        this.llmMetrics = llmMetrics;
     }
 
     /**
@@ -61,35 +64,50 @@ public class GeminiService implements LlmClient {
      * @return AI 回覆文字，失敗時回傳 empty
      */
     public Optional<String> generateContent(String systemPrompt, String userContent) {
-        String apiKey = aiConfig.getApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API Key 未設定，跳過 AI 分析");
-            return Optional.empty();
-        }
-
+        // W7: instrument metrics（latency / call count / success-fail）
+        long start = llmMetrics.startTimer();
         String model = aiConfig.getDefaultModel();
-        String url = GEMINI_API_BASE + model + ":generateContent?key=" + apiKey;
-
-        // 建構 request body
-        String requestBody = buildRequestBody(systemPrompt, userContent);
-
-        Request request = new Request.Builder()
-                .url(url)
-                .post(RequestBody.create(requestBody, JSON_MEDIA))
-                .build();
-
-        try (Response response = aiHttpClient.newCall(request).execute()) {
-            String body = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                log.warn("Gemini API 回應異常: HTTP {} - {}", response.code(), body);
-                return Optional.empty();
+        Optional<String> result = Optional.empty();
+        try {
+            String apiKey = aiConfig.getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                log.warn("Gemini API Key 未設定，跳過 AI 分析");
+                return result;
             }
 
-            return parseResponseText(body);
-        } catch (IOException e) {
-            log.warn("Gemini API 呼叫失敗: {}", e.getMessage());
-            return Optional.empty();
+            String url = GEMINI_API_BASE + model + ":generateContent?key=" + apiKey;
+            String requestBody = buildRequestBody(systemPrompt, userContent);
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(requestBody, JSON_MEDIA))
+                    .build();
+
+            try (Response response = aiHttpClient.newCall(request).execute()) {
+                String body = response.body() != null ? response.body().string() : "";
+
+                if (!response.isSuccessful()) {
+                    log.warn("Gemini API 回應異常: HTTP {} - {}", response.code(), body);
+                    return result;
+                }
+
+                result = parseResponseText(body);
+                return result;
+            } catch (IOException e) {
+                log.warn("Gemini API 呼叫失敗: {}", e.getMessage());
+                return result;
+            }
+        } finally {
+            recordMetrics(com.trader.shared.llm.LlmMetrics.OP_GENERATE, model, start, result);
+        }
+    }
+
+    /** Helper — 依 result 是否 present 決定 record success or failure */
+    private void recordMetrics(String op, String model, long start, Optional<?> result) {
+        if (result != null && result.isPresent()) {
+            llmMetrics.recordSuccess(op, model, start, 0, 0);
+        } else {
+            llmMetrics.recordFailure(op, model, start, "empty_or_failed");
         }
     }
 
@@ -112,34 +130,40 @@ public class GeminiService implements LlmClient {
                                                         int maxTokens,
                                                         double temperature,
                                                         String model) {
-        String apiKey = aiConfig.getApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API Key 未設定，跳過 AI 客服回覆");
-            return Optional.empty();
-        }
-
+        long start = llmMetrics.startTimer();
         String effectiveModel = (model != null && !model.isBlank()) ? model : aiConfig.getDefaultModel();
-        String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
-
-        String requestBody = buildMultiTurnRequestBody(systemPrompt, history, userMessage, maxTokens, temperature);
-
-        Request request = new Request.Builder()
-                .url(url)
-                .post(RequestBody.create(requestBody, JSON_MEDIA))
-                .build();
-
-        try (Response response = aiHttpClient.newCall(request).execute()) {
-            String body = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                log.warn("Gemini API（客服）回應異常: HTTP {} - {}", response.code(), body);
-                return Optional.empty();
+        Optional<String> result = Optional.empty();
+        try {
+            String apiKey = aiConfig.getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                log.warn("Gemini API Key 未設定，跳過 AI 客服回覆");
+                return result;
             }
 
-            return parseResponseText(body);
-        } catch (IOException e) {
-            log.warn("Gemini API（客服）呼叫失敗: {}", e.getMessage());
-            return Optional.empty();
+            String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
+            String requestBody = buildMultiTurnRequestBody(systemPrompt, history, userMessage, maxTokens, temperature);
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(requestBody, JSON_MEDIA))
+                    .build();
+
+            try (Response response = aiHttpClient.newCall(request).execute()) {
+                String body = response.body() != null ? response.body().string() : "";
+
+                if (!response.isSuccessful()) {
+                    log.warn("Gemini API（客服）回應異常: HTTP {} - {}", response.code(), body);
+                    return result;
+                }
+
+                result = parseResponseText(body);
+                return result;
+            } catch (IOException e) {
+                log.warn("Gemini API（客服）呼叫失敗: {}", e.getMessage());
+                return result;
+            }
+        } finally {
+            recordMetrics(com.trader.shared.llm.LlmMetrics.OP_GENERATE_WITH_HISTORY, effectiveModel, start, result);
         }
     }
 
@@ -165,34 +189,40 @@ public class GeminiService implements LlmClient {
                                                                double temperature,
                                                                String model,
                                                                JsonObject tools) {
-        String apiKey = aiConfig.getApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API Key 未設定");
-            return Optional.empty();
-        }
-
+        long start = llmMetrics.startTimer();
         String effectiveModel = (model != null && !model.isBlank()) ? model : aiConfig.getDefaultModel();
-        String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
-
-        String requestBody = buildMultiTurnRequestBodyWithTools(systemPrompt, history, userMessage, maxTokens, temperature, tools);
-
-        Request request = new Request.Builder()
-                .url(url)
-                .post(RequestBody.create(requestBody, JSON_MEDIA))
-                .build();
-
-        try (Response response = aiHttpClient.newCall(request).execute()) {
-            String body = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                log.warn("Gemini API（Function Calling）回應異常: HTTP {} - {}", response.code(), body);
-                return Optional.empty();
+        Optional<GeminiResponse> result = Optional.empty();
+        try {
+            String apiKey = aiConfig.getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                log.warn("Gemini API Key 未設定");
+                return result;
             }
 
-            return parseGeminiResponse(body);
-        } catch (IOException e) {
-            log.warn("Gemini API（Function Calling）呼叫失敗: {}", e.getMessage());
-            return Optional.empty();
+            String url = GEMINI_API_BASE + effectiveModel + ":generateContent?key=" + apiKey;
+            String requestBody = buildMultiTurnRequestBodyWithTools(systemPrompt, history, userMessage, maxTokens, temperature, tools);
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(requestBody, JSON_MEDIA))
+                    .build();
+
+            try (Response response = aiHttpClient.newCall(request).execute()) {
+                String body = response.body() != null ? response.body().string() : "";
+
+                if (!response.isSuccessful()) {
+                    log.warn("Gemini API（Function Calling）回應異常: HTTP {} - {}", response.code(), body);
+                    return result;
+                }
+
+                result = parseGeminiResponse(body);
+                return result;
+            } catch (IOException e) {
+                log.warn("Gemini API（Function Calling）呼叫失敗: {}", e.getMessage());
+                return result;
+            }
+        } finally {
+            recordMetrics(com.trader.shared.llm.LlmMetrics.OP_GENERATE_WITH_TOOLS, effectiveModel, start, result);
         }
     }
 
@@ -594,42 +624,49 @@ public class GeminiService implements LlmClient {
      * @return 向量陣列（768 維），失敗時回傳 empty
      */
     public Optional<float[]> getEmbedding(String text) {
-        String apiKey = aiConfig.getApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API Key 未設定，無法生成 embedding");
-            return Optional.empty();
-        }
-
-        String url = EMBEDDING_API_BASE + EMBEDDING_MODEL + ":embedContent?key=" + apiKey;
-
-        JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", "models/" + EMBEDDING_MODEL);
-
-        JsonObject content = new JsonObject();
-        JsonArray parts = new JsonArray();
-        JsonObject textPart = new JsonObject();
-        textPart.addProperty("text", text);
-        parts.add(textPart);
-        content.add("parts", parts);
-        requestBody.add("content", content);
-
-        Request request = new Request.Builder()
-                .url(url)
-                .post(RequestBody.create(gson.toJson(requestBody), JSON_MEDIA))
-                .build();
-
-        try (Response response = aiHttpClient.newCall(request).execute()) {
-            String body = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                log.warn("Gemini Embedding API 回應異常: HTTP {} - {}", response.code(), body);
-                return Optional.empty();
+        long start = llmMetrics.startTimer();
+        Optional<float[]> result = Optional.empty();
+        try {
+            String apiKey = aiConfig.getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                log.warn("Gemini API Key 未設定，無法生成 embedding");
+                return result;
             }
 
-            return parseEmbeddingResponse(body);
-        } catch (IOException e) {
-            log.warn("Gemini Embedding API 呼叫失敗: {}", e.getMessage());
-            return Optional.empty();
+            String url = EMBEDDING_API_BASE + EMBEDDING_MODEL + ":embedContent?key=" + apiKey;
+
+            JsonObject requestBody = new JsonObject();
+            requestBody.addProperty("model", "models/" + EMBEDDING_MODEL);
+
+            JsonObject content = new JsonObject();
+            JsonArray parts = new JsonArray();
+            JsonObject textPart = new JsonObject();
+            textPart.addProperty("text", text);
+            parts.add(textPart);
+            content.add("parts", parts);
+            requestBody.add("content", content);
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(gson.toJson(requestBody), JSON_MEDIA))
+                    .build();
+
+            try (Response response = aiHttpClient.newCall(request).execute()) {
+                String body = response.body() != null ? response.body().string() : "";
+
+                if (!response.isSuccessful()) {
+                    log.warn("Gemini Embedding API 回應異常: HTTP {} - {}", response.code(), body);
+                    return result;
+                }
+
+                result = parseEmbeddingResponse(body);
+                return result;
+            } catch (IOException e) {
+                log.warn("Gemini Embedding API 呼叫失敗: {}", e.getMessage());
+                return result;
+            }
+        } finally {
+            recordMetrics(com.trader.shared.llm.LlmMetrics.OP_EMBED, EMBEDDING_MODEL, start, result);
         }
     }
 
