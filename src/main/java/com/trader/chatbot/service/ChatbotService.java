@@ -43,6 +43,11 @@ public class ChatbotService {
     private final ResponseGuard responseGuard;
     private final QueryRewriteService queryRewriteService;
     private final NerResolveService nerResolveService;
+    private final ChatbotPromptService promptService;
+
+    /** Prompt 在 DB 裡的 name 常數（W6a） */
+    public static final String PROMPT_NAME_SYSTEM_USER = "system_user";
+    public static final String PROMPT_NAME_SYSTEM_ADMIN = "system_admin";
 
     private static final String ADMIN_USER_ID = "ADMIN";
     private static final String FALLBACK_MESSAGE = "抱歉，AI 客服暫時無法回應。請稍後再試，或輸入「客服」聯繫人工客服。";
@@ -53,7 +58,8 @@ public class ChatbotService {
             "無法回答", "沒有相關資料", "建議聯繫", "我無法判斷", "資料不足"
     );
 
-    private static final String SYSTEM_PROMPT = """
+    // package-private — 供 ChatbotPromptSeeder 首次 seed 使用
+    static final String SYSTEM_PROMPT = """
             你是 HookFi 加密貨幣交易平台的 AI 客服助理。
 
             ## 角色
@@ -113,7 +119,8 @@ public class ChatbotService {
             ## 用戶資料（系統提供，可信任）
             """;
 
-    private static final String ADMIN_SYSTEM_PROMPT = """
+    // package-private — 供 ChatbotPromptSeeder 首次 seed 使用
+    static final String ADMIN_SYSTEM_PROMPT = """
             你是 HookFi 加密貨幣交易平台的 Admin AI 助理。
 
             ## 角色
@@ -237,8 +244,11 @@ public class ChatbotService {
 
         String nerContext = nerResolveService.formatForPrompt(nerResult);
 
-        // 8. 組裝 system prompt
-        String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context + nerContext;
+        // 8. 組裝 system prompt — 優先從 DB 讀 active 版本（W6a），fallback 到 code 內 default
+        String basePrompt = isAdmin
+                ? promptService.getActivePrompt(PROMPT_NAME_SYSTEM_ADMIN, ADMIN_SYSTEM_PROMPT)
+                : promptService.getActivePrompt(PROMPT_NAME_SYSTEM_USER, SYSTEM_PROMPT);
+        String fullSystemPrompt = basePrompt + context + nerContext;
 
         // 9. 呼叫 Gemini（userMessage 用 rewritten — 確保 LLM 也看到完整問句）
         String response = handleWithFunctionCalling(userId, isAdmin, intent, fullSystemPrompt, history, rewrittenMessage);
