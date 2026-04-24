@@ -42,6 +42,7 @@ public class ChatbotService {
     private final ChatbotActionExecutor actionExecutor;
     private final ResponseGuard responseGuard;
     private final QueryRewriteService queryRewriteService;
+    private final NerResolveService nerResolveService;
 
     private static final String ADMIN_USER_ID = "ADMIN";
     private static final String FALLBACK_MESSAGE = "抱歉，AI 客服暫時無法回應。請稍後再試，或輸入「客服」聯繫人工客服。";
@@ -217,8 +218,13 @@ public class ChatbotService {
                 ? userContextGatherer.gatherAdminContext(rewrittenMessage)
                 : userContextGatherer.gatherContext(userId, intent, rewrittenMessage);
 
+        // 7.5 NER — 解析 query 中提及的訊號來源，給 LLM 精確白名單避免瞎編 source name
+        //     （W5b：降低 chenge 類 hallucination）
+        NerResolveService.NerResult nerResult = nerResolveService.resolveSources(rewrittenMessage);
+        String nerContext = nerResolveService.formatForPrompt(nerResult);
+
         // 8. 組裝 system prompt
-        String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context;
+        String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context + nerContext;
 
         // 9. 呼叫 Gemini（userMessage 用 rewritten — 確保 LLM 也看到完整問句）
         String response = handleWithFunctionCalling(userId, isAdmin, intent, fullSystemPrompt, history, rewrittenMessage);
