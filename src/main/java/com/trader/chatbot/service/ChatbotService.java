@@ -41,6 +41,7 @@ public class ChatbotService {
     private final ChatConversationRepository conversationRepository;
     private final ChatbotActionExecutor actionExecutor;
     private final ResponseGuard responseGuard;
+    private final QueryRewriteService queryRewriteService;
 
     private static final String ADMIN_USER_ID = "ADMIN";
     private static final String FALLBACK_MESSAGE = "抱歉，AI 客服暫時無法回應。請稍後再試，或輸入「客服」聯繫人工客服。";
@@ -195,33 +196,37 @@ public class ChatbotService {
         // 2. 輸入清洗
         String cleanMessage = sanitizeInput(userMessage);
 
-        // 3. 意圖分類
-        Intent intent = intentClassifier.classify(cleanMessage);
-        log.info("客服意圖分類: userId={} channel={} intent={} message={}", userId, channel, intent,
-                cleanMessage.length() > 50 ? cleanMessage.substring(0, 50) + "..." : cleanMessage);
-
-        // 4. Session 管理（Admin 用 channelUserId 區分不同管理員的對話）
+        // 3. Session 管理（Admin 用 channelUserId 區分不同管理員的對話）
         String sessionKey = isAdmin ? ADMIN_USER_ID + ":" + channelUserId : userId;
         String sessionId = resolveSessionId(sessionKey);
 
-        // 5. 收集上下文（Admin 收集全平台資料，一般用戶帶訊息做 FAQ 匹配）
-        String context = isAdmin
-                ? userContextGatherer.gatherAdminContext(cleanMessage)
-                : userContextGatherer.gatherContext(userId, intent, cleanMessage);
-
-        // 6. 載入對話歷史
+        // 4. 載入對話歷史（Query Rewrite 依賴歷史）
         List<ChatTurn> history = loadHistory(sessionId);
 
-        // 7. 組裝 system prompt
+        // 5. 查詢重寫 — 短 / 上下文依賴 query 補齊為自包含語句
+        //    （W5a：解決「90 天呢」這類 follow-up 讓下游 intent 分類和 LLM 都能正確 routing）
+        String rewrittenMessage = queryRewriteService.rewrite(cleanMessage, history);
+
+        // 6. 意圖分類（基於 rewritten — 能正確辨識 follow-up 的真實 intent）
+        Intent intent = intentClassifier.classify(rewrittenMessage);
+        log.info("客服意圖分類: userId={} channel={} intent={} message={}", userId, channel, intent,
+                rewrittenMessage.length() > 50 ? rewrittenMessage.substring(0, 50) + "..." : rewrittenMessage);
+
+        // 7. 收集上下文（基於 rewritten）
+        String context = isAdmin
+                ? userContextGatherer.gatherAdminContext(rewrittenMessage)
+                : userContextGatherer.gatherContext(userId, intent, rewrittenMessage);
+
+        // 8. 組裝 system prompt
         String fullSystemPrompt = (isAdmin ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT) + context;
 
-        // 8. 呼叫 Gemini（根據 intent 過濾可用 tools — GenBI 式 intent-based routing）
-        String response = handleWithFunctionCalling(userId, isAdmin, intent, fullSystemPrompt, history, cleanMessage);
+        // 9. 呼叫 Gemini（userMessage 用 rewritten — 確保 LLM 也看到完整問句）
+        String response = handleWithFunctionCalling(userId, isAdmin, intent, fullSystemPrompt, history, rewrittenMessage);
 
-        // 9. 後處理：不確定回覆自動加人工客服引導
+        // 10. 後處理：不確定回覆自動加人工客服引導
         response = postProcessResponse(response);
 
-        // 10. 儲存對話（Admin 用 sessionKey 區分不同管理員）
+        // 11. 儲存對話 — 儲存原始 cleanMessage（保留用戶真實輸入，未來 Rewrite 基於真實歷史）
         Long assistantConvId = saveConversation(sessionKey, channel, channelUserId, sessionId, cleanMessage, response, intent);
 
         return ChatbotResponse.builder().text(response).conversationId(assistantConvId).build();
