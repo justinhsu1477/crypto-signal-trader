@@ -137,6 +137,50 @@ class NerResolveServiceTest {
     }
 
     @Nested
+    @DisplayName("buildDisambiguationMessage — 回問用戶")
+    class DisambiguationMessageTests {
+
+        @Test
+        @DisplayName("單一候選 → null（不需要 disambig）")
+        void singleCandidateNoMessage() {
+            var result = new NerResolveService.NerResult(List.of(source(1L, "chenge", null, true)));
+            assertThat(service.buildDisambiguationMessage(result, "陳哥勝率")).isNull();
+        }
+
+        @Test
+        @DisplayName("空結果 → null")
+        void emptyNoMessage() {
+            assertThat(service.buildDisambiguationMessage(NerResolveService.NerResult.empty(), "x")).isNull();
+        }
+
+        @Test
+        @DisplayName("多候選 → 格式化訊息含所有候選")
+        void multipleCandidatesFormatted() {
+            var result = new NerResolveService.NerResult(List.of(
+                    source(1L, "feiyang", "比特幣飛揚", true),
+                    source(2L, "feiyang-vip", "比特幣飛揚VIP", true)));
+            String msg = service.buildDisambiguationMessage(result, "飛揚");
+
+            assertThat(msg).contains("2 種可能");
+            assertThat(msg).contains("1.");
+            assertThat(msg).contains("2.");
+            assertThat(msg).contains("feiyang");
+            assertThat(msg).contains("feiyang-vip");
+            assertThat(msg).contains("比特幣飛揚");
+            assertThat(msg).contains("請回覆完整名稱");
+        }
+
+        @Test
+        @DisplayName("候選超過 6 個 → null（匹配太寬鬆不讓用戶挑）")
+        void tooManyNoMessage() {
+            List<SignalSourceConfig> many = new java.util.ArrayList<>();
+            for (int i = 0; i < 8; i++) many.add(source((long) i, "src-" + i, null, true));
+            var result = new NerResolveService.NerResult(many);
+            assertThat(service.buildDisambiguationMessage(result, "src")).isNull();
+        }
+    }
+
+    @Nested
     @DisplayName("formatForPrompt — LLM prompt 片段")
     class FormatTests {
 

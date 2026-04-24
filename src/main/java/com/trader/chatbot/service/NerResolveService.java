@@ -74,6 +74,35 @@ public class NerResolveService {
     }
 
     /**
+     * 產生給用戶的 disambiguation 訊息（W5c）
+     * — 當 NER 檢測到多個候選時，回問用戶要選哪一個；不走 LLM 省成本。
+     *
+     * @return 格式化訊息；若無需 disambiguation 回傳 null
+     */
+    public String buildDisambiguationMessage(NerResult result, String originalQuery) {
+        if (result == null || !result.hasAmbiguousSources()) return null;
+        List<SignalSourceConfig> sources = result.getSourceMatches();
+        // 超過 6 個視為匹配太寬鬆，不讓用戶挑
+        if (sources.size() > 6) return null;
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("您提到的來源有 ").append(sources.size()).append(" 種可能，請選擇：\n");
+        int i = 1;
+        for (SignalSourceConfig src : sources) {
+            sb.append(i++).append(". ");
+            if (src.getDisplayName() != null && !src.getDisplayName().isBlank()) {
+                sb.append(src.getDisplayName()).append("（").append(src.getName()).append("）");
+            } else {
+                sb.append(src.getName());
+            }
+            sb.append("\n");
+        }
+        sb.append("\n請回覆完整名稱重新提問（例：").append(sources.get(0).getName())
+                .append(" 最近勝率）。");
+        return sb.toString();
+    }
+
+    /**
      * 將 NER 結果格式化為 system prompt 附加 context
      * （塞進 LLM 看到的 prompt，降低 hallucination）
      */
