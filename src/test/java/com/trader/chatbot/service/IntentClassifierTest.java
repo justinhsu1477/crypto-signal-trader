@@ -1,6 +1,6 @@
 package com.trader.chatbot.service;
 
-import com.trader.advisor.service.GeminiService;
+import com.trader.shared.llm.LlmClient;
 import com.trader.chatbot.config.ChatbotConfig;
 import com.trader.shared.config.AiConfig;
 import com.trader.chatbot.service.IntentClassifier.Intent;
@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 @DisplayName("IntentClassifier — 意圖分類")
 class IntentClassifierTest {
 
-    @Mock private GeminiService geminiService;
+    @Mock private LlmClient geminiService;
     @Mock private ChatbotConfig chatbotConfig;
     @Mock private AiConfig aiConfig;
 
