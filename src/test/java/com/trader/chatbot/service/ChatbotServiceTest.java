@@ -38,6 +38,7 @@ class ChatbotServiceTest {
     @Mock private ChatbotActionExecutor actionExecutor;
     @Mock private ResponseGuard responseGuard;
     @Mock private QueryRewriteService queryRewriteService;
+    @Mock private NerResolveService nerResolveService;
 
     private ChatbotService chatbotService;
 
@@ -46,7 +47,7 @@ class ChatbotServiceTest {
         MockitoAnnotations.openMocks(this);
         chatbotService = new ChatbotService(chatbotConfig, aiConfig, geminiService, intentClassifier,
                 userContextGatherer, rateLimiter, conversationRepository, actionExecutor, responseGuard,
-                queryRewriteService);
+                queryRewriteService, nerResolveService);
         // ResponseGuard 預設 passthrough（既有測試聚焦在主流程，不測 guard 行為）
         when(responseGuard.sanitize(any(), anyString())).thenAnswer(inv -> {
             Object raw = inv.getArgument(0);
@@ -54,6 +55,9 @@ class ChatbotServiceTest {
         });
         // QueryRewriteService 預設 passthrough（不影響既有測試斷言）
         when(queryRewriteService.rewrite(anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
+        // NerResolveService 預設回空結果 + 空 prompt 片段
+        when(nerResolveService.resolveSources(anyString())).thenReturn(NerResolveService.NerResult.empty());
+        when(nerResolveService.formatForPrompt(any())).thenReturn("");
         // actionExecutor 預設回傳空 tools schema（任意 Intent + isAdmin 組合）
         when(actionExecutor.buildToolsSchema(any(), anyBoolean())).thenReturn(new JsonObject());
     }
