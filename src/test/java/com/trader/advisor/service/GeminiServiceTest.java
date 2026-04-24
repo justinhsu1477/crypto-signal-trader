@@ -23,6 +23,7 @@ class GeminiServiceTest {
     private OkHttpClient httpClient;
     private AiConfig aiConfig;
     private AdvisorConfig advisorConfig;
+    private com.trader.shared.llm.LlmMetrics llmMetrics;
     private GeminiService geminiService;
     private Call mockCall;
 
@@ -31,6 +32,7 @@ class GeminiServiceTest {
         httpClient = mock(OkHttpClient.class);
         aiConfig = mock(AiConfig.class);
         advisorConfig = mock(AdvisorConfig.class);
+        llmMetrics = mock(com.trader.shared.llm.LlmMetrics.class);
 
         OkHttpClient.Builder mockBuilder = mock(OkHttpClient.Builder.class);
         when(httpClient.newBuilder()).thenReturn(mockBuilder);
@@ -46,7 +48,7 @@ class GeminiServiceTest {
         when(advisorConfig.getMaxResponseTokens()).thenReturn(1024);
         when(advisorConfig.getTemperatureValue()).thenReturn(0.7);
 
-        geminiService = new GeminiService(httpClient, aiConfig, advisorConfig);
+        geminiService = new GeminiService(httpClient, aiConfig, advisorConfig, llmMetrics);
     }
 
     @Nested
@@ -57,7 +59,7 @@ class GeminiServiceTest {
         @DisplayName("API Key 為 null — 回傳 empty")
         void nullApiKeyReturnsEmpty() {
             when(aiConfig.getApiKey()).thenReturn(null);
-            geminiService = new GeminiService(httpClient, aiConfig, advisorConfig);
+            geminiService = new GeminiService(httpClient, aiConfig, advisorConfig, llmMetrics);
 
             Optional<String> result = geminiService.generateContent("system", "user");
 
@@ -69,7 +71,7 @@ class GeminiServiceTest {
         @DisplayName("API Key 為空白 — 回傳 empty")
         void blankApiKeyReturnsEmpty() {
             when(aiConfig.getApiKey()).thenReturn("  ");
-            geminiService = new GeminiService(httpClient, aiConfig, advisorConfig);
+            geminiService = new GeminiService(httpClient, aiConfig, advisorConfig, llmMetrics);
 
             Optional<String> result = geminiService.generateContent("system", "user");
 
