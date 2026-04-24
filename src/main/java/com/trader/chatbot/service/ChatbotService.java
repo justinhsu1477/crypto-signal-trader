@@ -1,7 +1,6 @@
 package com.trader.chatbot.service;
 
 import com.google.gson.JsonObject;
-import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.config.ChatbotConfig;
 import com.trader.chatbot.dto.ChatbotResponse;
 import com.trader.chatbot.dto.ChatTurn;
@@ -11,6 +10,7 @@ import com.trader.chatbot.repository.ChatConversationRepository;
 import com.trader.chatbot.service.IntentClassifier.Intent;
 import com.trader.shared.config.AppConstants;
 import com.trader.shared.config.AiConfig;
+import com.trader.shared.llm.LlmClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,7 +34,7 @@ public class ChatbotService {
 
     private final ChatbotConfig chatbotConfig;
     private final AiConfig aiConfig;
-    private final GeminiService geminiService;
+    private final LlmClient geminiService;  // port 名保留 geminiService 以最小化既有 callsite diff
     private final IntentClassifier intentClassifier;
     private final UserContextGatherer userContextGatherer;
     private final ChatbotRateLimiter rateLimiter;

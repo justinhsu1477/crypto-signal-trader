@@ -5,6 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.trader.advisor.config.AdvisorConfig;
 import com.trader.shared.config.AiConfig;
+import com.trader.shared.llm.LlmClient;
+import com.trader.shared.llm.LlmUtils;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -24,9 +26,15 @@ import java.util.concurrent.TimeUnit;
  * 直接透過 OkHttp 呼叫 Gemini generateContent API，
  * 不引入額外 SDK，保持與專案一致的 HTTP 呼叫模式。
  */
+/**
+ * Gemini 實作 {@link LlmClient}。
+ *
+ * 引入 LlmClient interface 後，新呼叫端應注入 LlmClient（port），
+ * 保留具名 GeminiService 為了向後相容既有 @Autowired 欄位。
+ */
 @Slf4j
 @Service
-public class GeminiService {
+public class GeminiService implements LlmClient {
 
     private static final String GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
     private static final MediaType JSON_MEDIA = MediaType.get("application/json; charset=utf-8");

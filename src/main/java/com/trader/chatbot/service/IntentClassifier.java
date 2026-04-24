@@ -1,8 +1,8 @@
 package com.trader.chatbot.service;
 
-import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.config.ChatbotConfig;
 import com.trader.shared.config.AiConfig;
+import com.trader.shared.llm.LlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -22,11 +22,11 @@ import java.util.Set;
 @Component
 public class IntentClassifier {
 
-    private final GeminiService geminiService;
+    private final LlmClient geminiService;
     private final ChatbotConfig chatbotConfig;
     private final AiConfig aiConfig;
 
-    public IntentClassifier(GeminiService geminiService, ChatbotConfig chatbotConfig, AiConfig aiConfig) {
+    public IntentClassifier(LlmClient geminiService, ChatbotConfig chatbotConfig, AiConfig aiConfig) {
         this.geminiService = geminiService;
         this.chatbotConfig = chatbotConfig;
         this.aiConfig = aiConfig;

@@ -1,7 +1,7 @@
 package com.trader.chatbot.service;
 
 import com.trader.shared.config.AiConfig;
-import com.trader.advisor.service.GeminiService;
+import com.trader.shared.llm.LlmClient;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class TradingNlqService {
 
-    private final GeminiService geminiService;
+    private final LlmClient geminiService;
     private final AiConfig aiConfig;
     private final EntityManager entityManager;
     private final TradingSchemaProvider schemaProvider;
