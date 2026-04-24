@@ -1,6 +1,6 @@
 package com.trader.chatbot.controller;
 
-import com.trader.advisor.service.GeminiService;
+import com.trader.shared.llm.LlmClient;
 import com.trader.chatbot.entity.ChatConversation;
 import com.trader.chatbot.repository.ChatConversationRepository;
 import com.trader.chatbot.service.KnowledgeIndexService;
@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 class AdminChatbotControllerTest {
 
     @Mock private ChatConversationRepository conversationRepository;
-    @Mock private GeminiService geminiService;
+    @Mock private LlmClient geminiService;
     @Mock private KnowledgeIndexService knowledgeIndexService;
 
     private AdminChatbotController controller;

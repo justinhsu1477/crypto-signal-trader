@@ -1,9 +1,10 @@
 package com.trader.chatbot.controller;
 
-import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.entity.ChatConversation;
 import com.trader.chatbot.repository.ChatConversationRepository;
 import com.trader.chatbot.service.KnowledgeIndexService;
+import com.trader.shared.llm.LlmClient;
+import com.trader.shared.llm.LlmUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,7 +25,7 @@ import java.util.Optional;
 public class AdminChatbotController {
 
     private final ChatConversationRepository conversationRepository;
-    private final GeminiService geminiService;
+    private final LlmClient geminiService;
     private final KnowledgeIndexService knowledgeIndexService;
 
     /**
@@ -111,7 +112,7 @@ public class AdminChatbotController {
         result.put("dimensions", vector.length);
         result.put("model", "text-embedding-004");
         result.put("vector", vector);
-        result.put("vectorString", GeminiService.vectorToString(vector));
+        result.put("vectorString", LlmUtils.vectorToString(vector));
         return ResponseEntity.ok(result);
     }
 

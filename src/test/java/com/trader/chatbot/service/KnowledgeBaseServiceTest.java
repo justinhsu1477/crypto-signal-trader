@@ -1,6 +1,6 @@
 package com.trader.chatbot.service;
 
-import com.trader.advisor.service.GeminiService;
+import com.trader.shared.llm.LlmClient;
 import com.trader.chatbot.dto.KnowledgeSection;
 import com.trader.chatbot.entity.KnowledgeChunk;
 import com.trader.chatbot.repository.KnowledgeChunkRepository;
@@ -28,7 +28,7 @@ class KnowledgeBaseServiceTest {
     private KnowledgeChunkRepository chunkRepository;
 
     @Mock
-    private GeminiService geminiService;
+    private LlmClient geminiService;
 
     private KnowledgeBaseService service;
 

@@ -40,6 +40,7 @@ public class ChatbotService {
     private final ChatbotRateLimiter rateLimiter;
     private final ChatConversationRepository conversationRepository;
     private final ChatbotActionExecutor actionExecutor;
+    private final ResponseGuard responseGuard;
 
     private static final String ADMIN_USER_ID = "ADMIN";
     private static final String FALLBACK_MESSAGE = "抱歉，AI 客服暫時無法回應。請稍後再試，或輸入「客服」聯繫人工客服。";
@@ -295,21 +296,22 @@ public class ChatbotService {
             );
 
             if (nextResponse.isEmpty()) {
-                // Gemini 呼叫失敗 → fallback 直接顯示最後一次工具結果
-                return lastActionResult != null ? lastActionResult : FALLBACK_MESSAGE;
+                // Gemini 呼叫失敗 → fallback，但必須經 ResponseGuard 過濾原始工具輸出
+                return responseGuard.sanitize(lastActionResult, FALLBACK_MESSAGE);
             }
 
             resp = nextResponse.get();
 
-            // 如果回傳 text → 結束 loop
+            // 如果回傳 text → 結束 loop（LLM 文字也過 Guard 以防 LLM 吐 raw JSON）
             if (resp.hasText()) {
-                return resp.getText().orElse(lastActionResult != null ? lastActionResult : FALLBACK_MESSAGE);
+                String textOrFallback = resp.getText().orElse(lastActionResult);
+                return responseGuard.sanitize(textOrFallback, FALLBACK_MESSAGE);
             }
         }
 
         // 超過 MAX_TOOL_CHAIN_ROUNDS 還在呼叫工具 → fallback
         log.warn("Function Calling 超過最大輪次 {}: userId={}", MAX_TOOL_CHAIN_ROUNDS, userId);
-        return lastActionResult != null ? lastActionResult : FALLBACK_MESSAGE;
+        return responseGuard.sanitize(lastActionResult, FALLBACK_MESSAGE);
     }
 
     /**
