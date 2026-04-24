@@ -1,9 +1,10 @@
 package com.trader.chatbot.service;
 
-import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.dto.KnowledgeSection;
 import com.trader.chatbot.entity.KnowledgeChunk;
 import com.trader.chatbot.repository.KnowledgeChunkRepository;
+import com.trader.shared.llm.LlmClient;
+import com.trader.shared.llm.LlmUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -30,7 +31,7 @@ public class KnowledgeIndexService {
 
     private final KnowledgeBaseService knowledgeBaseService;
     private final KnowledgeChunkRepository chunkRepository;
-    private final GeminiService geminiService;
+    private final LlmClient geminiService;
 
     /**
      * 啟動時自動同步 knowledge_base.md → DB + embedding
@@ -101,7 +102,7 @@ public class KnowledgeIndexService {
                 Optional<float[]> embedding = geminiService.getEmbedding(textForEmbedding);
 
                 if (embedding.isPresent()) {
-                    String vectorStr = GeminiService.vectorToString(embedding.get());
+                    String vectorStr = LlmUtils.vectorToString(embedding.get());
                     chunkRepository.updateEmbedding(chunk.getId(), vectorStr);
                     successCount++;
                     log.info("Embedding 生成成功: {} ({}維)", chunk.getTitle(), embedding.get().length);
@@ -154,7 +155,7 @@ public class KnowledgeIndexService {
         try {
             String textForEmbedding = title + "\n" + content;
             geminiService.getEmbedding(textForEmbedding).ifPresent(vec -> {
-                String vectorStr = GeminiService.vectorToString(vec);
+                String vectorStr = LlmUtils.vectorToString(vec);
                 chunkRepository.updateEmbedding(chunk.getId(), vectorStr);
                 log.info("新增知識 embedding 完成: {}", title);
             });

@@ -1,9 +1,10 @@
 package com.trader.chatbot.service;
 
-import com.trader.advisor.service.GeminiService;
 import com.trader.chatbot.dto.KnowledgeSection;
 import com.trader.chatbot.entity.KnowledgeChunk;
 import com.trader.chatbot.repository.KnowledgeChunkRepository;
+import com.trader.shared.llm.LlmClient;
+import com.trader.shared.llm.LlmUtils;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -48,11 +49,11 @@ public class KnowledgeBaseService {
     private static final double KEYWORD_WEIGHT = 0.3;
 
     private final KnowledgeChunkRepository chunkRepository;
-    private final GeminiService geminiService;
+    private final LlmClient geminiService;
 
     private List<KnowledgeSection> sections = Collections.emptyList();
 
-    public KnowledgeBaseService(KnowledgeChunkRepository chunkRepository, GeminiService geminiService) {
+    public KnowledgeBaseService(KnowledgeChunkRepository chunkRepository, LlmClient geminiService) {
         this.chunkRepository = chunkRepository;
         this.geminiService = geminiService;
     }
@@ -147,7 +148,7 @@ public class KnowledgeBaseService {
                 return Collections.emptyMap();
             }
 
-            String queryVector = GeminiService.vectorToString(embedding.get());
+            String queryVector = LlmUtils.vectorToString(embedding.get());
             List<KnowledgeChunk> chunks = chunkRepository.findTopKBySimilarity(
                     queryVector, VECTOR_CANDIDATE_SIZE);
 
