@@ -28,14 +28,18 @@ class QueryRewriteServiceTest {
 
     private LlmClient llmClient;
     private AiConfig aiConfig;
+    private ChatbotPromptService promptService;
     private QueryRewriteService service;
 
     @BeforeEach
     void setUp() {
         llmClient = mock(LlmClient.class);
         aiConfig = mock(AiConfig.class);
+        promptService = mock(ChatbotPromptService.class);
         when(aiConfig.getDefaultModel()).thenReturn("gemini-2.5-flash-lite");
-        service = new QueryRewriteService(llmClient, aiConfig);
+        when(promptService.getActivePrompt(anyString(), anyString()))
+                .thenAnswer(inv -> inv.getArgument(1));
+        service = new QueryRewriteService(llmClient, aiConfig, promptService);
     }
 
     @Nested

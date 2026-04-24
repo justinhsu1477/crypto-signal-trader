@@ -23,15 +23,19 @@ class IntentClassifierTest {
     @Mock private LlmClient geminiService;
     @Mock private ChatbotConfig chatbotConfig;
     @Mock private AiConfig aiConfig;
+    @Mock private ChatbotPromptService promptService;
 
     private IntentClassifier classifier;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        classifier = new IntentClassifier(geminiService, chatbotConfig, aiConfig);
+        classifier = new IntentClassifier(geminiService, chatbotConfig, aiConfig, promptService);
         // 預設 AI 分類關閉（keyword-only 測試）
         when(chatbotConfig.isAiClassificationEnabled()).thenReturn(false);
+        // promptService 預設回 fallback（不影響既有行為）
+        when(promptService.getActivePrompt(anyString(), anyString()))
+                .thenAnswer(inv -> inv.getArgument(1));
     }
 
     @Nested

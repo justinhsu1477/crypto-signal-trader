@@ -38,6 +38,22 @@ public class ChatbotPromptSeeder {
                     ChatbotService.ADMIN_SYSTEM_PROMPT,
                     "Default admin chatbot system prompt (auto-seeded from code)");
 
+            // W6c 新增 — IntentClassifier / QueryRewrite / Summary
+            promptService.seedIfAbsent(
+                    ChatbotService.PROMPT_NAME_INTENT_CLASSIFIER,
+                    IntentClassifier.CLASSIFICATION_PROMPT,
+                    "AI 意圖分類器 prompt（auto-seeded）");
+
+            promptService.seedIfAbsent(
+                    ChatbotService.PROMPT_NAME_QUERY_REWRITE,
+                    QueryRewriteService.REWRITE_PROMPT_TEMPLATE,
+                    "上下文查詢重寫 prompt（auto-seeded）");
+
+            promptService.seedIfAbsent(
+                    ChatbotService.PROMPT_NAME_HISTORY_SUMMARY,
+                    ChatbotService.SUMMARY_PROMPT,
+                    "對話歷史壓縮摘要 prompt（auto-seeded）");
+
             log.info("Chatbot prompt seeding 完成");
         } catch (Exception e) {
             log.warn("Chatbot prompt seeding 失敗（非致命，ChatbotService 會用 code fallback）: {}",

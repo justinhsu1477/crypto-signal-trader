@@ -38,6 +38,7 @@ public class QueryRewriteService {
 
     private final LlmClient llmClient;
     private final AiConfig aiConfig;
+    private final ChatbotPromptService promptService;
 
     /** 重寫 LLM 的生成參數：低 temperature（確定性）、低 token（回覆短） */
     private static final int REWRITE_MAX_TOKENS = 120;
@@ -49,7 +50,8 @@ public class QueryRewriteService {
     /** 最多取最近 N 輪歷史給 LLM 參考（避免 prompt 過長） */
     private static final int HISTORY_LOOKBACK = 6;
 
-    private static final String REWRITE_PROMPT_TEMPLATE = """
+    // package-private — 供 ChatbotPromptSeeder seed
+    static final String REWRITE_PROMPT_TEMPLATE = """
             你是查詢重寫助手。根據對話歷史，把「當前查詢」改寫為完整、自包含的問句。
 
             規則：
@@ -98,8 +100,11 @@ public class QueryRewriteService {
         String fullPrompt = historyBlock + "\n當前：" + trimmed;
 
         try {
+            // W6c: prompt 走 DB，fallback 到 code 內 default
+            String activePrompt = promptService.getActivePrompt(
+                    ChatbotService.PROMPT_NAME_QUERY_REWRITE, REWRITE_PROMPT_TEMPLATE);
             Optional<String> rewritten = llmClient.generateContentWithHistory(
-                    REWRITE_PROMPT_TEMPLATE,
+                    activePrompt,
                     Collections.emptyList(), // history 已經嵌進 user prompt，不另外傳
                     fullPrompt,
                     REWRITE_MAX_TOKENS,
