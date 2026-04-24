@@ -39,6 +39,7 @@ class ChatbotServiceTest {
     @Mock private ResponseGuard responseGuard;
     @Mock private QueryRewriteService queryRewriteService;
     @Mock private NerResolveService nerResolveService;
+    @Mock private ChatbotPromptService promptService;
 
     private ChatbotService chatbotService;
 
@@ -47,7 +48,10 @@ class ChatbotServiceTest {
         MockitoAnnotations.openMocks(this);
         chatbotService = new ChatbotService(chatbotConfig, aiConfig, geminiService, intentClassifier,
                 userContextGatherer, rateLimiter, conversationRepository, actionExecutor, responseGuard,
-                queryRewriteService, nerResolveService);
+                queryRewriteService, nerResolveService, promptService);
+        // promptService 預設：不管傳什麼都回傳 fallback（保持既有測試行為）
+        when(promptService.getActivePrompt(anyString(), anyString()))
+                .thenAnswer(inv -> inv.getArgument(1));
         // ResponseGuard 預設 passthrough（既有測試聚焦在主流程，不測 guard 行為）
         when(responseGuard.sanitize(any(), anyString())).thenAnswer(inv -> {
             Object raw = inv.getArgument(0);
