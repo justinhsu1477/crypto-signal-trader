@@ -221,6 +221,20 @@ public class ChatbotService {
         // 7.5 NER — 解析 query 中提及的訊號來源，給 LLM 精確白名單避免瞎編 source name
         //     （W5b：降低 chenge 類 hallucination）
         NerResolveService.NerResult nerResult = nerResolveService.resolveSources(rewrittenMessage);
+
+        // 7.6 Entity Disambiguation — query 模糊到多個 source 時不走 LLM，直接回問用戶
+        //     （W5c：省 LLM 成本 + 避免瞎猜；admin 模式放行給 LLM 處理）
+        if (!isAdmin && shouldDisambiguate(intent, nerResult)) {
+            String clarify = nerResolveService.buildDisambiguationMessage(nerResult, rewrittenMessage);
+            if (clarify != null) {
+                log.info("Disambiguation 觸發: userId={} query={} candidates={}",
+                        userId, rewrittenMessage, nerResult.getSourceNames());
+                Long convId = saveConversation(sessionKey, channel, channelUserId, sessionId,
+                        cleanMessage, clarify, intent);
+                return ChatbotResponse.builder().text(clarify).conversationId(convId).build();
+            }
+        }
+
         String nerContext = nerResolveService.formatForPrompt(nerResult);
 
         // 8. 組裝 system prompt
@@ -471,6 +485,22 @@ public class ChatbotService {
             log.warn("儲存客服對話失敗: userId={} error={}", userId, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 決定是否主動 disambiguate（不走 LLM 直接回問用戶）
+     *
+     * 觸發條件：
+     * - 有 source entity 匹配且數量 > 1
+     * - Intent 屬於「會用到 source 的查詢類型」
+     * - 候選數量合理（NerResolveService.buildDisambiguationMessage 另有 ≤ 6 上限）
+     */
+    boolean shouldDisambiguate(Intent intent, NerResolveService.NerResult nerResult) {
+        if (!nerResult.hasAmbiguousSources()) return false;
+        // 涉及 source 的 intent 才做 disambiguation
+        return intent == Intent.TRADE_QUERY
+                || intent == Intent.SIGNAL_EXPLAIN
+                || intent == Intent.MARKET_DATA;
     }
 
     /**

@@ -440,6 +440,79 @@ class ChatbotServiceTest {
     }
 
     @Nested
+    @DisplayName("W5c Disambiguation — ambiguous source 回問不走 LLM")
+    class DisambiguationTests {
+
+        @Test
+        @DisplayName("TRADE_QUERY + 多候選 → 回問用戶，不呼叫 Gemini")
+        void ambiguousTradeQueryAsksUser() {
+            setupNormalMocks();
+            when(intentClassifier.classify(anyString())).thenReturn(Intent.TRADE_QUERY);
+            // NER 模擬回兩個候選
+            com.trader.trading.entity.SignalSourceConfig s1 =
+                    com.trader.trading.entity.SignalSourceConfig.builder()
+                            .id(1L).name("feiyang").build();
+            com.trader.trading.entity.SignalSourceConfig s2 =
+                    com.trader.trading.entity.SignalSourceConfig.builder()
+                            .id(2L).name("feiyang-vip").build();
+            var ner = new NerResolveService.NerResult(java.util.List.of(s1, s2));
+            when(nerResolveService.resolveSources(anyString())).thenReturn(ner);
+            when(nerResolveService.buildDisambiguationMessage(eq(ner), anyString()))
+                    .thenReturn("您提到的來源有 2 種可能，請選擇：\n1. feiyang\n2. feiyang-vip");
+
+            var result = chatbotService.handleUserMessage("u1", "LINE", "line1", "飛揚績效");
+
+            assertThat(result.getText()).contains("2 種可能");
+            verify(geminiService, never()).generateContentWithTools(
+                    anyString(), anyList(), anyString(), anyInt(), anyDouble(), any(), any());
+        }
+
+        @Test
+        @DisplayName("單一候選 → 正常走 LLM（不觸發 disambig）")
+        void singleCandidateNoAsk() {
+            setupNormalMocks();
+            when(intentClassifier.classify(anyString())).thenReturn(Intent.TRADE_QUERY);
+            com.trader.trading.entity.SignalSourceConfig s1 =
+                    com.trader.trading.entity.SignalSourceConfig.builder()
+                            .id(1L).name("chenge").build();
+            var ner = new NerResolveService.NerResult(java.util.List.of(s1));
+            when(nerResolveService.resolveSources(anyString())).thenReturn(ner);
+
+            GeminiResponse textResp = GeminiResponse.builder().text("陳哥勝率 60%").build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(),
+                    anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(textResp));
+
+            chatbotService.handleUserMessage("u1", "LINE", "line1", "陳哥勝率");
+
+            verify(geminiService).generateContentWithTools(anyString(), anyList(), anyString(),
+                    anyInt(), anyDouble(), any(), any());
+            verify(nerResolveService, never()).buildDisambiguationMessage(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("GENERAL intent + 多候選 → 不 disambig（只對查詢類 intent 生效）")
+        void generalIntentSkipsDisambig() {
+            setupNormalMocks();
+            when(intentClassifier.classify(anyString())).thenReturn(Intent.GENERAL);
+            com.trader.trading.entity.SignalSourceConfig s1 =
+                    com.trader.trading.entity.SignalSourceConfig.builder().id(1L).name("a").build();
+            com.trader.trading.entity.SignalSourceConfig s2 =
+                    com.trader.trading.entity.SignalSourceConfig.builder().id(2L).name("b").build();
+            var ner = new NerResolveService.NerResult(java.util.List.of(s1, s2));
+            when(nerResolveService.resolveSources(anyString())).thenReturn(ner);
+            GeminiResponse textResp = GeminiResponse.builder().text("OK").build();
+            when(geminiService.generateContentWithTools(anyString(), anyList(), anyString(),
+                    anyInt(), anyDouble(), any(), any()))
+                    .thenReturn(Optional.of(textResp));
+
+            chatbotService.handleUserMessage("u1", "LINE", "line1", "一般閒聊");
+
+            verify(nerResolveService, never()).buildDisambiguationMessage(any(), anyString());
+        }
+    }
+
+    @Nested
     @DisplayName("人工客服引導 — postProcessResponse")
     class HumanHandoffTests {
 
