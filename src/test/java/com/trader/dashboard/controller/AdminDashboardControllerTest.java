@@ -58,7 +58,8 @@ class AdminDashboardControllerTest {
         controller = new AdminDashboardController(
                 dashboardService, userRepository, dataSource,
                 mock(MetricsService.class), broadcastLogRepository, objectMapper,
-                mock(DailySignalReportService.class));
+                mock(DailySignalReportService.class),
+                mock(com.trader.trading.service.WeeklyTradeReportService.class));
     }
 
     // ── system-overview ──

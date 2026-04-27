@@ -23,6 +23,7 @@ import com.trader.trading.entity.BroadcastLog;
 import com.trader.trading.entity.DailySignalReport;
 import com.trader.trading.repository.BroadcastLogRepository;
 import com.trader.trading.service.DailySignalReportService;
+import com.trader.trading.service.WeeklyTradeReportService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -85,6 +86,7 @@ public class AdminDashboardController {
     private final BroadcastLogRepository broadcastLogRepository;
     private final ObjectMapper objectMapper;
     private final DailySignalReportService dailySignalReportService;
+    private final WeeklyTradeReportService weeklyTradeReportService;
 
     /**
      * 系統全域概覽 — 所有用戶匯總 + per-user 摘要
@@ -468,6 +470,16 @@ public class AdminDashboardController {
                         .createdAt(r.getCreatedAt())
                         .build()))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 手動觸發週報立即推送到 Admin Discord
+     * （Scheduler 為每週一 09:00 Asia/Taipei；此 endpoint 用於測試或補發）
+     */
+    @PostMapping("/weekly-report/trigger")
+    public ResponseEntity<Map<String, Object>> triggerWeeklyReport() {
+        weeklyTradeReportService.sendWeeklyReport();
+        return ResponseEntity.ok(Map.of("status", "ok", "message", "週報已推送"));
     }
 
     /**
