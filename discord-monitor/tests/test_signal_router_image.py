@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -80,3 +80,174 @@ class TestImageObservability:
 
         assert any("MISSED_IMAGE_ONLY" in rec.message for rec in caplog.records), \
             "純圖訊息應該被 log 成 MISSED_IMAGE_ONLY"
+
+
+class TestImageFirstRouting:
+    """image-first 分支測試：有圖優先走 vision，文字訊號不受影響。"""
+
+    def setup_method(self):
+        # 通用 mock Gemini parser
+        self.ai_parser = MagicMock()
+        self.ai_parser.parse = AsyncMock(return_value=None)
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "SHORT",
+            "entry_price": 82800,
+            "stop_loss": 84500,
+            "take_profit": 80800,
+        })
+
+    @pytest.mark.asyncio
+    async def test_pure_text_message_uses_text_path(self):
+        """純文字訊息 → 走原本 ai_parser.parse()，不碰 parse_with_image。"""
+        self.ai_parser.parse = AsyncMock(return_value={
+            "action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT",
+            "entry_price": 82800, "stop_loss": 84500,
+        })
+        router = _make_router(image_enabled=True, image_dry_run=True, ai_parser=self.ai_parser)
+        msg = _make_msg(content="BTC 82800 做空 SL 84500", attachments=[], embed_images=[])
+
+        await router.handle_message(msg)
+
+        self.ai_parser.parse.assert_called_once()
+        self.ai_parser.parse_with_image.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pure_image_uses_image_path(self):
+        """純圖訊息 → 走 image path（功能開啟時）。"""
+        router = _make_router(image_enabled=True, image_dry_run=True, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "signal.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 200000,
+            }],
+        )
+
+        # 模擬 image fetch — 不真的下載
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "abc123"),
+        )):
+            await router.handle_message(msg)
+
+        self.ai_parser.parse_with_image.assert_called_once()
+        self.ai_parser.parse.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_image_with_text_uses_image_path(self):
+        """圖+文字混合 → 走 image path（圖優先，文字當補充）。"""
+        router = _make_router(image_enabled=True, image_dry_run=True, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="BTC市价82600-83000附近做空",
+            attachments=[{
+                "id": "a1", "filename": "signal.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 200000,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "abc123"),
+        )):
+            await router.handle_message(msg)
+
+        self.ai_parser.parse_with_image.assert_called_once()
+        # 文字被當作 text_content 傳進去
+        call_kwargs = self.ai_parser.parse_with_image.call_args.kwargs
+        assert "BTC市价82600-83000" in call_kwargs.get("text_content", "")
+
+    @pytest.mark.asyncio
+    async def test_image_path_disabled_falls_back_to_text(self):
+        """image_signal.enabled=false → 即使有圖也走原文字流（=現況）。"""
+        self.ai_parser.parse = AsyncMock(return_value={
+            "action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT",
+            "entry_price": 82800, "stop_loss": 84500,
+        })
+        router = _make_router(image_enabled=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="BTC做空",
+            attachments=[{
+                "id": "a1", "filename": "signal.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 200000,
+            }],
+        )
+
+        await router.handle_message(msg)
+
+        # 功能關閉時 image_path 完全不啟用
+        self.ai_parser.parse_with_image.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_btc_image_signal_dropped(self):
+        """陳哥發 ETH 訊號圖 → BTC 白名單擋掉，不送下游。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "ENTRY", "symbol": "ETHUSDT", "side": "LONG",
+            "entry_price": 2500, "stop_loss": 2450,
+        })
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "eth.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 100000,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "abc"),
+        )):
+            await router.handle_message(msg)
+
+        # parse_with_image 被叫了，但下游 send_trade 不該被叫
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_does_not_send_trade(self):
+        """dry_run=true → 解析完成但不呼叫 send_trade。"""
+        router = _make_router(image_enabled=True, image_dry_run=True, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "signal.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 200000,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "abc"),
+        )):
+            await router.handle_message(msg)
+
+        # parse 跑了但沒送 Java
+        self.ai_parser.parse_with_image.assert_called_once()
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_image_path_send_trade_when_btc_and_not_dry_run(self):
+        """BTC 訊號 + dry_run=false → 真的送 Java。"""
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "btc.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 200000,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_btc"),
+        )):
+            await router.handle_message(msg)
+
+        router.api_client.send_trade.assert_called_once()
+        # 確認 source 帶了 attachment metadata
+        call_kwargs = router.api_client.send_trade.call_args.kwargs
+        source = call_kwargs.get("source") or {}
+        assert "attachment" in source
+        assert source["attachment"]["sha256"] == "sha_btc"
