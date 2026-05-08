@@ -39,22 +39,40 @@ def test_detect_mime_unknown():
     assert detect_mime_from_bytes(garbage) == "application/octet-stream"
 
 
-@pytest.mark.asyncio
-async def test_fetch_image_success():
-    """成功下載 → 回傳 (bytes, mime, sha256)。"""
-    fake_bytes = b"\x89PNG\r\n\x1a\n" + b"FAKE" * 100
-    expected_sha = hashlib.sha256(fake_bytes).hexdigest()
+class _FakeContent:
+    """模擬 aiohttp resp.content 的 iter_chunked()。"""
+    def __init__(self, data: bytes, chunk_size: int = 64 * 1024):
+        self._data = data
+        self._chunk_size = chunk_size
 
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.read = AsyncMock(return_value=fake_bytes)
-    mock_response.headers = {"Content-Type": "image/png"}
+    def iter_chunked(self, n: int):
+        async def _gen():
+            for i in range(0, len(self._data), n):
+                yield self._data[i:i + n]
+        return _gen()
+
+
+def _make_mock_session(data: bytes, status: int = 200, headers: dict | None = None):
+    """建構模擬 streaming response 的 mock session。"""
+    mock_response = MagicMock()
+    mock_response.status = status
+    mock_response.headers = headers or {}
+    mock_response.content = _FakeContent(data)
 
     mock_session = MagicMock()
     mock_session.get = MagicMock(return_value=AsyncMock(
         __aenter__=AsyncMock(return_value=mock_response),
         __aexit__=AsyncMock(return_value=False),
     ))
+    return mock_session
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_success():
+    """成功下載 → 回傳 (bytes, mime, sha256)。"""
+    fake_bytes = b"\x89PNG\r\n\x1a\n" + b"FAKE" * 100
+    expected_sha = hashlib.sha256(fake_bytes).hexdigest()
+    mock_session = _make_mock_session(fake_bytes, headers={"Content-Type": "image/png"})
 
     data, mime, sha = await fetch_image(
         mock_session, "https://example.com/img.png", max_bytes=1024 * 1024,
@@ -66,18 +84,9 @@ async def test_fetch_image_success():
 
 @pytest.mark.asyncio
 async def test_fetch_image_size_limit_exceeded():
-    """檔案超過 max_bytes 必須 raise ImageFetchError。"""
+    """檔案超過 max_bytes 必須 raise ImageFetchError（streaming 偵測）。"""
     big_bytes = b"X" * (2 * 1024 * 1024)
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.read = AsyncMock(return_value=big_bytes)
-    mock_response.headers = {"Content-Type": "image/png"}
-
-    mock_session = MagicMock()
-    mock_session.get = MagicMock(return_value=AsyncMock(
-        __aenter__=AsyncMock(return_value=mock_response),
-        __aexit__=AsyncMock(return_value=False),
-    ))
+    mock_session = _make_mock_session(big_bytes, headers={"Content-Type": "image/png"})
 
     with pytest.raises(ImageFetchError, match="exceeds max"):
         await fetch_image(
@@ -86,19 +95,39 @@ async def test_fetch_image_size_limit_exceeded():
 
 
 @pytest.mark.asyncio
+async def test_fetch_image_content_length_rejected_early():
+    """Content-Length header 超過上限 → 不下載 body 直接 raise。"""
+    mock_session = _make_mock_session(
+        b"",
+        headers={"Content-Length": str(5 * 1024 * 1024)},
+    )
+
+    with pytest.raises(ImageFetchError, match="Content-Length"):
+        await fetch_image(
+            mock_session, "https://example.com/img.png", max_bytes=1024 * 1024,
+        )
+
+
+@pytest.mark.asyncio
 async def test_fetch_image_http_error():
     """HTTP 非 200 回應 raise ImageFetchError。"""
-    mock_response = AsyncMock()
-    mock_response.status = 404
-    mock_response.headers = {}
-
-    mock_session = MagicMock()
-    mock_session.get = MagicMock(return_value=AsyncMock(
-        __aenter__=AsyncMock(return_value=mock_response),
-        __aexit__=AsyncMock(return_value=False),
-    ))
+    mock_session = _make_mock_session(b"", status=404)
 
     with pytest.raises(ImageFetchError, match="HTTP 404"):
         await fetch_image(
             mock_session, "https://example.com/img.png", max_bytes=1024 * 1024,
         )
+
+
+def test_detect_mime_webp_proper():
+    """合法 WebP（RIFF...WEBP）正確識別為 image/webp。"""
+    from src.image_utils import detect_mime_from_bytes
+    webp_header = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 100
+    assert detect_mime_from_bytes(webp_header) == "image/webp"
+
+
+def test_detect_mime_riff_not_webp_is_unknown():
+    """RIFF 但不是 WEBP（例如 WAV）→ 不該誤判成 image/webp。"""
+    from src.image_utils import detect_mime_from_bytes
+    wav_header = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"\x00" * 100
+    assert detect_mime_from_bytes(wav_header) == "application/octet-stream"
