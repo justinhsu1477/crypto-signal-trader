@@ -124,6 +124,41 @@ INJECT_JS = """
                         description: e.description || ''
                     };
                 }),
+                // 新增：附件（圖片、影片、檔案） — 失敗時 fallback 到空陣列
+                attachments: (function() {
+                    try {
+                        return (msg.attachments || []).map(function(a) {
+                            return {
+                                id: a.id || '',
+                                filename: a.filename || '',
+                                url: a.url || '',
+                                proxy_url: a.proxy_url || '',
+                                content_type: a.content_type || '',
+                                size: a.size || 0,
+                                width: a.width || 0,
+                                height: a.height || 0
+                            };
+                        });
+                    } catch (e) {
+                        return [];
+                    }
+                })(),
+                // 新增：embed 中的圖片（image / thumbnail）
+                embed_images: (function() {
+                    try {
+                        var imgs = [];
+                        (msg.embeds || []).forEach(function(e) {
+                            if (e.image && e.image.url) {
+                                imgs.push({url: e.image.url, width: e.image.width || 0, height: e.image.height || 0});
+                            } else if (e.thumbnail && e.thumbnail.url) {
+                                imgs.push({url: e.thumbnail.url, width: e.thumbnail.width || 0, height: e.thumbnail.height || 0});
+                            }
+                        });
+                        return imgs;
+                    } catch (e) {
+                        return [];
+                    }
+                })(),
                 has_reference: !!msg.message_reference,
                 has_snapshots: !!(msg.message_snapshots && msg.message_snapshots.length > 0),
                 referenced_content: (msg.referenced_message && msg.referenced_message.content) || ''
