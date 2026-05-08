@@ -251,3 +251,93 @@ class TestImageFirstRouting:
         source = call_kwargs.get("source") or {}
         assert "attachment" in source
         assert source["attachment"]["sha256"] == "sha_btc"
+
+
+class TestImageE2E:
+    """端對端整合測試：模擬陳哥的圖+文字訊號從 CDP → image_path → send_trade。"""
+
+    @pytest.mark.asyncio
+    async def test_chen_ge_btc_short_signal_full_flow(self):
+        """模擬本月實際截圖（陳哥的紫色 BTC SHORT 框）的完整解析路徑。"""
+        # 1. Setup: enable image path, dry_run=false (要驗證真的送出去)
+        ai_parser = MagicMock()
+        ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "SHORT",
+            "entry_price": 82800,
+            "stop_loss": 84500,
+            "take_profit": 80800,
+        })
+        ai_parser.prompt_version = 7
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=ai_parser)
+
+        # 2. 模擬陳哥訊息：含文字 + 紫色框圖片附件
+        msg = _make_msg(
+            content="BTC市价82600-83000附近正常仓位入场做空。",
+            attachments=[{
+                "id": "att_001",
+                "filename": "陳哥訊號.png",
+                "url": "https://cdn.discordapp.com/attachments/123/456/signal.png",
+                "content_type": "image/png",
+                "size": 350000,
+                "width": 800, "height": 1000,
+            }],
+            message_id="msg_chen_001",
+        )
+
+        # 3. 跑流程
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\nFAKE_PURPLE_BANNER", "image/png", "sha_e2e_001"),
+        )):
+            await router.handle_message(msg)
+
+        # 4. 驗證：parse_with_image 收到正確的 text + image
+        ai_parser.parse_with_image.assert_called_once()
+        call = ai_parser.parse_with_image.call_args
+        assert "82600-83000" in call.kwargs["text_content"]
+        assert call.kwargs["mime_type"] == "image/png"
+
+        # 5. 驗證：send_trade 收到完整 payload
+        router.api_client.send_trade.assert_called_once()
+        send_call = router.api_client.send_trade.call_args
+        trade_request = send_call.kwargs["trade_request"]
+        assert trade_request["action"] == "ENTRY"
+        assert trade_request["symbol"] == "BTCUSDT"
+        assert trade_request["side"] == "SHORT"
+        assert trade_request["stop_loss"] == 84500
+        assert trade_request["prompt_version"] == 7
+
+        source = send_call.kwargs["source"]
+        assert source["message_id"] == "msg_chen_001"
+        assert source["channel_id"] == "ch_chen_ge"
+        assert source["attachment"]["sha256"] == "sha_e2e_001"
+        assert source["attachment"]["filename"] == "陳哥訊號.png"
+
+    @pytest.mark.asyncio
+    async def test_text_signal_unaffected_by_image_feature(self):
+        """純文字訊號（陳哥也會發）— 確認 image feature 開啟不影響文字流。"""
+        ai_parser = MagicMock()
+        ai_parser.parse = AsyncMock(return_value={
+            "action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG",
+            "entry_price": 95000, "stop_loss": 93000, "take_profit": 98000,
+        })
+        ai_parser.parse_with_image = AsyncMock(return_value=None)
+        ai_parser.prompt_version = 7
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=ai_parser)
+
+        # 純文字訊號（無圖）
+        msg = _make_msg(
+            content="📢 BTC 做多 入場 95000 SL 93000 TP 98000",
+            attachments=[],
+            embed_images=[],
+            message_id="msg_text_001",
+        )
+
+        await router.handle_message(msg)
+
+        # parse() 被叫了，parse_with_image() 沒被叫
+        ai_parser.parse.assert_called_once()
+        ai_parser.parse_with_image.assert_not_called()
+        # 訊息照樣送 Java
+        router.api_client.send_trade.assert_called_once()
