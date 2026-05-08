@@ -91,7 +91,14 @@ async def main() -> None:
         logger.info("AI parser disabled — using regex-only mode")
 
     # Build components
-    router = SignalRouter(config.discord, api_client, dry_run=dry_run, ai_parser=ai_parser, signal_queue=signal_queue)
+    router = SignalRouter(
+        config.discord,
+        api_client,
+        dry_run=dry_run,
+        ai_parser=ai_parser,
+        signal_queue=signal_queue,
+        image_signal_config=config.image_signal,
+    )
     cdp_client = CdpClient(config.cdp)
 
     # gRPC config watch (可選：從 Admin Dashboard 即時接收頻道設定變更)
