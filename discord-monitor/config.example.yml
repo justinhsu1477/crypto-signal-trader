@@ -37,3 +37,11 @@ ai:
 logging:
   level: "INFO"                # DEBUG, INFO, WARNING, ERROR
   file: "discord-monitor.log"  # 留空 = 只輸出到 console
+
+# 圖片訊號解析設定 — 處理用截圖發訊號的訊息源（如陳哥的紫色框）
+image_signal:
+  enabled: false              # 主開關，false = 整條 image path 不啟用（預設安全）
+  dry_run: true               # true = 解析但不送下游（shadow mode 驗證用）
+  allowed_symbols:            # 白名單，僅這些幣的訊號會被處理
+    - "BTCUSDT"
+  max_image_bytes: 5242880    # 圖片下載大小上限 (5 MB)

@@ -72,6 +72,21 @@ class QueueConfig:
 
 
 @dataclass
+class ImageSignalConfig:
+    """圖片訊號解析設定 — 處理陳哥等用截圖發訊號的訊息源。
+
+    - enabled: 主開關，false 時整條 image path 不會啟用，現有文字流不受影響
+    - dry_run: true 時走完解析流程但不送 Java（用於 shadow mode 驗證）
+    - allowed_symbols: 白名單，目前僅 BTCUSDT，將來想擴幣只改 config 不改 code
+    - max_image_bytes: 下載圖片大小上限，超過 skip 避免 LLM 超大圖
+    """
+    enabled: bool = False
+    dry_run: bool = True
+    allowed_symbols: list[str] = field(default_factory=lambda: ["BTCUSDT"])
+    max_image_bytes: int = 5 * 1024 * 1024  # 5 MB
+
+
+@dataclass
 class AppConfig:
     cdp: CdpConfig = field(default_factory=CdpConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
@@ -80,6 +95,7 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     queue: QueueConfig = field(default_factory=QueueConfig)
     grpc: GrpcConfig = field(default_factory=GrpcConfig)
+    image_signal: ImageSignalConfig = field(default_factory=ImageSignalConfig)
 
     def validate(self) -> None:
         """驗證必要的配置項目，啟動時呼叫。缺少必要設定時直接報錯退出。"""
@@ -137,6 +153,7 @@ def load_config(path: str) -> AppConfig:
     logging_raw = raw.get("logging", {})
     queue_raw = raw.get("queue", {})
     grpc_raw = raw.get("grpc", {})
+    image_raw = raw.get("image_signal", {})
 
     return AppConfig(
         cdp=CdpConfig(
@@ -184,5 +201,11 @@ def load_config(path: str) -> AppConfig:
             target=os.environ.get("GRPC_TARGET", grpc_raw.get("target", "")),
             use_tls=os.environ.get("GRPC_USE_TLS", str(grpc_raw.get("use_tls", False))).lower() == "true",
             reconnect_interval=grpc_raw.get("reconnect_interval", 5),
+        ),
+        image_signal=ImageSignalConfig(
+            enabled=image_raw.get("enabled", False),
+            dry_run=image_raw.get("dry_run", True),
+            allowed_symbols=image_raw.get("allowed_symbols", ["BTCUSDT"]),
+            max_image_bytes=image_raw.get("max_image_bytes", 5 * 1024 * 1024),
         ),
     )
