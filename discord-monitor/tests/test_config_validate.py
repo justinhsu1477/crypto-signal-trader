@@ -182,3 +182,44 @@ ai:
         assert cfg.queue.max_size == 100
 
         os.unlink(f.name)
+
+
+def test_image_signal_config_defaults(tmp_path):
+    """ImageSignalConfig 預設值: 功能關閉、dry_run、僅 BTCUSDT。"""
+    from src.config import load_config
+
+    cfg_file = tmp_path / "config.yml"
+    cfg_file.write_text(
+        "discord:\n"
+        "  channel_ids: ['1']\n"
+        "api:\n"
+        "  base_url: 'http://localhost:8080'\n"
+    )
+    cfg = load_config(str(cfg_file))
+    assert cfg.image_signal.enabled is False
+    assert cfg.image_signal.dry_run is True
+    assert cfg.image_signal.allowed_symbols == ["BTCUSDT"]
+    assert cfg.image_signal.max_image_bytes == 5 * 1024 * 1024
+
+
+def test_image_signal_config_yaml_overrides(tmp_path):
+    """從 YAML 讀取 image_signal 設定。"""
+    from src.config import load_config
+
+    cfg_file = tmp_path / "config.yml"
+    cfg_file.write_text(
+        "discord:\n"
+        "  channel_ids: ['1']\n"
+        "api:\n"
+        "  base_url: 'http://localhost:8080'\n"
+        "image_signal:\n"
+        "  enabled: true\n"
+        "  dry_run: false\n"
+        "  allowed_symbols: ['BTCUSDT', 'ETHUSDT']\n"
+        "  max_image_bytes: 1048576\n"
+    )
+    cfg = load_config(str(cfg_file))
+    assert cfg.image_signal.enabled is True
+    assert cfg.image_signal.dry_run is False
+    assert cfg.image_signal.allowed_symbols == ["BTCUSDT", "ETHUSDT"]
+    assert cfg.image_signal.max_image_bytes == 1048576
