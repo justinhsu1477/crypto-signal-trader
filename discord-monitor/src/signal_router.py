@@ -9,6 +9,7 @@ import time
 
 from .api_client import ApiClient
 from .config import DiscordConfig, ImageSignalConfig
+from .image_utils import ImageFetchError, fetch_image
 from .trade_action_detector import detector
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,140 @@ class SignalRouter:
             return True
         return False
 
+    def _collect_image_urls(self, msg: dict) -> list[dict]:
+        """從 attachments + embed_images 蒐集所有可處理的圖片 URL。
+
+        Returns:
+            list of {"url": str, "filename": str, "content_type": str, "source": "attachment"|"embed"}
+        """
+        result = []
+        for att in msg.get("attachments", []):
+            ctype = (att.get("content_type") or "").lower()
+            if not ctype.startswith("image/"):
+                continue
+            result.append({
+                "url": att.get("url", ""),
+                "filename": att.get("filename", ""),
+                "content_type": ctype,
+                "source": "attachment",
+            })
+        for emb in msg.get("embed_images", []):
+            url = emb.get("url", "")
+            if url:
+                result.append({
+                    "url": url,
+                    "filename": "",
+                    "content_type": "image/*",
+                    "source": "embed",
+                })
+        return result
+
+    async def _handle_image_signal(self, msg: dict, source: dict) -> None:
+        """Image-first signal path. 解析圖片 → 過濾白名單 → 送 Java。
+
+        失敗策略：任何步驟失敗（下載、parse、validate）都 silently skip 並 log。
+        不應該 raise — 讓 handle_message 主流程不被一張壞圖搞掛。
+        """
+        cfg = self.image_signal_config
+        message_id = msg.get("id", "")
+        text_content = msg.get("content", "")
+
+        images = self._collect_image_urls(msg)
+        if not images:
+            return
+
+        # 取第一張圖（陳哥訊號通常一張，多張先簡單處理）
+        first = images[0]
+        url = first["url"]
+        if not url:
+            logger.warning("image path: empty URL in attachment, msg=%s", message_id)
+            return
+
+        # 下載
+        try:
+            image_bytes, mime, sha = await fetch_image(
+                self.api_client._session,
+                url,
+                max_bytes=cfg.max_image_bytes,
+            )
+        except ImageFetchError as e:
+            logger.warning("image path: fetch failed for msg=%s: %s", message_id, e)
+            return
+        except AttributeError:
+            # api_client._session 可能在某些測試 mock 中不存在 — fallback
+            logger.error("image path: api_client._session not available, cannot fetch image")
+            return
+
+        logger.info(
+            "image path: fetched msg=%s sha=%s mime=%s size=%d",
+            message_id, sha[:12], mime, len(image_bytes),
+        )
+
+        # AI 解析
+        if not self.ai_parser:
+            logger.warning("image path: ai_parser not configured, skipping image msg=%s", message_id)
+            return
+
+        parsed = await self.ai_parser.parse_with_image(
+            text_content=text_content,
+            image_bytes=image_bytes,
+            mime_type=mime,
+        )
+        if not parsed:
+            logger.warning("image path: parse failed for msg=%s", message_id)
+            return
+
+        # BTC 白名單過濾
+        symbol = (parsed.get("symbol") or "").upper()
+        if symbol not in cfg.allowed_symbols:
+            logger.info(
+                "image path: symbol %s not in allowed_symbols %s, skipping msg=%s",
+                symbol, cfg.allowed_symbols, message_id,
+            )
+            return
+
+        # INFO action 不送下游（與 text path 行為一致）
+        if parsed.get("action") == "INFO":
+            logger.info("image path: INFO action, not forwarding msg=%s", message_id)
+            return
+
+        # 附件 metadata 加入 source
+        enriched_source = dict(source)
+        enriched_source["attachment"] = {
+            "url": url,
+            "filename": first.get("filename", ""),
+            "content_type": mime,
+            "sha256": sha,
+            "size": len(image_bytes),
+        }
+
+        # Dry-run 模式只 log 不送
+        if cfg.dry_run:
+            logger.info(
+                "[IMAGE DRY RUN] would send: action=%s symbol=%s side=%s entry=%s SL=%s",
+                parsed.get("action"), parsed.get("symbol"), parsed.get("side"),
+                parsed.get("entry_price"), parsed.get("stop_loss"),
+            )
+            return
+
+        # 真送
+        prompt_version = self.ai_parser.prompt_version if hasattr(self.ai_parser, "prompt_version") else 0
+        if prompt_version:
+            parsed["prompt_version"] = prompt_version
+
+        try:
+            result = await self.api_client.send_trade(
+                trade_request=parsed,
+                dry_run=False,
+                source=enriched_source,
+            )
+            logger.info(
+                "image path: send_trade result msg=%s status=%s success=%s",
+                message_id, result.status_code, result.success,
+            )
+        except Exception as e:
+            logger.exception("image path: send_trade error msg=%s: %s", message_id, e)
+
     async def handle_message(self, msg: dict) -> None:
         """Called by CdpClient for each MESSAGE_CREATE event.
 
@@ -106,6 +241,39 @@ class SignalRouter:
         # Author filter
         if self.author_ids and msg.get("author_id", "") not in self.author_ids:
             return
+
+        # === Image-first branch (新增 — 文字流不受影響)===
+        # 條件：feature flag on AND 訊息含可處理圖片
+        # 通過後直接走 image path 並 return，不進入下方文字流
+        if self.image_signal_config.enabled and self._has_processable_image(msg):
+            # message_id dedup 也在這裡先擋一次（避免同訊息走兩次）
+            if message_id in self._processed_ids:
+                return
+            self._processed_ids.add(message_id)
+            self._trim_dedup_set()
+
+            # 建構 source（與文字流相同欄位）
+            image_source = {
+                "platform": "DISCORD",
+                "channel_id": channel_id,
+                "guild_id": guild_id,
+                "author_name": author_name,
+                "message_id": message_id,
+            }
+            metadata = self.source_metadata_map.get(channel_id)
+            if metadata:
+                image_source["source_name"] = metadata.get("name", "")
+                image_source["display_name"] = metadata.get("display_name", "")
+                image_source["trade_mode"] = metadata.get("trade_mode", "AUTO")
+                image_source["risk_multiplier"] = metadata.get("risk_multiplier", 1.0)
+
+            logger.info(
+                "image path triggered: #%s @%s msg=%s (text=%r)",
+                channel_id[-6:], author_name, message_id, msg.get("content", "")[:60],
+            )
+            await self._handle_image_signal(msg, image_source)
+            return  # 不進入文字流
+        # === Image-first branch end ===
 
         # Build content — 多層防護避免引用的舊訊號混入
         #   Layer 1: has_reference（標準 Discord 回覆）
