@@ -375,6 +375,22 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 """
 
 
+# Image-mode system prompt — 在既有 SYSTEM_PROMPT 之上追加圖片專用規則。
+# 設計原則：保留所有既有 schema 規則，加上「BTC-only + 從圖優先 + 文字補充」的 hint。
+IMAGE_SYSTEM_PROMPT_SUFFIX = """
+
+## 圖片訊號額外規則（multimodal mode）
+
+當輸入包含圖片時：
+1. **以圖片為主**：圖片中的數字（entry / SL / TP）優先於文字描述
+2. **僅處理 BTC**：若圖片或文字明確是其他幣（ETH、SOL 等），回傳 {"action": "INFO", "symbol": "OTHER"}
+3. **文字補充驗證**：若文字提到的價格與圖片一致 → 提高信心；若不一致 → 以圖片為準並在輸出加 "discrepancy_note" 欄位
+4. **多幣別圖片**：若圖列多個幣（含 BTC），只抽 BTC 的部分
+5. **過期訊號**：圖中含「上週」「回顧」「總結」「已平倉」等字樣 → 回傳 {"action": "INFO"}
+6. **純技術分析圖**（K 線圖無交易計畫）→ 回傳 {"action": "INFO"}
+"""
+
+
 class AiSignalParser:
     """Parses trading signals using Google Gemini.
 
@@ -521,6 +537,122 @@ class AiSignalParser:
             "AI parser: all %d retries exhausted: %s",
             self.config.max_retries,
             last_error,
+        )
+        return None
+
+    async def parse_with_image(
+        self,
+        text_content: str,
+        image_bytes: bytes,
+        mime_type: str,
+    ) -> dict | None:
+        """Parse a Discord message that contains an image (with optional accompanying text).
+
+        Uses Gemini multimodal: text + inline image bytes. The system prompt is the
+        existing SYSTEM_PROMPT plus IMAGE_SYSTEM_PROMPT_SUFFIX (BTC-only rules).
+
+        Retry strategy: identical to parse() — 429 retries with exponential backoff.
+
+        Args:
+            text_content: Optional text accompanying the image (may be empty string).
+            image_bytes: Raw image bytes (PNG / JPEG / GIF / WebP).
+            mime_type: Image MIME type (e.g. "image/png").
+
+        Returns:
+            dict matching TradeRequest schema, or None on failure.
+        """
+        if not self.client:
+            return None
+
+        # 建構 multimodal contents：文字 + 圖片 Part
+        text_part = text_content if text_content else "[圖片訊號 — 請從圖中解析]"
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+        # google-genai 接受 list[str | Part]，第一個是文字、第二個是圖片
+        contents = [text_part, image_part]
+
+        # 圖片模式 system prompt = 文字 prompt + 圖片專用規則
+        image_system_prompt = self._system_prompt + IMAGE_SYSTEM_PROMPT_SUFFIX
+
+        last_error = None
+        for attempt in range(self.config.max_retries):
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=self.config.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=image_system_prompt,
+                        response_mime_type="application/json",
+                        temperature=0.0,
+                    ),
+                )
+
+                # Token 統計（與 parse() 一致）
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
+                    response_tokens = getattr(usage, "candidates_token_count", 0) or 0
+                    total_tokens = getattr(usage, "total_token_count", 0) or 0
+                    self._total_prompt_tokens += prompt_tokens
+                    self._total_response_tokens += response_tokens
+                    self._call_count += 1
+                    logger.info(
+                        "AI image tokens: prompt=%d response=%d total=%d (image_size=%d B)",
+                        prompt_tokens, response_tokens, total_tokens, len(image_bytes),
+                    )
+
+                text = response.text.strip()
+                parsed = json.loads(text)
+
+                # 多訊號 list 處理（與 parse() 一致）
+                if isinstance(parsed, list):
+                    logger.warning(
+                        "AI image parser: got list (%d items), picking best",
+                        len(parsed),
+                    )
+                    parsed = self._pick_best_from_list(parsed)
+                    if parsed is None:
+                        return None
+
+                if not self._validate(parsed):
+                    logger.warning(
+                        "AI image parser: validation failed for: %s", text[:200],
+                    )
+                    return None
+
+                logger.info(
+                    "AI image parsed: action=%s symbol=%s side=%s",
+                    parsed.get("action"),
+                    parsed.get("symbol"),
+                    parsed.get("side"),
+                )
+                return parsed
+
+            except json.JSONDecodeError as e:
+                logger.warning("AI image parser: invalid JSON: %s", e)
+                return None
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+
+                if is_rate_limit and attempt < self.config.max_retries - 1:
+                    delay = self.config.retry_delays[
+                        min(attempt, len(self.config.retry_delays) - 1)
+                    ]
+                    logger.warning(
+                        "AI image parser: rate limited, retry %d/%d after %ds",
+                        attempt + 1, self.config.max_retries, delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                logger.warning("AI image parser: request failed: %s", e)
+                return None
+
+        logger.error(
+            "AI image parser: all %d retries exhausted: %s",
+            self.config.max_retries, last_error,
         )
         return None
 
