@@ -8,7 +8,7 @@ import re
 import time
 
 from .api_client import ApiClient
-from .config import DiscordConfig
+from .config import DiscordConfig, ImageSignalConfig
 from .trade_action_detector import detector
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ class SignalRouter:
         dry_run: bool = False,
         ai_parser=None,
         signal_queue=None,
+        image_signal_config: ImageSignalConfig | None = None,
     ):
         self.channel_ids = set(discord_config.channel_ids) if discord_config.channel_ids else set()
         self.guild_ids = set(discord_config.guild_ids) if discord_config.guild_ids else None
@@ -58,13 +59,26 @@ class SignalRouter:
         self.ai_parser = ai_parser
         self.signal_queue = signal_queue
         self.ignore_keywords = discord_config.ignore_keywords or []
-        self.source_metadata_map: dict[str, dict] = {}  # channel_id → source metadata (gRPC 推送)
-        self.channel_last_seen: dict[str, float] = {}  # channel_id → epoch seconds（每頻道最後活動時間）
+        self.image_signal_config = image_signal_config or ImageSignalConfig()
+        self.source_metadata_map: dict[str, dict] = {}
+        self.channel_last_seen: dict[str, float] = {}
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
-        # Content-hash dedup: prevent re-processing old signal content that appears in embeds
         self._content_hashes: set[str] = set()
         self._max_content_hash_size = 5000
+
+    def _has_processable_image(self, msg: dict) -> bool:
+        """訊息是否含可處理的圖片（attachment 或 embed image）。
+
+        只看 image/* MIME，過濾掉影片、PDF 等。
+        """
+        for att in msg.get("attachments", []):
+            ctype = (att.get("content_type") or "").lower()
+            if ctype.startswith("image/"):
+                return True
+        if msg.get("embed_images"):
+            return True
+        return False
 
     async def handle_message(self, msg: dict) -> None:
         """Called by CdpClient for each MESSAGE_CREATE event.
@@ -141,6 +155,16 @@ class SignalRouter:
         content = "\n".join(parts)
 
         if not content.strip():
+            # 觀測層：偵測純圖訊息（content 空 + 有圖）
+            if self._has_processable_image(msg):
+                logger.warning(
+                    "MISSED_IMAGE_ONLY channel=%s author=%s msg_id=%s attachments=%d embed_images=%d",
+                    channel_id,
+                    author_name,
+                    message_id,
+                    len(msg.get("attachments", [])),
+                    len(msg.get("embed_images", [])),
+                )
             return
 
         # 轉發所有訊息到分析師收集 API（fire-and-forget，不阻塞主流程）
