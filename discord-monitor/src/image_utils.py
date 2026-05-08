@@ -26,7 +26,6 @@ _MAGIC_NUMBERS = [
     (b"\xff\xd8\xff", "image/jpeg"),
     (b"GIF87a", "image/gif"),
     (b"GIF89a", "image/gif"),
-    (b"RIFF", "image/webp"),  # WebP 開頭是 RIFF (進一步檢查 WEBP 字串較嚴格但簡化)
 ]
 
 
@@ -35,6 +34,10 @@ def detect_mime_from_bytes(data: bytes) -> str:
 
     比信任 Content-Type header 更可靠（陳哥的圖可能透過 CDN 改 header）。
     """
+    # WebP 特殊處理：RIFF...WEBP 才算 WebP，純 RIFF 可能是 WAV/AVI
+    if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
+        return "image/webp"
+
     for magic, mime in _MAGIC_NUMBERS:
         if data.startswith(magic):
             return mime
@@ -69,11 +72,24 @@ async def fetch_image(
             if resp.status != 200:
                 raise ImageFetchError(f"HTTP {resp.status} from {url}")
 
-            data = await resp.read()
-            if len(data) > max_bytes:
+            # 先看 Content-Length 快速拒絕（如果 server 有給）
+            content_length = resp.headers.get("Content-Length")
+            if content_length and int(content_length) > max_bytes:
                 raise ImageFetchError(
-                    f"Image size {len(data)} exceeds max {max_bytes}"
+                    f"Image Content-Length {content_length} exceeds max {max_bytes}"
                 )
+
+            # 邊收邊計大小，超過立即中斷（防 streaming attack）
+            chunks = []
+            total = 0
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ImageFetchError(
+                        f"Image streaming size exceeds max {max_bytes}"
+                    )
+                chunks.append(chunk)
+            data = b"".join(chunks)
 
             mime = detect_mime_from_bytes(data)
             sha = compute_sha256(data)

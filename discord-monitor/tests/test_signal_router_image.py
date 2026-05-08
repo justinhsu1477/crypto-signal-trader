@@ -341,3 +341,147 @@ class TestImageE2E:
         ai_parser.parse_with_image.assert_not_called()
         # 訊息照樣送 Java
         router.api_client.send_trade.assert_called_once()
+
+
+class TestImageEdgeCases:
+    """補齊 image-first 分支的 edge cases — code review 補強。"""
+
+    def setup_method(self):
+        self.ai_parser = MagicMock()
+        self.ai_parser.parse = AsyncMock(return_value=None)
+        # 預設 parse_with_image 回完整 BTC SHORT
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "SHORT",
+            "entry_price": 82800,
+            "stop_loss": 84500,
+        })
+        self.ai_parser.prompt_version = 0
+
+    @pytest.mark.asyncio
+    async def test_parse_with_image_returns_none_skips_send(self):
+        """parse_with_image 回 None（解析失敗）→ 不送 Java + log 警告。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value=None)
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "x.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 100000,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "abc"),
+        )):
+            await router.handle_message(msg)
+
+        self.ai_parser.parse_with_image.assert_called_once()
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_info_action_not_forwarded(self):
+        """parse_with_image 回 INFO action（純技術分析圖、回顧）→ 不送 Java。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "INFO",
+            "symbol": "BTCUSDT",
+        })
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "kline.png",
+                "url": "https://cdn.discordapp.com/k.png",
+                "content_type": "image/png", "size": 100000,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "abc"),
+        )):
+            await router.handle_message(msg)
+
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_embed_images_only_no_attachments(self):
+        """訊息只有 embed_images（無 attachments） → 仍能走 image path。"""
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[],
+            embed_images=[{
+                "url": "https://cdn.discordapp.com/embed.png",
+                "width": 800, "height": 600,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_embed"),
+        )):
+            await router.handle_message(msg)
+
+        # parse_with_image 被叫了，且圖片 URL 是 embed 的
+        self.ai_parser.parse_with_image.assert_called_once()
+        router.api_client.send_trade.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fetch_image_failure_handled_gracefully(self):
+        """fetch_image 拋 ImageFetchError → 不影響後續訊息、不送 Java。"""
+        from src.image_utils import ImageFetchError
+
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "x.png",
+                "url": "https://cdn.discordapp.com/broken.png",
+                "content_type": "image/png", "size": 100000,
+            }],
+        )
+
+        async def fake_fetch_fail(*args, **kwargs):
+            raise ImageFetchError("HTTP 404 from URL")
+
+        with patch("src.signal_router.fetch_image", new=fake_fetch_fail):
+            await router.handle_message(msg)
+
+        # 解析根本沒被呼叫，trade 也沒送
+        self.ai_parser.parse_with_image.assert_not_called()
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_multi_image_processes_first_only(self):
+        """訊息含多張圖 → 只處理第一張（陳哥訊號通常一張）。"""
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        msg = _make_msg(
+            content="",
+            attachments=[
+                {
+                    "id": "a1", "filename": "first.png",
+                    "url": "https://cdn.discordapp.com/first.png",
+                    "content_type": "image/png", "size": 100000,
+                },
+                {
+                    "id": "a2", "filename": "second.png",
+                    "url": "https://cdn.discordapp.com/second.png",
+                    "content_type": "image/png", "size": 100000,
+                },
+            ],
+        )
+
+        fetch_calls = []
+        async def tracking_fetch(session, url, max_bytes, timeout_seconds=10.0):
+            fetch_calls.append(url)
+            return (b"\x89PNG\r\n\x1a\n", "image/png", "sha_first")
+
+        with patch("src.signal_router.fetch_image", new=tracking_fetch):
+            await router.handle_message(msg)
+
+        # 只下載第一張圖
+        assert len(fetch_calls) == 1, f"Expected 1 fetch call, got {len(fetch_calls)}: {fetch_calls}"
+        assert "first.png" in fetch_calls[0]
+        # parse 被叫一次
+        self.ai_parser.parse_with_image.assert_called_once()
