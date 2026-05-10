@@ -861,4 +861,71 @@ class MarketDataServiceTest {
             org.assertj.core.api.Assertions.assertThat(result).contains("無任何用戶");
         }
     }
+
+    @Nested
+    @DisplayName("getAllUsersSummary(period) — 帶時間區間的全用戶 PnL")
+    class GetAllUsersSummaryWithPeriodTests {
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("period=7d → 呼叫 aggregateStatsPerUserSince 並非 aggregateStatsPerUser")
+        void periodSevenDaysCallsSinceQuery() {
+            Object[] row = new Object[]{"u1", 5L, 3L, 250.0};
+            org.mockito.Mockito.when(tradeRepository.aggregateStatsPerUserSince(
+                    org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class)))
+                    .thenReturn(java.util.List.<Object[]>of(row));
+            org.mockito.Mockito.when(tradeRepository.findByStatus("OPEN"))
+                    .thenReturn(java.util.List.of());
+            com.trader.user.entity.User user1 = new com.trader.user.entity.User();
+            user1.setUserId("u1"); user1.setName("Alice");
+            org.mockito.Mockito.when(userRepository.findAll())
+                    .thenReturn(java.util.List.of(user1));
+
+            String result = service.getAllUsersSummary("7d");
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("Alice");
+            org.assertj.core.api.Assertions.assertThat(result).contains("250.00");
+            org.assertj.core.api.Assertions.assertThat(result).contains("近7天");
+            org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.atLeastOnce())
+                    .aggregateStatsPerUserSince(org.mockito.ArgumentMatchers.any());
+            org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.never())
+                    .aggregateStatsPerUser();
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("period=all → fallback 到原 aggregateStatsPerUser 行為")
+        void periodAllCallsAllTimeQuery() {
+            Object[] row = new Object[]{"u1", 50L, 30L, 5000.0};
+            org.mockito.Mockito.when(tradeRepository.aggregateStatsPerUser())
+                    .thenReturn(java.util.List.<Object[]>of(row));
+            org.mockito.Mockito.when(tradeRepository.findByStatus("OPEN"))
+                    .thenReturn(java.util.List.of());
+            com.trader.user.entity.User user1 = new com.trader.user.entity.User();
+            user1.setUserId("u1"); user1.setName("Alice");
+            org.mockito.Mockito.when(userRepository.findAll())
+                    .thenReturn(java.util.List.of(user1));
+
+            String result = service.getAllUsersSummary("all");
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("Alice");
+            org.assertj.core.api.Assertions.assertThat(result).contains("5000.00");
+            org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.atLeastOnce())
+                    .aggregateStatsPerUser();
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("無參數版本 = period=all（向後相容）")
+        void backwardCompatibleNoArgsEqualsAllTime() {
+            org.mockito.Mockito.when(tradeRepository.aggregateStatsPerUser())
+                    .thenReturn(java.util.List.of());
+            org.mockito.Mockito.when(tradeRepository.findByStatus("OPEN"))
+                    .thenReturn(java.util.List.of());
+            org.mockito.Mockito.when(userRepository.findAll()).thenReturn(java.util.List.of());
+
+            String resultOld = service.getAllUsersSummary();
+            String resultNew = service.getAllUsersSummary("all");
+
+            // 兩者都應該是「無資料」訊息（or 兩個結果一致）
+            org.assertj.core.api.Assertions.assertThat(resultOld).isEqualTo(resultNew);
+        }
+    }
 }
