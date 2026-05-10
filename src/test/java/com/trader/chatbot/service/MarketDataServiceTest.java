@@ -14,6 +14,7 @@ import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.SignalSourceService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import com.trader.user.service.UserApiKeyService;
 import org.springframework.data.domain.PageImpl;
 import okhttp3.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,7 @@ class MarketDataServiceTest {
     @Mock private BroadcastLogRepository broadcastLogRepository;
     @Mock private SignalSourceService signalSourceService;
     @Mock private OkHttpClient okHttpClient;
+    @Mock private UserApiKeyService userApiKeyService;
 
     private MarketDataService service;
 
@@ -52,7 +54,7 @@ class MarketDataServiceTest {
         MockitoAnnotations.openMocks(this);
         service = new MarketDataService(binanceFuturesService, dailySignalReportRepository,
                 tradeRepository, userRepository, signalSourceConfigRepository,
-                broadcastLogRepository, signalSourceService, okHttpClient);
+                broadcastLogRepository, signalSourceService, okHttpClient, userApiKeyService);
     }
 
     @Nested
@@ -721,6 +723,56 @@ class MarketDataServiceTest {
             String result = service.getTradesByDate("2026-03-18");
 
             assertThat(result).contains("2026-03-18");
+        }
+    }
+
+    @Nested
+    @DisplayName("getUserBalance — 單用戶即時餘額")
+    class GetUserBalanceTests {
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("用戶有 API Key → 從 Binance 拿到實際餘額")
+        void userWithApiKeyReturnsRealBalance() {
+            String userId = "user_001";
+            UserApiKeyService.BinanceKeys keys = new UserApiKeyService.BinanceKeys("api_k", "sec_k");
+            org.mockito.Mockito.when(userApiKeyService.getUserBinanceKeys(userId))
+                    .thenReturn(java.util.Optional.of(keys));
+            org.mockito.Mockito.when(binanceFuturesService.getAvailableBalance())
+                    .thenReturn(1234.56);
+
+            String result = service.getUserBalance(userId);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("1234.56");
+            org.assertj.core.api.Assertions.assertThat(result).contains("USDT");
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("用戶沒 API Key → 回友善訊息，不打 Binance")
+        void userWithoutApiKeyReturnsFriendlyMessage() {
+            String userId = "user_no_key";
+            org.mockito.Mockito.when(userApiKeyService.getUserBinanceKeys(userId))
+                    .thenReturn(java.util.Optional.empty());
+
+            String result = service.getUserBalance(userId);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("未設定");
+            org.mockito.Mockito.verify(binanceFuturesService, org.mockito.Mockito.never())
+                    .getAvailableBalance();
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("Binance API 失敗 → 不拋出，回錯誤訊息")
+        void binanceFailureReturnsErrorMessage() {
+            String userId = "user_001";
+            UserApiKeyService.BinanceKeys keys = new UserApiKeyService.BinanceKeys("api_k", "sec_k");
+            org.mockito.Mockito.when(userApiKeyService.getUserBinanceKeys(userId))
+                    .thenReturn(java.util.Optional.of(keys));
+            org.mockito.Mockito.when(binanceFuturesService.getAvailableBalance())
+                    .thenThrow(new RuntimeException("API key invalid"));
+
+            String result = service.getUserBalance(userId);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("查詢失敗");
         }
     }
 }
