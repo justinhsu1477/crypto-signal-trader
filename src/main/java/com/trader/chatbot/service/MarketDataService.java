@@ -278,10 +278,20 @@ public class MarketDataService {
     }
 
     /**
-     * 全用戶持倉與交易概覽（Admin 專屬）
+     * 全用戶持倉與交易概覽（Admin 專屬）— 全時間版本（向後相容）
      */
     public String getAllUsersSummary() {
-        StringBuilder sb = new StringBuilder("### 全用戶持倉與交易概覽\n");
+        return getAllUsersSummary("all");
+    }
+
+    /**
+     * 全用戶持倉與交易概覽（Admin 專屬）— 指定時間區間
+     *
+     * @param period 時間區間：7d / 30d / 90d / all（預設 all）
+     */
+    public String getAllUsersSummary(String period) {
+        String periodLabel = formatPeriodLabel(period);
+        StringBuilder sb = new StringBuilder("### 全用戶持倉與交易概覽（" + periodLabel + "）\n");
 
         try {
             // 用戶名稱對照表（一次查詢）
@@ -292,10 +302,16 @@ public class MarketDataService {
                             (a, b) -> a
                     ));
 
-            // 批次聚合統計（一次 SQL）
-            List<Object[]> stats = tradeRepository.aggregateStatsPerUser();
+            // 批次聚合統計（一次 SQL）— 依 period 選擇查詢方法
+            List<Object[]> stats;
+            if ("all".equalsIgnoreCase(period) || period == null || period.isEmpty()) {
+                stats = tradeRepository.aggregateStatsPerUser();
+            } else {
+                java.time.LocalDateTime since = parsePeriod(period);
+                stats = tradeRepository.aggregateStatsPerUserSince(since);
+            }
 
-            // 全部 OPEN 持倉（一次查詢）
+            // 全部 OPEN 持倉（一次查詢）— 持倉為「即時」狀態，不受 period 影響
             List<Trade> allOpenTrades = tradeRepository.findByStatus("OPEN");
             Map<String, Long> openCountByUser = allOpenTrades.stream()
                     .collect(Collectors.groupingBy(Trade::getUserId, Collectors.counting()));
@@ -338,6 +354,16 @@ public class MarketDataService {
         }
 
         return sb.toString();
+    }
+
+    private String formatPeriodLabel(String period) {
+        if (period == null || "all".equalsIgnoreCase(period)) return "全時間";
+        return switch (period.toLowerCase()) {
+            case "7d" -> "近7天";
+            case "30d" -> "近30天";
+            case "90d" -> "近90天";
+            default -> period;
+        };
     }
 
     /**
