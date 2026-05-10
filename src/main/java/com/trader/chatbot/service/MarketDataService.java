@@ -15,6 +15,7 @@ import com.trader.trading.service.BinanceFuturesService;
 import com.trader.trading.service.SignalSourceService;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
+import com.trader.user.service.UserApiKeyService;
 import org.springframework.data.domain.PageRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +53,7 @@ public class MarketDataService {
     private final BroadcastLogRepository broadcastLogRepository;
     private final SignalSourceService signalSourceService;
     private final OkHttpClient okHttpClient;
+    private final UserApiKeyService userApiKeyService;
     private final Gson gson = new Gson();
 
     private static final String FEAR_GREED_URL = "https://api.alternative.me/fcp/v1/fear-and-greed-index/?limit=1";
@@ -180,6 +182,35 @@ public class MarketDataService {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 查詢單一用戶的即時 Binance USDT 餘額
+     *
+     * 線程安全：使用 BinanceFuturesService.setCurrentUserKeys/clearCurrentUserKeys 包裝，
+     * 確保 ThreadLocal 不會洩漏到下次呼叫。
+     *
+     * @param userId 用戶 ID
+     * @return 格式化字串，含餘額或錯誤訊息（不拋出）
+     */
+    public String getUserBalance(String userId) {
+        var keysOpt = userApiKeyService.getUserBinanceKeys(userId);
+        if (keysOpt.isEmpty()) {
+            return "用戶 " + userId + " 未設定 Binance API Key，無法查詢餘額。";
+        }
+
+        try {
+            BinanceFuturesService.setCurrentUserKeys(keysOpt.get());
+            try {
+                double balance = binanceFuturesService.getAvailableBalance();
+                return String.format("用戶 %s 即時餘額：%.2f USDT", userId, balance);
+            } finally {
+                BinanceFuturesService.clearCurrentUserKeys();
+            }
+        } catch (Exception e) {
+            log.warn("查詢用戶 {} 餘額失敗: {}", userId, e.getMessage());
+            return String.format("用戶 %s 餘額查詢失敗：%s", userId, e.getMessage());
+        }
     }
 
     /**
