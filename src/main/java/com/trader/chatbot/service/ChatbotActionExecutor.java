@@ -40,7 +40,7 @@ public class ChatbotActionExecutor {
      */
     private static final Map<Intent, Set<String>> INTENT_FUNCTIONS = new EnumMap<>(Intent.class);
     static {
-        INTENT_FUNCTIONS.put(Intent.ACCOUNT_STATUS, Set.of("get_trade_settings", "get_my_positions", "query_trading_data"));
+        INTENT_FUNCTIONS.put(Intent.ACCOUNT_STATUS, Set.of("get_trade_settings", "get_my_positions", "query_trading_data", "get_user_balance"));
         INTENT_FUNCTIONS.put(Intent.TRADE_QUERY, Set.of("query_trading_data", "get_signal_report"));
         INTENT_FUNCTIONS.put(Intent.SIGNAL_EXPLAIN, Set.of("query_trading_data"));
         INTENT_FUNCTIONS.put(Intent.SETTING_CHANGE, Set.of("get_trade_settings", "update_risk_percent", "update_max_leverage", "update_max_dca_layers", "toggle_auto_sl_tp"));
@@ -53,7 +53,8 @@ public class ChatbotActionExecutor {
     private static final Set<String> ADMIN_FUNCTIONS = Set.of(
             "get_all_users_summary", "get_source_list", "get_source_performance",
             "get_source_recent_trades", "get_recent_broadcasts", "update_source_mode",
-            "get_trades_by_date", "query_trading_data"
+            "get_trades_by_date", "query_trading_data",
+            "get_all_user_balances", "get_today_signals_summary"
     );
 
     /**
@@ -170,7 +171,35 @@ public class ChatbotActionExecutor {
 
         map.put("get_all_users_summary", buildFunction(
                 "get_all_users_summary",
-                "查詢全部用戶的持倉與交易概覽，包含每位用戶的持倉數、總損益、勝率。僅限 Admin 使用。管理員問到全部用戶、所有用戶、餘額、持倉概覽時呼叫。",
+                "查詢全部用戶的持倉與交易概覽：每位用戶持倉數、總損益、勝率。" +
+                "支援時間區間參數（period）：7d=近7天 / 30d=近30天 / 90d=近90天 / all=全時間（預設）。" +
+                "僅限 Admin 使用。管理員問到「本週用戶獲利」「最近30天表現」「所有用戶概覽」時呼叫。" +
+                "注意：此工具回 DB 累積 PnL，不是即時餘額；要即時餘額用 get_all_user_balances。",
+                Map.of("period", Map.of("type", "STRING", "description", "時間區間：7d / 30d / 90d / all（預設 all）"))
+        ));
+
+        // === 新增 Admin 工具：即時餘額 + 訊號狀況 ===
+
+        map.put("get_user_balance", buildFunction(
+                "get_user_balance",
+                "查詢用戶當前的 Binance USDT 即時餘額（直接呼叫 Binance API，非 DB 快照）。" +
+                "用戶問「我的餘額」「我有多少錢」「帳戶餘額多少」時呼叫。" +
+                "Admin 可指定 target_user_id 查詢特定用戶。",
+                Map.of("target_user_id", Map.of("type", "STRING", "description", "（Admin 專用，可選）目標用戶 ID。不填則查自己。")),
+                List.of()
+        ));
+
+        map.put("get_all_user_balances", buildFunction(
+                "get_all_user_balances",
+                "查詢全部用戶的 Binance USDT 即時餘額（直接呼叫 Binance API）。" +
+                "僅限 Admin 使用。管理員問「所有用戶餘額」「總共多少錢」「全部用戶帳戶」時呼叫。",
+                Map.of()
+        ));
+
+        map.put("get_today_signals_summary", buildFunction(
+                "get_today_signals_summary",
+                "查詢今日訊號狀況：訊號總數、多空分布、AI 平均信心、廣播跟單成功/失敗/跳過數。" +
+                "僅限 Admin 使用。管理員問「今天訊號狀況」「今天廣播」「今天跟單情形」時呼叫。",
                 Map.of()
         ));
 
@@ -262,7 +291,28 @@ public class ChatbotActionExecutor {
                     if (!isAdmin) {
                         yield "此操作僅限管理員使用。";
                     }
-                    yield marketDataService.getAllUsersSummary();
+                    String period = args.has("period") ? args.get("period").getAsString() : "all";
+                    yield marketDataService.getAllUsersSummary(period);
+                }
+                case "get_user_balance" -> {
+                    String targetUserId = args.has("target_user_id") ? args.get("target_user_id").getAsString() : userId;
+                    if (!isAdmin && !targetUserId.equals(userId)) {
+                        // 非 admin 不可指定別人
+                        yield "查詢他人餘額僅限管理員。";
+                    }
+                    yield marketDataService.getUserBalance(targetUserId);
+                }
+                case "get_all_user_balances" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
+                    yield marketDataService.getAllUserBalances();
+                }
+                case "get_today_signals_summary" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
+                    yield marketDataService.getTodaySignalSummaryWithOutcomes();
                 }
                 case "get_source_list" -> {
                     if (!isAdmin) {

@@ -44,10 +44,11 @@ class ChatbotActionExecutorTest {
     private static final String ADMIN_ID = "admin-user";
 
     @Test
-    void buildToolsSchema_ACCOUNT_STATUS_一般用戶有3個函式() {
+    void buildToolsSchema_ACCOUNT_STATUS_一般用戶有4個函式() {
+        // get_trade_settings, get_my_positions, query_trading_data, get_user_balance = 4
         JsonObject tools = executor.buildToolsSchema(Intent.ACCOUNT_STATUS, false);
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(3);
+        assertThat(declarations).hasSize(4);
     }
 
     @Test
@@ -58,11 +59,16 @@ class ChatbotActionExecutorTest {
     }
 
     @Test
-    void buildToolsSchema_ACCOUNT_STATUS_Admin有10個函式() {
-        // 2 (intent) + 8 (admin, including query_trading_data) = 10
+    void buildToolsSchema_ACCOUNT_STATUS_Admin有13個函式() {
+        // intent: get_trade_settings, get_my_positions, query_trading_data, get_user_balance = 4
+        // admin: get_all_users_summary, get_source_list, get_source_performance,
+        //        get_source_recent_trades, get_recent_broadcasts, update_source_mode,
+        //        get_trades_by_date, query_trading_data, get_all_user_balances,
+        //        get_today_signals_summary = 10
+        // union (query_trading_data 共用): 4 + 10 - 1 = 13
         JsonObject tools = executor.buildToolsSchema(Intent.ACCOUNT_STATUS, true);
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(10);
+        assertThat(declarations).hasSize(13);
     }
 
     @Test
@@ -221,12 +227,12 @@ class ChatbotActionExecutorTest {
 
     @Test
     void executeGetAllUsersSummary_Admin委派給MarketDataService() {
-        when(marketDataService.getAllUsersSummary()).thenReturn("全用戶概覽");
+        when(marketDataService.getAllUsersSummary("all")).thenReturn("全用戶概覽");
 
         String result = executor.executeFunction(ADMIN_ID, true, "get_all_users_summary", new JsonObject());
 
         assertThat(result).isEqualTo("全用戶概覽");
-        verify(marketDataService).getAllUsersSummary();
+        verify(marketDataService).getAllUsersSummary("all");
     }
 
     @Test
@@ -480,6 +486,89 @@ class ChatbotActionExecutorTest {
             // 非 Admin 即使有 target_user_name 也只能改自己
             verify(userTradeSettingsService).updateSettings(eq(USER_ID), any());
             verifyNoInteractions(userRepository);
+        }
+    }
+
+    @Nested
+    @org.junit.jupiter.api.DisplayName("Admin 新工具 routing")
+    class AdminNewToolsTests {
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_user_balance Admin 呼叫 → 路由到 marketDataService.getUserBalance")
+        void getUserBalanceRoutesCorrectly() {
+            org.mockito.Mockito.when(marketDataService.getUserBalance("user_x"))
+                    .thenReturn("用戶 user_x 即時餘額：1234.56 USDT");
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+            args.addProperty("target_user_id", "user_x");
+
+            String result = executor.executeFunction("admin_id", true, "get_user_balance", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("1234.56");
+            org.mockito.Mockito.verify(marketDataService).getUserBalance("user_x");
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_user_balance 無參數 → 用呼叫者自己的 userId")
+        void getUserBalanceNoArgsUsesSelf() {
+            org.mockito.Mockito.when(marketDataService.getUserBalance("self_id"))
+                    .thenReturn("用戶 self_id 即時餘額：500.00 USDT");
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+
+            String result = executor.executeFunction("self_id", false, "get_user_balance", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("500.00");
+            org.mockito.Mockito.verify(marketDataService).getUserBalance("self_id");
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_all_user_balances 非 Admin → 拒絕")
+        void getAllUserBalancesNonAdminRejected() {
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+
+            String result = executor.executeFunction("user_id", false, "get_all_user_balances", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("僅限管理員");
+            org.mockito.Mockito.verify(marketDataService, org.mockito.Mockito.never()).getAllUserBalances();
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_all_user_balances Admin → 路由")
+        void getAllUserBalancesAdminRoutes() {
+            org.mockito.Mockito.when(marketDataService.getAllUserBalances())
+                    .thenReturn("### 全用戶即時餘額\n- Alice | 100 USDT\n");
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+
+            String result = executor.executeFunction("admin", true, "get_all_user_balances", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("Alice");
+            org.mockito.Mockito.verify(marketDataService).getAllUserBalances();
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_all_users_summary 帶 period 參數 → 傳給 service")
+        void getAllUsersSummaryWithPeriod() {
+            org.mockito.Mockito.when(marketDataService.getAllUsersSummary("7d"))
+                    .thenReturn("### 全用戶持倉與交易概覽（近7天）\n");
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+            args.addProperty("period", "7d");
+
+            String result = executor.executeFunction("admin", true, "get_all_users_summary", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("近7天");
+            org.mockito.Mockito.verify(marketDataService).getAllUsersSummary("7d");
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_today_signals_summary Admin → 路由")
+        void getTodaySignalsSummaryRoutes() {
+            org.mockito.Mockito.when(marketDataService.getTodaySignalSummaryWithOutcomes())
+                    .thenReturn("### 今日訊號狀況\n");
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+
+            String result = executor.executeFunction("admin", true, "get_today_signals_summary", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("今日訊號");
+            org.mockito.Mockito.verify(marketDataService).getTodaySignalSummaryWithOutcomes();
         }
     }
 }
