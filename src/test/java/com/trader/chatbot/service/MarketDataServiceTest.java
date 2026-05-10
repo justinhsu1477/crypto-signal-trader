@@ -928,4 +928,74 @@ class MarketDataServiceTest {
             org.assertj.core.api.Assertions.assertThat(resultOld).isEqualTo(resultNew);
         }
     }
+
+    @Nested
+    @DisplayName("getTodaySignalSummaryWithOutcomes — 今天訊號狀況含廣播結果")
+    class GetTodaySignalSummaryWithOutcomesTests {
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("有日報 + 有廣播 → 顯示訊號數 + 成功/失敗/跳過")
+        void hasReportAndBroadcasts() {
+            java.time.LocalDate today = java.time.LocalDate.now();
+
+            com.trader.trading.entity.DailySignalReport report =
+                    new com.trader.trading.entity.DailySignalReport();
+            report.setReportDate(today);
+            report.setTotalSignals(15);
+            report.setLongCount(5);
+            report.setShortCount(10);
+            report.setAvgConfidence(78.0);
+            report.setTotalSources(3);
+            org.mockito.Mockito.when(dailySignalReportRepository.findByReportDate(today))
+                    .thenReturn(java.util.Optional.of(report));
+
+            com.trader.trading.entity.BroadcastLog log1 =
+                    com.trader.trading.entity.BroadcastLog.builder()
+                            .signalAction("ENTRY").symbol("BTCUSDT")
+                            .totalUsers(10).successCount(8).failCount(1)
+                            .skippedNoSub(0).skippedNoKey(1).skippedNotAssigned(0)
+                            .status("COMPLETED")
+                            .build();
+            com.trader.trading.entity.BroadcastLog log2 =
+                    com.trader.trading.entity.BroadcastLog.builder()
+                            .signalAction("CLOSE").symbol("BTCUSDT")
+                            .totalUsers(8).successCount(8).failCount(0)
+                            .skippedNoSub(0).skippedNoKey(0).skippedNotAssigned(0)
+                            .status("COMPLETED")
+                            .build();
+            org.mockito.Mockito.when(broadcastLogRepository.findByCreatedAtBetween(
+                    org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                    org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class)))
+                    .thenReturn(java.util.List.of(log1, log2));
+
+            String result = service.getTodaySignalSummaryWithOutcomes();
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("15"); // total signals
+            org.assertj.core.api.Assertions.assertThat(result).contains("5L"); // long
+            org.assertj.core.api.Assertions.assertThat(result).contains("10S"); // short
+            org.assertj.core.api.Assertions.assertThat(result).contains("78"); // confidence
+            org.assertj.core.api.Assertions.assertThat(result).contains("廣播"); // broadcast section
+            org.assertj.core.api.Assertions.assertThat(result).contains("成功");
+            org.assertj.core.api.Assertions.assertThat(result).contains("16"); // total success = 8+8
+            org.assertj.core.api.Assertions.assertThat(result).contains("失敗");
+            org.assertj.core.api.Assertions.assertThat(result).contains("跳過");
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("無日報無廣播 → 友善提示「今日無資料」")
+        void noDataFriendlyMessage() {
+            org.mockito.Mockito.when(dailySignalReportRepository.findByReportDate(
+                    org.mockito.ArgumentMatchers.any(java.time.LocalDate.class)))
+                    .thenReturn(java.util.Optional.empty());
+            org.mockito.Mockito.when(broadcastLogRepository.findByCreatedAtBetween(
+                    org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                    org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class)))
+                    .thenReturn(java.util.List.of());
+
+            String result = service.getTodaySignalSummaryWithOutcomes();
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("今日");
+            org.assertj.core.api.Assertions.assertThat(result).containsAnyOf("無資料", "無訊號");
+        }
+    }
 }

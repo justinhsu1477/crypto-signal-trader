@@ -401,6 +401,82 @@ public class MarketDataService {
         return sb.toString();
     }
 
+    /**
+     * 今天訊號狀況 — 訊號數 + 多空分布 + AI 信心 + 廣播成功/失敗/跳過聚合
+     *
+     * 資料源：
+     * - DailySignalReport（訊號統計）
+     * - BroadcastLog（廣播跟單結果）— 兩者合併
+     *
+     * @return Markdown 字串
+     */
+    public String getTodaySignalSummaryWithOutcomes() {
+        StringBuilder sb = new StringBuilder("### 今日訊號狀況\n");
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDateTime startOfDay = today.atStartOfDay();
+        java.time.LocalDateTime startOfTomorrow = today.plusDays(1).atStartOfDay();
+
+        // ===== Part 1: 訊號統計 =====
+        java.util.Optional<DailySignalReport> reportOpt =
+                dailySignalReportRepository.findByReportDate(today);
+
+        if (reportOpt.isPresent()) {
+            var r = reportOpt.get();
+            sb.append(String.format("**訊號**：%d 條（%dL/%dS）",
+                    r.getTotalSignals(),
+                    r.getLongCount(),
+                    r.getShortCount()));
+            if (r.getAvgConfidence() != null) {
+                sb.append(String.format(" | 平均信心：%.0f/100", r.getAvgConfidence()));
+            }
+            sb.append(String.format(" | 來源：%d 個\n", r.getTotalSources()));
+        } else {
+            sb.append("**訊號**：今日無訊號日報資料\n");
+        }
+
+        // ===== Part 2: 廣播聚合 =====
+        java.util.List<com.trader.trading.entity.BroadcastLog> broadcasts =
+                broadcastLogRepository.findByCreatedAtBetween(startOfDay, startOfTomorrow);
+
+        if (broadcasts.isEmpty()) {
+            sb.append("**廣播**：今日無廣播紀錄\n");
+        } else {
+            int totalBroadcasts = broadcasts.size();
+            int totalSuccess = broadcasts.stream().mapToInt(b -> b.getSuccessCount()).sum();
+            int totalFail = broadcasts.stream().mapToInt(b -> b.getFailCount()).sum();
+            int totalSkippedNoSub = broadcasts.stream().mapToInt(b -> b.getSkippedNoSub()).sum();
+            int totalSkippedNoKey = broadcasts.stream().mapToInt(b -> b.getSkippedNoKey()).sum();
+            int totalSkippedNotAssigned = broadcasts.stream().mapToInt(b -> b.getSkippedNotAssigned()).sum();
+            int totalSkipped = totalSkippedNoSub + totalSkippedNoKey + totalSkippedNotAssigned;
+
+            // 按 action 分類
+            java.util.Map<String, Long> byAction = broadcasts.stream()
+                    .filter(b -> b.getSignalAction() != null)
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            com.trader.trading.entity.BroadcastLog::getSignalAction,
+                            java.util.stream.Collectors.counting()
+                    ));
+
+            sb.append(String.format("**廣播**：%d 次", totalBroadcasts));
+            if (!byAction.isEmpty()) {
+                sb.append(" (");
+                String breakdown = byAction.entrySet().stream()
+                        .map(e -> e.getKey() + ":" + e.getValue())
+                        .collect(java.util.stream.Collectors.joining(", "));
+                sb.append(breakdown).append(")");
+            }
+            sb.append("\n");
+            sb.append(String.format("• 成功：%d | 失敗：%d | 跳過：%d", totalSuccess, totalFail, totalSkipped));
+            if (totalSkipped > 0) {
+                sb.append(String.format("（無訂閱:%d / 無API Key:%d / 未綁定:%d）",
+                        totalSkippedNoSub, totalSkippedNoKey, totalSkippedNotAssigned));
+            }
+            sb.append("\n");
+        }
+
+        return sb.toString();
+    }
+
     // ==================== 訊號來源查詢（Admin 專屬） ====================
 
     /**
