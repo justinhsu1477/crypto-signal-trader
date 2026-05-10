@@ -214,6 +214,70 @@ public class MarketDataService {
     }
 
     /**
+     * 查詢全部用戶的即時 Binance USDT 餘額
+     *
+     * 設計：
+     * - 從 UserApiKeyService 拿全部用戶的解密 API Key（一次 SQL）
+     * - 對每個用戶：set ThreadLocal → 呼叫 getAvailableBalance → clear ThreadLocal
+     * - 個別失敗不影響整體，標記為「查詢失敗」
+     * - 結果聚合成 Markdown，回給 Gemini 格式化成 Discord 訊息
+     *
+     * 注意：第一版採序列呼叫；高併發時可改 CompletableFuture 並行（最多 5 並發）。
+     *
+     * @return Markdown 格式字串
+     */
+    public String getAllUserBalances() {
+        StringBuilder sb = new StringBuilder("### 全用戶即時餘額（Binance API）\n");
+
+        java.util.Map<String, UserApiKeyService.BinanceKeys> allKeys =
+                userApiKeyService.getAllBinanceKeys("BINANCE");
+
+        if (allKeys.isEmpty()) {
+            sb.append("- 目前無任何用戶設定 Binance API Key\n");
+            return sb.toString();
+        }
+
+        // 用戶名稱對照表
+        java.util.Map<String, String> userNames = userRepository.findAll().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        com.trader.user.entity.User::getUserId,
+                        u -> u.getName() != null && !u.getName().isEmpty()
+                                ? u.getName()
+                                : (u.getEmail() != null ? u.getEmail() : u.getUserId()),
+                        (a, b) -> a
+                ));
+
+        double totalBalance = 0.0;
+        int successCount = 0;
+        int failCount = 0;
+
+        for (var entry : allKeys.entrySet()) {
+            String uid = entry.getKey();
+            String name = userNames.getOrDefault(uid, uid);
+
+            try {
+                BinanceFuturesService.setCurrentUserKeys(entry.getValue());
+                try {
+                    double balance = binanceFuturesService.getAvailableBalance();
+                    sb.append(String.format("- %s | %.2f USDT\n", name, balance));
+                    totalBalance += balance;
+                    successCount++;
+                } finally {
+                    BinanceFuturesService.clearCurrentUserKeys();
+                }
+            } catch (Exception e) {
+                log.warn("查詢用戶 {} 餘額失敗: {}", uid, e.getMessage());
+                sb.append(String.format("- %s | [查詢失敗：%s]\n", name, e.getMessage()));
+                failCount++;
+            }
+        }
+
+        sb.append(String.format("\n總用戶：%d | 成功：%d | 失敗：%d | 總餘額：%.2f USDT\n",
+                allKeys.size(), successCount, failCount, totalBalance));
+        return sb.toString();
+    }
+
+    /**
      * 全用戶持倉與交易概覽（Admin 專屬）
      */
     public String getAllUsersSummary() {

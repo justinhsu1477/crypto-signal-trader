@@ -775,4 +775,90 @@ class MarketDataServiceTest {
             org.assertj.core.api.Assertions.assertThat(result).contains("查詢失敗");
         }
     }
+
+    @Nested
+    @DisplayName("getAllUserBalances — 全用戶即時餘額")
+    class GetAllUserBalancesTests {
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("3 個用戶各有 API Key → 全部餘額正確聚合")
+        void threeUsersAllSucceed() {
+            UserApiKeyService.BinanceKeys k1 = new UserApiKeyService.BinanceKeys("a1", "s1");
+            UserApiKeyService.BinanceKeys k2 = new UserApiKeyService.BinanceKeys("a2", "s2");
+            UserApiKeyService.BinanceKeys k3 = new UserApiKeyService.BinanceKeys("a3", "s3");
+            java.util.Map<String, UserApiKeyService.BinanceKeys> keys = new java.util.LinkedHashMap<>();
+            keys.put("u1", k1);
+            keys.put("u2", k2);
+            keys.put("u3", k3);
+            org.mockito.Mockito.when(userApiKeyService.getAllBinanceKeys("BINANCE")).thenReturn(keys);
+
+            // Binance 對 3 個 ThreadLocal 上下文回不同數字
+            org.mockito.Mockito.when(binanceFuturesService.getAvailableBalance())
+                    .thenReturn(100.0, 200.5, 50.25);
+
+            // 用戶名稱對照
+            com.trader.user.entity.User user1 = new com.trader.user.entity.User();
+            user1.setUserId("u1"); user1.setName("Alice");
+            com.trader.user.entity.User user2 = new com.trader.user.entity.User();
+            user2.setUserId("u2"); user2.setName("Bob");
+            com.trader.user.entity.User user3 = new com.trader.user.entity.User();
+            user3.setUserId("u3"); user3.setName("Carol");
+            org.mockito.Mockito.when(userRepository.findAll())
+                    .thenReturn(java.util.List.of(user1, user2, user3));
+
+            String result = service.getAllUserBalances();
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("Alice");
+            org.assertj.core.api.Assertions.assertThat(result).contains("Bob");
+            org.assertj.core.api.Assertions.assertThat(result).contains("Carol");
+            org.assertj.core.api.Assertions.assertThat(result).contains("100.00");
+            org.assertj.core.api.Assertions.assertThat(result).contains("200.50");
+            org.assertj.core.api.Assertions.assertThat(result).contains("50.25");
+            // 總計應該出現
+            org.assertj.core.api.Assertions.assertThat(result).contains("總餘額");
+            org.assertj.core.api.Assertions.assertThat(result).contains("350.75");
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("某用戶 Binance 失敗 → 標記但不影響其他用戶")
+        void oneUserFailsOthersStillWork() {
+            UserApiKeyService.BinanceKeys k1 = new UserApiKeyService.BinanceKeys("a1", "s1");
+            UserApiKeyService.BinanceKeys k2 = new UserApiKeyService.BinanceKeys("a2", "s2");
+            java.util.Map<String, UserApiKeyService.BinanceKeys> keys = new java.util.LinkedHashMap<>();
+            keys.put("u1", k1);
+            keys.put("u2", k2);
+            org.mockito.Mockito.when(userApiKeyService.getAllBinanceKeys("BINANCE")).thenReturn(keys);
+
+            // 第一次 OK 第二次拋
+            org.mockito.Mockito.when(binanceFuturesService.getAvailableBalance())
+                    .thenReturn(100.0)
+                    .thenThrow(new RuntimeException("API key revoked"));
+
+            com.trader.user.entity.User user1 = new com.trader.user.entity.User();
+            user1.setUserId("u1"); user1.setName("Alice");
+            com.trader.user.entity.User user2 = new com.trader.user.entity.User();
+            user2.setUserId("u2"); user2.setName("Bob");
+            org.mockito.Mockito.when(userRepository.findAll())
+                    .thenReturn(java.util.List.of(user1, user2));
+
+            String result = service.getAllUserBalances();
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("Alice");
+            org.assertj.core.api.Assertions.assertThat(result).contains("100.00");
+            org.assertj.core.api.Assertions.assertThat(result).contains("Bob");
+            // Bob 該行應有「查詢失敗」字樣
+            org.assertj.core.api.Assertions.assertThat(result).contains("查詢失敗");
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("沒有任何用戶有 API Key → 回友善訊息")
+        void noUsersWithApiKey() {
+            org.mockito.Mockito.when(userApiKeyService.getAllBinanceKeys("BINANCE"))
+                    .thenReturn(java.util.Map.of());
+
+            String result = service.getAllUserBalances();
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("無任何用戶");
+        }
+    }
 }
