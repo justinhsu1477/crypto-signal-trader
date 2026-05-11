@@ -41,6 +41,7 @@ class TradeControllerTest {
     private SignalRecordService signalRecordService;
     private SymbolLockRegistry symbolLockRegistry;
     private com.trader.trading.config.MultiUserConfig multiUserConfig;
+    private SignalMetrics signalMetrics;
 
     private TradeController controller;
 
@@ -58,6 +59,7 @@ class TradeControllerTest {
         signalRecordService = mock(SignalRecordService.class);
         symbolLockRegistry = new SymbolLockRegistry();
         multiUserConfig = mock(com.trader.trading.config.MultiUserConfig.class);
+        signalMetrics = mock(SignalMetrics.class);
         // 預設多用戶模式關閉 — 既有測試聚焦單用戶行為
         when(multiUserConfig.isEnabled()).thenReturn(false);
 
@@ -65,7 +67,7 @@ class TradeControllerTest {
                 binanceFuturesService, broadcastTradeService, signalParserService,
                 riskConfig, tradeRecordService, deduplicationService,
                 webhookService, heartbeatService, userDataStreamService, signalRecordService,
-                symbolLockRegistry, multiUserConfig);
+                symbolLockRegistry, multiUserConfig, signalMetrics);
 
         // 預設白名單通過
         when(riskConfig.isSymbolAllowed(anyString())).thenReturn(true);
@@ -1259,6 +1261,87 @@ class TradeControllerTest {
         }
 
         // ====== 訊號記錄時序（防重複下單） ======
+
+        @Test
+        @DisplayName("廣播 attachment_sha256 不為 null → recordImageSignal(received)")
+        void broadcastImageSignal_recordsImageMetric() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            request.setSource(SignalSource.builder()
+                    .platform("DISCORD").messageId("msg-img-1")
+                    .attachmentSha256("sha-abc").build());
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED"));
+
+            controller.broadcastTrade(request);
+
+            verify(signalMetrics).recordImageSignal("received");
+            verify(signalMetrics, never()).recordCompoundAction(anyString());
+        }
+
+        @Test
+        @DisplayName("廣播 messageId 帶 __close 後綴 → recordCompoundAction(close)")
+        void broadcastCloseCompound_recordsCompoundMetric() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("CLOSE");
+            request.setSymbol("BTCUSDT");
+            request.setSource(SignalSource.builder()
+                    .platform("DISCORD").messageId("msg-7__close").build());
+
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED"));
+
+            controller.broadcastTrade(request);
+
+            verify(signalMetrics).recordCompoundAction("close");
+            verify(signalMetrics, never()).recordImageSignal(anyString());
+        }
+
+        @Test
+        @DisplayName("廣播 messageId 帶 __move_sl 後綴 → recordCompoundAction(move_sl)")
+        void broadcastMoveSlCompound_recordsCompoundMetric() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("MOVE_SL");
+            request.setSymbol("BTCUSDT");
+            request.setNewStopLoss(94500.0);
+            request.setSource(SignalSource.builder()
+                    .platform("DISCORD").messageId("msg-7__move_sl").build());
+
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED"));
+
+            controller.broadcastTrade(request);
+
+            verify(signalMetrics).recordCompoundAction("move_sl");
+        }
+
+        @Test
+        @DisplayName("廣播純文字訊號（無 attachment / 無後綴）→ 不觸發任何 metric")
+        void broadcastPlainTextSignal_noMetric() {
+            TradeRequest request = new TradeRequest();
+            request.setAction("ENTRY");
+            request.setSymbol("BTCUSDT");
+            request.setSide("LONG");
+            request.setEntryPrice(95000.0);
+            request.setStopLoss(94000.0);
+            request.setSource(SignalSource.builder()
+                    .platform("DISCORD").messageId("msg-plain").build());
+
+            when(deduplicationService.isSignalProcessed(any())).thenReturn(false);
+            when(broadcastTradeService.broadcastTrade(any()))
+                    .thenReturn(Map.of("status", "COMPLETED"));
+
+            controller.broadcastTrade(request);
+
+            verify(signalMetrics, never()).recordImageSignal(anyString());
+            verify(signalMetrics, never()).recordCompoundAction(anyString());
+        }
 
         @Test
         @DisplayName("ENTRY 廣播 → signalRecord 在 broadcastTrade 之前寫入（防 race condition）")
