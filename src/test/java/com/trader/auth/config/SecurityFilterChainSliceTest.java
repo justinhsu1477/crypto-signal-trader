@@ -6,9 +6,11 @@ import com.trader.auth.handler.CustomAccessDeniedHandler;
 import com.trader.auth.handler.CustomAuthenticationEntryPoint;
 import com.trader.auth.service.JwtService;
 import com.trader.auth.util.ClientIpResolver;
+import com.trader.chatbot.service.DiscordBotService;
 import com.trader.shared.controller.HealthController;
 import com.trader.shared.service.AuditService;
 import com.trader.shared.util.BinanceApiRateLimiter;
+import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -55,6 +57,10 @@ class SecurityFilterChainSliceTest {
     private DataSource dataSource;
     @MockBean
     private BinanceApiRateLimiter binanceApiRateLimiter;
+    @MockBean
+    private MonitorHeartbeatService monitorHeartbeatService;
+    @MockBean
+    private DiscordBotService discordBotService;
 
     // Filter / Handler 依賴
     @MockBean
