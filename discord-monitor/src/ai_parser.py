@@ -573,6 +573,17 @@ class AiSignalParser:
                 # 防禦：Gemini 有時會回傳 JSON array（複雜訊號含多段時）
                 # 例如 [{"action":"ENTRY",...}, {"action":"INFO",...}]
                 if isinstance(parsed, list):
+                    # 先檢查是不是合法的 CLOSE + MOVE_SL 複合動作
+                    if self._is_compound_close_movesl(parsed):
+                        # CLOSE 要先 send 再 MOVE_SL（避免 race condition）
+                        ordered = sorted(parsed, key=lambda x: 0 if x.get("action") == "CLOSE" else 1)
+                        logger.info(
+                            "AI parser: compound action detected (CLOSE %.0f%% + MOVE_SL breakeven) symbol=%s",
+                            ordered[0].get("close_ratio", 0) * 100,
+                            ordered[0].get("symbol"),
+                        )
+                        return ordered  # 回傳 list，上游 signal_router 會 iterate
+                    # 不是 compound → 退回原 pick best 行為
                     logger.warning(
                         "AI parser: got list (%d items), extracting best signal: %s",
                         len(parsed), text[:200],
@@ -692,6 +703,13 @@ class AiSignalParser:
 
                 # 多訊號 list 處理（與 parse() 一致）
                 if isinstance(parsed, list):
+                    if self._is_compound_close_movesl(parsed):
+                        ordered = sorted(parsed, key=lambda x: 0 if x.get("action") == "CLOSE" else 1)
+                        logger.info(
+                            "AI image parser: compound action detected symbol=%s",
+                            ordered[0].get("symbol"),
+                        )
+                        return ordered
                     logger.warning(
                         "AI image parser: got list (%d items), picking best",
                         len(parsed),
@@ -742,6 +760,42 @@ class AiSignalParser:
             self.config.max_retries, last_error,
         )
         return None
+
+    def _is_compound_close_movesl(self, items: list) -> bool:
+        """判斷 list 是否為合法的 CLOSE + MOVE_SL 複合動作。
+
+        條件（全部要滿足）：
+        - 恰好 2 個 dict
+        - 一個 action=CLOSE，一個 action=MOVE_SL
+        - 兩個都通過 _validate
+        - CLOSE 有合理的 close_ratio（0.01-1.0）
+
+        Returns:
+            True 表示是合法 compound，應該回傳 list 給下游執行
+            False 表示不是 compound，下游用 _pick_best_from_list 退回單一動作
+        """
+        if not isinstance(items, list) or len(items) != 2:
+            return False
+
+        # 全部要是 dict 且有 action
+        if not all(isinstance(it, dict) and it.get("action") for it in items):
+            return False
+
+        actions = sorted([it.get("action") for it in items])
+        if actions != ["CLOSE", "MOVE_SL"]:
+            return False
+
+        # 兩個都要過 validate
+        if not all(self._validate(it) for it in items):
+            return False
+
+        # CLOSE 必須有合理的 close_ratio
+        close_item = next(it for it in items if it.get("action") == "CLOSE")
+        ratio = close_item.get("close_ratio")
+        if not isinstance(ratio, (int, float)) or ratio <= 0 or ratio > 1:
+            return False
+
+        return True
 
     def _pick_best_from_list(self, items: list) -> dict | None:
         """When Gemini returns a JSON array, pick the most actionable signal.
