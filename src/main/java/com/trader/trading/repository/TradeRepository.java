@@ -342,12 +342,17 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     /**
      * 通用時間區間批次聚合 — 回傳指定時間之後的交易統計
      *
-     * 回傳 Object[]：
-     *   [0] userId(String), [1] tradeCount(Long), [2] netProfit(Double)
+     * 回傳 Object[]（4 cols）：
+     *   [0] userId(String), [1] tradeCount(Long),
+     *   [2] winCount(Long), [3] netProfit(Double)
+     *
+     * 注意：與 aggregateStatsPerUser() 的前 4 個欄位對齊
+     * （aggregateStatsPerUser 多一個 openCount 在 [4]）
      */
     @Query(value = """
             SELECT user_id,
                    COUNT(*) AS trade_count,
+                   COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
                    COALESCE(SUM(net_profit), 0) AS net_profit
             FROM trades
             WHERE status = 'CLOSED' AND exit_time >= :since AND simulated = false

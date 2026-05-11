@@ -308,6 +308,11 @@ public class MarketDataService {
                 stats = tradeRepository.aggregateStatsPerUser();
             } else {
                 java.time.LocalDateTime since = parsePeriod(period);
+                if (since == null) {
+                    // parsePeriod 不認識的格式 — 給用戶清楚訊息而不是「無資料」
+                    return "### 全用戶持倉與交易概覽\n- 不支援的時間區間：" + period
+                            + "（可用值：7d / 30d / 90d / all）\n";
+                }
                 stats = tradeRepository.aggregateStatsPerUserSince(since);
             }
 
