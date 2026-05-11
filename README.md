@@ -9,7 +9,7 @@
 
 > Discord 訊號 → AI 解析 → 多用戶 Binance Futures 自動跟單
 
-把訊號頻道（如「陳哥合約頻道」）的訊號自動轉換成 Binance Futures 訂單，**支援多用戶 SaaS 模式**：訊號廣播跟單、per-user 風控、USDT 訂閱計費、Admin Discord chatbot。
+把 Discord 訊號頻道的訊息自動轉換成 Binance Futures 訂單，**支援多用戶 SaaS 模式**：訊號廣播跟單、per-user 風控、USDT 訂閱計費、Admin Discord chatbot。
 
 ---
 
@@ -36,7 +36,7 @@
 
 ### 1. AI 多模態訊號解析
 - **文字訊號**：Gemini 2.5 Flash + 自訂 SYSTEM_PROMPT（70+ few-shot）
-- **圖片訊號**：Vision LLM 抽取紫色 banner 訊號（陳哥的招牌格式）
+- **圖片訊號**：Vision LLM 抽取 banner 樣式截圖中的交易參數（部分頻道用圖片發訊號規避文字爬蟲）
 - **複合動作**：辨識「止盈50%做成本保护」→ 自動 CLOSE 50% + MOVE_SL 到 breakeven（含手續費補償）
 
 ### 2. 多用戶廣播跟單
@@ -165,7 +165,7 @@ shared        共用元件（Config / DTO / Cache / Rate Limiter）
 
 ## 最近新增（2026-05）
 
-- 🖼️ **圖訊號解析**：Vision LLM 自動抽取陳哥紫色框訊號（feature-flagged）
+- 🖼️ **圖訊號解析**：Vision LLM 自動抽取圖片中的交易參數（feature-flagged）
 - 🔀 **複合動作識別**：「止盈X%做成本保護」→ CLOSE + MOVE_SL（跨頻道通用）
 - 🤖 **Admin Chatbot 工具**：即時餘額 / 全用戶 PnL（時間區間）/ 今日訊號狀況
 - 📊 **可觀測性升級**：sha256 audit chain + Prometheus 計量 + deep health check（含 heartbeat + Discord bot 狀態）
