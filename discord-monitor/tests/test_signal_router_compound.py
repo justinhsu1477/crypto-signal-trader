@@ -151,3 +151,73 @@ class TestCompoundE2E:
         # MOVE_SL 不帶 new_stop_loss — 由 Java 端用 entry price + 手續費補償
         assert "new_stop_loss" not in req_2 or req_2["new_stop_loss"] is None
         assert src_2["message_id"] == "real_msg_8_58__move_sl"
+
+
+class TestImageCompoundFlow:
+    """確保 image flow 也支援 compound action（不會 crash）"""
+
+    @pytest.mark.asyncio
+    async def test_image_compound_does_not_crash(self):
+        """parse_with_image 回 list → _handle_image_signal 應該路由到 _forward_compound 不 crash"""
+        # 需要 import + setup: 模擬 image_signal config 啟用
+        from src.config import ImageSignalConfig
+        from unittest.mock import patch
+
+        ai_parser = MagicMock()
+        ai_parser.parse_with_image = AsyncMock(return_value=[
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+            {"action": "MOVE_SL", "symbol": "BTCUSDT"},
+        ])
+        ai_parser.parse = AsyncMock(return_value=None)
+        ai_parser.prompt_version = 7
+
+        discord_config = DiscordConfig(channel_ids=["ch_chen_ge"])
+        image_config = ImageSignalConfig(
+            enabled=True,
+            dry_run=False,
+            allowed_symbols=["BTCUSDT"],
+        )
+        api_client = MagicMock()
+        from src.api_client import ExecutionResult
+        api_client.send_trade = AsyncMock(
+            return_value=ExecutionResult(success=True, status_code=200, summary="ok")
+        )
+        router = SignalRouter(
+            discord_config=discord_config,
+            api_client=api_client,
+            ai_parser=ai_parser,
+            image_signal_config=image_config,
+        )
+
+        msg = {
+            "id": "img_compound_001",
+            "channel_id": "ch_chen_ge",
+            "guild_id": "guild1",
+            "author_id": "author_chen",
+            "author_name": "陈哥合约频道",
+            "content": "",  # 純圖
+            "embeds": [],
+            "attachments": [{
+                "id": "a1",
+                "filename": "signal.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png",
+                "size": 200000,
+            }],
+            "embed_images": [],
+            "timestamp": "2026-05-12T10:00:00",
+            "has_reference": False,
+            "has_snapshots": False,
+        }
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_img"),
+        )):
+            await router.handle_message(msg)
+
+        # 應該 send 2 次（compound）
+        assert api_client.send_trade.call_count == 2
+        # 每次 message_id 該 suffix
+        msg_ids = [c.kwargs["source"]["message_id"] for c in api_client.send_trade.call_args_list]
+        assert any("close" in m.lower() for m in msg_ids)
+        assert any("move_sl" in m.lower() for m in msg_ids)
