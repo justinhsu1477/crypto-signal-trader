@@ -13,6 +13,7 @@ import com.trader.notification.service.DiscordWebhookService;
 import com.trader.notification.service.NotificationService;
 import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalDeduplicationService;
+import com.trader.trading.service.SignalMetrics;
 import com.trader.trading.service.SignalParserService;
 import com.trader.trading.service.BinanceUserDataStreamService;
 import com.trader.trading.service.SignalRecordService;
@@ -54,6 +55,7 @@ public class TradeController {
     private final SignalRecordService signalRecordService;
     private final SymbolLockRegistry symbolLockRegistry;
     private final MultiUserConfig multiUserConfig;
+    private final SignalMetrics signalMetrics;
 
     /** 訊號最大容許延遲（毫秒）：5 分鐘 */
     private static final long SIGNAL_MAX_AGE_MS = 5 * 60 * 1000L;
@@ -667,6 +669,35 @@ public class TradeController {
         return o == null ? null : o.toString();
     }
 
+    /**
+     * 觀測廣播訊號的兩種特性：
+     * 1. attachment_sha256 不為空 → 來自圖訊號（OCR / VLM 線路）
+     * 2. messageId 帶 __close / __move_sl 後綴 → 來自複合動作子訊號拆分
+     *
+     * 全包 try-catch 確保 metric 失敗不影響交易主流程。
+     */
+    private void recordSignalMetrics(TradeRequest request) {
+        try {
+            SignalSource source = request.getSource();
+            if (source == null) {
+                return;
+            }
+            if (source.getAttachmentSha256() != null && !source.getAttachmentSha256().isBlank()) {
+                signalMetrics.recordImageSignal("received");
+            }
+            String msgId = source.getMessageId();
+            if (msgId != null) {
+                if (msgId.endsWith("__close")) {
+                    signalMetrics.recordCompoundAction("close");
+                } else if (msgId.endsWith("__move_sl")) {
+                    signalMetrics.recordCompoundAction("move_sl");
+                }
+            }
+        } catch (Exception e) {
+            log.debug("signalMetrics 記錄失敗（non-blocking）: {}", e.getMessage());
+        }
+    }
+
     // ==================== Per-user 通知 Helper ====================
 
     /**
@@ -845,6 +876,9 @@ public class TradeController {
                     "allowed", riskConfig.getAllowedSymbols().toString(),
                     "received", symbol != null ? symbol : "null"));
         }
+
+        // Prometheus 計數（觀察圖訊號 / 複合動作量）—— 一旦通過 action+symbol 驗證就算「收到」
+        recordSignalMetrics(request);
 
         // message_id 永久去重：防止 Queue Replay 超過 5 分鐘 hash 窗口後的重複下單
         // 此檢查不受時間窗口限制，只要 message_id 存在於 signals 表就攔截
