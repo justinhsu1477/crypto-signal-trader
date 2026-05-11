@@ -1,5 +1,8 @@
 # Crypto Signal Trader
 
+[![繁體中文](https://img.shields.io/badge/lang-繁體中文-red)](README.md)
+[![English](https://img.shields.io/badge/lang-English-blue)](README.en.md)
+
 [![CI](https://github.com/justinhsu1477/crypto-signal-trader/actions/workflows/ci.yml/badge.svg)](https://github.com/justinhsu1477/crypto-signal-trader/actions/workflows/ci.yml)
 ![Tests](https://img.shields.io/badge/tests-2321%20passed-brightgreen)
 ![Java](https://img.shields.io/badge/Java-17-orange)
