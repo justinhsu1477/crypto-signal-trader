@@ -1,5 +1,12 @@
 # Crypto Signal Trader
 
+[![CI](https://github.com/justinhsu1477/crypto-signal-trader/actions/workflows/ci.yml/badge.svg)](https://github.com/justinhsu1477/crypto-signal-trader/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-2321%20passed-brightgreen)
+![Java](https://img.shields.io/badge/Java-17-orange)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-6DB33F)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
+![Next.js](https://img.shields.io/badge/Next.js-14-black)
+
 > Discord 訊號 → AI 解析 → 多用戶 Binance Futures 自動跟單
 
 把訊號頻道（如「陳哥合約頻道」）的訊號自動轉換成 Binance Futures 訂單，**支援多用戶 SaaS 模式**：訊號廣播跟單、per-user 風控、USDT 訂閱計費、Admin Discord chatbot。
@@ -46,10 +53,22 @@ DM bot 直接問：
 - 「本週用戶獲利」→ 時間區間 PnL（7d/30d/90d）
 - 「今天訊號狀況」→ 訊號 + 廣播成功/失敗/跳過聚合
 
+<p align="center">
+  <img src="docs/images/chatbot.png" alt="Admin Discord Chatbot" width="700"/>
+  <br/>
+  <em>Admin DM 「查詢目前所有人額額」→ Bot 即時抓取每位用戶 Binance USDT 餘額並列出</em>
+</p>
+
 ### 5. 完整審計鏈
 - DB：`trades` / `signals` / `broadcast_logs`（含 AI 信心 + per-user 結果 JSON）
 - 圖訊號 `sha256` 落地（可追溯哪張圖觸發哪筆交易）
 - Prometheus metrics：`signal_image_total`、`signal_compound_total`、`chatbot_llm_calls_total` 等
+
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="Admin Web Dashboard — System Overview" width="900"/>
+  <br/>
+  <em>Web Dashboard — System Overview（DB / Binance / WebSocket 健康狀態、用戶統計、Today/Week/Month PnL）</em>
+</p>
 
 ---
 
