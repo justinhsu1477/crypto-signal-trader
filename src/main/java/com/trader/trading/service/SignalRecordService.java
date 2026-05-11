@@ -75,7 +75,8 @@ public class SignalRecordService {
                            .sourceChannelName(source.getChannelName())
                            .sourceGuildId(source.getGuildId())
                            .sourceAuthorName(source.getAuthorName())
-                           .sourceMessageId(source.getMessageId());
+                           .sourceMessageId(source.getMessageId())
+                           .attachmentSha256(source.getAttachmentSha256());
                 }
             }
 
