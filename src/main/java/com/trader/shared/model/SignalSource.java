@@ -48,4 +48,13 @@ public class SignalSource {
     /** 原始訊息 ID（用於溯源） */
     @JsonProperty("message_id")
     private String messageId;
+
+    /**
+     * 觸發訊號的圖片附件 SHA-256（圖訊號 audit trail）
+     *
+     * Python 端在圖訊號觸發時於 source.attachment.sha256 提供，
+     * 用於追蹤「這筆交易是哪張圖觸發的」。文字訊號為 null。
+     */
+    @JsonProperty("attachment_sha256")
+    private String attachmentSha256;
 }

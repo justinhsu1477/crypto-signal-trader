@@ -32,6 +32,13 @@ public class Signal {
     private String sourceAuthorName;
     private String sourceMessageId;
 
+    /**
+     * 觸發訊號的圖片附件 SHA-256（圖訊號 audit trail）
+     * 圖訊號才會有值；文字訊號為 null。
+     */
+    @Column(name = "attachment_sha256")
+    private String attachmentSha256;
+
     // === 訊號內容 ===
     private String action;              // ENTRY, CLOSE, DCA, MOVE_SL, CANCEL, INFO
     private String symbol;

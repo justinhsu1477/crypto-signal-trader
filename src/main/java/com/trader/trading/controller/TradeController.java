@@ -625,20 +625,46 @@ public class TradeController {
         return request;
     }
 
+    @SuppressWarnings("unchecked")
     private SignalSource extractSource(Map<String, Object> body) {
         Object sourceObj = body.get("source");
-        if (sourceObj instanceof Map) {
-            Map<String, String> src = (Map<String, String>) sourceObj;
-            return SignalSource.builder()
-                    .platform(src.get("platform"))
-                    .channelId(src.get("channel_id"))
-                    .channelName(src.get("channel_name"))
-                    .guildId(src.get("guild_id"))
-                    .authorName(src.get("author_name"))
-                    .messageId(src.get("message_id"))
-                    .build();
+        if (!(sourceObj instanceof Map)) {
+            return null;
         }
-        return null;
+        Map<String, Object> src = (Map<String, Object>) sourceObj;
+        SignalSource source = SignalSource.builder()
+                .platform(asString(src.get("platform")))
+                .channelId(asString(src.get("channel_id")))
+                .channelName(asString(src.get("channel_name")))
+                .guildId(asString(src.get("guild_id")))
+                .authorName(asString(src.get("author_name")))
+                .messageId(asString(src.get("message_id")))
+                .build();
+
+        // Extract attachment.sha256（圖訊號 audit trail）— Python 端在圖訊號觸發時於
+        // source.attachment 帶 {url, filename, content_type, sha256, size}。也相容
+        // 頂層 body.attachment 的舊格式。
+        Map<String, Object> attachmentMap = null;
+        Object nested = src.get("attachment");
+        if (nested instanceof Map) {
+            attachmentMap = (Map<String, Object>) nested;
+        } else {
+            Object topLevel = body.get("attachment");
+            if (topLevel instanceof Map) {
+                attachmentMap = (Map<String, Object>) topLevel;
+            }
+        }
+        if (attachmentMap != null) {
+            Object sha = attachmentMap.get("sha256");
+            if (sha != null) {
+                source.setAttachmentSha256(sha.toString());
+            }
+        }
+        return source;
+    }
+
+    private static String asString(Object o) {
+        return o == null ? null : o.toString();
     }
 
     // ==================== Per-user 通知 Helper ====================

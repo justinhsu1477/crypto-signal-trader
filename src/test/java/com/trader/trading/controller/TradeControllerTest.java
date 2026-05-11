@@ -1286,6 +1286,79 @@ class TradeControllerTest {
         }
     }
 
+    // ==================== extractSource（圖訊號 audit chain） ====================
+
+    @Nested
+    @DisplayName("extractSource — source.attachment.sha256 audit chain")
+    class ExtractSourceTests {
+
+        /** 用 reflection 呼叫 private extractSource。 */
+        @SuppressWarnings("unchecked")
+        private SignalSource invokeExtractSource(Map<String, Object> body) throws Exception {
+            var method = TradeController.class.getDeclaredMethod("extractSource", Map.class);
+            method.setAccessible(true);
+            return (SignalSource) method.invoke(controller, body);
+        }
+
+        @Test
+        @DisplayName("source.attachment.sha256 從 nested map 提取並設到 SignalSource")
+        void extractSource_attachmentSha256_nested() throws Exception {
+            Map<String, Object> attachment = Map.of(
+                    "url", "https://cdn.discordapp.com/x.png",
+                    "filename", "chart.png",
+                    "content_type", "image/png",
+                    "sha256", "abc123def456",
+                    "size", 102400);
+            Map<String, Object> source = new HashMap<>();
+            source.put("platform", "DISCORD");
+            source.put("message_id", "msg-1");
+            source.put("attachment", attachment);
+            Map<String, Object> body = Map.of("source", source);
+
+            SignalSource result = invokeExtractSource(body);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getPlatform()).isEqualTo("DISCORD");
+            assertThat(result.getMessageId()).isEqualTo("msg-1");
+            assertThat(result.getAttachmentSha256()).isEqualTo("abc123def456");
+        }
+
+        @Test
+        @DisplayName("body.attachment 頂層格式（向後相容）也能取到 sha256")
+        void extractSource_attachmentSha256_topLevel() throws Exception {
+            Map<String, Object> body = new HashMap<>();
+            body.put("source", Map.of("platform", "DISCORD", "message_id", "msg-2"));
+            body.put("attachment", Map.of("sha256", "topsha999"));
+
+            SignalSource result = invokeExtractSource(body);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getAttachmentSha256()).isEqualTo("topsha999");
+        }
+
+        @Test
+        @DisplayName("無 attachment — attachmentSha256 為 null（文字訊號路徑）")
+        void extractSource_noAttachment() throws Exception {
+            Map<String, Object> body = Map.of(
+                    "source", Map.of("platform", "DISCORD", "message_id", "msg-3"));
+
+            SignalSource result = invokeExtractSource(body);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getAttachmentSha256()).isNull();
+        }
+
+        @Test
+        @DisplayName("source 為 null — 回傳 null（保留原行為）")
+        void extractSource_noSource() throws Exception {
+            Map<String, Object> body = Map.of("message", "buy btc");
+
+            SignalSource result = invokeExtractSource(body);
+
+            assertThat(result).isNull();
+        }
+    }
+
     // ==================== 其他端點 ====================
 
     @Nested
