@@ -104,3 +104,50 @@ class TestCompoundActionExecution:
         source = router.api_client.send_trade.call_args.kwargs["source"]
         # 單動作不該 suffix
         assert source["message_id"] == "msg_single_001"
+
+
+class TestCompoundE2E:
+    """端對端：模擬陳哥真實 partial close + breakeven 訊息。"""
+
+    @pytest.mark.asyncio
+    async def test_chen_ge_realistic_message_flow(self):
+        """陳哥 5/11 8:58 訊息的端對端模擬"""
+        # 模擬 Gemini 對這則訊息的真實回應
+        ai_parser = MagicMock()
+        ai_parser.parse = AsyncMock(return_value=[
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+            {"action": "MOVE_SL", "symbol": "BTCUSDT"},
+        ])
+        ai_parser.prompt_version = 7
+        router = _make_router(ai_parser)
+
+        # 真實訊息內容
+        msg = _make_msg(
+            content="🎉🎉🎉🎉🎉🎉\n再次恭喜跟上BTC空单的朋友\n短线收益止盈出局【1000收益点】\n中长线止盈50%做成本保护继续持有。\nBTC市价【81200】附近",
+            message_id="real_msg_8_58",
+        )
+
+        await router.handle_message(msg)
+
+        # 確認送了 2 個 trades
+        assert router.api_client.send_trade.call_count == 2
+
+        # 第一個是 CLOSE 50%
+        call_1 = router.api_client.send_trade.call_args_list[0]
+        req_1 = call_1.kwargs["trade_request"]
+        src_1 = call_1.kwargs["source"]
+        assert req_1["action"] == "CLOSE"
+        assert req_1["close_ratio"] == 0.5
+        assert req_1["symbol"] == "BTCUSDT"
+        assert req_1.get("prompt_version") == 7
+        assert src_1["message_id"] == "real_msg_8_58__close"
+
+        # 第二個是 MOVE_SL（不帶 new_stop_loss → Java 端 breakeven）
+        call_2 = router.api_client.send_trade.call_args_list[1]
+        req_2 = call_2.kwargs["trade_request"]
+        src_2 = call_2.kwargs["source"]
+        assert req_2["action"] == "MOVE_SL"
+        assert req_2["symbol"] == "BTCUSDT"
+        # MOVE_SL 不帶 new_stop_loss — 由 Java 端用 entry price + 手續費補償
+        assert "new_stop_loss" not in req_2 or req_2["new_stop_loss"] is None
+        assert src_2["message_id"] == "real_msg_8_58__move_sl"
