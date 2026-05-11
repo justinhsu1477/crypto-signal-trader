@@ -430,6 +430,16 @@ class SignalRouter:
         if self.ai_parser:
             parsed = await self.ai_parser.parse(content)
 
+            # 複合動作（list）— 例如「止盈50%做成本保護」回 [CLOSE, MOVE_SL]
+            # 各子動作獨立送 API，用 suffixed message_id 避開 Java L1 dedup
+            if isinstance(parsed, list):
+                logger.info(
+                    "Compound action: %d sub-actions for msg=%s",
+                    len(parsed), source.get("message_id") if source else None,
+                )
+                await self._forward_compound(parsed, source or {})
+                return
+
             # === TradeActionDetector 補充判斷 ===
             # 當 AI 無法判斷（返回 None）或判為 INFO 時，嘗試 TradeActionDetector 補助
             if parsed is None:
@@ -514,6 +524,45 @@ class SignalRouter:
                     source=source,
                     dry_run=self.dry_run,
                     original_content=content,
+                )
+
+    async def _forward_compound(self, actions: list, base_source: dict) -> None:
+        """執行複合動作（list of trade_requests）。
+
+        每個 sub-action 用 suffixed message_id（base_msg__close / base_msg__movesl）
+        避開 Java 端 L1（source_message_id）永久 dedup。
+
+        順序由 ai_parser.parse() 排好（CLOSE 先，MOVE_SL 後）。
+        """
+        base_msg_id = base_source.get("message_id", "")
+        prompt_version = getattr(self.ai_parser, "prompt_version", 0)
+
+        for action in actions:
+            sub_source = dict(base_source)
+            action_name = (action.get("action") or "unknown").lower()
+            sub_source["message_id"] = f"{base_msg_id}__{action_name}"
+
+            # 帶上 prompt_version（與既有 _forward_signal 行為一致）
+            trade_req = dict(action)
+            if prompt_version:
+                trade_req["prompt_version"] = prompt_version
+
+            try:
+                result = await self.api_client.send_trade(
+                    trade_request=trade_req,
+                    dry_run=self.dry_run,
+                    source=sub_source,
+                )
+                logger.info(
+                    "Compound sub-action sent: %s msg=%s status=%s success=%s",
+                    action_name, sub_source["message_id"],
+                    result.status_code, result.success,
+                )
+            except Exception as e:
+                # 一個 sub-action 失敗不該影響下一個（隔離）
+                logger.exception(
+                    "Compound sub-action failed: %s msg=%s err=%s",
+                    action_name, sub_source["message_id"], e,
                 )
 
     @staticmethod
