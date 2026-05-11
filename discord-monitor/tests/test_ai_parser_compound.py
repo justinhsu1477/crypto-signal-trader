@@ -103,3 +103,47 @@ class TestCompoundActionParsing:
 
         # MOVE_SL 沒過 validate → 不算合法 compound → 退回 pick best
         assert not isinstance(result, list)
+
+
+class TestCompoundDefenseInDepth:
+    """Compound action 防禦層測試 — 不該被 false positive 觸發的 case。"""
+
+    @pytest.mark.asyncio
+    async def test_compound_cross_symbol_falls_back(self):
+        """[CLOSE BTC, MOVE_SL ETH] 跨幣 → 不視為 compound，退回 pick best"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+            {"action": "MOVE_SL", "symbol": "ETHUSDT"},
+        ])
+
+        result = await parser.parse("BTC 止盈50% ETH 移SL到入場")
+
+        # 跨幣 → 不該回 list
+        assert not isinstance(result, list), \
+            f"cross-symbol must not be compound, got list: {result}"
+
+    @pytest.mark.asyncio
+    async def test_two_close_no_movesl_falls_back(self):
+        """[CLOSE 50%, CLOSE 100%] 兩個 CLOSE 沒 MOVE_SL → 不視為 compound"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 1.0},
+        ])
+
+        result = await parser.parse("某混亂訊息")
+
+        # 兩個 CLOSE 沒 MOVE_SL → 不是 compound
+        assert not isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_invalid_close_ratio_falls_back(self):
+        """[CLOSE 1.5, MOVE_SL] close_ratio 超範圍 → 不視為 compound"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 1.5},
+            {"action": "MOVE_SL", "symbol": "BTCUSDT"},
+        ])
+
+        result = await parser.parse("止盈一半半半做成本保護")
+
+        # close_ratio > 1 → 不是 compound
+        assert not isinstance(result, list)

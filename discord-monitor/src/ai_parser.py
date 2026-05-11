@@ -523,7 +523,7 @@ class AiSignalParser:
             "total_response_tokens": self._total_response_tokens,
         }
 
-    async def parse(self, content: str) -> dict | None:
+    async def parse(self, content: str) -> dict | list[dict] | None:
         """Parse a Discord signal message into a structured trade request.
 
         Retry strategy:
@@ -532,7 +532,8 @@ class AiSignalParser:
           - Other exceptions → no retry (fallback to regex)
 
         Returns:
-            dict matching TradeRequest schema, or None on failure.
+            dict matching TradeRequest schema, or a list of dicts when compound
+            action detected (e.g. [CLOSE, MOVE_SL]), or None on failure.
         """
         if not self.client:
             return None
@@ -643,7 +644,7 @@ class AiSignalParser:
         text_content: str,
         image_bytes: bytes,
         mime_type: str,
-    ) -> dict | None:
+    ) -> dict | list[dict] | None:
         """Parse a Discord message that contains an image (with optional accompanying text).
 
         Uses Gemini multimodal: text + inline image bytes. The system prompt is the
@@ -657,7 +658,8 @@ class AiSignalParser:
             mime_type: Image MIME type (e.g. "image/png").
 
         Returns:
-            dict matching TradeRequest schema, or None on failure.
+            dict matching TradeRequest schema, or a list of dicts when compound
+            action detected (e.g. [CLOSE, MOVE_SL]), or None on failure.
         """
         if not self.client:
             return None
@@ -793,6 +795,12 @@ class AiSignalParser:
         close_item = next(it for it in items if it.get("action") == "CLOSE")
         ratio = close_item.get("close_ratio")
         if not isinstance(ratio, (int, float)) or ratio <= 0 or ratio > 1:
+            return False
+
+        # 兩個 sub-action 必須是同一個 symbol（防 AI 跨幣腦補）
+        # 例如不允許 [{CLOSE BTCUSDT}, {MOVE_SL ETHUSDT}]
+        symbols = {it.get("symbol") for it in items}
+        if len(symbols) != 1:
             return False
 
         return True

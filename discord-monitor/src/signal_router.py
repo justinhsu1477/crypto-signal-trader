@@ -164,6 +164,25 @@ class SignalRouter:
             logger.warning("image path: parse failed for msg=%s", message_id)
             return
 
+        # Compound action（list）— 圖片回 [CLOSE, MOVE_SL]，與文字流相同處理
+        # 注意：白名單過濾在 _forward_compound 之前直接做（取第一筆 symbol 即可，
+        # 因為 _is_compound_close_movesl 保證同 symbol），確保非 BTC 不會偷渡
+        if isinstance(parsed, list):
+            logger.info(
+                "Image compound action: %d sub-actions for msg=%s",
+                len(parsed), message_id,
+            )
+            # 白名單檢查（list 中所有子動作 symbol 都一致，取第一筆即可）
+            compound_symbol = (parsed[0].get("symbol") or "").upper() if parsed else ""
+            if compound_symbol not in self.image_signal_config.allowed_symbols:
+                logger.info(
+                    "image path: compound symbol %s not in allowed_symbols %s, skipping msg=%s",
+                    compound_symbol, self.image_signal_config.allowed_symbols, message_id,
+                )
+                return
+            await self._forward_compound(parsed, source)
+            return
+
         # BTC 白名單過濾
         symbol = (parsed.get("symbol") or "").upper()
         if symbol not in cfg.allowed_symbols:
@@ -437,6 +456,8 @@ class SignalRouter:
                     "Compound action: %d sub-actions for msg=%s",
                     len(parsed), source.get("message_id") if source else None,
                 )
+                # 與單動作路徑一致：記錄 content hash，避免引用/轉發再觸發
+                self._record_content_hash(content)
                 await self._forward_compound(parsed, source or {})
                 return
 
@@ -529,7 +550,7 @@ class SignalRouter:
     async def _forward_compound(self, actions: list, base_source: dict) -> None:
         """執行複合動作（list of trade_requests）。
 
-        每個 sub-action 用 suffixed message_id（base_msg__close / base_msg__movesl）
+        每個 sub-action 用 suffixed message_id（base_msg__close / base_msg__move_sl）
         避開 Java 端 L1（source_message_id）永久 dedup。
 
         順序由 ai_parser.parse() 排好（CLOSE 先，MOVE_SL 後）。
