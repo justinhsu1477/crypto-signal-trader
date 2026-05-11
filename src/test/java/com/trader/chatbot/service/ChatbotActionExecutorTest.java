@@ -570,5 +570,18 @@ class ChatbotActionExecutorTest {
             org.assertj.core.api.Assertions.assertThat(result).contains("今日訊號");
             org.mockito.Mockito.verify(marketDataService).getTodaySignalSummaryWithOutcomes();
         }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("非 admin 試圖用 target_user_id 查別人餘額 → 拒絕")
+        void getUserBalanceNonAdminCrossUserRejected() {
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+            args.addProperty("target_user_id", "victim_id");
+
+            String result = executor.executeFunction("attacker_id", false, "get_user_balance", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("查詢他人餘額僅限管理員");
+            org.mockito.Mockito.verify(marketDataService, org.mockito.Mockito.never())
+                    .getUserBalance(org.mockito.ArgumentMatchers.any());
+        }
     }
 }

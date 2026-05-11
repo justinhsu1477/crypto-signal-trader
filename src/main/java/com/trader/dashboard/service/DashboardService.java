@@ -828,24 +828,26 @@ public class DashboardService {
         });
 
         // 3. 批次聚合：本周統計（1 query for all users）
+        // aggregateStatsPerUserSince 回傳 4 cols: [userId, tradeCount, winCount, netProfit]
         LocalDateTime startOfWeek = LocalDate.now(AppConstants.ZONE_ID)
                 .with(DayOfWeek.MONDAY).atStartOfDay();
         tradeRecordService.getTradeRepository().aggregateStatsPerUserSince(startOfWeek).forEach(row -> {
             String userId = (String) row[0];
             Map<String, Object> stats = result.get(userId);
             if (stats != null) {
-                stats.put("weekPnl", ((Number) row[2]).doubleValue());
+                stats.put("weekPnl", ((Number) row[3]).doubleValue());
             }
         });
 
         // 4. 批次聚合：本月統計（1 query for all users）
+        // aggregateStatsPerUserSince 回傳 4 cols: [userId, tradeCount, winCount, netProfit]
         LocalDateTime startOfMonth = LocalDate.now(AppConstants.ZONE_ID)
                 .withDayOfMonth(1).atStartOfDay();
         tradeRecordService.getTradeRepository().aggregateStatsPerUserSince(startOfMonth).forEach(row -> {
             String userId = (String) row[0];
             Map<String, Object> stats = result.get(userId);
             if (stats != null) {
-                stats.put("monthPnl", ((Number) row[2]).doubleValue());
+                stats.put("monthPnl", ((Number) row[3]).doubleValue());
             }
         });
 

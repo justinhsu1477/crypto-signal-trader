@@ -867,9 +867,10 @@ class MarketDataServiceTest {
     class GetAllUsersSummaryWithPeriodTests {
 
         @org.junit.jupiter.api.Test
-        @DisplayName("period=7d → 呼叫 aggregateStatsPerUserSince 並非 aggregateStatsPerUser")
+        @DisplayName("period=7d → 呼叫 aggregateStatsPerUserSince 並計算勝率")
         void periodSevenDaysCallsSinceQuery() {
-            Object[] row = new Object[]{"u1", 5L, 3L, 250.0};
+            // 注意：aggregateStatsPerUserSince 現在回 4 cols: [userId, tradeCount, winCount, netProfit]
+            Object[] row = new Object[]{"u1", 5L, 3L, 250.0};  // 5 筆中 3 筆獲利
             org.mockito.Mockito.when(tradeRepository.aggregateStatsPerUserSince(
                     org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class)))
                     .thenReturn(java.util.List.<Object[]>of(row));
@@ -885,10 +886,26 @@ class MarketDataServiceTest {
             org.assertj.core.api.Assertions.assertThat(result).contains("Alice");
             org.assertj.core.api.Assertions.assertThat(result).contains("250.00");
             org.assertj.core.api.Assertions.assertThat(result).contains("近7天");
+            // 勝率：3/5 = 60%
+            org.assertj.core.api.Assertions.assertThat(result).contains("60%");
             org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.atLeastOnce())
                     .aggregateStatsPerUserSince(org.mockito.ArgumentMatchers.any());
             org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.never())
                     .aggregateStatsPerUser();
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("不支援的 period（例如 'abc'）→ 清楚的錯誤訊息，非「無資料」")
+        void invalidPeriodReturnsClearError() {
+            String result = service.getAllUsersSummary("abc");
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("不支援的時間區間");
+            org.assertj.core.api.Assertions.assertThat(result).contains("abc");
+            // 不該打 DB
+            org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.never())
+                    .aggregateStatsPerUser();
+            org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.never())
+                    .aggregateStatsPerUserSince(org.mockito.ArgumentMatchers.any());
         }
 
         @org.junit.jupiter.api.Test
