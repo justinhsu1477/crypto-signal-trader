@@ -372,6 +372,93 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 
 輸入: 止损不变，触发就出局
 輸出: {"action":"INFO","symbol":"BTCUSDT"}
+
+## 複合動作識別（Compound Actions） — 重要 ⚠️
+
+當訊息同時滿足以下兩個條件，必須回傳 **JSON array** 包含兩個動作（CLOSE + MOVE_SL）：
+
+**條件 1（部分平倉指令）**：訊息含明確的部分平倉用語，例如：
+- 「止盈X%」「平X%」「出X%」「平一半」「出一半」「平X成」
+- 「TP X%」「Close X%」「Partial close」
+- X 為比例（10-99），轉成 close_ratio = X/100
+
+**條件 2（保本/成本保護指令）**：訊息含明確的「將止損移至開倉價」意圖，例如：
+- 「做成本保護」「成本價保護」「成本保护」「保本」「保本處理」
+- 「移到開倉價」「SL移到入場」「移SL到開倉」「止損上移至成本」
+- 「breakeven」「move SL to entry」「BE」
+
+當兩個條件都明確出現 → 回傳 JSON array：
+```
+[
+  {"action": "CLOSE", "symbol": "<SYMBOL>", "close_ratio": <X/100>},
+  {"action": "MOVE_SL", "symbol": "<SYMBOL>"}
+]
+```
+
+**重要**：MOVE_SL 不要帶 `new_stop_loss` 欄位（後端自動算成本價 + 手續費補償）。
+
+### 複合動作範例（few-shot — 跨頻道風格）
+
+範例 1（陳哥風格 — 中文簡體口語）:
+輸入: "中长线止盈50%做成本保护继续持有"
+輸出: [
+  {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+  {"action": "MOVE_SL", "symbol": "BTCUSDT"}
+]
+
+範例 2（繁體中文簡潔）:
+輸入: "BTC 止盈一半，做成本價保護"
+輸出: [
+  {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+  {"action": "MOVE_SL", "symbol": "BTCUSDT"}
+]
+
+範例 3（指令型中文）:
+輸入: "ETH 平30% 移SL到開倉價"
+輸出: [
+  {"action": "CLOSE", "symbol": "ETHUSDT", "close_ratio": 0.3},
+  {"action": "MOVE_SL", "symbol": "ETHUSDT"}
+]
+
+範例 4（混合中英文）:
+輸入: "BTC TP 50% + move SL to entry"
+輸出: [
+  {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+  {"action": "MOVE_SL", "symbol": "BTCUSDT"}
+]
+
+範例 5（純英文）:
+輸入: "Close 50% BTC, breakeven SL"
+輸出: [
+  {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+  {"action": "MOVE_SL", "symbol": "BTCUSDT"}
+]
+
+### 反例 — 不該觸發複合動作
+
+反例 1（只有部分平倉，沒提保護）:
+輸入: "止盈50%"
+輸出: {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5}
+（單一動作，不是 array）
+
+反例 2（只有保本，沒提部分平倉）:
+輸入: "移SL到開倉價"
+輸出: {"action": "MOVE_SL", "symbol": "BTCUSDT"}
+（單一動作）
+
+反例 3（全平 + 保本 — 全平後無倉位，保本無意義）:
+輸入: "全部止盈出局"
+輸出: {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 1.0}
+（只回 CLOSE，不該加 MOVE_SL）
+
+反例 4（過去式描述，非當前指令）:
+輸入: "上次止盈50%做成本保護救了我"
+輸出: {"action": "INFO"}
+
+反例 5（建議語氣，非命令）:
+輸入: "可以考慮止盈50%並保護"
+輸出: {"action": "INFO"}
+（不是明確指令）
 """
 
 
