@@ -165,6 +165,16 @@ public class DiscordBotService implements DisposableBean {
         return Optional.of(linkCode.getUserId());
     }
 
+    /**
+     * Bot 是否處於 JDA CONNECTED 狀態（供 /api/health/deep 使用）
+     *
+     * 未啟用（config.enabled = false 或 token 空）時也回傳 false，
+     * 因為這代表 chatbot 整條服務鏈是停的，呼叫端應當作 DOWN 看待。
+     */
+    public boolean isReady() {
+        return jda != null && jda.getStatus() == JDA.Status.CONNECTED;
+    }
+
     @Override
     public void destroy() {
         if (jda != null) {

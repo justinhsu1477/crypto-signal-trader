@@ -1,6 +1,8 @@
 package com.trader.shared.controller;
 
+import com.trader.chatbot.service.DiscordBotService;
 import com.trader.shared.util.BinanceApiRateLimiter;
+import com.trader.trading.service.MonitorHeartbeatService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +18,7 @@ import java.util.Map;
  * Health Check 端點
  *
  * GET /api/health       — Docker 探活（輕量，永遠回 200）
- * GET /api/health/deep  — 深度檢查（DB 連線 + Binance API 配額）
+ * GET /api/health/deep  — 深度檢查（DB + Binance API 配額 + Python 心跳 + Discord Bot）
  *
  * 無認證、無副作用。
  */
@@ -25,8 +27,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class HealthController {
 
+    /** Python heartbeat 過期門檻（與 MonitorHeartbeatService.HEARTBEAT_TIMEOUT_SECONDS 一致） */
+    private static final long HEARTBEAT_FRESH_SECONDS = 90;
+
     private final DataSource dataSource;
     private final BinanceApiRateLimiter binanceApiRateLimiter;
+    private final MonitorHeartbeatService monitorHeartbeatService;
+    private final DiscordBotService discordBotService;
 
     /**
      * 輕量探活 — Docker / Load Balancer 用
@@ -42,6 +49,11 @@ public class HealthController {
      * 檢查：
      *   1. 資料庫連線（SELECT 1）
      *   2. Binance API 配額使用量
+     *   3. Python Monitor heartbeat（90 秒新鮮度門檻）
+     *   4. Discord JDA Bot 連線狀態
+     *
+     * 註：Gemini reachability 不在此處同步檢查（會消耗 token），改由
+     *     Prometheus chatbot_llm_calls_total 等 metric 觀測。
      */
     @GetMapping("/api/health/deep")
     public ResponseEntity<Map<String, Object>> deepHealth() {
@@ -59,6 +71,20 @@ public class HealthController {
         Map<String, Object> binanceStatus = checkBinanceRateLimit();
         result.put("binanceApi", binanceStatus);
         if ("DOWN".equals(binanceStatus.get("status"))) {
+            allHealthy = false;
+        }
+
+        // 3. Python Monitor Heartbeat
+        Map<String, Object> heartbeatStatus = checkMonitorHeartbeat();
+        result.put("monitorHeartbeat", heartbeatStatus);
+        if ("DOWN".equals(heartbeatStatus.get("status"))) {
+            allHealthy = false;
+        }
+
+        // 4. Discord JDA Bot
+        Map<String, Object> botStatus = checkDiscordBot();
+        result.put("discordBot", botStatus);
+        if ("DOWN".equals(botStatus.get("status"))) {
             allHealthy = false;
         }
 
@@ -105,6 +131,62 @@ public class HealthController {
             status.put("warning", "API rate limit usage high");
         } else {
             status.put("status", "UP");
+        }
+        return status;
+    }
+
+    /**
+     * Python Monitor 心跳檢查 — 用 secondsSinceLastHeartbeat 判斷是否新鮮
+     * 90 秒內有心跳視為 UP，逾時為 DOWN，從未收過為 UNKNOWN（避免冷啟動誤報）。
+     */
+    private Map<String, Object> checkMonitorHeartbeat() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        try {
+            Map<String, Object> hb = monitorHeartbeatService.getStatus();
+            Object secondsSinceObj = hb.get("secondsSinceLastHeartbeat");
+            Object lastHeartbeat = hb.get("lastHeartbeat");
+
+            if (secondsSinceObj == null || lastHeartbeat == null) {
+                // 系統剛啟動還沒收到心跳 — 不擋健康狀態
+                status.put("status", "UNKNOWN");
+                status.put("reason", "no heartbeat received yet");
+                return status;
+            }
+
+            long elapsed = ((Number) secondsSinceObj).longValue();
+            boolean fresh = elapsed >= 0 && elapsed <= HEARTBEAT_FRESH_SECONDS;
+            status.put("status", fresh ? "UP" : "DOWN");
+            status.put("lastHeartbeat", lastHeartbeat);
+            status.put("secondsSinceLastHeartbeat", elapsed);
+            status.put("monitorStatus", hb.get("monitorStatus"));
+            if (!fresh) {
+                status.put("warning",
+                        "Python heartbeat stale (> " + HEARTBEAT_FRESH_SECONDS + "s)");
+            }
+        } catch (Exception e) {
+            log.error("Health check: 心跳查詢失敗 - {}", e.getMessage());
+            status.put("status", "UNKNOWN");
+            status.put("error", e.getMessage());
+        }
+        return status;
+    }
+
+    /**
+     * Discord JDA Bot 連線狀態檢查 — JDA Status == CONNECTED 為 UP。
+     * Chatbot 沒啟用（token 空）也算 DOWN，因為整條 chatbot 服務鏈是停的。
+     */
+    private Map<String, Object> checkDiscordBot() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        try {
+            boolean ready = discordBotService.isReady();
+            status.put("status", ready ? "UP" : "DOWN");
+            if (!ready) {
+                status.put("warning", "Discord JDA not connected");
+            }
+        } catch (Exception e) {
+            log.error("Health check: Discord Bot 狀態查詢失敗 - {}", e.getMessage());
+            status.put("status", "UNKNOWN");
+            status.put("error", e.getMessage());
         }
         return status;
     }
