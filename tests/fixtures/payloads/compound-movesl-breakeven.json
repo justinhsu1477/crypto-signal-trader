@@ -1,0 +1,17 @@
+{
+  "action": "MOVE_SL",
+  "symbol": "BTCUSDT",
+  "prompt_version": 7,
+  "signal_timestamp": 1747000000000,
+  "source": {
+    "platform": "DISCORD",
+    "channel_id": "1234567890",
+    "guild_id": "9876543210",
+    "author_name": "signal-channel",
+    "message_id": "msg_compound_001__move_sl",
+    "source_name": "test-channel",
+    "display_name": "Test Channel",
+    "trade_mode": "AUTO",
+    "risk_multiplier": 1.0
+  }
+}
