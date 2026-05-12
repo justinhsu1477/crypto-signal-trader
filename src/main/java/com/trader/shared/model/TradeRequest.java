@@ -1,5 +1,6 @@
 package com.trader.shared.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
@@ -8,8 +9,13 @@ import java.util.List;
 /**
  * 結構化交易請求 DTO
  * 接收 Python AI 解析後的 JSON
+ *
+ * Python 端可能多帶尚未在 Java 端落地的欄位（如 prompt_version 等 audit 用元資料），
+ * 用 @JsonIgnoreProperties 容忍 unknown，與 Spring Boot 預設行為一致。
+ * 這也讓單元測試用 plain ObjectMapper 反序列化時能跟 production 行為一致。
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TradeRequest {
 
     private String action;      // ENTRY, CLOSE, MOVE_SL, CANCEL
