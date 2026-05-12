@@ -425,6 +425,29 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
                                       @Param("since") LocalDateTime since);
 
     /**
+     * 取得指定來源在指定區間（now - days）的 rolling 績效統計。
+     *
+     * 回傳 Object[]（4 cols）：
+     *   [0] tradeCount(Long), [1] winCount(Long),
+     *   [2] totalPnl(Double), [3] worstPnl(Double)
+     *
+     * 用於 chatbot 「陳哥最近 X 天表現」查詢,避開月份切片誤導。
+     */
+    @Query(value = """
+            SELECT COUNT(*) AS trade_count,
+                   COUNT(*) FILTER (WHERE net_profit > 0) AS win_count,
+                   COALESCE(SUM(net_profit), 0) AS total_pnl,
+                   COALESCE(MIN(net_profit), 0) AS worst_pnl
+            FROM trades
+            WHERE status = 'CLOSED'
+              AND source_author_name = :sourceName
+              AND (simulated = FALSE OR simulated IS NULL)
+              AND exit_time >= :since
+            """, nativeQuery = true)
+    Object[] getRollingStatsForSource(@Param("sourceName") String sourceName,
+                                       @Param("since") LocalDateTime since);
+
+    /**
      * 按訊號來源取已平倉交易序列（計算連勝/連虧用）
      */
     @Query(value = """

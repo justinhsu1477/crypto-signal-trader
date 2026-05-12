@@ -59,16 +59,16 @@ class ChatbotActionExecutorTest {
     }
 
     @Test
-    void buildToolsSchema_ACCOUNT_STATUS_Admin有13個函式() {
+    void buildToolsSchema_ACCOUNT_STATUS_Admin有14個函式() {
         // intent: get_trade_settings, get_my_positions, query_trading_data, get_user_balance = 4
         // admin: get_all_users_summary, get_source_list, get_source_performance,
         //        get_source_recent_trades, get_recent_broadcasts, update_source_mode,
         //        get_trades_by_date, query_trading_data, get_all_user_balances,
-        //        get_today_signals_summary = 10
-        // union (query_trading_data 共用): 4 + 10 - 1 = 13
+        //        get_today_signals_summary, get_source_rolling_performance = 11
+        // union (query_trading_data 共用): 4 + 11 - 1 = 14
         JsonObject tools = executor.buildToolsSchema(Intent.ACCOUNT_STATUS, true);
         var declarations = tools.getAsJsonArray("function_declarations");
-        assertThat(declarations).hasSize(13);
+        assertThat(declarations).hasSize(14);
     }
 
     @Test
@@ -582,6 +582,33 @@ class ChatbotActionExecutorTest {
             org.assertj.core.api.Assertions.assertThat(result).contains("查詢他人餘額僅限管理員");
             org.mockito.Mockito.verify(marketDataService, org.mockito.Mockito.never())
                     .getUserBalance(org.mockito.ArgumentMatchers.any());
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_source_rolling_performance Admin → routes to MarketDataService")
+        void getSourceRollingPerformanceRoutes() {
+            org.mockito.Mockito.when(marketDataService.getSourceRollingPerformance("陳哥"))
+                    .thenReturn("### 「陳哥合約頻道」Rolling 績效\n...");
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+            args.addProperty("source_name", "陳哥");
+
+            String result = executor.executeFunction("admin", true, "get_source_rolling_performance", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("Rolling 績效");
+            org.mockito.Mockito.verify(marketDataService).getSourceRollingPerformance("陳哥");
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("get_source_rolling_performance 非 admin → 拒絕")
+        void getSourceRollingPerformanceNonAdminRejected() {
+            com.google.gson.JsonObject args = new com.google.gson.JsonObject();
+            args.addProperty("source_name", "陳哥");
+
+            String result = executor.executeFunction("user", false, "get_source_rolling_performance", args);
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("僅限管理員");
+            org.mockito.Mockito.verify(marketDataService, org.mockito.Mockito.never())
+                    .getSourceRollingPerformance(org.mockito.ArgumentMatchers.any());
         }
     }
 }

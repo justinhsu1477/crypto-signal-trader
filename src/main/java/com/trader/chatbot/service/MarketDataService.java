@@ -562,6 +562,67 @@ public class MarketDataService {
     }
 
     /**
+     * 來源 Rolling 績效 — 7d / 30d / 90d 並排
+     *
+     * 設計：避開月份切片陷阱（4月 100% 5月 27% 的反差是月份邊界誤導，
+     * rolling 視窗會在連虧發生時立刻反映）。
+     *
+     * @param sourceName 來源名稱（模糊匹配，與 getSourcePerformance 一致）
+     * @return Markdown 格式字串
+     */
+    public String getSourceRollingPerformance(String sourceName) {
+        StringBuilder sb = new StringBuilder();
+
+        // 模糊匹配（既有 helper）
+        SignalSourceConfig source = findSourceByName(sourceName);
+        if (source == null) {
+            return String.format("找不到名為「%s」的訊號來源。", sourceName);
+        }
+        String resolvedName = source.getName();
+
+        sb.append(String.format("### 「%s」Rolling 績效\n", resolvedName));
+
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(com.trader.shared.config.AppConstants.ZONE_ID);
+        int[] windows = {7, 30, 90};
+        for (int days : windows) {
+            java.time.LocalDateTime since = now.minusDays(days);
+            Object[] row = tradeRepository.getRollingStatsForSource(resolvedName, since);
+            if (row == null || row.length == 0) {
+                sb.append(String.format("- %d 天: 查無資料\n", days));
+                continue;
+            }
+            long trades = row[0] == null ? 0 : ((Number) row[0]).longValue();
+            long wins = row[1] == null ? 0 : ((Number) row[1]).longValue();
+            double totalPnl = row[2] == null ? 0 : ((Number) row[2]).doubleValue();
+            double worst = row[3] == null ? 0 : ((Number) row[3]).doubleValue();
+            double winRate = trades > 0 ? 100.0 * wins / trades : 0;
+            sb.append(String.format("- **%d 天**: %d 筆 | 勝率 %.0f%% | PnL %s%.2f | 最差 %.2f\n",
+                    days, trades, winRate,
+                    totalPnl >= 0 ? "+" : "", totalPnl, worst));
+        }
+
+        // 翻車警示：若 7d rolling 勝率 < 50% 但 90d > 60% → 短期失準警示
+        Object[] r7 = tradeRepository.getRollingStatsForSource(resolvedName, now.minusDays(7));
+        Object[] r90 = tradeRepository.getRollingStatsForSource(resolvedName, now.minusDays(90));
+        if (r7 != null && r7[0] != null && ((Number) r7[0]).longValue() >= 5 &&
+            r90 != null && r90[0] != null && ((Number) r90[0]).longValue() >= 30) {
+            long t7 = ((Number) r7[0]).longValue();
+            long w7 = ((Number) r7[1]).longValue();
+            long t90 = ((Number) r90[0]).longValue();
+            long w90 = ((Number) r90[1]).longValue();
+            double wr7 = 100.0 * w7 / t7;
+            double wr90 = 100.0 * w90 / t90;
+            if (wr7 < 50 && wr90 >= 60) {
+                sb.append("\n⚠️ **警示**：7 天勝率 ").append(String.format("%.0f%%", wr7))
+                  .append(" 顯著低於 90 天 ").append(String.format("%.0f%%", wr90))
+                  .append(" — 短期策略失準，建議降權或暫停。\n");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    /**
      * 取得指定訊號來源最近的交易明細
      */
     public String getSourceRecentTrades(String sourceName, int count) {

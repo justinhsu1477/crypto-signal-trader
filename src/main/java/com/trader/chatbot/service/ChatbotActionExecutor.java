@@ -54,7 +54,8 @@ public class ChatbotActionExecutor {
             "get_all_users_summary", "get_source_list", "get_source_performance",
             "get_source_recent_trades", "get_recent_broadcasts", "update_source_mode",
             "get_trades_by_date", "query_trading_data",
-            "get_all_user_balances", "get_today_signals_summary"
+            "get_all_user_balances", "get_today_signals_summary",
+            "get_source_rolling_performance"
     );
 
     /**
@@ -218,6 +219,17 @@ public class ChatbotActionExecutor {
                 )
         ));
 
+        map.put("get_source_rolling_performance", buildFunction(
+                "get_source_rolling_performance",
+                "查詢指定訊號來源的 Rolling（滑動視窗）績效，並排 7 天 / 30 天 / 90 天。" +
+                "避開月份切片陷阱（單月看起來很棒但實際正在衰退）。" +
+                "當管理員問到「最近表現」「最近一週」「最近一個月」「rolling」「衰退」等字眼時呼叫，直接將來源名稱作為 source_name。" +
+                "僅限 Admin 使用。",
+                Map.of("source_name", Map.of("type", "STRING",
+                        "description", "來源名稱（支援模糊匹配，例如「陳哥」「飛揚」）")),
+                List.of("source_name")
+        ));
+
         map.put("get_source_recent_trades", buildFunction(
                 "get_source_recent_trades",
                 "查詢指定訊號來源最近的交易紀錄明細（入場價、出場價、PnL、AI 信心分數）。當管理員提到任何頻道/來源名稱並搭配「最近交易」「最近的單」「紀錄」等字眼時，直接將名稱作為 source_name 呼叫，工具支援模糊匹配。",
@@ -327,6 +339,13 @@ public class ChatbotActionExecutor {
                     String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
                     String period = args.has("period") ? args.get("period").getAsString() : "all";
                     yield marketDataService.getSourcePerformance(sourceName, period);
+                }
+                case "get_source_rolling_performance" -> {
+                    if (!isAdmin) {
+                        yield "此操作僅限管理員使用。";
+                    }
+                    String sourceName = args.has("source_name") ? args.get("source_name").getAsString() : "";
+                    yield marketDataService.getSourceRollingPerformance(sourceName);
                 }
                 case "get_source_recent_trades" -> {
                     if (!isAdmin) {
