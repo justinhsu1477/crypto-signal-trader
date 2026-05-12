@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -582,12 +583,17 @@ public class MarketDataService {
 
         sb.append(String.format("### 「%s」Rolling 績效\n", resolvedName));
 
-        java.time.LocalDateTime now = java.time.LocalDateTime.now(com.trader.shared.config.AppConstants.ZONE_ID);
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(AppConstants.ZONE_ID);
         int[] windows = {7, 30, 90};
+        Map<Integer, Object[]> resultsByWindow = new LinkedHashMap<>();
+
         for (int days : windows) {
             java.time.LocalDateTime since = now.minusDays(days);
-            Object[] row = tradeRepository.getRollingStatsForSource(resolvedName, since);
-            if (row == null || row.length == 0) {
+            // 路由 extractAggregateRow → 安全解開 Hibernate 6 可能的 nested Object[][] wrap
+            Object[] row = extractAggregateRow(tradeRepository.getRollingStatsForSource(resolvedName, since));
+            resultsByWindow.put(days, row);
+
+            if (row == null) {
                 sb.append(String.format("- %d 天: 查無資料\n", days));
                 continue;
             }
@@ -601,21 +607,22 @@ public class MarketDataService {
                     totalPnl >= 0 ? "+" : "", totalPnl, worst));
         }
 
-        // 翻車警示：若 7d rolling 勝率 < 50% 但 90d > 60% → 短期失準警示
-        Object[] r7 = tradeRepository.getRollingStatsForSource(resolvedName, now.minusDays(7));
-        Object[] r90 = tradeRepository.getRollingStatsForSource(resolvedName, now.minusDays(90));
-        if (r7 != null && r7[0] != null && ((Number) r7[0]).longValue() >= 5 &&
-            r90 != null && r90[0] != null && ((Number) r90[0]).longValue() >= 30) {
+        // 衰退警示：使用 cached 結果而非重複查詢
+        // Design note: 7d < 50% AND 90d >= 60% 才警示 — 「短期飄移、長期還行」訊號。
+        // 若 90d 也 < 60% 則是「整體失準」（已在 get_source_performance 顯示），不重複警示。
+        Object[] r7 = resultsByWindow.get(7);
+        Object[] r90 = resultsByWindow.get(90);
+        if (r7 != null && r7[0] != null && r90 != null && r90[0] != null) {
             long t7 = ((Number) r7[0]).longValue();
-            long w7 = ((Number) r7[1]).longValue();
             long t90 = ((Number) r90[0]).longValue();
-            long w90 = ((Number) r90[1]).longValue();
-            double wr7 = 100.0 * w7 / t7;
-            double wr90 = 100.0 * w90 / t90;
-            if (wr7 < 50 && wr90 >= 60) {
-                sb.append("\n⚠️ **警示**：7 天勝率 ").append(String.format("%.0f%%", wr7))
-                  .append(" 顯著低於 90 天 ").append(String.format("%.0f%%", wr90))
-                  .append(" — 短期策略失準，建議降權或暫停。\n");
+            if (t7 >= 5 && t90 >= 30) {
+                double wr7 = 100.0 * ((Number) r7[1]).longValue() / t7;
+                double wr90 = 100.0 * ((Number) r90[1]).longValue() / t90;
+                if (wr7 < 50 && wr90 >= 60) {
+                    sb.append("\n⚠️ **警示**：7 天勝率 ").append(String.format("%.0f%%", wr7))
+                      .append(" 顯著低於 90 天 ").append(String.format("%.0f%%", wr90))
+                      .append(" — 短期策略失準，建議降權或暫停。\n");
+                }
             }
         }
 

@@ -26,9 +26,13 @@ import org.mockito.MockitoAnnotations;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+
+import com.trader.shared.config.AppConstants;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -1052,6 +1056,45 @@ class MarketDataServiceTest {
             // 但 7 天那行還是要顯示資料
             org.assertj.core.api.Assertions.assertThat(result).contains("7 天");
             org.assertj.core.api.Assertions.assertThat(result).contains("3 筆");
+        }
+
+        @Test
+        @DisplayName("Hibernate 6 nested Object[][] — 正確解開不丟 ClassCastException")
+        void hibernate6NestedResultUnwrapped() {
+            SignalSourceConfig src = new SignalSourceConfig();
+            src.setName("陳哥合約頻道");
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                .thenReturn(List.of(src));
+
+            // 模擬 Hibernate 6 nested wrap: Object[]{ Object[]{...} } 而非 flat Object[]{...}
+            Object[] nested = new Object[]{ new Object[]{10L, 7L, 500.0, -100.0} };
+            when(tradeRepository.getRollingStatsForSource(anyString(), any(LocalDateTime.class)))
+                .thenReturn(nested);
+
+            String result = service.getSourceRollingPerformance("陳哥");
+            // 不能炸，必須正常解析出 10 筆、勝率 70%
+            assertThat(result).contains("10 筆").contains("70%").contains("+500.00");
+        }
+
+        @Test
+        @DisplayName("7d 90d 都失準 → 不發短期警示（已由 get_source_performance 涵蓋）")
+        void degradationWarning_bothBadDoesNotFire() {
+            SignalSourceConfig src = new SignalSourceConfig();
+            src.setName("陳哥合約頻道");
+            when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                .thenReturn(List.of(src));
+            // 7d: 5 筆 1 win (20%)；90d: 50 筆 20 win (40%)
+            when(tradeRepository.getRollingStatsForSource(eq("陳哥合約頻道"), any(LocalDateTime.class)))
+                .thenAnswer(inv -> {
+                    LocalDateTime since = inv.getArgument(1);
+                    long daysAgo = ChronoUnit.DAYS.between(since.toLocalDate(), LocalDate.now(AppConstants.ZONE_ID));
+                    if (daysAgo <= 8)  return new Object[]{5L, 1L, -1000.0, -500.0};
+                    if (daysAgo <= 31) return new Object[]{20L, 8L, -200.0, -500.0};
+                    return new Object[]{50L, 20L, -2000.0, -500.0};
+                });
+
+            String result = service.getSourceRollingPerformance("陳哥");
+            assertThat(result).doesNotContain("短期策略失準");
         }
     }
 
