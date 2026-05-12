@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -111,6 +112,20 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.builder()
                         .error("請求參數錯誤")
                         .message(e.getMessage())
+                        .build());
+    }
+
+    // ── 新增：JSON body 無法解析（壞 JSON / 型別不符）→ 400 而非 500 ──
+    // 若不顯式處理，會落到下面 Exception.class fallback 回 500，
+    // 違反 Spring MVC 預設語意（client error 應為 4xx）。
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException e) {
+        log.debug("請求 JSON 無法解析: {}", e.getMostSpecificCause().getMessage());
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.builder()
+                        .error("請求格式錯誤")
+                        .message("無法解析請求 body，請檢查 JSON 格式")
                         .build());
     }
 
