@@ -947,6 +947,115 @@ class MarketDataServiceTest {
     }
 
     @Nested
+    @DisplayName("getSourceRollingPerformance — Rolling 7d/30d/90d 績效")
+    class SourceRollingPerformanceTests {
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("找不到來源 → 回傳清楚的找不到訊息")
+        void sourceNotFound_returnsClearMessage() {
+            org.mockito.Mockito.when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(java.util.Collections.emptyList());
+
+            String result = service.getSourceRollingPerformance("不存在的來源");
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("找不到");
+            org.assertj.core.api.Assertions.assertThat(result).contains("不存在的來源");
+            org.mockito.Mockito.verify(tradeRepository, org.mockito.Mockito.never())
+                    .getRollingStatsForSource(org.mockito.ArgumentMatchers.any(),
+                            org.mockito.ArgumentMatchers.any());
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("有資料 → 回傳 7/30/90 三個視窗的勝率與 PnL")
+        void happyPath_returnsThreeWindows() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("陳哥合約頻道")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            org.mockito.Mockito.when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(java.util.List.of(source));
+
+            // 7d: 10 筆 / 7 勝 / +500 / -100；30d: 40 筆 / 28 勝 / +2000 / -300；90d: 100 筆 / 70 勝 / +5000 / -500
+            Object[] r7  = new Object[]{10L, 7L, 500.0, -100.0};
+            Object[] r30 = new Object[]{40L, 28L, 2000.0, -300.0};
+            Object[] r90 = new Object[]{100L, 70L, 5000.0, -500.0};
+
+            org.mockito.Mockito.when(tradeRepository.getRollingStatsForSource(
+                            org.mockito.ArgumentMatchers.eq("陳哥合約頻道"),
+                            org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class)))
+                    .thenReturn(r7, r30, r90, r7, r90);  // 額外兩次是給警示檢查用
+
+            String result = service.getSourceRollingPerformance("陳哥");
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("陳哥合約頻道");
+            org.assertj.core.api.Assertions.assertThat(result).contains("7 天");
+            org.assertj.core.api.Assertions.assertThat(result).contains("30 天");
+            org.assertj.core.api.Assertions.assertThat(result).contains("90 天");
+            // 70% 勝率出現多次
+            org.assertj.core.api.Assertions.assertThat(result).contains("70%");
+            org.assertj.core.api.Assertions.assertThat(result).contains("+500.00");
+            org.assertj.core.api.Assertions.assertThat(result).contains("+2000.00");
+            org.assertj.core.api.Assertions.assertThat(result).contains("+5000.00");
+            // 由於 7d 70% / 90d 70% 都健康，不該有警示
+            org.assertj.core.api.Assertions.assertThat(result).doesNotContain("短期策略失準");
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("7d 20% / 90d 70% → 觸發短期策略失準警示")
+        void degradationWarningTriggers() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("陳哥合約頻道")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            org.mockito.Mockito.when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(java.util.List.of(source));
+
+            // 7d 連虧：5 筆 / 1 勝（20%）；30d 中性：20 筆 / 10 勝（50%）；90d 健康：50 筆 / 35 勝（70%）
+            Object[] r7  = new Object[]{5L, 1L, -1000.0, -500.0};
+            Object[] r30 = new Object[]{20L, 10L, 100.0, -500.0};
+            Object[] r90 = new Object[]{50L, 35L, 3500.0, -500.0};
+
+            // 順序：迴圈中 7、30、90 各 1 次；警示檢查再 7、90 各 1 次 → 共 5
+            org.mockito.Mockito.when(tradeRepository.getRollingStatsForSource(
+                            org.mockito.ArgumentMatchers.eq("陳哥合約頻道"),
+                            org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class)))
+                    .thenReturn(r7, r30, r90, r7, r90);
+
+            String result = service.getSourceRollingPerformance("陳哥");
+
+            org.assertj.core.api.Assertions.assertThat(result).contains("短期策略失準");
+            org.assertj.core.api.Assertions.assertThat(result).contains("警示");
+            org.assertj.core.api.Assertions.assertThat(result).contains("20%");
+            org.assertj.core.api.Assertions.assertThat(result).contains("70%");
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("7d 樣本不足（< 5）→ 即使勝率 0% 也不警示")
+        void degradationWarningNotTriggeredOnSmallSample() {
+            SignalSourceConfig source = SignalSourceConfig.builder()
+                    .name("陳哥合約頻道")
+                    .tradeMode(SignalSourceConfig.TradeMode.AUTO).build();
+            org.mockito.Mockito.when(signalSourceConfigRepository.findAllByOrderByCreatedAtDesc())
+                    .thenReturn(java.util.List.of(source));
+
+            // 7d 只有 3 筆 / 0 勝 → 樣本不足，不該警示
+            Object[] r7  = new Object[]{3L, 0L, -500.0, -300.0};
+            Object[] r30 = new Object[]{20L, 14L, 800.0, -200.0};
+            Object[] r90 = new Object[]{60L, 40L, 3000.0, -400.0};
+
+            org.mockito.Mockito.when(tradeRepository.getRollingStatsForSource(
+                            org.mockito.ArgumentMatchers.eq("陳哥合約頻道"),
+                            org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class)))
+                    .thenReturn(r7, r30, r90, r7, r90);
+
+            String result = service.getSourceRollingPerformance("陳哥");
+
+            org.assertj.core.api.Assertions.assertThat(result).doesNotContain("短期策略失準");
+            // 但 7 天那行還是要顯示資料
+            org.assertj.core.api.Assertions.assertThat(result).contains("7 天");
+            org.assertj.core.api.Assertions.assertThat(result).contains("3 筆");
+        }
+    }
+
+    @Nested
     @DisplayName("getTodaySignalSummaryWithOutcomes — 今天訊號狀況含廣播結果")
     class GetTodaySignalSummaryWithOutcomesTests {
 
