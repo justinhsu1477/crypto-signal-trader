@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.entity.Signal;
+import com.trader.trading.repository.DiscordRawMessageRepository;
 import com.trader.trading.repository.SignalRepository;
 import com.trader.trading.service.SignalDeduplicationService;
 import com.trader.trading.service.SignalRecordService;
@@ -24,6 +25,7 @@ class SignalRecordServiceTest {
     private SignalRepository signalRepository;
     private SignalDeduplicationService deduplicationService;
     private ObjectMapper objectMapper;
+    private DiscordRawMessageRepository discordRawMessageRepository;
     private SignalRecordService service;
 
     @BeforeEach
@@ -31,9 +33,13 @@ class SignalRecordServiceTest {
         signalRepository = mock(SignalRepository.class);
         deduplicationService = mock(SignalDeduplicationService.class);
         objectMapper = new ObjectMapper();
-        service = new SignalRecordService(signalRepository, deduplicationService, objectMapper);
+        discordRawMessageRepository = mock(DiscordRawMessageRepository.class);
+        service = new SignalRecordService(signalRepository, deduplicationService, objectMapper,
+                discordRawMessageRepository);
 
         when(signalRepository.save(any(Signal.class))).thenAnswer(inv -> inv.getArgument(0));
+        // 預設無 discord_raw_messages 對應列（不影響既有測試）
+        when(discordRawMessageRepository.findByMessageId(any())).thenReturn(java.util.Optional.empty());
     }
 
     @Nested

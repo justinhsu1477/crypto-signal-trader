@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.shared.model.SignalSource;
 import com.trader.shared.model.TradeSignal;
 import com.trader.trading.entity.Signal;
+import com.trader.trading.repository.DiscordRawMessageRepository;
 import com.trader.trading.repository.SignalRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,7 @@ public class SignalRecordService {
     private final SignalRepository signalRepository;
     private final SignalDeduplicationService deduplicationService;
     private final ObjectMapper objectMapper;
+    private final DiscordRawMessageRepository discordRawMessageRepository;
 
     /**
      * 記錄訊號到 DB
@@ -88,8 +90,42 @@ public class SignalRecordService {
                     entity.getSymbol(),
                     executionStatus);
 
+            // Audit 反向連結：若 discord_raw_messages 已有對應訊息（archive 先到），補上 signal_id
+            linkDiscordRawMessage(entity);
+
         } catch (Exception e) {
             log.error("Signal recording failed (non-blocking): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 將既存的 discord_raw_messages 列補上 signal_id（fire-and-forget；失敗不阻塞主流程）。
+     *
+     * <p>若 archive POST 比 broadcast-trade 晚到，由 {@code DiscordRawMessageService.recordMessage}
+     * 主動查 signals 表連結；若 archive POST 比 broadcast-trade 早到，則由這裡反向回填。</p>
+     */
+    private void linkDiscordRawMessage(Signal signal) {
+        try {
+            if (signal == null || signal.getSourceMessageId() == null) {
+                return;
+            }
+            discordRawMessageRepository.findByMessageId(signal.getSourceMessageId())
+                    .ifPresent(drm -> {
+                        boolean changed = false;
+                        if (drm.getSignalId() == null) {
+                            drm.setSignalId(signal.getSignalId());
+                            changed = true;
+                        }
+                        if (drm.getParserAction() == null && signal.getAction() != null) {
+                            drm.setParserAction(signal.getAction());
+                            changed = true;
+                        }
+                        if (changed) {
+                            discordRawMessageRepository.save(drm);
+                        }
+                    });
+        } catch (Exception e) {
+            log.debug("discord_raw_messages back-link failed (non-blocking): {}", e.getMessage());
         }
     }
 
