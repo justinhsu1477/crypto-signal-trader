@@ -279,12 +279,27 @@ class SignalRouter:
         channel_id = msg.get("channel_id", "")
         guild_id = msg.get("guild_id", "")
         author_name = msg.get("author_name", "?")
-        message_id = msg.get("id", "")
+        raw_message_id = msg.get("id", "")
 
         # Layer 1 (capture watchdog): 在所有 filter 之前先記錄「收到任何訊息」的時間，
         # 因為 capture stall 偵測的核心問題是「CDP 是不是還在送訊息」，被 channel / guild /
         # author filter 擋下的訊息也代表 CDP 還活著。
         self._last_message_time = time.time()
+
+        # === MESSAGE_UPDATE 處理 ===
+        # 真實場景：陳哥先發 placeholder「等等」→ 編輯成「BTC 60000 long SL 58000」。
+        # Java L1 dedup 用 source.message_id 永久去重，原始 message_id 已處理過。
+        # 對策：把 message_id 加 __edit-N 後綴（N = edit_revision 末 6 碼），讓 Java 視為新訊號。
+        # 同訊號編輯多次只會走進 Python L1 dedup（不會重打 API）— 因為 edit_revision 不同所以
+        # message_id 也不同 — 視為新訊號正確。
+        # Archive 端會把 parser_action 加 EDIT: 前綴標記為編輯來源。
+        is_edit = bool(msg.get("is_edit", False))
+        if is_edit:
+            edit_rev = msg.get("edit_revision", 0)
+            short_rev = str(edit_rev)[-6:] if edit_rev else "000000"
+            message_id = f"{raw_message_id}__edit-{short_rev}"
+        else:
+            message_id = raw_message_id
 
         # Channel whitelist filter
         if self.channel_ids and channel_id not in self.channel_ids:
@@ -704,6 +719,11 @@ class SignalRouter:
         Server 端用 message_id UPSERT，所以多次呼叫（例如先記 DEDUP 再記 BLACKLIST）安全。
         只記錄 server schema 需要的 snake_case 欄位。
 
+        若 msg["is_edit"] 為 True：
+          - parser_action 自動加 "EDIT:" 前綴（例如 ENTRY → EDIT:ENTRY），標記為編輯來源訊號。
+          - message_id 用 __edit-N 後綴版本（與 handle_message 算出的 source.message_id 一致），
+            這樣同一筆原始訊息的不同編輯版本會各自有 row（audit trail 完整）。
+
         Args:
             image_sha_override: 若提供，優先寫入 attachment_sha256（image path 計算出的真實
                 sha256）。Discord 的 attachment metadata 並不會帶 sha256，所以走 image
@@ -723,8 +743,21 @@ class SignalRouter:
                         attachment_sha256 = att.get("sha256")
                         break
 
+            # MESSAGE_UPDATE 處理：
+            # - parser_action 加 EDIT: 前綴
+            # - message_id 帶上 __edit-N 後綴版本（與 send_trade 用的 source.message_id 一致）
+            is_edit = bool(msg.get("is_edit", False))
+            archive_action = parser_action
+            archive_message_id = msg.get("id", "")
+            if is_edit:
+                if parser_action:
+                    archive_action = f"EDIT:{parser_action}"
+                edit_rev = msg.get("edit_revision", 0)
+                short_rev = str(edit_rev)[-6:] if edit_rev else "000000"
+                archive_message_id = f"{archive_message_id}__edit-{short_rev}"
+
             payload = {
-                "message_id": msg.get("id", ""),
+                "message_id": archive_message_id,
                 "channel_id": msg.get("channel_id", ""),
                 "channel_name": msg.get("channel_name"),
                 "guild_id": msg.get("guild_id"),
@@ -736,7 +769,7 @@ class SignalRouter:
                 "attachment_sha256": attachment_sha256,
                 "has_embed_images": bool(embed_images),
                 "has_reference": bool(msg.get("has_reference", False)),
-                "parser_action": parser_action,
+                "parser_action": archive_action,
                 "parser_skipped_reason": parser_skipped_reason,
             }
             asyncio.create_task(self.api_client.send_discord_message(payload))

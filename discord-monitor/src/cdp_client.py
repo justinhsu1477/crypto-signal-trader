@@ -106,68 +106,98 @@ INJECT_JS = """
     window.__signalMonitorQueue = [];
     window.__signalMonitorActive = true;
 
+    // Build a Python-side data dict from a Discord internal message object.
+    // 共用 builder：MESSAGE_CREATE / MESSAGE_UPDATE 共用同一份欄位 schema，差異
+    // 僅在後續 push 時把 is_edit / edit_revision 加上去（避免 30+ 行重複）。
+    function buildMessageData(msg, event) {
+        return {
+            id: msg.id,
+            channel_id: msg.channel_id,
+            guild_id: event.guildId || msg.guild_id || '',
+            author_id: msg.author ? msg.author.id : '',
+            author_name: msg.author ? msg.author.username : '',
+            content: msg.content || '',
+            timestamp: msg.timestamp || '',
+            embeds: (msg.embeds || []).map(function(e) {
+                return {
+                    title: e.title || '',
+                    description: e.description || ''
+                };
+            }),
+            // 附件（圖片、影片、檔案） — 失敗時 fallback 到空陣列
+            attachments: (function() {
+                try {
+                    return (msg.attachments || []).map(function(a) {
+                        return {
+                            id: a.id || '',
+                            filename: a.filename || '',
+                            url: a.url || '',
+                            proxy_url: a.proxy_url || '',
+                            content_type: a.content_type || '',
+                            size: a.size || 0,
+                            width: a.width || 0,
+                            height: a.height || 0
+                        };
+                    });
+                } catch (e) {
+                    return [];
+                }
+            })(),
+            // embed 中的圖片（image / thumbnail）
+            embed_images: (function() {
+                try {
+                    var imgs = [];
+                    (msg.embeds || []).forEach(function(e) {
+                        if (e.image && e.image.url) {
+                            imgs.push({url: e.image.url, width: e.image.width || 0, height: e.image.height || 0});
+                        } else if (e.thumbnail && e.thumbnail.url) {
+                            imgs.push({url: e.thumbnail.url, width: e.thumbnail.width || 0, height: e.thumbnail.height || 0});
+                        }
+                    });
+                    return imgs;
+                } catch (e) {
+                    return [];
+                }
+            })(),
+            has_reference: !!msg.message_reference,
+            has_snapshots: !!(msg.message_snapshots && msg.message_snapshots.length > 0),
+            referenced_content: (msg.referenced_message && msg.referenced_message.content) || ''
+        };
+    }
+
+    function enqueueData(data) {
+        window.__signalMonitorQueue.push(JSON.stringify(data));
+        // Keep queue bounded
+        if (window.__signalMonitorQueue.length > 100) {
+            window.__signalMonitorQueue.shift();
+        }
+    }
+
     // Subscribe to MESSAGE_CREATE events
     Dispatcher.subscribe('MESSAGE_CREATE', function(event) {
         try {
             var msg = event.message || event;
-            var data = {
-                id: msg.id,
-                channel_id: msg.channel_id,
-                guild_id: event.guildId || msg.guild_id || '',
-                author_id: msg.author ? msg.author.id : '',
-                author_name: msg.author ? msg.author.username : '',
-                content: msg.content || '',
-                timestamp: msg.timestamp || '',
-                embeds: (msg.embeds || []).map(function(e) {
-                    return {
-                        title: e.title || '',
-                        description: e.description || ''
-                    };
-                }),
-                // 新增：附件（圖片、影片、檔案） — 失敗時 fallback 到空陣列
-                attachments: (function() {
-                    try {
-                        return (msg.attachments || []).map(function(a) {
-                            return {
-                                id: a.id || '',
-                                filename: a.filename || '',
-                                url: a.url || '',
-                                proxy_url: a.proxy_url || '',
-                                content_type: a.content_type || '',
-                                size: a.size || 0,
-                                width: a.width || 0,
-                                height: a.height || 0
-                            };
-                        });
-                    } catch (e) {
-                        return [];
-                    }
-                })(),
-                // 新增：embed 中的圖片（image / thumbnail）
-                embed_images: (function() {
-                    try {
-                        var imgs = [];
-                        (msg.embeds || []).forEach(function(e) {
-                            if (e.image && e.image.url) {
-                                imgs.push({url: e.image.url, width: e.image.width || 0, height: e.image.height || 0});
-                            } else if (e.thumbnail && e.thumbnail.url) {
-                                imgs.push({url: e.thumbnail.url, width: e.thumbnail.width || 0, height: e.thumbnail.height || 0});
-                            }
-                        });
-                        return imgs;
-                    } catch (e) {
-                        return [];
-                    }
-                })(),
-                has_reference: !!msg.message_reference,
-                has_snapshots: !!(msg.message_snapshots && msg.message_snapshots.length > 0),
-                referenced_content: (msg.referenced_message && msg.referenced_message.content) || ''
-            };
-            window.__signalMonitorQueue.push(JSON.stringify(data));
-            // Keep queue bounded
-            if (window.__signalMonitorQueue.length > 100) {
-                window.__signalMonitorQueue.shift();
-            }
+            if (!msg.id || !msg.channel_id) return;
+            enqueueData(buildMessageData(msg, event));
+        } catch(e) {
+            // silently ignore
+        }
+    });
+
+    // Subscribe to MESSAGE_UPDATE events
+    // Scenario: 陳哥 posts placeholder, then edits to add full signal.
+    // signal_router 會用 is_edit 旗標 + edit_revision 後綴 message_id 避開 L1 dedup。
+    Dispatcher.subscribe('MESSAGE_UPDATE', function(event) {
+        try {
+            var msg = event.message || event;
+            if (!msg.id || !msg.channel_id) return;
+            var data = buildMessageData(msg, event);
+            // 時間優先取 edited_timestamp（如果 Discord 有給），否則退回原 timestamp
+            data.timestamp = msg.edited_timestamp || msg.timestamp || '';
+            data.is_edit = true;
+            // 用 epoch ms 做 revision counter，signal_router 取末 6 碼當 suffix
+            data.edit_revision = Date.now();
+            enqueueData(data);
         } catch(e) {
             // silently ignore
         }
