@@ -139,6 +139,7 @@ async def main() -> None:
                     ai_status="active" if ai_active else "disabled",
                     ai_token_stats=token_stats,
                     channel_last_seen=router.channel_last_seen,
+                    seconds_since_any_message=router.seconds_since_any_message(),
                 )
 
                 # Queue replay: API 恢復時自動重播暫存的訊號

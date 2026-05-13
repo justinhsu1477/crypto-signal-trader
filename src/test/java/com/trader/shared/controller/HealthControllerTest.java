@@ -54,6 +54,26 @@ class HealthControllerTest {
         hb.put("lastHeartbeat", "2026-05-12T12:00:00Z");
         hb.put("secondsSinceLastHeartbeat", 30L);
         hb.put("monitorStatus", "connected");
+        // 預設 capture 也健康（120 秒前剛收到訊息）
+        hb.put("secondsSinceAnyMessage", 120.0);
+        return hb;
+    }
+
+    private Map<String, Object> heartbeatWithCaptureStalled(double secondsSinceAnyMessage) {
+        Map<String, Object> hb = new HashMap<>();
+        hb.put("lastHeartbeat", "2026-05-12T12:00:00Z");
+        hb.put("secondsSinceLastHeartbeat", 30L);
+        hb.put("monitorStatus", "connected");
+        hb.put("secondsSinceAnyMessage", secondsSinceAnyMessage);
+        return hb;
+    }
+
+    private Map<String, Object> heartbeatWithoutCaptureField() {
+        Map<String, Object> hb = new HashMap<>();
+        hb.put("lastHeartbeat", "2026-05-12T12:00:00Z");
+        hb.put("secondsSinceLastHeartbeat", 30L);
+        hb.put("monitorStatus", "connected");
+        hb.put("secondsSinceAnyMessage", null);  // Python 啟動以來還沒收到訊息
         return hb;
     }
 
@@ -284,6 +304,84 @@ class HealthControllerTest {
         Map<String, Object> bot = (Map<String, Object>) response.getBody().get("discordBot");
         assertEquals("UNKNOWN", bot.get("status"));
         assertEquals("jda error", bot.get("error"));
+    }
+
+    // ==================== Layer 1 capture watchdog ====================
+
+    @Test
+    @DisplayName("deep: capture 新鮮（120s）→ capture UP")
+    @SuppressWarnings("unchecked")
+    void deepHealthCaptureFresh() throws Exception {
+        mockDbAndBinanceUp();
+
+        ResponseEntity<Map<String, Object>> response = controller.deepHealth();
+
+        assertEquals(200, response.getStatusCode().value());
+        Map<String, Object> capture = (Map<String, Object>) response.getBody().get("capture");
+        assertEquals("UP", capture.get("status"));
+        assertEquals(120.0, capture.get("secondsSinceAnyMessage"));
+    }
+
+    @Test
+    @DisplayName("deep: capture stalled（15000s > 14400 門檻）→ capture DEGRADED + 503")
+    @SuppressWarnings("unchecked")
+    void deepHealthCaptureStalled() throws Exception {
+        mockDbAndBinanceUp();
+        when(heartbeatService.getStatus()).thenReturn(heartbeatWithCaptureStalled(15000.0));
+
+        ResponseEntity<Map<String, Object>> response = controller.deepHealth();
+
+        assertEquals(503, response.getStatusCode().value());
+        assertEquals("DEGRADED", response.getBody().get("status"));
+        Map<String, Object> capture = (Map<String, Object>) response.getBody().get("capture");
+        assertEquals("DEGRADED", capture.get("status"));
+        assertTrue(capture.get("warning").toString().contains("stalled"));
+        assertTrue(capture.get("warning").toString().contains("hours"));
+    }
+
+    @Test
+    @DisplayName("deep: capture 剛好在門檻邊緣（14400s）→ UP")
+    @SuppressWarnings("unchecked")
+    void deepHealthCaptureAtBoundary() throws Exception {
+        mockDbAndBinanceUp();
+        when(heartbeatService.getStatus()).thenReturn(heartbeatWithCaptureStalled(14400.0));
+
+        ResponseEntity<Map<String, Object>> response = controller.deepHealth();
+
+        // 14400 exact = 不超過門檻 → UP
+        assertEquals(200, response.getStatusCode().value());
+        Map<String, Object> capture = (Map<String, Object>) response.getBody().get("capture");
+        assertEquals("UP", capture.get("status"));
+    }
+
+    @Test
+    @DisplayName("deep: capture null（Python 啟動還沒收到訊息）→ capture UP + 不擋健康")
+    @SuppressWarnings("unchecked")
+    void deepHealthCaptureNull() throws Exception {
+        mockDbAndBinanceUp();
+        when(heartbeatService.getStatus()).thenReturn(heartbeatWithoutCaptureField());
+
+        ResponseEntity<Map<String, Object>> response = controller.deepHealth();
+
+        assertEquals(200, response.getStatusCode().value());
+        Map<String, Object> capture = (Map<String, Object>) response.getBody().get("capture");
+        assertEquals("UP", capture.get("status"));
+        assertEquals("no messages received yet", capture.get("reason"));
+    }
+
+    @Test
+    @DisplayName("deep: 心跳本身 UNKNOWN（冷啟動）→ capture UNKNOWN")
+    @SuppressWarnings("unchecked")
+    void deepHealthCaptureUnknownWhenHeartbeatUnknown() throws Exception {
+        mockDbAndBinanceUp();
+        when(heartbeatService.getStatus()).thenReturn(noHeartbeatYet());
+
+        ResponseEntity<Map<String, Object>> response = controller.deepHealth();
+
+        // heartbeat UNKNOWN 不擋健康，capture 也應跟著 UNKNOWN
+        assertEquals(200, response.getStatusCode().value());
+        Map<String, Object> capture = (Map<String, Object>) response.getBody().get("capture");
+        assertEquals("UNKNOWN", capture.get("status"));
     }
 
     /** 共用：mock DB + Binance 都 UP（給 heartbeat / bot 測試用） */

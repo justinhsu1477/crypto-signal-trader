@@ -236,6 +236,7 @@ class ApiClient:
         ai_status: str = "active",
         ai_token_stats: dict | None = None,
         channel_last_seen: dict[str, float] | None = None,
+        seconds_since_any_message: float | None = None,
     ) -> bool:
         """Send heartbeat to Spring Boot API.
 
@@ -244,6 +245,8 @@ class ApiClient:
             ai_status: AI parser status (active / disabled).
             ai_token_stats: Optional AI token usage stats from AiSignalParser.
             channel_last_seen: Optional per-channel last activity timestamps (epoch seconds).
+            seconds_since_any_message: Layer 1 capture watchdog — 任何 CDP 訊息上次抵達後過了
+                幾秒。None 代表啟動以來還沒收過任何訊息（不告警，避免冷啟動誤報）。
 
         Returns:
             True if heartbeat was acknowledged, False otherwise.
@@ -258,6 +261,9 @@ class ApiClient:
                 payload["channelLastSeen"] = {
                     ch_id: int(ts * 1000) for ch_id, ts in channel_last_seen.items()
                 }
+            if seconds_since_any_message is not None:
+                # 直接送 float 秒數，Java 端用 Double 接
+                payload["secondsSinceAnyMessage"] = float(seconds_since_any_message)
             async with self._session.post(
                 url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
             ) as resp:
