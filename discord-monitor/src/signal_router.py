@@ -109,18 +109,28 @@ class SignalRouter:
                 })
         return result
 
-    async def _handle_image_signal(self, msg: dict, source: dict) -> tuple[str | None, str | None]:
+    async def _handle_image_signal(
+        self, msg: dict, source: dict,
+    ) -> tuple[str | None, str | None, str | None]:
         """Image-first signal path. 解析圖片 → 過濾白名單 → 送 Java。
 
         失敗策略：任何步驟失敗（下載、parse、validate）都 silently skip 並 log。
         不應該 raise — 讓 handle_message 主流程不被一張壞圖搞掛。
 
         Returns:
-            (parser_action, parser_skipped_reason) for audit archive. Examples:
-              - ("ENTRY", None) — parsed and forwarded successfully
-              - ("COMPOUND", None) — compound action forwarded
-              - ("INFO", None) — AI judged INFO, not forwarded
-              - (None, "IMAGE_FETCH_FAILED") / "IMAGE_PARSE_FAILED" / "FILTERED" / "NO_IMAGE"
+            (parser_action, parser_skipped_reason, attachment_sha256) for audit archive.
+
+            第三個欄位是 fetch_image() 計算出的真實 SHA-256（hex string）。
+            Discord 的 attachment metadata 不含 sha256，必須走這條路才能讓
+            discord_raw_messages.attachment_sha256 不為 NULL。
+
+            Examples:
+              - ("ENTRY", None, "abc123…") — parsed and forwarded successfully
+              - ("COMPOUND", None, "abc123…") — compound action forwarded
+              - ("INFO", None, "abc123…") — AI judged INFO, not forwarded
+              - (None, "IMAGE_FETCH_FAILED", None) — fetch_image 失敗，沒算 sha
+              - (None, "IMAGE_PARSE_FAILED", "abc123…") — fetch 成功但 parse 失敗，仍回傳 sha
+              - (None, "FILTERED", "abc123…") — 白名單擋掉，仍回傳 sha
         """
         cfg = self.image_signal_config
         message_id = msg.get("id", "")
@@ -128,14 +138,14 @@ class SignalRouter:
 
         images = self._collect_image_urls(msg)
         if not images:
-            return (None, "NO_IMAGE")
+            return (None, "NO_IMAGE", None)
 
         # 取第一張圖（陳哥訊號通常一張，多張先簡單處理）
         first = images[0]
         url = first["url"]
         if not url:
             logger.warning("image path: empty URL in attachment, msg=%s", message_id)
-            return (None, "IMAGE_FETCH_FAILED")
+            return (None, "IMAGE_FETCH_FAILED", None)
 
         # 下載
         try:
@@ -146,11 +156,11 @@ class SignalRouter:
             )
         except ImageFetchError as e:
             logger.warning("image path: fetch failed for msg=%s: %s", message_id, e)
-            return (None, "IMAGE_FETCH_FAILED")
+            return (None, "IMAGE_FETCH_FAILED", None)
         except AttributeError:
             # api_client._session 可能在某些測試 mock 中不存在 — fallback
             logger.error("image path: api_client._session not available, cannot fetch image")
-            return (None, "IMAGE_FETCH_FAILED")
+            return (None, "IMAGE_FETCH_FAILED", None)
 
         logger.info(
             "image path: fetched msg=%s sha=%s mime=%s size=%d",
@@ -160,7 +170,7 @@ class SignalRouter:
         # AI 解析
         if not self.ai_parser:
             logger.warning("image path: ai_parser not configured, skipping image msg=%s", message_id)
-            return (None, "IMAGE_PARSE_FAILED")
+            return (None, "IMAGE_PARSE_FAILED", sha)
 
         parsed = await self.ai_parser.parse_with_image(
             text_content=text_content,
@@ -169,7 +179,7 @@ class SignalRouter:
         )
         if not parsed:
             logger.warning("image path: parse failed for msg=%s", message_id)
-            return (None, "IMAGE_PARSE_FAILED")
+            return (None, "IMAGE_PARSE_FAILED", sha)
 
         # Compound action（list）— 圖片回 [CLOSE, MOVE_SL]，與文字流相同處理
         # 注意：白名單過濾在 _forward_compound 之前直接做（取第一筆 symbol 即可，
@@ -186,9 +196,9 @@ class SignalRouter:
                     "image path: compound symbol %s not in allowed_symbols %s, skipping msg=%s",
                     compound_symbol, self.image_signal_config.allowed_symbols, message_id,
                 )
-                return (None, "FILTERED")
+                return (None, "FILTERED", sha)
             await self._forward_compound(parsed, source)
-            return ("COMPOUND", None)
+            return ("COMPOUND", None, sha)
 
         # BTC 白名單過濾
         symbol = (parsed.get("symbol") or "").upper()
@@ -197,12 +207,12 @@ class SignalRouter:
                 "image path: symbol %s not in allowed_symbols %s, skipping msg=%s",
                 symbol, cfg.allowed_symbols, message_id,
             )
-            return (None, "FILTERED")
+            return (None, "FILTERED", sha)
 
         # INFO action 不送下游（與 text path 行為一致）
         if parsed.get("action") == "INFO":
             logger.info("image path: INFO action, not forwarding msg=%s", message_id)
-            return ("INFO", None)
+            return ("INFO", None, sha)
 
         # 附件 metadata 加入 source
         enriched_source = dict(source)
@@ -221,7 +231,7 @@ class SignalRouter:
                 parsed.get("action"), parsed.get("symbol"), parsed.get("side"),
                 parsed.get("entry_price"), parsed.get("stop_loss"),
             )
-            return (parsed.get("action"), None)
+            return (parsed.get("action"), None, sha)
 
         # 真送
         prompt_version = self.ai_parser.prompt_version if hasattr(self.ai_parser, "prompt_version") else 0
@@ -240,7 +250,7 @@ class SignalRouter:
             )
         except Exception as e:
             logger.exception("image path: send_trade error msg=%s: %s", message_id, e)
-        return (parsed.get("action"), None)
+        return (parsed.get("action"), None, sha)
 
     async def handle_message(self, msg: dict) -> None:
         """Called by CdpClient for each MESSAGE_CREATE event.
@@ -302,9 +312,12 @@ class SignalRouter:
                 "image path triggered: #%s @%s msg=%s (text=%r)",
                 channel_id[-6:], author_name, message_id, msg.get("content", "")[:60],
             )
-            img_action, img_skip = await self._handle_image_signal(msg, image_source)
+            img_action, img_skip, img_sha = await self._handle_image_signal(msg, image_source)
             self._archive_message_async(
-                msg, parser_action=img_action, parser_skipped_reason=img_skip,
+                msg,
+                parser_action=img_action,
+                parser_skipped_reason=img_skip,
+                image_sha_override=img_sha,
             )
             return  # 不進入文字流
         # === Image-first branch end ===
@@ -659,6 +672,7 @@ class SignalRouter:
         msg: dict,
         parser_action: str | None = None,
         parser_skipped_reason: str | None = None,
+        image_sha_override: str | None = None,
     ) -> None:
         """Fire-and-forget per-message archive POST.
 
@@ -667,17 +681,25 @@ class SignalRouter:
 
         Server 端用 message_id UPSERT，所以多次呼叫（例如先記 DEDUP 再記 BLACKLIST）安全。
         只記錄 server schema 需要的 snake_case 欄位。
+
+        Args:
+            image_sha_override: 若提供，優先寫入 attachment_sha256（image path 計算出的真實
+                sha256）。Discord 的 attachment metadata 並不會帶 sha256，所以走 image
+                path 時必須靠 fetch_image() 回傳的值，否則 attachment_sha256 永遠 NULL。
         """
         try:
             attachments = msg.get("attachments", []) or []
             embed_images = msg.get("embed_images", []) or []
-            # 第一張圖的 sha256（若 attachment 已含 sha256；否則為 None）
-            first_image_sha = None
-            for att in attachments:
-                ctype = (att.get("content_type") or "").lower()
-                if ctype.startswith("image/"):
-                    first_image_sha = att.get("sha256")
-                    break
+
+            # 優先使用 image path 計算出的真實 sha256；fallback 才去 dict 撈
+            # （非 image-first 路徑，attachments[0].sha256 通常為 None — Discord 不給）
+            attachment_sha256 = image_sha_override
+            if attachment_sha256 is None:
+                for att in attachments:
+                    ctype = (att.get("content_type") or "").lower()
+                    if ctype.startswith("image/"):
+                        attachment_sha256 = att.get("sha256")
+                        break
 
             payload = {
                 "message_id": msg.get("id", ""),
@@ -689,7 +711,7 @@ class SignalRouter:
                 "content": msg.get("content", ""),
                 "has_attachments": bool(attachments),
                 "attachment_count": len(attachments),
-                "attachment_sha256": first_image_sha,
+                "attachment_sha256": attachment_sha256,
                 "has_embed_images": bool(embed_images),
                 "has_reference": bool(msg.get("has_reference", False)),
                 "parser_action": parser_action,
