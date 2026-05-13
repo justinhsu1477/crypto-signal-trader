@@ -494,7 +494,14 @@ public class TradeController {
             }
         }
 
-        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(status, aiStatus, aiTokenStats, channelLastSeenData));
+        // Layer 1 capture watchdog（向後相容：舊版 Python 沒帶這個欄位 → null）
+        Double secondsSinceAnyMessage = null;
+        if (body != null && body.get("secondsSinceAnyMessage") instanceof Number) {
+            secondsSinceAnyMessage = ((Number) body.get("secondsSinceAnyMessage")).doubleValue();
+        }
+
+        return ResponseEntity.ok(heartbeatService.receiveHeartbeat(
+                status, aiStatus, aiTokenStats, channelLastSeenData, secondsSinceAnyMessage));
     }
 
     /**

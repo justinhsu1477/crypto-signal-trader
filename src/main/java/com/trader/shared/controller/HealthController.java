@@ -30,6 +30,12 @@ public class HealthController {
     /** Python heartbeat 過期門檻（與 MonitorHeartbeatService.HEARTBEAT_TIMEOUT_SECONDS 一致） */
     private static final long HEARTBEAT_FRESH_SECONDS = 90;
 
+    /**
+     * Layer 1 capture watchdog 門檻：CDP 全域沉默超過 4 小時就判定 DEGRADED。
+     * 4 小時 = 14400 秒，能容忍訊號群最安靜時段（17-22 Taipei 夜間 1-12 msgs/hr）。
+     */
+    private static final long CAPTURE_STALLED_SECONDS = 14400;
+
     private final DataSource dataSource;
     private final BinanceApiRateLimiter binanceApiRateLimiter;
     private final MonitorHeartbeatService monitorHeartbeatService;
@@ -85,6 +91,15 @@ public class HealthController {
         Map<String, Object> botStatus = checkDiscordBot();
         result.put("discordBot", botStatus);
         if ("DOWN".equals(botStatus.get("status"))) {
+            allHealthy = false;
+        }
+
+        // 5. Layer 1 capture watchdog — CDP 是否還在送訊息
+        // 與 monitorHeartbeat 不同：心跳是 Python 進程活著沒，capture 是 hook 是否還在 fire。
+        // 5/13 incident 就是心跳正常但 hook 死掉，所以分開檢查。
+        Map<String, Object> captureStatus = checkCaptureHealth(heartbeatStatus);
+        result.put("capture", captureStatus);
+        if ("DEGRADED".equals(captureStatus.get("status"))) {
             allHealthy = false;
         }
 
@@ -165,6 +180,56 @@ public class HealthController {
             }
         } catch (Exception e) {
             log.error("Health check: 心跳查詢失敗 - {}", e.getMessage());
+            status.put("status", "UNKNOWN");
+            status.put("error", e.getMessage());
+        }
+        return status;
+    }
+
+    /**
+     * Layer 1 capture watchdog — 看 Python 帶來的 secondsSinceAnyMessage，
+     * 超過 CAPTURE_STALLED_SECONDS（4h）即視為 DEGRADED。
+     *
+     * Decision matrix:
+     *   - heartbeat UNKNOWN（系統剛啟動）→ capture UNKNOWN
+     *   - secondsSinceAnyMessage == null（Python 啟動以來還沒收訊息，或舊版 Python）→ UP
+     *     不誤報。冷啟動空窗很正常，何況夜間時段本來就可能上小時無訊號。
+     *   - 0 ≤ value ≤ threshold → UP
+     *   - value > threshold → DEGRADED（並帶人類可讀的 hours 訊息）
+     */
+    private Map<String, Object> checkCaptureHealth(Map<String, Object> heartbeatStatus) {
+        Map<String, Object> status = new LinkedHashMap<>();
+        try {
+            // 心跳本身 UNKNOWN 時 capture 也算 UNKNOWN（避免冷啟動誤報）
+            if ("UNKNOWN".equals(heartbeatStatus.get("status"))) {
+                status.put("status", "UNKNOWN");
+                status.put("reason", "heartbeat not yet received");
+                return status;
+            }
+
+            Map<String, Object> hb = monitorHeartbeatService.getStatus();
+            Object raw = hb.get("secondsSinceAnyMessage");
+            if (!(raw instanceof Number)) {
+                // Python 啟動以來還沒收過訊息（或舊版 Python 沒送這個欄位）
+                status.put("status", "UP");
+                status.put("reason", "no messages received yet");
+                return status;
+            }
+
+            double secondsSince = ((Number) raw).doubleValue();
+            status.put("secondsSinceAnyMessage", secondsSince);
+
+            if (secondsSince > CAPTURE_STALLED_SECONDS) {
+                double hours = secondsSince / 3600.0;
+                status.put("status", "DEGRADED");
+                status.put("warning",
+                        String.format("Capture stalled %.1f hours (threshold %d hours)",
+                                hours, CAPTURE_STALLED_SECONDS / 3600));
+            } else {
+                status.put("status", "UP");
+            }
+        } catch (Exception e) {
+            log.error("Health check: capture 狀態查詢失敗 - {}", e.getMessage());
             status.put("status", "UNKNOWN");
             status.put("error", e.getMessage());
         }

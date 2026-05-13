@@ -389,6 +389,49 @@ class MonitorHeartbeatServiceTest {
         }
     }
 
+    // ==================== Layer 1 capture watchdog ====================
+
+    @Nested
+    @DisplayName("secondsSinceAnyMessage — Layer 1 capture watchdog")
+    class CaptureWatchdogTests {
+
+        @Test
+        @DisplayName("初始狀態 — secondsSinceAnyMessage null")
+        void initialNull() {
+            Map<String, Object> status = service.getStatus();
+            assertThat(status.get("secondsSinceAnyMessage")).isNull();
+        }
+
+        @Test
+        @DisplayName("heartbeat 帶 secondsSinceAnyMessage=15000 — getStatus 帶回正確值")
+        void storesSecondsSinceAnyMessage() {
+            service.receiveHeartbeat("connected", "active", null, null, 15000.0);
+
+            Map<String, Object> status = service.getStatus();
+            assertThat(status.get("secondsSinceAnyMessage")).isEqualTo(15000.0);
+        }
+
+        @Test
+        @DisplayName("舊版 4-arg overload 仍可用（向後相容）— secondsSinceAnyMessage 保持 null")
+        void backwardCompatible4ArgOverload() {
+            service.receiveHeartbeat("connected", "active", null, null);
+
+            Map<String, Object> status = service.getStatus();
+            assertThat(status.get("secondsSinceAnyMessage")).isNull();
+        }
+
+        @Test
+        @DisplayName("secondsSinceAnyMessage null — 覆蓋舊值（Python 重啟還沒收訊息）")
+        void nullOverwritesPreviousValue() {
+            service.receiveHeartbeat("connected", "active", null, null, 1234.0);
+            // Python 重啟，第一個 heartbeat 帶 null
+            service.receiveHeartbeat("connected", "active", null, null, null);
+
+            Map<String, Object> status = service.getStatus();
+            assertThat(status.get("secondsSinceAnyMessage")).isNull();
+        }
+    }
+
     // ==================== AI Token 用量 ====================
 
     @Nested

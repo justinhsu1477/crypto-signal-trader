@@ -6,6 +6,7 @@ import hashlib
 import logging
 import re
 import time
+from typing import Optional
 
 from .api_client import ApiClient
 from .config import DiscordConfig, ImageSignalConfig
@@ -63,10 +64,26 @@ class SignalRouter:
         self.image_signal_config = image_signal_config or ImageSignalConfig()
         self.source_metadata_map: dict[str, dict] = {}
         self.channel_last_seen: dict[str, float] = {}
+        # Layer 1: 任何頻道、任何訊息（連被 channel filter 擋下的都算）的最後 wall-clock 時間。
+        # 用來偵測「CDP 完全沒在送訊息」的 capture stall 情境 — Python heartbeat 還活著，
+        # 但已經很久沒從 Dispatcher 收到任何事件了。None 表示啟動到現在還沒收過任何訊息。
+        self._last_message_time: Optional[float] = None
         self._processed_ids: set[str] = set()
         self._max_dedup_size = 10000
         self._content_hashes: set[str] = set()
         self._max_content_hash_size = 5000
+
+    def seconds_since_any_message(self) -> Optional[float]:
+        """Layer 1 watchdog: 距離上一次 CDP 送來任何訊息已過幾秒。
+
+        - 啟動後從未收過任何訊息 → None（不要錯誤地報「stalled」，等收到第一筆再說）
+        - 否則回傳 monotonic-ish 的秒數差（用 time.time() 即可，這裡不需要避免 NTP 抖動）
+
+        Java 端拿到後若 > 14400（4 小時）就判定 capture: DEGRADED。
+        """
+        if self._last_message_time is None:
+            return None
+        return time.time() - self._last_message_time
 
     def _has_processable_image(self, msg: dict) -> bool:
         """訊息是否含可處理的圖片（attachment 或 embed image）。
@@ -263,6 +280,11 @@ class SignalRouter:
         guild_id = msg.get("guild_id", "")
         author_name = msg.get("author_name", "?")
         message_id = msg.get("id", "")
+
+        # Layer 1 (capture watchdog): 在所有 filter 之前先記錄「收到任何訊息」的時間，
+        # 因為 capture stall 偵測的核心問題是「CDP 是不是還在送訊息」，被 channel / guild /
+        # author filter 擋下的訊息也代表 CDP 還活著。
+        self._last_message_time = time.time()
 
         # Channel whitelist filter
         if self.channel_ids and channel_id not in self.channel_ids:

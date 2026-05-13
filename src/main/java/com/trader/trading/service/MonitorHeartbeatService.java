@@ -64,6 +64,13 @@ public class MonitorHeartbeatService {
     /** 每個頻道最後收到訊息的時間（epoch millis），由 Python heartbeat 帶入 */
     private final AtomicReference<Map<String, Long>> channelLastSeen = new AtomicReference<>(Map.of());
 
+    /**
+     * Layer 1 capture watchdog — 任何 CDP 訊息上次抵達後過了幾秒（Python 計算）。
+     * null 代表 Python 啟動以來還沒收過任何訊息（冷啟動，不告警）。
+     * /api/health/deep 會看這個值：超過 4 小時就判定 capture: DEGRADED。
+     */
+    private final AtomicReference<Double> secondsSinceAnyMessage = new AtomicReference<>(null);
+
     public MonitorHeartbeatService(NotificationService webhookService) {
         this.webhookService = webhookService;
     }
@@ -91,6 +98,20 @@ public class MonitorHeartbeatService {
     public Map<String, Object> receiveHeartbeat(String status, String aiStatus,
                                                  Map<String, Object> aiTokenStats,
                                                  Map<String, Long> channelLastSeenData) {
+        return receiveHeartbeat(status, aiStatus, aiTokenStats, channelLastSeenData, null);
+    }
+
+    /**
+     * 接收 Python monitor 的心跳（含 Layer 1 capture watchdog 欄位）。
+     *
+     * @param secondsSinceAnyMessageValue 自 CDP 上次送任何訊息以來的秒數；null = 啟動以來
+     *                                    沒收過訊息或 Python 沒帶這個欄位（向後相容）。
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> receiveHeartbeat(String status, String aiStatus,
+                                                 Map<String, Object> aiTokenStats,
+                                                 Map<String, Long> channelLastSeenData,
+                                                 Double secondsSinceAnyMessageValue) {
         Instant now = Instant.now();
         Instant previous = lastHeartbeat.getAndSet(now);
         String previousStatus = lastStatus;
@@ -110,6 +131,11 @@ public class MonitorHeartbeatService {
         if (channelLastSeenData != null && !channelLastSeenData.isEmpty()) {
             channelLastSeen.set(Map.copyOf(channelLastSeenData));
         }
+
+        // ===== Layer 1 capture watchdog =====
+        // 注意：null 也直接覆蓋，因為 Python 重啟後第一筆 heartbeat 就會帶 null（還沒收訊息），
+        // 此時不應該繼續沿用舊值，否則 health check 會永遠看到舊資料。
+        secondsSinceAnyMessage.set(secondsSinceAnyMessageValue);
 
         // ===== 情況 1: Discord 斷了，Python 在重連 =====
         if ("reconnecting".equals(status) && !alertSent) {
@@ -224,6 +250,8 @@ public class MonitorHeartbeatService {
         status.put("aiStatus", lastAiStatus);
         status.put("alertSent", alertSent);
         status.put("channelLastSeen", channelLastSeen.get());
+        // Layer 1 watchdog 給 HealthController 用；null 代表還沒收過任何訊息
+        status.put("secondsSinceAnyMessage", secondsSinceAnyMessage.get());
         return status;
     }
 
