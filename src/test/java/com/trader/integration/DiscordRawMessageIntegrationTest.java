@@ -20,8 +20,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
@@ -31,6 +33,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -340,5 +343,36 @@ class DiscordRawMessageIntegrationTest extends BaseIntegrationTest {
 
         assertThat(result).extracting(DiscordRawMessage::getMessageId)
                 .containsExactlyInAnyOrder("missed-1", "missed-2");
+    }
+
+    @Test
+    @DisplayName("recordMessage_concurrentUpdate_throwsOptimisticLockException: 第二次以 stale version 寫入應拋 OptimisticLockException")
+    void recordMessage_concurrentUpdate_throwsOptimisticLockException() {
+        // setup: 插入一筆，version 應為 0
+        DiscordRawMessage initial = DiscordRawMessage.builder()
+                .messageId("msg-optlock-1")
+                .sourceChannelId("ch-optlock")
+                .sourceAuthorName("陳哥")
+                .messageTimestamp(LocalDateTime.now())
+                .parserAction(null)
+                .build();
+        DiscordRawMessage saved = discordRawMessageRepository.saveAndFlush(initial);
+
+        // 模擬 stale read：複製整個物件，version 還是當下的 saved.version
+        DiscordRawMessage stale = new DiscordRawMessage();
+        BeanUtils.copyProperties(saved, stale);
+
+        // 第一次寫入（fresh）— version 會被 JPA 增加
+        saved.setParserAction("ENTRY");
+        discordRawMessageRepository.saveAndFlush(saved);
+
+        // 清掉 persistence context，避免 JPA 把 stale 視為已 managed 物件而合併
+        entityManager.flush();
+        entityManager.clear();
+
+        // 第二次以 stale version 寫入應該失敗
+        stale.setParserAction("CLOSE");
+        assertThatThrownBy(() -> discordRawMessageRepository.saveAndFlush(stale))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
     }
 }
