@@ -109,11 +109,18 @@ class SignalRouter:
                 })
         return result
 
-    async def _handle_image_signal(self, msg: dict, source: dict) -> None:
+    async def _handle_image_signal(self, msg: dict, source: dict) -> tuple[str | None, str | None]:
         """Image-first signal path. 解析圖片 → 過濾白名單 → 送 Java。
 
         失敗策略：任何步驟失敗（下載、parse、validate）都 silently skip 並 log。
         不應該 raise — 讓 handle_message 主流程不被一張壞圖搞掛。
+
+        Returns:
+            (parser_action, parser_skipped_reason) for audit archive. Examples:
+              - ("ENTRY", None) — parsed and forwarded successfully
+              - ("COMPOUND", None) — compound action forwarded
+              - ("INFO", None) — AI judged INFO, not forwarded
+              - (None, "IMAGE_FETCH_FAILED") / "IMAGE_PARSE_FAILED" / "FILTERED" / "NO_IMAGE"
         """
         cfg = self.image_signal_config
         message_id = msg.get("id", "")
@@ -121,14 +128,14 @@ class SignalRouter:
 
         images = self._collect_image_urls(msg)
         if not images:
-            return
+            return (None, "NO_IMAGE")
 
         # 取第一張圖（陳哥訊號通常一張，多張先簡單處理）
         first = images[0]
         url = first["url"]
         if not url:
             logger.warning("image path: empty URL in attachment, msg=%s", message_id)
-            return
+            return (None, "IMAGE_FETCH_FAILED")
 
         # 下載
         try:
@@ -139,11 +146,11 @@ class SignalRouter:
             )
         except ImageFetchError as e:
             logger.warning("image path: fetch failed for msg=%s: %s", message_id, e)
-            return
+            return (None, "IMAGE_FETCH_FAILED")
         except AttributeError:
             # api_client._session 可能在某些測試 mock 中不存在 — fallback
             logger.error("image path: api_client._session not available, cannot fetch image")
-            return
+            return (None, "IMAGE_FETCH_FAILED")
 
         logger.info(
             "image path: fetched msg=%s sha=%s mime=%s size=%d",
@@ -153,7 +160,7 @@ class SignalRouter:
         # AI 解析
         if not self.ai_parser:
             logger.warning("image path: ai_parser not configured, skipping image msg=%s", message_id)
-            return
+            return (None, "IMAGE_PARSE_FAILED")
 
         parsed = await self.ai_parser.parse_with_image(
             text_content=text_content,
@@ -162,7 +169,7 @@ class SignalRouter:
         )
         if not parsed:
             logger.warning("image path: parse failed for msg=%s", message_id)
-            return
+            return (None, "IMAGE_PARSE_FAILED")
 
         # Compound action（list）— 圖片回 [CLOSE, MOVE_SL]，與文字流相同處理
         # 注意：白名單過濾在 _forward_compound 之前直接做（取第一筆 symbol 即可，
@@ -179,9 +186,9 @@ class SignalRouter:
                     "image path: compound symbol %s not in allowed_symbols %s, skipping msg=%s",
                     compound_symbol, self.image_signal_config.allowed_symbols, message_id,
                 )
-                return
+                return (None, "FILTERED")
             await self._forward_compound(parsed, source)
-            return
+            return ("COMPOUND", None)
 
         # BTC 白名單過濾
         symbol = (parsed.get("symbol") or "").upper()
@@ -190,12 +197,12 @@ class SignalRouter:
                 "image path: symbol %s not in allowed_symbols %s, skipping msg=%s",
                 symbol, cfg.allowed_symbols, message_id,
             )
-            return
+            return (None, "FILTERED")
 
         # INFO action 不送下游（與 text path 行為一致）
         if parsed.get("action") == "INFO":
             logger.info("image path: INFO action, not forwarding msg=%s", message_id)
-            return
+            return ("INFO", None)
 
         # 附件 metadata 加入 source
         enriched_source = dict(source)
@@ -214,7 +221,7 @@ class SignalRouter:
                 parsed.get("action"), parsed.get("symbol"), parsed.get("side"),
                 parsed.get("entry_price"), parsed.get("stop_loss"),
             )
-            return
+            return (parsed.get("action"), None)
 
         # 真送
         prompt_version = self.ai_parser.prompt_version if hasattr(self.ai_parser, "prompt_version") else 0
@@ -233,6 +240,7 @@ class SignalRouter:
             )
         except Exception as e:
             logger.exception("image path: send_trade error msg=%s: %s", message_id, e)
+        return (parsed.get("action"), None)
 
     async def handle_message(self, msg: dict) -> None:
         """Called by CdpClient for each MESSAGE_CREATE event.
@@ -267,6 +275,10 @@ class SignalRouter:
         if self.image_signal_config.enabled and self._has_processable_image(msg):
             # message_id dedup 也在這裡先擋一次（避免同訊息走兩次）
             if message_id in self._processed_ids:
+                # archive 即使是 dedup 也記，便於 audit
+                self._archive_message_async(
+                    msg, parser_action=None, parser_skipped_reason="DEDUP_MESSAGE_ID",
+                )
                 return
             self._processed_ids.add(message_id)
             self._trim_dedup_set()
@@ -290,7 +302,10 @@ class SignalRouter:
                 "image path triggered: #%s @%s msg=%s (text=%r)",
                 channel_id[-6:], author_name, message_id, msg.get("content", "")[:60],
             )
-            await self._handle_image_signal(msg, image_source)
+            img_action, img_skip = await self._handle_image_signal(msg, image_source)
+            self._archive_message_async(
+                msg, parser_action=img_action, parser_skipped_reason=img_skip,
+            )
             return  # 不進入文字流
         # === Image-first branch end ===
 
@@ -352,6 +367,8 @@ class SignalRouter:
                     len(msg.get("attachments", [])),
                     len(msg.get("embed_images", [])),
                 )
+            # archive：空訊息也記，便於 audit
+            self._archive_message_async(msg, parser_action=None, parser_skipped_reason="EMPTY")
             return
 
         # 轉發所有訊息到分析師收集 API（fire-and-forget，不阻塞主流程）
@@ -366,10 +383,16 @@ class SignalRouter:
                         kw,
                         content[:80].replace("\n", " | "),
                     )
+                    self._archive_message_async(
+                        msg, parser_action=None, parser_skipped_reason="BLACKLIST",
+                    )
                     return
 
         # Dedup
         if message_id in self._processed_ids:
+            self._archive_message_async(
+                msg, parser_action=None, parser_skipped_reason="DEDUP_MESSAGE_ID",
+            )
             return
         self._processed_ids.add(message_id)
         self._trim_dedup_set()
@@ -399,7 +422,8 @@ class SignalRouter:
                 author_name,
                 content[:120].replace("\n", " | "),
             )
-            await self._forward_signal(content, source=source)
+            resolved_action = await self._forward_signal(content, source=source)
+            self._archive_message_async(msg, parser_action=resolved_action, parser_skipped_reason=None)
         else:
             # Regex fallback 模式：保留 emoji/keyword 過濾，避免閒聊打 API
             signal_type = self._identify_type(content)
@@ -412,8 +436,12 @@ class SignalRouter:
             )
             if signal_type not in ACTIONABLE_TYPES:
                 logger.debug("Signal type %s is info-only, skipping API call", signal_type)
+                self._archive_message_async(
+                    msg, parser_action=signal_type, parser_skipped_reason="FILTERED",
+                )
                 return
             await self._forward_signal(content, source=source)
+            self._archive_message_async(msg, parser_action=signal_type, parser_skipped_reason=None)
 
     def _identify_type(self, content: str) -> str:
         """Identify signal type by emoji prefix or keyword."""
@@ -427,13 +455,17 @@ class SignalRouter:
                 return sig_type
         return "UNKNOWN"
 
-    async def _forward_signal(self, content: str, source: dict | None = None) -> None:
+    async def _forward_signal(self, content: str, source: dict | None = None) -> str | None:
         """Forward the signal to the Spring Boot API.
 
         Strategy: AI-first, regex-fallback.
         1. If AI parser is available, try AI parsing first (Agent 1: Signal Parser)
         2. On AI success → send structured JSON to /api/execute-trade
         3. On AI failure → fallback to raw text /api/execute-signal (regex)
+
+        Returns:
+            The resolved parser action string (e.g. "ENTRY"/"CLOSE"/"MOVE_SL"/"CANCEL"/"INFO"/
+            "COMPOUND") used by the caller for audit archive. None if pre-AI fallback.
 
         Multi-Agent Extension Point (future):
         After Agent 1 parses successfully, additional agents can be inserted:
@@ -459,7 +491,7 @@ class SignalRouter:
                 # 與單動作路徑一致：記錄 content hash，避免引用/轉發再觸發
                 self._record_content_hash(content)
                 await self._forward_compound(parsed, source or {})
-                return
+                return "COMPOUND"
 
             # === TradeActionDetector 補充判斷 ===
             # 當 AI 無法判斷（返回 None）或判為 INFO 時，嘗試 TradeActionDetector 補助
@@ -489,7 +521,7 @@ class SignalRouter:
                         parsed['symbol'] = 'BTCUSDT'
                 else:
                     logger.debug("AI identified as INFO, TradeActionDetector 無補救, skipping")
-                    return
+                    return "INFO"
 
             # 如果有有效的 action（不是 INFO 也不是 UNKNOWN）
             if parsed and parsed.get("action") not in ("INFO", "UNKNOWN"):
@@ -519,10 +551,10 @@ class SignalRouter:
                             dry_run=self.dry_run,
                             original_content=content,
                         )
-                return
+                return parsed.get("action")
             elif parsed and parsed.get("action") == "INFO":
                 logger.debug("AI identified as INFO (TradeActionDetector 未補救), skipping")
-                return
+                return "INFO"
             else:
                 logger.warning("AI parsing failed, falling back to regex")
 
@@ -546,6 +578,7 @@ class SignalRouter:
                     dry_run=self.dry_run,
                     original_content=content,
                 )
+        return None
 
     async def _forward_compound(self, actions: list, base_source: dict) -> None:
         """執行複合動作（list of trade_requests）。
@@ -620,3 +653,48 @@ class SignalRouter:
             )
         except Exception as e:
             logger.debug("Analyst message append error (ignored): %s", e)
+
+    def _archive_message_async(
+        self,
+        msg: dict,
+        parser_action: str | None = None,
+        parser_skipped_reason: str | None = None,
+    ) -> None:
+        """Fire-and-forget per-message archive POST.
+
+        以 asyncio.create_task 包起來，不阻塞 handle_message 主流程。
+        失敗由 api_client.send_discord_message 內吞下，這裡再加一層保險。
+
+        Server 端用 message_id UPSERT，所以多次呼叫（例如先記 DEDUP 再記 BLACKLIST）安全。
+        只記錄 server schema 需要的 snake_case 欄位。
+        """
+        try:
+            attachments = msg.get("attachments", []) or []
+            embed_images = msg.get("embed_images", []) or []
+            # 第一張圖的 sha256（若 attachment 已含 sha256；否則為 None）
+            first_image_sha = None
+            for att in attachments:
+                ctype = (att.get("content_type") or "").lower()
+                if ctype.startswith("image/"):
+                    first_image_sha = att.get("sha256")
+                    break
+
+            payload = {
+                "message_id": msg.get("id", ""),
+                "channel_id": msg.get("channel_id", ""),
+                "channel_name": msg.get("channel_name"),
+                "guild_id": msg.get("guild_id"),
+                "author_name": msg.get("author_name"),
+                "message_timestamp": msg.get("timestamp"),
+                "content": msg.get("content", ""),
+                "has_attachments": bool(attachments),
+                "attachment_count": len(attachments),
+                "attachment_sha256": first_image_sha,
+                "has_embed_images": bool(embed_images),
+                "has_reference": bool(msg.get("has_reference", False)),
+                "parser_action": parser_action,
+                "parser_skipped_reason": parser_skipped_reason,
+            }
+            asyncio.create_task(self.api_client.send_discord_message(payload))
+        except Exception as e:
+            logger.debug("archive_message_async build payload failed (ignored): %s", e)
