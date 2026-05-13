@@ -80,7 +80,8 @@ public class AuthConfig {
                                 "/api/monitor-status", "/api/stream-status",
                                 "/api/leverage", "/api/orders",
                                 "/api/heartbeat",
-                                "/api/analyst-messages"
+                                "/api/analyst-messages",
+                                "/api/discord-messages"
                         ).authenticated()
 
                         // === WebSocket handshake（auth 在 STOMP interceptor 處理）===
