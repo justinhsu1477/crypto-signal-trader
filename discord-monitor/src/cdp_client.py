@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Awaitable, Callable
 
 import aiohttp
@@ -17,6 +18,17 @@ import websockets
 from .config import CdpConfig
 
 logger = logging.getLogger(__name__)
+
+# 每隔多少秒 evaluate `window.__signalMonitorActive` 確認 hook 還在。
+# 60s 已足夠：典型 Discord renderer 崩潰或頁面 reload 偵測延遲可以接受 1 分鐘。
+HEALTH_CHECK_INTERVAL_S = 60
+
+# 健康檢查的回傳值（從 JS 拿到的字串）
+_HOOK_ALIVE = "alive"
+_HOOK_DEAD = "dead"
+HEALTH_PROBE_JS = (
+    "(window.__signalMonitorActive === true) ? 'alive' : 'dead'"
+)
 
 # JavaScript to inject into Discord's page.
 # This hooks into Discord's internal Flux Dispatcher to capture MESSAGE_CREATE events.
@@ -273,6 +285,12 @@ class CdpClient:
         Instead of intercepting raw WebSocket frames, we poll a JavaScript
         queue that collects MESSAGE_CREATE events from Discord's Dispatcher.
 
+        每 HEALTH_CHECK_INTERVAL_S 秒 evaluate window.__signalMonitorActive 確認 hook 還活著。
+        若 hook 已死（Discord 重新整理頁面、webpack 重載、CSP 動到等場景）：
+          1. 嘗試原地 CLEAR_JS + INJECT_JS 重注入
+          2. 若失敗 → raise ConnectionError 讓 main.py 的 reconnect loop 接手
+        用 time.monotonic() 而非 time.time()，避免機器 NTP 跳秒影響 interval 判斷。
+
         Args:
             callback: async function called with each message dict containing
                       id, channel_id, guild_id, author_id, author_name,
@@ -281,8 +299,29 @@ class CdpClient:
         if not self._ws:
             raise ConnectionError("Not connected. Call connect() first.")
 
+        last_health_check = time.monotonic()
+
         while True:
             try:
+                # Periodic hook health check
+                if time.monotonic() - last_health_check > HEALTH_CHECK_INTERVAL_S:
+                    last_health_check = time.monotonic()
+                    alive = await self._evaluate_js(HEALTH_PROBE_JS)
+                    if alive != _HOOK_ALIVE:
+                        logger.error(
+                            "CDP hook DEAD (eval returned %r) — attempting re-injection",
+                            alive,
+                        )
+                        # 嘗試原地 re-inject
+                        await self._evaluate_js(CLEAR_JS)
+                        result = await self._evaluate_js(INJECT_JS)
+                        if result not in ("ok", "already_active"):
+                            # Re-inject 失敗 → 讓 main.py reconnect loop 接手
+                            raise ConnectionError(
+                                f"Re-injection failed: {result}"
+                            )
+                        logger.warning("CDP hook re-injected successfully")
+
                 raw = await self._evaluate_js(DRAIN_JS)
                 if raw:
                     messages = json.loads(raw)
@@ -292,7 +331,12 @@ class CdpClient:
                             await callback(msg)
                         except Exception:
                             logger.exception("Error processing message")
-            except websockets.exceptions.ConnectionClosed:
+            except websockets.ConnectionClosed:
+                # websockets 套件 ConnectionClosed 直接掛在頂層；用 .exceptions.* 路徑會被
+                # lazy-import 機制踩到 AttributeError，這裡不要用。
+                raise
+            except ConnectionError:
+                # Re-injection 失敗 — bubble up 給上層 reconnect loop
                 raise
             except Exception:
                 logger.exception("Error in poll loop")
