@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import com.trader.shared.config.AppConstants;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -161,8 +162,9 @@ class DiscordRawMessageServiceTest {
         ArgumentCaptor<LocalDateTime> sinceCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(repository).findUnprocessedByAuthorSince(authorCaptor.capture(), sinceCaptor.capture());
         assertThat(authorCaptor.getValue()).isEqualTo("三马哥");
-        // since 應該是大約 7 天前（驗證在 6.5~7.5 天範圍內，避免時間差脆性）
-        LocalDateTime expectedRoughly = LocalDateTime.now().minusDays(7);
+        // since 應該是大約 7 天前。Service 用 AppConstants.ZONE_ID (Asia/Taipei) 算 now()，
+        // 測試也必須用同一個 ZoneId，否則 CI 跑 UTC 環境會差 8 小時導致 fail。
+        LocalDateTime expectedRoughly = LocalDateTime.now(AppConstants.ZONE_ID).minusDays(7);
         assertThat(sinceCaptor.getValue()).isBetween(
                 expectedRoughly.minusHours(2),
                 expectedRoughly.plusHours(2)
