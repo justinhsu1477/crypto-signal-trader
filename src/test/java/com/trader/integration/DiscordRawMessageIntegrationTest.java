@@ -346,7 +346,8 @@ class DiscordRawMessageIntegrationTest extends BaseIntegrationTest {
         discordRawMessageRepository.saveAllAndFlush(List.of(old, middle, recent));
 
         discordRawMessageCleanupTask.cleanupExpiredMessages();
-        entityManager.flush();
+        // saveAllAndFlush 已 flush；clear 是為了 evict stale managed entities，
+        // 不需 active transaction（純記憶體操作）
         entityManager.clear();
 
         List<DiscordRawMessage> remaining = discordRawMessageRepository.findAll();
@@ -377,7 +378,7 @@ class DiscordRawMessageIntegrationTest extends BaseIntegrationTest {
         discordRawMessageRepository.saveAndFlush(saved);
 
         // 清掉 persistence context，避免 JPA 把 stale 視為已 managed 物件而合併
-        entityManager.flush();
+        // saveAndFlush 已 flush；clear 是純記憶體操作不需 active transaction
         entityManager.clear();
 
         // 第二次以 stale version 寫入應該失敗
