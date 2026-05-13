@@ -12,12 +12,17 @@ import com.trader.shared.service.AuditService;
 import com.trader.trading.entity.DiscordRawMessage;
 import com.trader.trading.service.DiscordRawMessageService;
 import com.trader.user.repository.UserRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
@@ -42,7 +47,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest(controllers = DiscordRawMessageController.class)
 @Import({AuthConfig.class, MonitorApiKeyFilter.class, JwtAuthenticationFilter.class,
-        CustomAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class})
+        CustomAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class,
+        DiscordRawMessageControllerSliceTest.MeterRegistryTestConfig.class})
 @TestPropertySource(properties = {
         "monitor.api-key=test-monitor-key",
         "jwt.secret=test-secret-key-for-slice-test-minimum-256-bits-long-enough",
@@ -52,8 +58,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("DiscordRawMessageController — Slice Test (@WebMvcTest)")
 class DiscordRawMessageControllerSliceTest {
 
+    @TestConfiguration
+    static class MeterRegistryTestConfig {
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+    }
+
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private MeterRegistry meterRegistry;
 
     @MockBean private DiscordRawMessageService service;
 
@@ -64,6 +79,14 @@ class DiscordRawMessageControllerSliceTest {
     @MockBean private ClientIpResolver clientIpResolver;
 
     private static final String MONITOR_API_KEY = "test-monitor-key";
+
+    @BeforeEach
+    void resetState() {
+        meterRegistry.clear();
+        // 清 mock 的 stubbing + invocations，避免 MetricsTests 觸發的 service.recordMessage
+        // 累積到後面 Auth / Validation tests 的 verify(never()) 失敗
+        org.mockito.Mockito.reset(service);
+    }
 
     private String validPayload() {
         return """
@@ -188,6 +211,67 @@ class DiscordRawMessageControllerSliceTest {
                     });
 
             verify(service).recordMessage(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Group D: Metrics")
+    class MetricsTests {
+
+        @Test
+        @DisplayName("counter — 成功 POST 增加 discord_archive_total{result=ok}")
+        void successPostIncrementsOkCounter() throws Exception {
+            DiscordRawMessage saved = DiscordRawMessage.builder()
+                    .id(1L)
+                    .messageId("msg-slice-001")
+                    .sourceChannelId("ch-1")
+                    .build();
+            when(service.recordMessage(any())).thenReturn(saved);
+
+            mockMvc.perform(post("/api/discord-messages")
+                            .header("X-Api-Key", MONITOR_API_KEY)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(validPayload()))
+                    .andExpect(status().isOk());
+
+            assertThat(meterRegistry.find("discord_archive_total").tag("result", "ok")
+                    .counter().count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("counter — 缺 message_id 增加 discord_archive_total{result=400_missing_message_id}")
+        void missingMessageIdIncrementsValidationCounter() throws Exception {
+            String payload = """
+                    {
+                      "channel_id": "ch-1",
+                      "content": "BTC"
+                    }
+                    """;
+            mockMvc.perform(post("/api/discord-messages")
+                            .header("X-Api-Key", MONITOR_API_KEY)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(payload))
+                    .andExpect(status().isBadRequest());
+
+            assertThat(meterRegistry.find("discord_archive_total")
+                    .tag("result", "400_missing_message_id")
+                    .counter().count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("counter — service throw 時增加 discord_archive_total{result=500_exception}")
+        void serviceExceptionIncrementsErrorCounter() throws Exception {
+            when(service.recordMessage(any())).thenThrow(new RuntimeException("boom"));
+
+            mockMvc.perform(post("/api/discord-messages")
+                            .header("X-Api-Key", MONITOR_API_KEY)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(validPayload()))
+                    .andExpect(status().isInternalServerError());
+
+            assertThat(meterRegistry.find("discord_archive_total")
+                    .tag("result", "500_exception")
+                    .counter().count()).isEqualTo(1.0);
         }
     }
 }
