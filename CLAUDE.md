@@ -4,6 +4,17 @@
 
 ---
 
+## 🚨 新 Session 必讀
+
+接手前先讀 **`docs/SESSION_HANDOFF.md`** — 涵蓋過去 2 週做了什麼（image / compound / chatbot / eval / watchdog / msg_update）、已踩過的坑（5/13 silent capture、Gemini RPM 限制、timezone bug、Hibernate 6 nested array）、debug cheat sheet、檔案地圖。不讀會重複踩已解過的問題。
+
+延伸閱讀：
+- `docs/雲端部署架構圖.md` — Java 雲端 / Python 本地拓樸
+- `ROADMAP.md` — 功能 phase（部分過時，handoff 比較準）
+- `discord-monitor/eval/README.md` — Eval harness 用法
+
+---
+
 ## General Rules
 
 - **問概念問題時，不要改檔案。** 當我問技術概念、架構解釋、面試準備相關問題時，只提供說明，不要建立、編輯、或修改任何檔案。除非我明確要求改 code。
