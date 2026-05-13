@@ -54,6 +54,10 @@ binance:
     ws-base-url: wss://stream.binancefuture.com/private/ws
     api-key: integration-test-fake-api-key
     secret-key: integration-test-fake-secret-key
+  risk:
+    # 關閉 signal-level dedup：integration test 用同樣 fixture 跑多次，
+    # in-memory cache (5min window) 會讓第二個測試永遠 SKIPPED
+    dedup-enabled: false
 
 # 停用所有外部服務
 discord:

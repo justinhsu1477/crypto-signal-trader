@@ -2,7 +2,6 @@ package com.trader.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.advisor.service.GeminiService;
-import com.trader.auth.filter.RateLimitFilter;
 import com.trader.auth.service.JwtService;
 import com.trader.chatbot.service.DiscordBotService;
 import com.trader.chatbot.service.KnowledgeIndexService;
@@ -90,7 +89,6 @@ public abstract class BaseIntegrationTest {
     @Autowired protected JwtService jwtService;
     @Autowired protected EntityManager entityManager;
     @Autowired protected PlatformTransactionManager transactionManager;
-    @Autowired protected RateLimitFilter rateLimitFilter;
 
     // ==================== 測試資料常數 ====================
 
@@ -138,9 +136,9 @@ public abstract class BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        Cookie accessToken = loginResult.getResponse().getCookie("accessToken");
+        Cookie accessToken = loginResult.getResponse().getCookie("ACCESS_TOKEN");
         if (accessToken == null) {
-            throw new AssertionError("Login did not return accessToken cookie");
+            throw new AssertionError("Login did not return ACCESS_TOKEN cookie");
         }
         return accessToken;
     }
@@ -164,8 +162,5 @@ public abstract class BaseIntegrationTest {
             entityManager.createNativeQuery("DELETE FROM users").executeUpdate();
             entityManager.flush();
         });
-        // RateLimitFilter 是 in-memory counter，跨測試共用同一 Spring context →
-        // /api/auth/login (5/min) 累積 → 429。每測試後重置避免互相干擾。
-        rateLimitFilter.resetCounters();
     }
 }

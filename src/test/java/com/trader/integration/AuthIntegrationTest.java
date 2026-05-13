@@ -61,7 +61,7 @@ class AuthIntegrationTest extends BaseIntegrationTest {
         void loginSuccess() throws Exception {
             Cookie cookie = registerAndLogin();
 
-            org.assertj.core.api.Assertions.assertThat(cookie.getName()).isEqualTo("accessToken");
+            org.assertj.core.api.Assertions.assertThat(cookie.getName()).isEqualTo("ACCESS_TOKEN");
             org.assertj.core.api.Assertions.assertThat(cookie.isHttpOnly()).isTrue();
         }
 

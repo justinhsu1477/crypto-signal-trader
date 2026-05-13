@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -44,6 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 @Component
+@Profile("!integration-test")  // 整合測試停用，避免跨測試累積觸發 429
 @RequiredArgsConstructor
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)  // 在 CORS 之後、Security 之前
 public class RateLimitFilter implements Filter {
