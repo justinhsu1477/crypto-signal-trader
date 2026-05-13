@@ -201,6 +201,35 @@ class ApiClient:
             logger.warning("Analyst message append failed: %s", e)
             return False
 
+    async def send_discord_message(self, payload: dict) -> None:
+        """Fire-and-forget per-message archive POST to /api/discord-messages.
+
+        為「漏單偵測 + eval-harness 訓練資料」設計：每則通過 channel/guild/author
+        過濾的訊息都會打一次（不論 AI 判讀結果）。
+
+        失敗策略：吞下所有 exception，不阻塞主流程（與 append_analyst_message 同模式）。
+        Server 端用 message_id UPSERT，所以重送是安全的。
+
+        Args:
+            payload: snake_case dict matching DiscordRawMessageRequest schema on Java side.
+                     Must contain at least message_id + channel_id.
+        """
+        try:
+            url = f"{self.config.base_url}/api/discord-messages"
+            async with self._session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status >= 400:
+                    logger.warning(
+                        "discord-messages API returned %d for msg=%s",
+                        resp.status, payload.get("message_id"),
+                    )
+        except Exception as e:
+            logger.warning(
+                "discord-messages POST failed for msg=%s: %s",
+                payload.get("message_id"), e,
+            )
+
     async def send_heartbeat(
         self,
         status: str = "connected",
