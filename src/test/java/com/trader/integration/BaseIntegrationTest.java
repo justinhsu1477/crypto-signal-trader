@@ -29,8 +29,6 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import jakarta.servlet.http.Cookie;
 
@@ -48,15 +46,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @ActiveProfiles("integration-test")
-@Testcontainers
 @Tag("integration")
 public abstract class BaseIntegrationTest {
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg16")
+    /**
+     * Singleton Container Pattern — 容器啟動一次，整個 JVM lifecycle 共用。
+     * 避免 @Container + @Testcontainers 在跨 test class 時 stop/restart，
+     * 導致 Spring 快取的 DataSource URL 指向已停的 container → ConnectException。
+     * Ryuk 會在 JVM 結束時清理。
+     */
+    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg16")
             .withDatabaseName("trading_test")
             .withUsername("test")
             .withPassword("test");
+
+    static {
+        POSTGRES.start();
+    }
 
     @DynamicPropertySource
     static void registerDatasource(DynamicPropertyRegistry registry) {
@@ -111,6 +117,15 @@ public abstract class BaseIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(registerBody))
                 .andExpect(status().isOk());
+
+        // 註冊後直接標記 email_verified=true：測試環境不跑 OTP 流程，
+        // 否則 AuthService.login() 撞 EmailNotVerifiedException → 403。
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            entityManager.createNativeQuery(
+                    "UPDATE users SET email_verified = true WHERE email = :email")
+                    .setParameter("email", TEST_EMAIL)
+                    .executeUpdate();
+        });
 
         // 登入
         String loginBody = """
