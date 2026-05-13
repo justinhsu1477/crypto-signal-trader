@@ -95,6 +95,15 @@ public class DiscordRawMessage {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * 樂觀鎖版本欄位 — 偵測同列並發更新（Python parser_action 更新 vs Java linkDiscordRawMessage）。
+     * stale 寫入會被 JPA 拒絕並拋 {@link org.springframework.orm.ObjectOptimisticLockingFailureException}。
+     */
+    @Version
+    @Column(nullable = false)
+    @Builder.Default
+    private Long version = 0L;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
