@@ -15,15 +15,12 @@ import com.trader.user.entity.User;
 import com.trader.user.entity.UserApiKey;
 import com.trader.user.repository.UserApiKeyRepository;
 import com.trader.user.repository.UserRepository;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -70,31 +67,7 @@ class BroadcastTradeServiceIntegrationTest extends BaseIntegrationTest {
     /** 既有所有測試使用同一交易對；以 BTCUSDT 確保通過 RiskConfig 白名單 */
     private static final String SYMBOL = "BTCUSDT";
 
-    @BeforeEach
-    @Transactional
-    void resetState() {
-        // 反相依序清理：trades → broadcast_logs → signals → user_api_keys → subscriptions → users
-        entityManager.createNativeQuery("DELETE FROM trades").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM broadcast_logs").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM signals").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM user_api_keys").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM subscriptions").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM users").executeUpdate();
-        entityManager.flush();
-    }
-
-    @AfterEach
-    @Transactional
-    void tearDown() {
-        // 同樣反相依序，避免殘留影響下個測試
-        entityManager.createNativeQuery("DELETE FROM trades").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM broadcast_logs").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM signals").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM user_api_keys").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM subscriptions").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM users").executeUpdate();
-        entityManager.flush();
-    }
+    // 清庫由 BaseIntegrationTest.@AfterEach 統一處理（TransactionTemplate）
 
     // ==================== Helpers ====================
 

@@ -2,6 +2,7 @@ package com.trader.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.advisor.service.GeminiService;
+import com.trader.auth.filter.RateLimitFilter;
 import com.trader.auth.service.JwtService;
 import com.trader.chatbot.service.DiscordBotService;
 import com.trader.chatbot.service.KnowledgeIndexService;
@@ -25,7 +26,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -81,6 +83,8 @@ public abstract class BaseIntegrationTest {
     @Autowired protected ObjectMapper objectMapper;
     @Autowired protected JwtService jwtService;
     @Autowired protected EntityManager entityManager;
+    @Autowired protected PlatformTransactionManager transactionManager;
+    @Autowired protected RateLimitFilter rateLimitFilter;
 
     // ==================== 測試資料常數 ====================
 
@@ -126,12 +130,27 @@ public abstract class BaseIntegrationTest {
         return accessToken;
     }
 
+    /**
+     * @AfterEach 用 TransactionTemplate 而非 @Transactional：
+     * Spring 的 TransactionalTestExecutionListener 只攔 @Test，不攔 lifecycle hook，
+     * 所以 @Transactional 標在這裡會丟 TransactionRequiredException。
+     *
+     * 反向 FK 順序清，涵蓋所有 integration test 用到的 table。
+     */
     @AfterEach
-    @Transactional
     void cleanDatabase() {
-        entityManager.createNativeQuery("DELETE FROM trades").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM broadcast_logs").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM users").executeUpdate();
-        entityManager.flush();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            entityManager.createNativeQuery("DELETE FROM trades").executeUpdate();
+            entityManager.createNativeQuery("DELETE FROM broadcast_logs").executeUpdate();
+            entityManager.createNativeQuery("DELETE FROM signals").executeUpdate();
+            entityManager.createNativeQuery("DELETE FROM discord_raw_messages").executeUpdate();
+            entityManager.createNativeQuery("DELETE FROM user_api_keys").executeUpdate();
+            entityManager.createNativeQuery("DELETE FROM subscriptions").executeUpdate();
+            entityManager.createNativeQuery("DELETE FROM users").executeUpdate();
+            entityManager.flush();
+        });
+        // RateLimitFilter 是 in-memory counter，跨測試共用同一 Spring context →
+        // /api/auth/login (5/min) 累積 → 429。每測試後重置避免互相干擾。
+        rateLimitFilter.resetCounters();
     }
 }

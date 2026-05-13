@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Optional;
 
@@ -42,18 +43,20 @@ class NlqIntegrationTest extends BaseIntegrationTest {
         ).getSingleResult();
         userId = result.toString();
 
-        // 插入測試 trades
-        entityManager.createNativeQuery("""
-                INSERT INTO trades (trade_id, user_id, symbol, side, entry_price, exit_price,
-                    net_profit, status, exit_reason, entry_time, exit_time, created_at)
-                VALUES
-                    ('t1', :userId, 'BTCUSDT', 'LONG', 95000, 96000, 100.0, 'CLOSED', 'SIGNAL_CLOSE', NOW() - INTERVAL '1 day', NOW(), NOW()),
-                    ('t2', :userId, 'ETHUSDT', 'SHORT', 3500, 3400, 50.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '2 days', NOW(), NOW()),
-                    ('t3', :userId, 'BTCUSDT', 'LONG', 94000, 93000, -80.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '3 days', NOW(), NOW()),
-                    ('t4', 'other-user', 'BTCUSDT', 'LONG', 90000, 91000, 200.0, 'CLOSED', 'SIGNAL_CLOSE', NOW(), NOW(), NOW())
-                """.trim())
-                .setParameter("userId", userId)
-                .executeUpdate();
+        // 插入測試 trades — executeUpdate 需 active tx，@BeforeEach 不會被 Spring tx 攔
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            entityManager.createNativeQuery("""
+                    INSERT INTO trades (trade_id, user_id, symbol, side, entry_price, exit_price,
+                        net_profit, status, exit_reason, entry_time, exit_time, created_at)
+                    VALUES
+                        ('t1', :userId, 'BTCUSDT', 'LONG', 95000, 96000, 100.0, 'CLOSED', 'SIGNAL_CLOSE', NOW() - INTERVAL '1 day', NOW(), NOW()),
+                        ('t2', :userId, 'ETHUSDT', 'SHORT', 3500, 3400, 50.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '2 days', NOW(), NOW()),
+                        ('t3', :userId, 'BTCUSDT', 'LONG', 94000, 93000, -80.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '3 days', NOW(), NOW()),
+                        ('t4', 'other-user', 'BTCUSDT', 'LONG', 90000, 91000, 200.0, 'CLOSED', 'SIGNAL_CLOSE', NOW(), NOW(), NOW())
+                    """.trim())
+                    .setParameter("userId", userId)
+                    .executeUpdate();
+        });
 
         // Mock GeminiService — NLQ 呼叫時回傳預設 SQL
         when(geminiService.generateContentWithHistory(any(), any(), any(), anyInt(), anyDouble(), any()))

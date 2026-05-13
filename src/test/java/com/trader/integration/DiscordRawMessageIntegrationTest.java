@@ -17,15 +17,12 @@ import com.trader.user.entity.User;
 import com.trader.user.entity.UserApiKey;
 import com.trader.user.repository.UserApiKeyRepository;
 import com.trader.user.repository.UserRepository;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -65,31 +62,7 @@ class DiscordRawMessageIntegrationTest extends BaseIntegrationTest {
 
     private static final String MONITOR_API_KEY = "test-monitor-key";
 
-    @BeforeEach
-    @Transactional
-    void resetState() {
-        entityManager.createNativeQuery("DELETE FROM discord_raw_messages").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM trades").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM broadcast_logs").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM signals").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM user_api_keys").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM subscriptions").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM users").executeUpdate();
-        entityManager.flush();
-    }
-
-    @AfterEach
-    @Transactional
-    void tearDown() {
-        entityManager.createNativeQuery("DELETE FROM discord_raw_messages").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM trades").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM broadcast_logs").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM signals").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM user_api_keys").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM subscriptions").executeUpdate();
-        entityManager.createNativeQuery("DELETE FROM users").executeUpdate();
-        entityManager.flush();
-    }
+    // 清庫由 BaseIntegrationTest.@AfterEach 統一處理（TransactionTemplate）
 
     // ==================== Helpers ====================
 

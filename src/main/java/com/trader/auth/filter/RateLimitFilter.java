@@ -145,6 +145,11 @@ public class RateLimitFilter implements Filter {
         return counters.size();
     }
 
+    /** 整合測試 @AfterEach 用，避免跨測試累積觸發 429 */
+    public void resetCounters() {
+        counters.clear();
+    }
+
     static class RateEntry {
         final long windowStart;
         final AtomicInteger count;
