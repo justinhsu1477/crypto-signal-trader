@@ -40,8 +40,15 @@ def load_cases() -> list[dict]:
     return cases
 
 
-async def run_eval(filter_prefix: str | None = None, max_cases: int | None = None) -> dict:
-    """Run all cases through the real AiSignalParser and aggregate scores."""
+async def run_eval(
+    filter_prefix: str | None = None,
+    max_cases: int | None = None,
+    delay_seconds: float = 5.0,
+) -> dict:
+    """Run all cases through the real AiSignalParser and aggregate scores.
+
+    delay_seconds: pause between API calls (default 5s = 12 RPM, safe for free tier).
+    """
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         print("ERROR: GEMINI_API_KEY not set", file=sys.stderr)
@@ -60,18 +67,20 @@ async def run_eval(filter_prefix: str | None = None, max_cases: int | None = Non
     if max_cases:
         cases = cases[:max_cases]
 
-    print(f"Running {len(cases)} cases against {config.model}...\n")
+    print(f"Running {len(cases)} cases against {config.model} (delay {delay_seconds}s)...\n")
 
     results: list[dict] = []
     total_score = 0.0
 
-    for case in cases:
+    for i, case in enumerate(cases):
+        if i > 0 and delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
         print(f"  {case['id']:30s} ", end="", flush=True)
         try:
             actual = await parser.parse(case["input"])
             score, failures = score_case(case, actual)
             status = "PASS" if score >= 0.99 else ("WARN" if score >= 0.5 else "FAIL")
-            print(f"{status} {score:.2f}")
+            print(f"{status} {score:.2f}", flush=True)
             if failures:
                 for f in failures:
                     print(f"      | {f}")
@@ -121,9 +130,11 @@ def main() -> None:
     ap.add_argument("--filter", help="Only run cases with this id prefix")
     ap.add_argument("--max", type=int, help="Only run first N cases")
     ap.add_argument("--json", help="Output results JSON to this file")
+    ap.add_argument("--delay", type=float, default=5.0,
+                    help="Seconds between API calls (free tier 15 RPM needs ~5s; default 5)")
     args = ap.parse_args()
 
-    summary = asyncio.run(run_eval(args.filter, args.max))
+    summary = asyncio.run(run_eval(args.filter, args.max, args.delay))
 
     if args.json:
         Path(args.json).write_text(
