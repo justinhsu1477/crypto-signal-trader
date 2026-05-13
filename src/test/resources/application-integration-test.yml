@@ -47,6 +47,14 @@ ai:
   api-key: ""
   default-model: gemini-2.5-flash-lite
 
+# Binance — integration test 不真打 Binance，只需要避免 @Value placeholder 解析失敗
+binance:
+  futures:
+    base-url: https://testnet.binancefuture.com
+    ws-base-url: wss://stream.binancefuture.com/private/ws
+    api-key: integration-test-fake-api-key
+    secret-key: integration-test-fake-secret-key
+
 # 停用所有外部服務
 discord:
   webhook:
