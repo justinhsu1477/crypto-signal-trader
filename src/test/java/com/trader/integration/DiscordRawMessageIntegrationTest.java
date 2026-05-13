@@ -11,6 +11,7 @@ import com.trader.trading.entity.DiscordRawMessage;
 import com.trader.trading.entity.Signal;
 import com.trader.trading.repository.DiscordRawMessageRepository;
 import com.trader.trading.repository.SignalRepository;
+import com.trader.trading.service.DiscordRawMessageCleanupTask;
 import com.trader.trading.service.DiscordRawMessageService;
 import com.trader.user.entity.User;
 import com.trader.user.entity.UserApiKey;
@@ -56,6 +57,7 @@ class DiscordRawMessageIntegrationTest extends BaseIntegrationTest {
     @Autowired private DiscordRawMessageRepository discordRawMessageRepository;
     @Autowired private SignalRepository signalRepository;
     @Autowired private DiscordRawMessageService discordRawMessageService;
+    @Autowired private DiscordRawMessageCleanupTask discordRawMessageCleanupTask;
     @Autowired private UserRepository userRepository;
     @Autowired private UserApiKeyRepository userApiKeyRepository;
     @Autowired private SubscriptionRepository subscriptionRepository;
@@ -343,6 +345,41 @@ class DiscordRawMessageIntegrationTest extends BaseIntegrationTest {
 
         assertThat(result).extracting(DiscordRawMessage::getMessageId)
                 .containsExactlyInAnyOrder("missed-1", "missed-2");
+    }
+
+    @Test
+    @DisplayName("cleanup_deletesOldButKeepsRecent: 清理任務只刪 > 180 天的列，保留近期")
+    void cleanup_deletesOldButKeepsRecent() {
+        LocalDateTime now = LocalDateTime.now();
+
+        DiscordRawMessage old = DiscordRawMessage.builder()
+                .messageId("old-msg")
+                .sourceChannelId("ch-cleanup")
+                .sourceAuthorName("陳哥")
+                .messageTimestamp(now.minusDays(200))
+                .build();
+        DiscordRawMessage middle = DiscordRawMessage.builder()
+                .messageId("middle-msg")
+                .sourceChannelId("ch-cleanup")
+                .sourceAuthorName("陳哥")
+                .messageTimestamp(now.minusDays(100))
+                .build();
+        DiscordRawMessage recent = DiscordRawMessage.builder()
+                .messageId("recent-msg")
+                .sourceChannelId("ch-cleanup")
+                .sourceAuthorName("陳哥")
+                .messageTimestamp(now)
+                .build();
+        discordRawMessageRepository.saveAllAndFlush(List.of(old, middle, recent));
+
+        discordRawMessageCleanupTask.cleanupExpiredMessages();
+        entityManager.flush();
+        entityManager.clear();
+
+        List<DiscordRawMessage> remaining = discordRawMessageRepository.findAll();
+        assertThat(remaining).hasSize(2);
+        assertThat(remaining.stream().map(DiscordRawMessage::getMessageId).toList())
+                .containsExactlyInAnyOrder("middle-msg", "recent-msg");
     }
 
     @Test

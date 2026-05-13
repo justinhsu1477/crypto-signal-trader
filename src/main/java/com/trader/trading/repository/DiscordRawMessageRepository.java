@@ -2,9 +2,11 @@ package com.trader.trading.repository;
 
 import com.trader.trading.entity.DiscordRawMessage;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,4 +35,15 @@ public interface DiscordRawMessageRepository extends JpaRepository<DiscordRawMes
             @Param("authorName") String authorName,
             @Param("since") LocalDateTime since
     );
+
+    /**
+     * 刪除 message_timestamp 早於 cutoff 的所有列（保留策略：180 天）。
+     * 由 DiscordRawMessageCleanupTask 排程呼叫。
+     *
+     * @return 被刪除的列數
+     */
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM DiscordRawMessage drm WHERE drm.messageTimestamp < :cutoff")
+    int deleteOlderThan(@Param("cutoff") LocalDateTime cutoff);
 }
