@@ -4,6 +4,7 @@
 .env.prod
 *.env.local
 discord-monitor/config.yml
+discord-monitor/config.oneclick.yml
 
 # === SSL Certificates (Cloudflare Origin Certificate) ===
 certs/
