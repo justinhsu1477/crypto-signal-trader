@@ -83,6 +83,33 @@ class TestAiParserFlow:
         self.api_client.send_signal.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_source_custom_prompt_passed_to_ai_parser(self):
+        """source.custom_prompt → 作為來源專屬 override 傳給 AI parser。"""
+        self.ai_parser.parse.return_value = {
+            "action": "ENTRY", "symbol": "BTCUSDT",
+            "side": "SHORT", "entry_price": 68500,
+        }
+        self.api_client.send_trade.return_value = ExecutionResult(
+            success=True, status_code=200, summary="OK", error="",
+        )
+
+        router = self._make_router(ai_parser=self.ai_parser)
+        await router._forward_signal(
+            "BTC 68500 做空",
+            source={
+                "message_id": "m-source",
+                "source_name": "chenge",
+                "custom_prompt": "此來源說「保護」時代表 move SL to entry。",
+            },
+        )
+
+        self.ai_parser.parse.assert_awaited_once_with(
+            "BTC 68500 做空",
+            source_prompt="此來源說「保護」時代表 move SL to entry。",
+            source_name="chenge",
+        )
+
+    @pytest.mark.asyncio
     async def test_ai_parse_close_sends_trade(self):
         """AI 成功解析 CLOSE → send_trade。"""
         self.ai_parser.parse.return_value = {

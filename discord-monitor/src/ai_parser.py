@@ -10,6 +10,7 @@ from google import genai
 from google.genai import types
 
 from .config import AiConfig
+from .prompt_builder import SignalPromptSections
 
 logger = logging.getLogger(__name__)
 
@@ -520,6 +521,9 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 - ❌ 把短線段當主要指令（短線「全平」會誤觸 close_ratio=1.0）
 """
 
+DEFAULT_PROMPT_SECTIONS = SignalPromptSections.from_legacy_prompt(SYSTEM_PROMPT)
+SYSTEM_PROMPT = DEFAULT_PROMPT_SECTIONS.render()
+
 
 # Image-mode system prompt — 在既有 SYSTEM_PROMPT 之上追加圖片專用規則。
 # 設計原則：保留所有既有 schema 規則，加上「BTC-only + 從圖優先 + 文字補充」的 hint。
@@ -551,7 +555,8 @@ class AiSignalParser:
         self._total_prompt_tokens = 0
         self._total_response_tokens = 0
         self._call_count = 0
-        self._system_prompt = SYSTEM_PROMPT  # 預設硬編碼值，gRPC 推送後動態替換
+        self._prompt_sections = DEFAULT_PROMPT_SECTIONS
+        self._system_prompt = self._prompt_sections.render()  # 預設硬編碼值，gRPC 推送後動態替換
         self._prompt_version = 0             # 0 = 使用硬編碼預設
 
         api_key = os.environ.get(config.api_key_env, "")
@@ -565,9 +570,21 @@ class AiSignalParser:
 
     def update_system_prompt(self, new_prompt: str, version: int) -> None:
         """熱更新 system prompt（由 gRPC config push 觸發）。"""
-        self._system_prompt = new_prompt
+        self._prompt_sections = SignalPromptSections.from_legacy_prompt(new_prompt)
+        self._system_prompt = self._prompt_sections.render()
         self._prompt_version = version
         logger.info("System prompt 已更新: v%d (%d chars)", version, len(new_prompt))
+
+    def build_system_prompt(
+        self,
+        source_prompt: str | None = None,
+        source_name: str | None = None,
+    ) -> str:
+        """Build the effective parser prompt, optionally with source override."""
+        return self._prompt_sections.render(
+            source_override=source_prompt,
+            source_name=source_name,
+        )
 
     @property
     def prompt_version(self) -> int:
@@ -582,7 +599,12 @@ class AiSignalParser:
             "total_response_tokens": self._total_response_tokens,
         }
 
-    async def parse(self, content: str) -> dict | list[dict] | None:
+    async def parse(
+        self,
+        content: str,
+        source_prompt: str | None = None,
+        source_name: str | None = None,
+    ) -> dict | list[dict] | None:
         """Parse a Discord signal message into a structured trade request.
 
         Retry strategy:
@@ -604,7 +626,7 @@ class AiSignalParser:
                     model=self.config.model,
                     contents=content,
                     config=types.GenerateContentConfig(
-                        system_instruction=self._system_prompt,
+                        system_instruction=self.build_system_prompt(source_prompt, source_name),
                         response_mime_type="application/json",
                         temperature=0.0,
                     ),
@@ -703,6 +725,8 @@ class AiSignalParser:
         text_content: str,
         image_bytes: bytes,
         mime_type: str,
+        source_prompt: str | None = None,
+        source_name: str | None = None,
     ) -> dict | list[dict] | None:
         """Parse a Discord message that contains an image (with optional accompanying text).
 
@@ -730,7 +754,10 @@ class AiSignalParser:
         contents = [text_part, image_part]
 
         # 圖片模式 system prompt = 文字 prompt + 圖片專用規則
-        image_system_prompt = self._system_prompt + IMAGE_SYSTEM_PROMPT_SUFFIX
+        image_system_prompt = (
+            self.build_system_prompt(source_prompt, source_name)
+            + IMAGE_SYSTEM_PROMPT_SUFFIX
+        )
 
         last_error = None
         for attempt in range(self.config.max_retries):

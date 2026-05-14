@@ -159,6 +159,35 @@ class TestImageFirstRouting:
         assert "BTC市价82600-83000" in call_kwargs.get("text_content", "")
 
     @pytest.mark.asyncio
+    async def test_image_path_passes_source_custom_prompt(self):
+        """image path 也要帶 per-source custom_prompt，避免圖訊號吃不到來源方言。"""
+        router = _make_router(image_enabled=True, image_dry_run=True, ai_parser=self.ai_parser)
+        router.source_metadata_map["ch_chen_ge"] = {
+            "name": "chenge",
+            "display_name": "陳哥",
+            "trade_mode": "AUTO",
+            "risk_multiplier": 1.0,
+            "custom_prompt": "圖片中的藍色框為 entry，紅色框為 stop loss。",
+        }
+        msg = _make_msg(
+            content="看圖",
+            attachments=[{
+                "id": "a1", "filename": "signal.png",
+                "url": "https://cdn.discordapp.com/x.png",
+                "content_type": "image/png", "size": 200000,
+            }],
+        )
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "abc123"),
+        )):
+            await router.handle_message(msg)
+
+        call_kwargs = self.ai_parser.parse_with_image.call_args.kwargs
+        assert call_kwargs["source_prompt"] == "圖片中的藍色框為 entry，紅色框為 stop loss。"
+        assert call_kwargs["source_name"] == "chenge"
+
+    @pytest.mark.asyncio
     async def test_image_path_disabled_falls_back_to_text(self):
         """image_signal.enabled=false → 即使有圖也走原文字流（=現況）。"""
         self.ai_parser.parse = AsyncMock(return_value={
