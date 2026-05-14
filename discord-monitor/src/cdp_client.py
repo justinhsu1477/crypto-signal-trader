@@ -125,7 +125,7 @@ INJECT_JS = """
         return {
             id: msg.id,
             channel_id: msg.channel_id,
-            guild_id: event.guildId || msg.guild_id || '',
+            guild_id: event.guildId || event.guild_id || msg.guild_id || '',
             author_id: msg.author ? msg.author.id : '',
             author_name: msg.author ? msg.author.username : '',
             content: msg.content || '',
@@ -177,7 +177,12 @@ INJECT_JS = """
         };
     }
 
+    window.__signalMonitorSeenKeys = window.__signalMonitorSeenKeys || {};
+
     function enqueueData(data) {
+        var key = (data.id || '') + ':' + (data.is_edit ? (data.edit_revision || 'edit') : 'create');
+        if (key && window.__signalMonitorSeenKeys[key]) return;
+        if (key) window.__signalMonitorSeenKeys[key] = Date.now();
         window.__signalMonitorQueue.push(JSON.stringify(data));
         // Keep queue bounded
         if (window.__signalMonitorQueue.length > 100) {
@@ -185,33 +190,81 @@ INJECT_JS = """
         }
     }
 
-    // Subscribe to MESSAGE_CREATE events
-    Dispatcher.subscribe('MESSAGE_CREATE', function(event) {
-        try {
-            var msg = event.message || event;
-            if (!msg.id || !msg.channel_id) return;
-            enqueueData(buildMessageData(msg, event));
-        } catch(e) {
-            // silently ignore
-        }
-    });
-
-    // Subscribe to MESSAGE_UPDATE events
-    // Scenario: 陳哥 posts placeholder, then edits to add full signal.
-    // signal_router 會用 is_edit 旗標 + edit_revision 後綴 message_id 避開 L1 dedup。
-    Dispatcher.subscribe('MESSAGE_UPDATE', function(event) {
-        try {
-            var msg = event.message || event;
-            if (!msg.id || !msg.channel_id) return;
-            var data = buildMessageData(msg, event);
+    function handleAction(event, forcedType) {
+        var eventType = forcedType || event.type || event.t || '';
+        if (eventType !== 'MESSAGE_CREATE' && eventType !== 'MESSAGE_UPDATE') return;
+        var msg = event.message || event;
+        if (!msg.id || !msg.channel_id) return;
+        var data = buildMessageData(msg, event);
+        if (eventType === 'MESSAGE_UPDATE') {
             // 時間優先取 edited_timestamp（如果 Discord 有給），否則退回原 timestamp
             data.timestamp = msg.edited_timestamp || msg.timestamp || '';
             data.is_edit = true;
             // 用 epoch ms 做 revision counter，signal_router 取末 6 碼當 suffix
             data.edit_revision = Date.now();
-            enqueueData(data);
-        } catch(e) {
-            // silently ignore
+        }
+        enqueueData(data);
+    }
+
+    // Discord can expose multiple Dispatcher-like objects. Newer Electron builds
+    // dispatch Gateway actions through a different candidate than the first
+    // generic subscribe+dispatch match, so attach to every valid candidate and
+    // dedup by message id.
+    var allDispatchers = [];
+    var seenDispatchers = [];
+    function addDispatcher(candidate) {
+        if (!candidate || typeof candidate !== 'object') return;
+        if (typeof candidate.subscribe !== 'function' || typeof candidate.dispatch !== 'function') return;
+        if (seenDispatchers.indexOf(candidate) !== -1) return;
+        seenDispatchers.push(candidate);
+        allDispatchers.push(candidate);
+    }
+
+    for (var rr = 0; rr < requires.length; rr++) {
+        var req2 = requires[rr];
+        try {
+            var known = req2(73153);
+            addDispatcher(known && known.h);
+        } catch(e) {}
+        try {
+            Object.keys(req2.c || {}).forEach(function(k) {
+                var mod = req2.c[k];
+                if (!mod || !mod.exports) return;
+                var exp = mod.exports;
+                addDispatcher(exp);
+                addDispatcher(exp.default);
+                for (var p in exp) {
+                    try { addDispatcher(exp[p]); } catch(e2) {}
+                }
+            });
+        } catch(e) {}
+    }
+    if (allDispatchers.length === 0) allDispatchers.push(Dispatcher);
+    window.__signalMonitorDispatcherCount = allDispatchers.length;
+
+    allDispatchers.forEach(function(dispatcher) {
+        // Subscribe path for older Discord builds.
+        try {
+            dispatcher.subscribe('MESSAGE_CREATE', function(event) {
+                try { handleAction(event, 'MESSAGE_CREATE'); } catch(e) {}
+            });
+        } catch(e) {}
+
+        try {
+            dispatcher.subscribe('MESSAGE_UPDATE', function(event) {
+                try { handleAction(event, 'MESSAGE_UPDATE'); } catch(e) {}
+            });
+        } catch(e) {}
+
+        // Dispatch wrapper path for newer builds where the active Dispatcher is
+        // not the first candidate selected by the old hook.
+        if (!dispatcher.__signalMonitorDispatchWrapped) {
+            var originalDispatch = dispatcher.dispatch;
+            dispatcher.__signalMonitorDispatchWrapped = true;
+            dispatcher.dispatch = function(action) {
+                try { handleAction(action); } catch(e) {}
+                return originalDispatch.apply(this, arguments);
+            };
         }
     });
 
