@@ -77,3 +77,6 @@ line:
 
 email:
   enabled: false
+  # 整合測試多個 test class 共用 test@hookfi.com，會超過 prod 預設 5/hour 限制 → 429。
+  max-sends-per-hour: 10000
+  max-reset-per-quarter-hour: 10000
