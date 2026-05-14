@@ -66,7 +66,7 @@ public class DiscordRawMessageService {
                 .sourceGuildId(req.getGuildId())
                 .sourceAuthorName(req.getAuthorName())
                 .messageTimestamp(req.getMessageTimestamp() != null
-                        ? req.getMessageTimestamp()
+                        ? req.getMessageTimestamp().atZoneSameInstant(AppConstants.ZONE_ID).toLocalDateTime()
                         : LocalDateTime.now(AppConstants.ZONE_ID))
                 .content(req.getContent())
                 .hasAttachments(Boolean.TRUE.equals(req.getHasAttachments()))

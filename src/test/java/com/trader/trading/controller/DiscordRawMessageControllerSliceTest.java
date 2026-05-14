@@ -96,7 +96,7 @@ class DiscordRawMessageControllerSliceTest {
                   "channel_name": "vip",
                   "guild_id": "g-1",
                   "author_name": "陳哥",
-                  "message_timestamp": "2026-05-11T10:00:00",
+                  "message_timestamp": "2026-05-11T10:00:00Z",
                   "content": "BTC 多單 60000",
                   "has_attachments": false,
                   "attachment_count": 0,
