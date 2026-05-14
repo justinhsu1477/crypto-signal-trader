@@ -45,14 +45,15 @@ class NlqIntegrationTest extends BaseIntegrationTest {
 
         // 插入測試 trades — executeUpdate 需 active tx，@BeforeEach 不會被 Spring tx 攔
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            // simulated 是 NOT NULL（Hibernate 從 entity 生 schema 沒套 DEFAULT），需顯式給值
             entityManager.createNativeQuery("""
                     INSERT INTO trades (trade_id, user_id, symbol, side, entry_price, exit_price,
-                        net_profit, status, exit_reason, entry_time, exit_time, created_at)
+                        net_profit, status, exit_reason, entry_time, exit_time, created_at, simulated)
                     VALUES
-                        ('t1', :userId, 'BTCUSDT', 'LONG', 95000, 96000, 100.0, 'CLOSED', 'SIGNAL_CLOSE', NOW() - INTERVAL '1 day', NOW(), NOW()),
-                        ('t2', :userId, 'ETHUSDT', 'SHORT', 3500, 3400, 50.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '2 days', NOW(), NOW()),
-                        ('t3', :userId, 'BTCUSDT', 'LONG', 94000, 93000, -80.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '3 days', NOW(), NOW()),
-                        ('t4', 'other-user', 'BTCUSDT', 'LONG', 90000, 91000, 200.0, 'CLOSED', 'SIGNAL_CLOSE', NOW(), NOW(), NOW())
+                        ('t1', :userId, 'BTCUSDT', 'LONG', 95000, 96000, 100.0, 'CLOSED', 'SIGNAL_CLOSE', NOW() - INTERVAL '1 day', NOW(), NOW(), false),
+                        ('t2', :userId, 'ETHUSDT', 'SHORT', 3500, 3400, 50.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '2 days', NOW(), NOW(), false),
+                        ('t3', :userId, 'BTCUSDT', 'LONG', 94000, 93000, -80.0, 'CLOSED', 'STOP_LOSS', NOW() - INTERVAL '3 days', NOW(), NOW(), false),
+                        ('t4', 'other-user', 'BTCUSDT', 'LONG', 90000, 91000, 200.0, 'CLOSED', 'SIGNAL_CLOSE', NOW(), NOW(), NOW(), false)
                     """.trim())
                     .setParameter("userId", userId)
                     .executeUpdate();
