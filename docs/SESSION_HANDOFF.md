@@ -111,6 +111,24 @@ Python discord-monitor                trading-api (Spring Boot, Java 17)
 ### 🚨 `LocalDateTime.now()` Without Tz Across Services
 找 service 程式碼，看是否有混用 `now()` vs `now(ZoneId)`。**統一用 `AppConstants.ZONE_ID`**。
 
+### 🚨 Integration Test 多層 cascade（2026-05-14 修完 11 個 bug 才綠）
+`./gradlew integrationTest` 全 fail，但表象一個個解才暴露下一個。Pattern：
+
+| 表象 | 根因 | 修法 |
+|---|---|---|
+| `PropertyPlaceholderHelper IllegalArgumentException` | `application-integration-test.yml` 沒繼承 prod yml，缺 `binance.futures.base-url` | yml 補齊 placeholder |
+| `TransactionRequiredException` at `@AfterEach` | Spring `TransactionalTestExecutionListener` 只攔 `@Test`，**不攔 lifecycle hook** | 用 `new TransactionTemplate(transactionManager).executeWithoutResult(...)` |
+| `CannotCreateTransactionException → ConnectException` 跨 test class | `@Container static` 每 class start/stop，DataSource URL 鎖在舊 port | **Singleton Container Pattern**：拿掉 `@Container`/`@Testcontainers`，static block 啟一次，Ryuk 收尾 |
+| `Login 200 → 403` | `EmailNotVerifiedException`（prod feature），register 後 `email_verified=false` | `registerAndLogin()` 補 `UPDATE users SET email_verified=true` |
+| `Login 200 → "no cookie"` | Cookie 名 `ACCESS_TOKEN`（uppercase）不是 `accessToken` | 改測試讀正確名 |
+| `Status 200 → 429` | `RateLimitFilter` in-memory ConcurrentHashMap 跨測試累積，`@AfterEach` reset 不可靠 | `@Profile("!integration-test")` 直接停用 filter |
+| `Status COMPLETED → SKIPPED` (broadcast) | `SignalDeduplicationService` 5-min memory cache 跨測試殘留 | yml 設 `binance.risk.dedup-enabled=false`（同 dev profile） |
+| `TransactionRequiredException` on `entityManager.flush()` in `@Test` | flush 需 active tx，但 saveAndFlush 已 flush，redundant | 拿掉 flush，留 clear（純記憶體操作） |
+| `null value in column simulated violates NOT NULL` | Hibernate `ddl-auto=create-drop` 從 entity 生 schema，Java field default 不翻成 SQL DEFAULT | INSERT 顯式給 `simulated=false` |
+| `EmailVerification 429` | `email.max-sends-per-hour=5`，跨 test class 共用 `test@hookfi.com` 超量 | yml 設 `email.max-sends-per-hour=10000`（test 不真送 email） |
+
+**教訓**：第一個錯誤修掉只暴露下一個。整套 integration test cascade fail 時，**一次只能修最表層那個**，然後 push 看下一層暴露什麼。
+
 ---
 
 ## 5. Debug Cheat Sheet
