@@ -193,6 +193,8 @@ class SignalRouter:
             text_content=text_content,
             image_bytes=image_bytes,
             mime_type=mime,
+            source_prompt=source.get("custom_prompt"),
+            source_name=source.get("source_name") or source.get("display_name"),
         )
         if not parsed:
             logger.warning("image path: parse failed for msg=%s", message_id)
@@ -344,6 +346,7 @@ class SignalRouter:
                 image_source["display_name"] = metadata.get("display_name", "")
                 image_source["trade_mode"] = metadata.get("trade_mode", "AUTO")
                 image_source["risk_multiplier"] = metadata.get("risk_multiplier", 1.0)
+                image_source["custom_prompt"] = metadata.get("custom_prompt", "")
 
             logger.info(
                 "image path triggered: #%s @%s msg=%s (text=%r)",
@@ -463,6 +466,7 @@ class SignalRouter:
             source["display_name"] = metadata.get("display_name", "")
             source["trade_mode"] = metadata.get("trade_mode", "AUTO")
             source["risk_multiplier"] = metadata.get("risk_multiplier", 1.0)
+            source["custom_prompt"] = metadata.get("custom_prompt", "")
 
         if self.ai_parser:
             # AI 模式：所有訊息都丟 AI 判斷，由 AI 決定 action
@@ -529,7 +533,12 @@ class SignalRouter:
         """
         # === Agent 1: AI Signal Parser (primary) ===
         if self.ai_parser:
-            parsed = await self.ai_parser.parse(content)
+            source_for_prompt = source or {}
+            parsed = await self.ai_parser.parse(
+                content,
+                source_prompt=source_for_prompt.get("custom_prompt"),
+                source_name=source_for_prompt.get("source_name") or source_for_prompt.get("display_name"),
+            )
 
             # 複合動作（list）— 例如「止盈50%做成本保護」回 [CLOSE, MOVE_SL]
             # 各子動作獨立送 API，用 suffixed message_id 避開 Java L1 dedup
