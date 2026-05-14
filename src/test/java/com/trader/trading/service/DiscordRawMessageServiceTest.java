@@ -12,6 +12,7 @@ import org.mockito.ArgumentCaptor;
 
 import com.trader.shared.config.AppConstants;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,7 +45,7 @@ class DiscordRawMessageServiceTest {
         req.setChannelName("vip");
         req.setGuildId("g-1");
         req.setAuthorName("陳哥");
-        req.setMessageTimestamp(LocalDateTime.now());
+        req.setMessageTimestamp(OffsetDateTime.now());
         req.setContent("BTC 多單 進場 60000");
         req.setHasAttachments(false);
         req.setAttachmentCount(0);
