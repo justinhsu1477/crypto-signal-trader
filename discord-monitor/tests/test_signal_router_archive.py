@@ -118,6 +118,30 @@ class TestArchiveCalls:
         assert last_payload["parser_skipped_reason"] is None
 
     @pytest.mark.asyncio
+    async def test_archive_marks_AI_PARSE_FAILED_when_ai_returns_none(self):
+        """AI parse 回 None → regex fallback，archive 帶 parser_skipped_reason=AI_PARSE_FAILED.
+
+        Regression test：之前 None 路徑 archive 寫成 (parser_action=None, skip_reason=None)，
+        跟「壓根沒進 parser」混在一起。漏單偵測 SQL 無法區分這兩種狀態。
+        """
+        router = self._make_router()
+        # AI parse 失敗 → 返回 None
+        self.ai_parser.parse.return_value = None
+        # regex fallback 也送（避免 fallback path 內部炸）
+        self.api_client.send_signal.return_value = MagicMock(
+            success=False, status_code=500, error="x", summary="",
+        )
+
+        msg = _make_msg(content="一些 AI 無法 parse 的雜訊")
+        await router.handle_message(msg)
+        await self._wait_for_tasks()
+
+        assert self.api_client.send_discord_message.await_count >= 1
+        last_payload = self.api_client.send_discord_message.await_args.args[0]
+        assert last_payload["parser_action"] is None
+        assert last_payload["parser_skipped_reason"] == "AI_PARSE_FAILED"
+
+    @pytest.mark.asyncio
     async def test_archive_called_with_DEDUP_when_message_id_seen(self):
         """同 message_id 第二次 → archive 帶 parser_skipped_reason=DEDUP_MESSAGE_ID."""
         router = self._make_router()

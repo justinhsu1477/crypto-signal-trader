@@ -473,7 +473,10 @@ class SignalRouter:
                 content[:120].replace("\n", " | "),
             )
             resolved_action = await self._forward_signal(content, source=source)
-            self._archive_message_async(msg, parser_action=resolved_action, parser_skipped_reason=None)
+            # AI 失敗走 regex fallback 時 _forward_signal 回 None。明確標 skip_reason
+            # 才能跟「壓根沒進 parser」區分（後者 parser_action / skip_reason 都 null）。
+            skip_reason = None if resolved_action is not None else "AI_PARSE_FAILED"
+            self._archive_message_async(msg, parser_action=resolved_action, parser_skipped_reason=skip_reason)
         else:
             # Regex fallback 模式：保留 emoji/keyword 過濾，避免閒聊打 API
             signal_type = self._identify_type(content)
