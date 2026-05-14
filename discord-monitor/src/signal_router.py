@@ -310,6 +310,15 @@ class SignalRouter:
 
         # Guild filter
         if self.guild_ids and guild_id not in self.guild_ids:
+            logger.warning(
+                "GUILD_FILTER_DROP channel=%s guild=%r expected=%s author=%s msg_id=%s content=%r",
+                channel_id,
+                guild_id,
+                self.guild_ids,
+                author_name,
+                message_id,
+                (msg.get("content") or "")[:120],
+            )
             return
 
         # Author filter

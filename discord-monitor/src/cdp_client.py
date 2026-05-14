@@ -121,11 +121,19 @@ INJECT_JS = """
     // Build a Python-side data dict from a Discord internal message object.
     // 共用 builder：MESSAGE_CREATE / MESSAGE_UPDATE 共用同一份欄位 schema，差異
     // 僅在後續 push 時把 is_edit / edit_revision 加上去（避免 30+ 行重複）。
+    function currentGuildIdFromLocation() {
+        try {
+            var match = (window.location.pathname || '').match(/^\\/channels\\/([^\\/]+)\\//);
+            if (match && match[1] && match[1] !== '@me') return match[1];
+        } catch(e) {}
+        return '';
+    }
+
     function buildMessageData(msg, event) {
         return {
             id: msg.id,
             channel_id: msg.channel_id,
-            guild_id: event.guildId || event.guild_id || msg.guild_id || '',
+            guild_id: event.guildId || event.guild_id || msg.guild_id || currentGuildIdFromLocation() || '',
             author_id: msg.author ? msg.author.id : '',
             author_name: msg.author ? msg.author.username : '',
             content: msg.content || '',
