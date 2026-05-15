@@ -83,28 +83,32 @@ public class CustomPromptValidator {
                     String.format("custom_prompt 過長：%d 字元，上限 %d", trimmed.length(), MAX_LENGTH));
         }
 
-        // 4. Section marker 禁止
-        String lower = trimmed.toLowerCase();
+        // 4. 比對時用「全部空白移除」版本 — 阻 NBSP / em-space / 中文全形空白等
+        //    替代 space 把關鍵字切開繞過 contains 比對。
+        //    （回傳值仍保留原 trimmed 不變，僅比對用的中間版本被去空白）
+        String forCompare = stripAllWhitespace(trimmed).toLowerCase();
+
+        // 5. Section marker 禁止
         for (String marker : FORBIDDEN_MARKERS) {
-            if (lower.contains(marker.toLowerCase())) {
+            if (forCompare.contains(stripAllWhitespace(marker).toLowerCase())) {
                 throw new IllegalArgumentException(
                         "custom_prompt 含禁止的 section marker：" + marker
                                 + "（會破壞 prompt 結構切割，請改用一般文字描述）");
             }
         }
 
-        // 5. Prompt injection 禁止
+        // 6. Prompt injection 禁止
         for (String phrase : FORBIDDEN_PHRASES) {
-            if (lower.contains(phrase.toLowerCase())) {
+            if (forCompare.contains(stripAllWhitespace(phrase).toLowerCase())) {
                 throw new IllegalArgumentException(
                         "custom_prompt 含疑似 prompt injection 樣本：「" + phrase + "」"
                                 + "（不允許指令型用語）");
             }
         }
 
-        // 6. Schema 改動禁止
+        // 7. Schema 改動禁止
         for (String verb : FORBIDDEN_SCHEMA_VERBS) {
-            if (lower.contains(verb.toLowerCase())) {
+            if (forCompare.contains(stripAllWhitespace(verb).toLowerCase())) {
                 throw new IllegalArgumentException(
                         "custom_prompt 試圖修改 schema：「" + verb + "」"
                                 + "（schema 是不可變約定，請走 parser release）");
@@ -112,6 +116,15 @@ public class CustomPromptValidator {
         }
 
         return trimmed;
+    }
+
+    /**
+     * 移除所有空白字元（含 NBSP / em-space / 中文全形 / ideographic space 等變體），
+     * 比對 FORBIDDEN_* 用。攻擊向量：`忽 略以上` 字面看像「忽略以上」但 contains 不命中；
+     * 去掉所有空白後 → `忽略以上`，contains 比對 `忽略以上`（也去掉空白）→ 命中。
+     */
+    private static String stripAllWhitespace(String s) {
+        return s.replaceAll("[\\s\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000]+", "");
     }
 
     /**
