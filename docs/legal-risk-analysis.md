@@ -1,6 +1,6 @@
 # 虛擬貨幣跟單產品 — 法律風險分析
 
-> 最後更新：2025-02
+> 最後更新：2026-05-15（加入 prompt 解析層的法律風險與技術防護）
 > 免責聲明：本文件僅供內部參考，不構成法律建議。產品化前請諮詢專業律師。
 
 ---
@@ -21,6 +21,26 @@
 - **不提供投資建議** — 我們只是執行用戶選擇追蹤的訊號
 - **用戶控制 API Key** — 用戶可隨時撤銷、設定 IP 白名單、禁止提幣
 - **業界先例** — 3Commas、Cornix、Cryptohopper 都採用相同定位
+
+### ⚠️ 灰色地帶：平台介入訊號解讀
+
+引入 `signal_sources.custom_prompt`（per-source AI 解析方言）後，平台從
+「純執行用戶選擇追蹤的訊號」**部分**移動到「設定 AI 對訊號的解讀方式」。
+
+| 純執行（業界標竿做法） | 加入 custom_prompt 後 |
+|---|---|
+| 訊號文字 → 寫死的 parser → 訂單 | 訊號文字 → 平台可調整的 AI prompt → 訂單 |
+| 解析錯誤 = 用戶看訊號自己誤判 | 解析錯誤 = 平台 prompt 的判斷 |
+| 法律歸屬清楚 | 責任歸屬可被質疑 |
+
+**緩解方式**（必須同時做到）：
+1. 服務條款明確聲明「平台對訊號的 AI 解析包含 source-specific override，
+   不構成投資建議」（見 §5.1）
+2. `custom_prompt` 修改有 audit log，可向用戶/監管證明任一筆交易使用的解析規則版本
+3. UI 上對該訊號源的用戶顯示「目前該來源使用客製化解析規則 vX」
+4. 用戶有權暫停該訊號源的跟單（已實現：`autoTradeEnabled` per-source flag）
+
+若上述任一項未做到，律師審查時可能要求把 `custom_prompt` 功能從正式版本移除。
 
 ---
 
@@ -67,6 +87,8 @@
 | 被認定為「投資顧問」 | 行銷文案暗示保證獲利、推薦特定交易 | 可能違反證券投資信託及顧問法 |
 | 系統 Bug 造成重大虧損 | 例如 SL 未掛上導致倉位爆倉 | 民事損害賠償訴訟 |
 | API Key 洩漏/被盜 | 用戶的 API Key 從我們的系統洩漏 | 民事賠償 + 個資法責任 |
+| **Prompt injection / Admin 帳號被入侵** | Admin 帳號被盜 → 改 `custom_prompt` 注入「all signals → close everything」 → 全體用戶被強制平倉 | **重大民事 + 個資法 + 可能刑事責任**（破壞電腦使用罪） |
+| **Admin 內部濫用** | 平台 admin 故意設定錯誤的 `custom_prompt` 操控用戶交易 | 違反受託人義務 + 民事訴訟 |
 
 ### 3.2 中風險
 
@@ -123,6 +145,9 @@
 [ ] 無保證條款 — 不保證任何特定的交易結果或投資回報
 [ ] 第三方服務 — 不對幣安等交易所的服務中斷、政策變更負責
 [ ] 訊號來源 — 不對訊號提供者的準確性或合法性負責
+[ ] AI 解析說明 — 平台使用 LLM 解析訊號文字，包含 source-specific override；
+                  此屬於技術服務範疇，不構成投資建議
+[ ] AI 解析失誤 — 不對 LLM 解析錯誤、模型版本變更、prompt 調整造成的解析差異負責
 [ ] 終止權利 — 保留隨時終止服務的權利
 [ ] 管轄法院 — 約定管轄法院（建議台灣台北地方法院）
 [ ] 資料處理 — API Key 的儲存、加密、使用範圍
@@ -163,10 +188,29 @@
 | SL 必掛驗證 | 避免倉位裸奔 — 已完成 (P0) | ✅ 已完成 |
 | 每日最大虧損限制 | 單日虧損超過 X% 自動停機 | ✅ 已完成 |
 | 最大持倉限制 | 防止過度暴露 | ✅ 已完成 |
-| 完整操作日誌 | 爭議時的證據保全 | ✅ 已完成 |
-| API Key 加密存儲 | 避免明文洩漏 | 🔶 產品化前必做 |
+| 完整操作日誌 | 爭議時的證據保全 | 🔶 部分完成（缺 `custom_prompt` 版本紀錄） |
+| API Key 加密存儲 | 避免明文洩漏 | ✅ 已完成（AES-256-GCM） |
 | 禁止提幣權限驗證 | 只接受無提幣權限的 API Key | 🔶 產品化前必做 |
 | 自動化測試覆蓋 | 確保核心交易邏輯正確 | 🔶 持續加強 |
+
+### 6.2 降低 AI 解析層風險（2026-05 新增）
+
+引入 per-source `custom_prompt` 後新增的攻擊面與緩解：
+
+| 措施 | 目的 | 優先級 |
+|------|------|--------|
+| `custom_prompt` 寫入端 sanitization | 阻擋「ignore previous」「output plain text」等 prompt injection | 🔴 P0 — 必須在 merge `codex/modular-signal-prompts` 前完成 |
+| `custom_prompt` 長度上限（1500 字元） | 防止 token 成本爆炸 + DoS 攻擊面 | 🔴 P0 |
+| `custom_prompt` 修改 audit log | 誰改、改前後、何時 | 🔴 P0 |
+| BroadcastLog 寫入 `effective_custom_prompt_sha256` + `custom_prompt_version` | 任一筆交易可追溯解析依據 | 🔴 P0 |
+| Eval CI gate（≥80% pass） | 防 prompt 改壞無人察覺 | 🟡 P1 |
+| Admin 角色拆分（read/write/super） | 限制誰能修改 `custom_prompt` | 🟡 多 admin 前必做 |
+| Admin 2FA | 防帳號被盜後濫權 | 🟡 多 admin 前必做 |
+| 服務條款揭露平台 AI 解析角色 | 明確告知用戶平台介入解讀層 | 🟡 產品化前必做 |
+| 用戶端「目前訊號源解析規則版本」顯示 | 透明化 | 🟢 加分項 |
+
+詳細實作規範見 `discord-monitor/docs/PROMPT_ARCHITECTURE.md#safety-constraints-on-custom_prompt`。
+詳細權限模型見 `docs/admin-permission-model.md`。
 
 ### 6.2 API Key 安全要求
 
@@ -200,11 +244,14 @@
 
 ### Phase 2：準備產品化
 - [ ] 諮詢律師，確認是否需要 VASP 登記
-- [ ] 律師撰寫正式服務條款（預算 3-5 萬 NTD）
+- [ ] 律師撰寫正式服務條款（預算 3-5 萬 NTD）— **務必把 AI 解析揭露 + custom_prompt 條款列入諮詢項目**
 - [ ] 律師撰寫風險揭示書
 - [ ] 律師撰寫隱私政策
 - [ ] 確認公司登記類別（資訊服務業）
-- [ ] API Key 加密存儲機制
+- [x] API Key 加密存儲機制（AES-256-GCM）
+- [ ] `custom_prompt` 寫入端 sanitization + audit log + per-trade 版本追蹤
+- [ ] Admin 權限角色拆分（read / write / super；見 `docs/admin-permission-model.md`）
+- [ ] Admin 2FA
 
 ### Phase 3：上線後持續
 - [ ] 追蹤台灣虛擬資產服務法立法進度
