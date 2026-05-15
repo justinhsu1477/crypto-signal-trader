@@ -183,6 +183,9 @@ class GrpcConfigClient:
                         "trade_mode": src.trade_mode,
                         "risk_multiplier": src.risk_multiplier,
                         "custom_prompt": src.custom_prompt,
+                        # Phase: signals 表 audit chain 用 — Python 在 parse 時 snapshot
+                        # 這個值，跟著 trade payload 送回 Java 寫進 signals.custom_prompt_version
+                        "custom_prompt_version": src.custom_prompt_version,
                     }
             self.signal_router.source_metadata_map = source_map
             logger.info("🔄 source_metadata_map 已更新: %d 個來源", len(source_map))

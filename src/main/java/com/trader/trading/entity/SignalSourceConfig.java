@@ -80,10 +80,25 @@ public class SignalSourceConfig {
     @Builder.Default
     private double riskMultiplier = 1.0;
 
-    /** AI 補充指令（Phase 2 用，目前預留） */
+    /** AI 補充指令（per-source 解析方言） — 寫入規範見 PROMPT_ARCHITECTURE.md */
     @Column(name = "custom_prompt", columnDefinition = "TEXT", nullable = false)
     @Builder.Default
     private String customPrompt = "";
+
+    /** custom_prompt 單調遞增版本號；BroadcastLog 可記錄這個值做稽核鏈 */
+    @Column(name = "custom_prompt_version", nullable = false)
+    @Builder.Default
+    private int customPromptVersion = 0;
+
+    /** custom_prompt 內容的 SHA-256 前 16 hex（null = 從未寫過 / 空字串） */
+    @Column(name = "custom_prompt_sha256", length = 16)
+    private String customPromptSha256;
+
+    @Column(name = "custom_prompt_updated_at")
+    private LocalDateTime customPromptUpdatedAt;
+
+    @Column(name = "custom_prompt_updated_by", length = 64)
+    private String customPromptUpdatedBy;
 
     /** 模擬交易開關（僅 SHADOW 模式有效） */
     @Column(name = "paper_trading_enabled", nullable = false)

@@ -75,24 +75,90 @@ matches.
 ## Limitations
 
 - Requires manual `GEMINI_API_KEY` — no mock mode (test the real parser).
-- No CI integration yet — runner is local-only. See "CI gate (future)" below.
 - Each run costs Gemini tokens; budget accordingly when iterating prompts.
 - Cases are hand-curated; coverage is best-effort, not exhaustive.
 
-## CI gate (future)
+## CI gate
 
-Add to `.github/workflows/eval.yml` for automated regression catching:
+The eval runner is the only thing that can catch prompt regressions before
+production. It MUST run automatically on the changes that can break it.
+
+### When eval runs in CI
+
+Triggered on any PR that touches:
+
+- `discord-monitor/src/ai_parser.py`
+- `discord-monitor/src/prompt_builder.py`
+- `discord-monitor/eval/cases.jsonl`
+- Any Java file under `src/main/java/com/trader/trading/service/SignalSourceService.java`
+  (since this writes `custom_prompt` that the parser consumes)
+- Any migration that touches `signal_sources` schema
+
+### Workflow
+
+`.github/workflows/eval.yml`:
 
 ```yaml
-- name: Run eval harness
-  run: |
-    cd discord-monitor
-    python -m eval.runner
-  env:
-    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+name: Eval (Signal Parser)
+
+on:
+  pull_request:
+    paths:
+      - 'discord-monitor/src/ai_parser.py'
+      - 'discord-monitor/src/prompt_builder.py'
+      - 'discord-monitor/eval/cases.jsonl'
+      - 'src/main/java/com/trader/trading/service/SignalSourceService.java'
+      - 'src/main/resources/db/migration/**signal_source**'
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+      - run: pip install -r discord-monitor/requirements.txt
+      - name: Run eval harness
+        working-directory: discord-monitor
+        run: python -m eval.runner --json eval-result.json
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        with: { name: eval-result, path: discord-monitor/eval-result.json }
 ```
 
-Threshold: overall >= 80% to pass.
+### Pass criteria
+
+| Criterion | Threshold | Hard / Soft |
+|---|---|---|
+| Overall score | ≥ 80% | Hard fail (exit 1) |
+| Real-message subset (`category` starts with `messy_*`) | ≥ 90% | Soft (warn on PR) |
+| Compound action category | 100% (action sequence must match) | Hard |
+| Action type accuracy across all cases | ≥ 95% | Hard |
+
+### When eval fails
+
+1. **Do not merge** until score recovers.
+2. If the prompt change is intentional and old cases are no longer valid:
+   update `cases.jsonl` in the same PR with a justification in the PR
+   description, then re-run.
+3. If the change is to `signal_sources.custom_prompt` for a single source:
+   add **at least one new case in `category: messy_<source_slug>`** that
+   exercises the new override.
+
+### Cost
+
+Each full run = ~30 Gemini Flash calls ≈ $0.01–0.05 depending on case length.
+Budget ≈ $10/month for typical PR volume.
+
+### Local-only debugging
+
+The runner stays usable locally without CI:
+
+```bash
+cd discord-monitor
+python -m eval.runner --filter compound  # iterate fast on one category
+```
 
 ## Running the scorer tests
 

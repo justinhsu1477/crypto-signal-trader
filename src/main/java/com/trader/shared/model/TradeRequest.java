@@ -55,4 +55,19 @@ public class TradeRequest {
 
     @JsonProperty("position_size_modifier")
     private Double positionSizeModifier;  // 倉位修飾（0.5=半倉/輕倉, null=預設100%）
+
+    /**
+     * Python 解析此訊號時 snapshot 的 signal_sources.custom_prompt_version。
+     * null = Python 端沒帶（舊版本或 regex fallback path），signals 表也留 null。
+     */
+    @JsonProperty("effective_custom_prompt_version")
+    private Integer effectiveCustomPromptVersion;
+
+    /**
+     * Python 端對「實際送進 Gemini 的 custom_prompt 原文」算的 SHA-256 前 16 hex。
+     * 與 signal_sources.custom_prompt_sha256 對齊；不一致表示 Python 在 race window
+     * 拿到舊版（OK，紀錄為準）或 metadata 推送漏拍（要 alert）。
+     */
+    @JsonProperty("effective_custom_prompt_sha256")
+    private String effectiveCustomPromptSha256;
 }

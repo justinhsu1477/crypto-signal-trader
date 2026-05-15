@@ -18,6 +18,28 @@ logger = logging.getLogger(__name__)
 # Pattern: embed title/description containing a quoted timestamp like "2026-03-03 00:48"
 _QUOTED_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}")
 
+
+def _attach_custom_prompt_audit(payload: dict, source: dict | None) -> None:
+    """把 per-source custom_prompt 的 audit 識別碼塞進 trade payload。
+
+    payload 收到後送到 Java，Java 寫進 signals.custom_prompt_version / sha256
+    做訊號層級的 audit chain。沒設 custom_prompt 的 source 不會送任何欄位。
+
+    - effective_custom_prompt_version: 直接 echo gRPC 推下來的 version（snapshot）
+    - effective_custom_prompt_sha256:  對「實際送進 Gemini 的 custom_prompt 原文」
+                                       算 SHA-256 前 16 hex
+    """
+    if not source:
+        return
+    prompt = source.get("custom_prompt") or ""
+    version = source.get("custom_prompt_version")
+    if not prompt:
+        # 來源沒設 custom_prompt — 不送任何 audit 欄位（signals 表留 null）
+        return
+    payload["effective_custom_prompt_version"] = int(version) if version else 0
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    payload["effective_custom_prompt_sha256"] = digest[:16]
+
 # Signal type identification by emoji prefix (only used when AI is disabled)
 SIGNAL_TYPES = {
     "\U0001f4e2": "ENTRY",     # 📢 交易訊號發布
@@ -193,6 +215,8 @@ class SignalRouter:
             text_content=text_content,
             image_bytes=image_bytes,
             mime_type=mime,
+            source_prompt=source.get("custom_prompt"),
+            source_name=source.get("source_name") or source.get("display_name"),
         )
         if not parsed:
             logger.warning("image path: parse failed for msg=%s", message_id)
@@ -254,6 +278,9 @@ class SignalRouter:
         prompt_version = self.ai_parser.prompt_version if hasattr(self.ai_parser, "prompt_version") else 0
         if prompt_version:
             parsed["prompt_version"] = prompt_version
+
+        # per-source custom_prompt audit（signals 表 audit chain）
+        _attach_custom_prompt_audit(parsed, source)
 
         try:
             result = await self.api_client.send_trade(
@@ -344,6 +371,7 @@ class SignalRouter:
                 image_source["display_name"] = metadata.get("display_name", "")
                 image_source["trade_mode"] = metadata.get("trade_mode", "AUTO")
                 image_source["risk_multiplier"] = metadata.get("risk_multiplier", 1.0)
+                image_source["custom_prompt"] = metadata.get("custom_prompt", "")
 
             logger.info(
                 "image path triggered: #%s @%s msg=%s (text=%r)",
@@ -463,6 +491,7 @@ class SignalRouter:
             source["display_name"] = metadata.get("display_name", "")
             source["trade_mode"] = metadata.get("trade_mode", "AUTO")
             source["risk_multiplier"] = metadata.get("risk_multiplier", 1.0)
+            source["custom_prompt"] = metadata.get("custom_prompt", "")
 
         if self.ai_parser:
             # AI 模式：所有訊息都丟 AI 判斷，由 AI 決定 action
@@ -532,7 +561,12 @@ class SignalRouter:
         """
         # === Agent 1: AI Signal Parser (primary) ===
         if self.ai_parser:
-            parsed = await self.ai_parser.parse(content)
+            source_for_prompt = source or {}
+            parsed = await self.ai_parser.parse(
+                content,
+                source_prompt=source_for_prompt.get("custom_prompt"),
+                source_name=source_for_prompt.get("source_name") or source_for_prompt.get("display_name"),
+            )
 
             # 複合動作（list）— 例如「止盈50%做成本保護」回 [CLOSE, MOVE_SL]
             # 各子動作獨立送 API，用 suffixed message_id 避開 Java L1 dedup
@@ -588,6 +622,9 @@ class SignalRouter:
                 # 附加 prompt 版本號（供後端交易追溯）
                 if self.ai_parser and self.ai_parser.prompt_version:
                     parsed["prompt_version"] = self.ai_parser.prompt_version
+
+                # per-source custom_prompt audit（signals 表 audit chain）
+                _attach_custom_prompt_audit(parsed, source)
 
                 result = await self.api_client.send_trade(parsed, dry_run=self.dry_run, source=source)
                 if result.success:
@@ -653,6 +690,9 @@ class SignalRouter:
             trade_req = dict(action)
             if prompt_version:
                 trade_req["prompt_version"] = prompt_version
+
+            # per-source custom_prompt audit — 每個 sub-action 都對應同一個 source 用的同一份 prompt
+            _attach_custom_prompt_audit(trade_req, base_source)
 
             try:
                 result = await self.api_client.send_trade(
