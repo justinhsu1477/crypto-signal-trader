@@ -1084,7 +1084,8 @@ class TradeControllerTest {
             verify(signalRecordService).recordFromRequest(
                     eq("ENTRY"), eq("BTCUSDT"), eq("LONG"),
                     eq(95000.0), eq(94000.0),
-                    eq("REJECTED"), contains("signal-stale"), isNull(), isNull());
+                    eq("REJECTED"), contains("signal-stale"), isNull(), isNull(),
+                    isNull(), isNull());
             verify(broadcastTradeService, never()).broadcastTrade(any());
             // 驗證發送紅色 Admin 通知
             verify(webhookService).sendNotificationToAdmins(
@@ -1198,7 +1199,8 @@ class TradeControllerTest {
             verify(signalRecordService).recordFromRequest(
                     eq("ENTRY"), eq("BTCUSDT"), eq("LONG"),
                     eq(95000.0), eq(93000.0),
-                    eq("EXECUTED"), isNull(), isNull(), any(SignalSource.class));
+                    eq("EXECUTED"), isNull(), isNull(), any(SignalSource.class),
+                    isNull(), isNull());
         }
 
         @Test
@@ -1364,7 +1366,8 @@ class TradeControllerTest {
             inOrder.verify(signalRecordService).recordFromRequest(
                     eq("ENTRY"), eq("BTCUSDT"), eq("LONG"),
                     eq(95000.0), eq(94000.0),
-                    eq("EXECUTED"), isNull(), isNull(), any());
+                    eq("EXECUTED"), isNull(), isNull(), any(),
+                    isNull(), isNull());
             inOrder.verify(broadcastTradeService).broadcastTrade(any());
         }
     }

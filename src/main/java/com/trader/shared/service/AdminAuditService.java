@@ -36,7 +36,7 @@ public class AdminAuditService {
      * @param reason      admin 提供的修改理由（可為 null）
      * @param ipAddress   呼叫端 IP（可為 null）
      */
-    @Async
+    @Async("auditExecutor")
     public void record(String action, String targetType, String targetId,
                        String beforeValue, String afterValue,
                        String reason, String ipAddress) {
