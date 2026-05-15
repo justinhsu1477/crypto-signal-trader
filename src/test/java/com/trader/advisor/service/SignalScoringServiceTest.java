@@ -1,6 +1,7 @@
 package com.trader.advisor.service;
 
 import com.trader.advisor.config.AdvisorConfig;
+import com.trader.advisor.dto.RiskLevel;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.shared.model.TradeRequest;
 import org.junit.jupiter.api.*;
@@ -75,7 +76,7 @@ class SignalScoringServiceTest {
 
         assertThat(score).isNotNull();
         assertThat(score.getConfidence()).isEqualTo(78);
-        assertThat(score.getRiskLevel()).isEqualTo("MEDIUM");
+        assertThat(score.getRiskLevel()).isEqualTo(RiskLevel.MEDIUM);
         assertThat(score.getReasoning()).isEqualTo("測試理由");
         assertThat(scoringMetrics.getScoredCount()).isEqualTo(1);
     }
