@@ -16,7 +16,10 @@ message SourceConfig {
   string routing_mode = 6;       // GLOBAL / ASSIGNED
   string trade_mode = 7;         // AUTO / SHADOW / MANUAL
   double risk_multiplier = 8;    // 風險倍率（預設 1.0）
-  string custom_prompt = 9;      // AI 補充指令（Phase 2 用）
+  string custom_prompt = 9;      // AI 補充指令（per-source 解析方言）
+  // custom_prompt 的單調遞增版本號。Python 在 parse 時 snapshot 這個值，
+  // 跟著 trade payload 回傳給 Java，寫進 signals 表做 audit chain。
+  int32 custom_prompt_version = 10;
 }
 
 // Discord Monitor 頻道過濾設定
