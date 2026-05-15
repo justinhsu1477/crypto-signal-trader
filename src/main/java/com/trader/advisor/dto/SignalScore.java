@@ -14,31 +14,17 @@ import lombok.Data;
 public class SignalScore {
 
     private int confidence;      // 0-100 信心分數
-    private String riskLevel;    // LOW / MEDIUM / HIGH
+    private RiskLevel riskLevel; // LOW / MEDIUM / HIGH（enum，顯示文字與 emoji 自帶）
     private String reasoning;    // 繁中簡短理由（≤50字）
     private long latencyMs;      // Gemini 回應耗時（毫秒）
 
-    /**
-     * 風險等級的繁中顯示
-     */
+    /** 風險等級的繁中顯示 — 委派給 enum，保留方法名以維持既有 caller 不動。 */
     public String getRiskLevelDisplay() {
-        return switch (riskLevel) {
-            case "LOW" -> "低風險";
-            case "MEDIUM" -> "中風險";
-            case "HIGH" -> "高風險";
-            default -> riskLevel;
-        };
+        return riskLevel == null ? "" : riskLevel.getDisplay();
     }
 
-    /**
-     * 風險等級的 emoji
-     */
+    /** 風險等級的 emoji — 委派給 enum。 */
     public String getRiskEmoji() {
-        return switch (riskLevel) {
-            case "LOW" -> "✅";
-            case "MEDIUM" -> "⚠️";
-            case "HIGH" -> "🔴";
-            default -> "❓";
-        };
+        return riskLevel == null ? "❓" : riskLevel.getEmoji();
     }
 }

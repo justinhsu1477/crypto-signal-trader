@@ -3,6 +3,7 @@ package com.trader.advisor.service;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.trader.advisor.config.AdvisorConfig;
+import com.trader.advisor.dto.RiskLevel;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.shared.model.TradeRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -200,20 +201,16 @@ public class SignalScoringService {
             JsonObject json = gson.fromJson(cleaned, JsonObject.class);
 
             int confidence = json.has("confidence") ? json.get("confidence").getAsInt() : -1;
-            String riskLevel = json.has("riskLevel") ? json.get("riskLevel").getAsString() : null;
+            String rawRiskLevel = json.has("riskLevel") ? json.get("riskLevel").getAsString() : null;
             String reasoning = json.has("reasoning") ? json.get("reasoning").getAsString() : null;
 
-            // 驗證必要欄位
-            if (confidence < 0 || confidence > 100 || riskLevel == null) {
-                log.warn("AI 信號評分: 回應格式不完整 — confidence={}, riskLevel={}", confidence, riskLevel);
+            // 驗證必要欄位（confidence 強制要有；riskLevel 缺值會由 enum 用 confidence 推導）
+            if (confidence < 0 || confidence > 100) {
+                log.warn("AI 信號評分: confidence 無效 — confidence={}, rawRiskLevel={}", confidence, rawRiskLevel);
                 return null;
             }
 
-            // riskLevel 規範化
-            riskLevel = riskLevel.toUpperCase();
-            if (!riskLevel.equals("LOW") && !riskLevel.equals("MEDIUM") && !riskLevel.equals("HIGH")) {
-                riskLevel = confidence >= 70 ? "LOW" : confidence >= 40 ? "MEDIUM" : "HIGH";
-            }
+            RiskLevel riskLevel = RiskLevel.fromGeminiOrInfer(rawRiskLevel, confidence);
 
             // reasoning 截斷
             if (reasoning != null && reasoning.length() > 100) {

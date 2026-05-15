@@ -1,6 +1,7 @@
 package com.trader.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trader.advisor.dto.RiskLevel;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.NotificationService;
@@ -607,7 +608,7 @@ class BroadcastTradeServiceTest {
         private SignalScore sampleScore() {
             return SignalScore.builder()
                     .confidence(78)
-                    .riskLevel("MEDIUM")
+                    .riskLevel(RiskLevel.MEDIUM)
                     .reasoning("R:R 1:2.5 合理，但止損幅度偏寬")
                     .latencyMs(2500)
                     .build();
