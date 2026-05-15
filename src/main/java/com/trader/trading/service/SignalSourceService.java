@@ -649,6 +649,7 @@ public class SignalSourceService {
                 .setTradeMode(entity.getTradeMode().name())
                 .setRiskMultiplier(entity.getRiskMultiplier())
                 .setCustomPrompt(entity.getCustomPrompt() != null ? entity.getCustomPrompt() : "")
+                .setCustomPromptVersion(entity.getCustomPromptVersion())
                 .build();
     }
 
