@@ -117,3 +117,21 @@ cd web-dashboard && npm run build
 ```
 
 Java 檔案修改後，優先確認編譯通過再繼續下一步。
+
+---
+
+## 關鍵設計文件索引
+
+改動相關區域前，先看對應的設計文件，**不要靠 code 反推設計意圖**：
+
+| 主題 | 文件 |
+|------|------|
+| Prompt 解析架構 / `custom_prompt` 安全約束 | [`discord-monitor/docs/PROMPT_ARCHITECTURE.md`](discord-monitor/docs/PROMPT_ARCHITECTURE.md) |
+| 訊號來源治理（trade_mode / routing_mode / custom_prompt） | [`SIGNAL_SOURCES.md`](SIGNAL_SOURCES.md) |
+| Eval CI gate 觸發條件 + pass 門檻 | [`discord-monitor/eval/README.md`](discord-monitor/eval/README.md) |
+| Admin 權限模型 / 高風險操作清單 | [`docs/admin-permission-model.md`](docs/admin-permission-model.md) |
+| 法律風險 / 服務條款必備條款 / 技術防護優先級 | [`docs/legal-risk-analysis.md`](docs/legal-risk-analysis.md) |
+| SaaS 產品化 phase plan / 收費模式 | [`docs/SaaS-product-plan.md`](docs/SaaS-product-plan.md) |
+| 環境變數完整參考 | [`docs/CONFIGURATION_REFERENCE.md`](docs/CONFIGURATION_REFERENCE.md) |
+
+碰到「prompt」「signal source」「admin 權限」「audit log」相關改動時，先讀上述前 4 份。
