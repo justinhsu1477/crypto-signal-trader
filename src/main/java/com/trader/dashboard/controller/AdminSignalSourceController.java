@@ -1,11 +1,13 @@
 package com.trader.dashboard.controller;
 
+import com.trader.shared.util.SecurityUtil;
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.grpc.generated.MonitorConfig;
 import com.trader.trading.service.MonitorConfigStore;
 import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalSourceService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -80,6 +82,42 @@ public class AdminSignalSourceController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    /**
+     * 更新 customPrompt — 獨立端點，便於 admin UI 加二次確認 + 強制 audit。
+     * 一般欄位的 update 走 PUT /{id}，這裡只處理 high-risk 欄位。
+     */
+    @PutMapping("/{id}/custom-prompt")
+    public ResponseEntity<?> updateCustomPrompt(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateCustomPromptRequest body,
+            HttpServletRequest request) {
+        try {
+            String adminId = SecurityUtil.getCurrentUserId();
+            String ip = resolveClientIp(request);
+            signalSourceService.updateCustomPrompt(id, body.getCustomPrompt(), body.getReason(), adminId, ip);
+            List<SignalSourceResponse> all = signalSourceService.getAllSources();
+            SignalSourceResponse response = all.stream()
+                    .filter(s -> s.getId().equals(id))
+                    .findFirst()
+                    .orElseThrow();
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private String resolveClientIp(HttpServletRequest request) {
+        // 對齊 application.yml 設定的 ip-header（Cloudflare 環境用 CF-Connecting-IP）
+        String header = request.getHeader("CF-Connecting-IP");
+        if (header != null && !header.isBlank()) return header;
+        header = request.getHeader("X-Forwarded-For");
+        if (header != null && !header.isBlank()) {
+            int comma = header.indexOf(',');
+            return comma > 0 ? header.substring(0, comma).trim() : header.trim();
+        }
+        return request.getRemoteAddr();
     }
 
     @DeleteMapping("/{id}")
