@@ -46,6 +46,17 @@ public class TradeSignal {
     private SignalSource source;     // 訊號來源 (可選)
     private Double positionSizeModifier;  // 倉位修飾（0.5=半倉/輕倉, null=預設100%）
 
+    /**
+     * 解析此訊號時 Python 端 snapshot 的 custom_prompt 版本號（可選）。
+     * 經 TradeRequest 從 Python payload 帶入；regex / 全局 parse 路徑為 null。
+     */
+    private Integer customPromptVersion;
+
+    /**
+     * 解析此訊號時 Python 端對 custom_prompt 原文算的 SHA-256 前 16 hex（可選）。
+     */
+    private String customPromptSha256;
+
     public enum Side {
         LONG, SHORT
     }
