@@ -1,6 +1,7 @@
 package com.trader.trading.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trader.advisor.dto.RiskLevel;
 import com.trader.advisor.dto.SignalScore;
 import com.trader.advisor.service.SignalScoringService;
 import com.trader.notification.service.NotificationService;
@@ -449,7 +450,7 @@ class BroadcastTradeServiceSourceRoutingTest {
             setupAllUsersPassPreFilter(user1);
 
             SignalScore score = SignalScore.builder()
-                    .confidence(72).riskLevel("MEDIUM").reasoning("R:R 尚可").latencyMs(1500L).build();
+                    .confidence(72).riskLevel(RiskLevel.MEDIUM).reasoning("R:R 尚可").latencyMs(1500L).build();
             when(signalScoringService.scoreAsync(any()))
                     .thenReturn(CompletableFuture.completedFuture(score));
 

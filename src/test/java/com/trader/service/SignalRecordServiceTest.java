@@ -320,4 +320,87 @@ class SignalRecordServiceTest {
             ).doesNotThrowAnyException();
         }
     }
+
+    @Nested
+    @DisplayName("custom_prompt audit chain（signals 表）")
+    class CustomPromptAudit {
+
+        @Test
+        @DisplayName("帶 version + sha 的 overload → 寫進 Signal entity")
+        void overloadWithAudit_persistsBothFields() {
+            when(deduplicationService.generateHash(any())).thenReturn("h");
+
+            service.recordFromRequest(
+                    "ENTRY", "BTCUSDT", "LONG",
+                    60000.0, 58000.0,
+                    "EXECUTED", null, "trade-1", null,
+                    3, "abc1234567890def");
+
+            ArgumentCaptor<Signal> captor = ArgumentCaptor.forClass(Signal.class);
+            verify(signalRepository).save(captor.capture());
+            Signal saved = captor.getValue();
+
+            assertThat(saved.getCustomPromptVersion()).isEqualTo(3);
+            assertThat(saved.getCustomPromptSha256()).isEqualTo("abc1234567890def");
+        }
+
+        @Test
+        @DisplayName("舊 overload（不帶 audit） → 兩欄都 null（向下相容）")
+        void legacyOverload_leavesAuditNull() {
+            when(deduplicationService.generateHash(any())).thenReturn("h");
+
+            service.recordFromRequest(
+                    "ENTRY", "BTCUSDT", "LONG",
+                    60000.0, 58000.0,
+                    "EXECUTED", null, "trade-legacy", null);
+
+            ArgumentCaptor<Signal> captor = ArgumentCaptor.forClass(Signal.class);
+            verify(signalRepository).save(captor.capture());
+            Signal saved = captor.getValue();
+
+            assertThat(saved.getCustomPromptVersion()).isNull();
+            assertThat(saved.getCustomPromptSha256()).isNull();
+        }
+
+        @Test
+        @DisplayName("Python 沒帶 audit 也能正常記錄（null 不爆）")
+        void nullAuditValues_recordedCleanly() {
+            when(deduplicationService.generateHash(any())).thenReturn("h");
+
+            service.recordFromRequest(
+                    "ENTRY", "BTCUSDT", "LONG",
+                    60000.0, 58000.0,
+                    "EXECUTED", null, null, null,
+                    null, null);
+
+            ArgumentCaptor<Signal> captor = ArgumentCaptor.forClass(Signal.class);
+            verify(signalRepository).save(captor.capture());
+            assertThat(captor.getValue().getCustomPromptVersion()).isNull();
+            assertThat(captor.getValue().getCustomPromptSha256()).isNull();
+        }
+
+        @Test
+        @DisplayName("recordSignal 直接帶 TradeSignal.customPromptVersion → 寫入")
+        void recordSignal_propagatesPromptAudit() {
+            TradeSignal signal = TradeSignal.builder()
+                    .signalType(TradeSignal.SignalType.ENTRY)
+                    .symbol("BTCUSDT")
+                    .side(TradeSignal.Side.LONG)
+                    .entryPriceLow(60000)
+                    .entryPriceHigh(60000)
+                    .stopLoss(58000)
+                    .customPromptVersion(7)
+                    .customPromptSha256("deadbeefcafebabe")
+                    .build();
+            when(deduplicationService.generateHash(signal)).thenReturn("h");
+
+            service.recordSignal(signal, "EXECUTED", null, null);
+
+            ArgumentCaptor<Signal> captor = ArgumentCaptor.forClass(Signal.class);
+            verify(signalRepository).save(captor.capture());
+            Signal saved = captor.getValue();
+            assertThat(saved.getCustomPromptVersion()).isEqualTo(7);
+            assertThat(saved.getCustomPromptSha256()).isEqualTo("deadbeefcafebabe");
+        }
+    }
 }

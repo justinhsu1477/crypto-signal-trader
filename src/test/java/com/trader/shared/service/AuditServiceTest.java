@@ -22,7 +22,13 @@ class AuditServiceTest {
     @BeforeEach
     void setUp() {
         auditLogRepository = mock(AuditLogRepository.class);
-        auditService = new AuditService(auditLogRepository);
+        // 真實 prod 由 Spring 把 self 注入成 proxy；unit test 直接用 spy 同物件，
+        // 因為這層測試只關心「方法委派 + 寫 DB」邏輯，不測 proxy / async / transaction 行為。
+        AuditService instance = new AuditService(auditLogRepository, null);
+        auditService = spy(instance);
+        // 把 spy 自己塞回 self 欄位，wrapper 走 self.log() 時打到同一個 spy。
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                auditService, "self", auditService);
     }
 
     @Nested

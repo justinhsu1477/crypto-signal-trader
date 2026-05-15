@@ -39,6 +39,21 @@ public class Signal {
     @Column(name = "attachment_sha256")
     private String attachmentSha256;
 
+    /**
+     * 解析此訊號時用到的 custom_prompt 版本號。
+     * Python parse 時 snapshot 自己 metadata 裡的值送回來，跟 admin 此後的改動無關。
+     * null = 該來源沒設 custom_prompt 或走 regex fallback。
+     */
+    @Column(name = "custom_prompt_version")
+    private Integer customPromptVersion;
+
+    /**
+     * 解析此訊號時用到的 custom_prompt 內容 SHA-256 前 16 hex。
+     * 與 signal_sources.custom_prompt_sha256 對齊；不一致 = Python 和 Java view 出現分歧（bug 訊號）。
+     */
+    @Column(name = "custom_prompt_sha256", length = 16)
+    private String customPromptSha256;
+
     // === 訊號內容 ===
     private String action;              // ENTRY, CLOSE, DCA, MOVE_SL, CANCEL, INFO
     private String symbol;

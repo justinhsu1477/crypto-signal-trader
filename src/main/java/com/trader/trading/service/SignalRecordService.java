@@ -60,7 +60,9 @@ public class SignalRecordService {
                        .closeRatio(signal.getCloseRatio())
                        .newStopLoss(signal.getNewStopLoss())
                        .newTakeProfit(signal.getNewTakeProfit())
-                       .rawMessage(signal.getRawMessage());
+                       .rawMessage(signal.getRawMessage())
+                       .customPromptVersion(signal.getCustomPromptVersion())
+                       .customPromptSha256(signal.getCustomPromptSha256());
 
                 // 去重 Hash
                 try {
@@ -132,11 +134,28 @@ public class SignalRecordService {
     /**
      * 從 TradeRequest 建立簡易 TradeSignal 並記錄
      * 用於 /api/execute-trade 和 /api/broadcast-trade
+     *
+     * <p>向下相容 overload — 不帶 custom_prompt audit 資訊。
      */
     public void recordFromRequest(String action, String symbol, String side,
                                   Double entryPrice, Double stopLoss,
                                   String executionStatus, String rejectionReason,
                                   String tradeId, SignalSource source) {
+        recordFromRequest(action, symbol, side, entryPrice, stopLoss,
+                executionStatus, rejectionReason, tradeId, source, null, null);
+    }
+
+    /**
+     * 從 TradeRequest 建立 TradeSignal 並記錄，帶 custom_prompt 稽核資訊。
+     *
+     * @param customPromptVersion Python parse 時 snapshot 的版本號（null = 該源無 custom_prompt）
+     * @param customPromptSha256  Python 對實際使用的 custom_prompt 算的 SHA-256 前 16 hex
+     */
+    public void recordFromRequest(String action, String symbol, String side,
+                                  Double entryPrice, Double stopLoss,
+                                  String executionStatus, String rejectionReason,
+                                  String tradeId, SignalSource source,
+                                  Integer customPromptVersion, String customPromptSha256) {
         try {
             TradeSignal.TradeSignalBuilder builder = TradeSignal.builder()
                     .signalType(parseSignalType(action))
@@ -145,7 +164,9 @@ public class SignalRecordService {
                     .entryPriceHigh(entryPrice != null ? entryPrice : 0)
                     .stopLoss(stopLoss != null ? stopLoss : 0)
                     .isDca("DCA".equalsIgnoreCase(action))
-                    .source(source);
+                    .source(source)
+                    .customPromptVersion(customPromptVersion)
+                    .customPromptSha256(customPromptSha256);
 
             if (side != null) {
                 try {

@@ -57,7 +57,9 @@ class SignalSourceServiceTest {
         when(monitorConfigStore.getDefaultChannelIdList()).thenReturn(List.of());
 
         service = new SignalSourceService(sourceRepository, userSourceRepository,
-                tradeRepository, userRepository, monitorConfigStore);
+                tradeRepository, userRepository, monitorConfigStore,
+                new com.trader.trading.validation.CustomPromptValidator(),
+                mock(com.trader.shared.service.AdminAuditService.class));
     }
 
     // ==================== 來源 CRUD ====================
