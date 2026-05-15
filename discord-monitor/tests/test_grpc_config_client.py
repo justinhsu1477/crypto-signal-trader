@@ -25,7 +25,8 @@ class FakeSourceConfig:
     """模擬 gRPC SourceConfig protobuf message。"""
 
     def __init__(self, id=0, channel_id="", name="", display_name="",
-                 routing_mode="GLOBAL", trade_mode="AUTO", risk_multiplier=1.0, custom_prompt=""):
+                 routing_mode="GLOBAL", trade_mode="AUTO", risk_multiplier=1.0,
+                 custom_prompt="", custom_prompt_version=0):
         self.id = id
         self.channel_id = channel_id
         self.name = name
@@ -34,6 +35,7 @@ class FakeSourceConfig:
         self.trade_mode = trade_mode
         self.risk_multiplier = risk_multiplier
         self.custom_prompt = custom_prompt
+        self.custom_prompt_version = custom_prompt_version
 
 
 class FakeConfig:
