@@ -111,6 +111,18 @@ Python discord-monitor                trading-api (Spring Boot, Java 17)
 ### 🚨 `LocalDateTime.now()` Without Tz Across Services
 找 service 程式碼，看是否有混用 `now()` vs `now(ZoneId)`。**統一用 `AppConstants.ZONE_ID`**。
 
+### 🚨 5/15 Prod 502 — CHAR(16) vs VARCHAR(16) Schema Mismatch
+
+**症狀**：PR #5 merge 後 auto-deploy → `/api/health` 502 fail loop ~10 分鐘
+
+**根因**：V47/V48/V49 用 `CHAR(16)`（PostgreSQL `bpchar`），但 JPA `@Column(length=16)` 預期 `VARCHAR(16)`。Hibernate `ddl-auto=validate` schema 比對失敗 → Spring boot 起不來
+
+**解法（雙軌）**：
+1. Neon MCP 直接對 prod 4 欄 ALTER CHAR→VARCHAR → prod 立即恢復（手動 `docker restart trading-api`）
+2. 寫 V50 idempotent migration（`DO $$ IF EXISTS udt='bpchar' $$`）→ 對齊 Flyway state + 修新環境
+
+**Pattern（永遠記）**：寫 Flyway migration 時，**字串欄位用 `VARCHAR(N)`，不要 `CHAR(N)`**。CHAR padding 行為跟 Hibernate VARCHAR mapping 不符，會在 prod startup 的 schema validation 上炸。如果硬要 CHAR，entity 必須加 `@Column(columnDefinition="char(N)")`。
+
 ### 🚨 Integration Test 多層 cascade（2026-05-14 修完 11 個 bug 才綠）
 `./gradlew integrationTest` 全 fail，但表象一個個解才暴露下一個。Pattern：
 
