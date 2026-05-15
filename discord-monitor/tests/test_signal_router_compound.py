@@ -154,11 +154,16 @@ class TestCompoundE2E:
 
 
 class TestImageCompoundFlow:
-    """確保 image flow 也支援 compound action（不會 crash）"""
+    """圖片 compound 被 P0a action gate 擋下（盈利圖常觸發 [CLOSE, MOVE_SL] 誤判，不可放行）。
+
+    歷史上這條測試是斷言「image compound 會 forward 2 次」，但會員盈利反饋圖含
+    「止盈 50% 做成本保護」這類字眼會讓 Gemini 回 compound list，提早平掉實盤倉位。
+    自 P0a action gate 引入後，圖片 path 一律拒非 ENTRY action（含 compound）。
+    """
 
     @pytest.mark.asyncio
-    async def test_image_compound_does_not_crash(self):
-        """parse_with_image 回 list → _handle_image_signal 應該路由到 _forward_compound 不 crash"""
+    async def test_image_compound_blocked_by_action_gate(self):
+        """parse_with_image 回 compound list → action gate 擋下，不送 broadcast。"""
         # 需要 import + setup: 模擬 image_signal config 啟用
         from src.config import ImageSignalConfig
         from unittest.mock import patch
@@ -215,9 +220,5 @@ class TestImageCompoundFlow:
         )):
             await router.handle_message(msg)
 
-        # 應該 send 2 次（compound）
-        assert api_client.send_trade.call_count == 2
-        # 每次 message_id 該 suffix
-        msg_ids = [c.kwargs["source"]["message_id"] for c in api_client.send_trade.call_args_list]
-        assert any("close" in m.lower() for m in msg_ids)
-        assert any("move_sl" in m.lower() for m in msg_ids)
+        # P0a：image compound 被 gate 擋下 → 完全不送 broadcast
+        assert api_client.send_trade.call_count == 0
