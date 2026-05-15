@@ -866,7 +866,9 @@ public class TradeController {
             signalRecordService.recordFromRequest(
                     request.getAction(), request.getSymbol(), request.getSide(),
                     request.getEntryPrice(), request.getStopLoss(),
-                    "REJECTED", "signal-stale: " + staleError.get(), null, request.getSource());
+                    "REJECTED", "signal-stale: " + staleError.get(), null, request.getSource(),
+                    request.getEffectiveCustomPromptVersion(),
+                    request.getEffectiveCustomPromptSha256());
             return ResponseEntity.badRequest().body(Map.of(
                     "error", staleError.get(),
                     "status", "REJECTED_STALE"));
@@ -919,7 +921,9 @@ public class TradeController {
                 signalRecordService.recordFromRequest(
                         request.getAction(), symbol, request.getSide(),
                         request.getEntryPrice(), request.getStopLoss(),
-                        "SKIPPED", "signal-duplicate", null, request.getSource());
+                        "SKIPPED", "signal-duplicate", null, request.getSource(),
+                        request.getEffectiveCustomPromptVersion(),
+                        request.getEffectiveCustomPromptSha256());
                 return ResponseEntity.ok(Map.of(
                         "status", "SKIPPED",
                         "reason", "重複訊號，5分鐘內已被廣播處理過"));
@@ -930,7 +934,9 @@ public class TradeController {
         signalRecordService.recordFromRequest(
                 request.getAction(), symbol, request.getSide(),
                 request.getEntryPrice(), request.getStopLoss(),
-                "EXECUTED", null, null, request.getSource());
+                "EXECUTED", null, null, request.getSource(),
+                request.getEffectiveCustomPromptVersion(),
+                request.getEffectiveCustomPromptSha256());
 
         // 執行廣播
         Map<String, Object> result = broadcastTradeService.broadcastTrade(request);
