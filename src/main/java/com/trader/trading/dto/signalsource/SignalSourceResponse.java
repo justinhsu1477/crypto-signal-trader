@@ -28,6 +28,19 @@ public class SignalSourceResponse {
     private boolean paperTradingEnabled;
     private boolean enabled;
     private int assignedUserCount;
+
+    /** 是否設定了 customPrompt（不回傳全文，避免敏感資訊在多 admin 場景外洩） */
+    private boolean customPromptSet;
+
+    /** customPrompt 版本號（給 audit chain 對齊用） */
+    private int customPromptVersion;
+
+    /** customPrompt SHA-256 前 16 hex */
+    private String customPromptSha256;
+
+    private LocalDateTime customPromptUpdatedAt;
+    private String customPromptUpdatedBy;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

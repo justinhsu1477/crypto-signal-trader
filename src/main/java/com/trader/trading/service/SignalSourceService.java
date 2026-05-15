@@ -1,5 +1,7 @@
 package com.trader.trading.service;
 
+import com.trader.shared.entity.AdminAuditLog;
+import com.trader.shared.service.AdminAuditService;
 import com.trader.trading.dto.signalsource.*;
 import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.entity.Trade;
@@ -9,6 +11,7 @@ import com.trader.trading.grpc.generated.SourceConfig;
 import com.trader.trading.repository.SignalSourceConfigRepository;
 import com.trader.trading.repository.TradeRepository;
 import com.trader.trading.repository.UserSignalSourceRepository;
+import com.trader.trading.validation.CustomPromptValidator;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
@@ -38,6 +41,8 @@ public class SignalSourceService {
     private final TradeRepository tradeRepository;
     private final UserRepository userRepository;
     private final MonitorConfigStore monitorConfigStore;
+    private final CustomPromptValidator customPromptValidator;
+    private final AdminAuditService adminAuditService;
 
     // ======================== 啟動同步 ========================
 
@@ -135,6 +140,63 @@ public class SignalSourceService {
         sourceRepository.deleteById(id);
         log.info("刪除訊號來源: id={}", id);
         syncMonitorConfig("admin", "source_deleted:" + id);
+    }
+
+    /**
+     * 更新 customPrompt — 高風險寫入，獨立端點 + 強制 audit log。
+     *
+     * <p>流程：sanitize → 計算 SHA-256 → bump version → save → audit log → gRPC push
+     *
+     * @return 更新後的 entity（含 version / sha256 / updatedAt）
+     * @throws IllegalArgumentException 來源不存在 / sanitization 失敗
+     */
+    @Transactional
+    public SignalSourceConfig updateCustomPrompt(Long id, String rawPrompt, String reason,
+                                                 String currentAdminId, String ipAddress) {
+        SignalSourceConfig source = sourceRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("訊號來源不存在: id=" + id));
+
+        String beforeValue = source.getCustomPrompt() != null ? source.getCustomPrompt() : "";
+        String sanitized = customPromptValidator.sanitizeOrThrow(rawPrompt);
+
+        // 內容沒變 → 不 bump、不 audit，省 noise
+        if (beforeValue.equals(sanitized)) {
+            log.info("custom_prompt 內容未變動，跳過: sourceId={}", id);
+            return source;
+        }
+
+        String afterHash = sanitized.isEmpty() ? null : AdminAuditService.hashOrNull(sanitized);
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(com.trader.shared.config.AppConstants.ZONE_ID);
+
+        source.setCustomPrompt(sanitized);
+        source.setCustomPromptVersion(source.getCustomPromptVersion() + 1);
+        source.setCustomPromptSha256(afterHash);
+        source.setCustomPromptUpdatedAt(now);
+        source.setCustomPromptUpdatedBy(currentAdminId);
+
+        SignalSourceConfig saved = sourceRepository.save(source);
+
+        String warning = customPromptValidator.softWarning(sanitized);
+        if (warning != null) {
+            log.warn("custom_prompt soft warning: sourceId={} — {}", id, warning);
+        }
+
+        adminAuditService.record(
+                AdminAuditLog.Action.UPDATE_CUSTOM_PROMPT,
+                AdminAuditLog.TargetType.SIGNAL_SOURCE,
+                String.valueOf(id),
+                beforeValue,
+                sanitized,
+                reason,
+                ipAddress
+        );
+
+        log.info("custom_prompt 更新: sourceId={} version={}→{} sha256={} by={} len={}",
+                id, source.getCustomPromptVersion() - 1, source.getCustomPromptVersion(),
+                afterHash, currentAdminId, sanitized.length());
+
+        syncMonitorConfig(currentAdminId, "custom_prompt_updated:" + saved.getName());
+        return saved;
     }
 
     public List<SignalSourceResponse> getAllSources() {
@@ -491,6 +553,7 @@ public class SignalSourceService {
 
     private SignalSourceResponse toResponse(SignalSourceConfig source) {
         int assignedCount = userSourceRepository.findBySourceId(source.getId()).size();
+        boolean promptSet = source.getCustomPrompt() != null && !source.getCustomPrompt().isEmpty();
         return SignalSourceResponse.builder()
                 .id(source.getId())
                 .name(source.getName())
@@ -504,6 +567,11 @@ public class SignalSourceService {
                 .paperTradingEnabled(source.isPaperTradingEnabled())
                 .enabled(source.isEnabled())
                 .assignedUserCount(assignedCount)
+                .customPromptSet(promptSet)
+                .customPromptVersion(source.getCustomPromptVersion())
+                .customPromptSha256(source.getCustomPromptSha256())
+                .customPromptUpdatedAt(source.getCustomPromptUpdatedAt())
+                .customPromptUpdatedBy(source.getCustomPromptUpdatedBy())
                 .createdAt(source.getCreatedAt())
                 .updatedAt(source.getUpdatedAt())
                 .build();
