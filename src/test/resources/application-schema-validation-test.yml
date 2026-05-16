@@ -14,7 +14,11 @@ spring:
       hibernate.hbm2ddl.auto: validate
   flyway:
     enabled: true                                 # 跑真 migration
-    locations: classpath:db/migration
+    # 兩條 location 合併：prod migration + 此 profile 專用的 placeholder users seed。
+    # V19.1 排在 V19 跟 V20 之間，預先建 beck-tsai / justin-hsu 滿足 V20 FK constraint。
+    locations:
+      - classpath:db/migration
+      - classpath:db/migration-test-seed
     baseline-on-migrate: false
   data:
     redis:
