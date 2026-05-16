@@ -45,10 +45,13 @@ public class SignalSourceService {
     private final AdminAuditService adminAuditService;
     private final com.trader.shared.util.AesEncryptionUtil aes;
 
-    /** 合法 Discord webhook URL：discord.com 或 discordapp.com 都接受 */
+    /**
+     * 合法 Discord webhook URL：discord.com 或 discordapp.com 都接受。
+     * Token 至少 20 字元 — Discord 實際 token ~68 字，太短的（典型誤貼截斷）擋下避免存壞資料。
+     */
     private static final java.util.regex.Pattern DISCORD_WEBHOOK_PATTERN =
             java.util.regex.Pattern.compile(
-                    "^https://(?:discord\\.com|discordapp\\.com)/api/webhooks/\\d+/[\\w-]+$");
+                    "^https://(?:discord\\.com|discordapp\\.com)/api/webhooks/\\d+/[\\w-]{20,}$");
 
     // ======================== 啟動同步 ========================
 
@@ -230,21 +233,27 @@ public class SignalSourceService {
                     "非合法 Discord webhook URL（須符合 https://discord.com/api/webhooks/<id>/<token>）");
         }
 
-        // 解出當前明碼 URL 比對是否真有改動
+        // 解出當前明碼 URL 比對是否真有改動。decrypt 失敗（例如 AES key 輪換後）→
+        // 視為「無法比對」，強制走寫入路徑（保留 audit 連續性）
         String currentDecrypted = "";
+        boolean decryptableForCompare = true;
         if (source.getMirrorWebhookUrl() != null && !source.getMirrorWebhookUrl().isBlank()) {
             try {
                 currentDecrypted = aes.decrypt(source.getMirrorWebhookUrl());
             } catch (Exception e) {
-                log.warn("mirror: 現有加密 URL decrypt 失敗（視為空）: source={} err={}",
+                log.warn("mirror: 現有加密 URL decrypt 失敗（強制寫入新值）: source={} err={}",
                         source.getName(), e.getMessage());
+                decryptableForCompare = false;
             }
         }
 
         String newUrl = clearing ? "" : rawUrl.trim();
         boolean newEnabled = !clearing && req.isEnabled();
 
-        if (currentDecrypted.equals(newUrl) && source.isMirrorEnabled() == newEnabled) {
+        // 只有「能正確比對」且內容真的相同才 short-circuit，否則寫入 + audit（保留連續性）
+        if (decryptableForCompare
+                && currentDecrypted.equals(newUrl)
+                && source.isMirrorEnabled() == newEnabled) {
             log.info("mirror: 無改動，跳過 sourceId={}", id);
             return source;
         }
