@@ -8,10 +8,8 @@ spring:
     password: test
   jpa:
     hibernate:
-      ddl-auto: validate                          # 關鍵：嚴格驗證
+      ddl-auto: validate                          # 關鍵：嚴格驗證（Spring Boot 會自動 propagate 到 hibernate.hbm2ddl.auto）
     show-sql: false
-    properties:
-      hibernate.hbm2ddl.auto: validate
   flyway:
     enabled: true                                 # 跑真 migration
     # 兩條 location 合併：prod migration + 此 profile 專用的 placeholder users seed。
