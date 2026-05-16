@@ -100,6 +100,21 @@ public class SignalSourceConfig {
     @Column(name = "custom_prompt_updated_by", length = 64)
     private String customPromptUpdatedBy;
 
+    /**
+     * AES-GCM 加密後 base64 的 Discord webhook URL；null = 未設定。
+     * decrypt 之後才是真 URL。明碼不入庫。
+     */
+    @Column(name = "mirror_webhook_url", length = 512)
+    private String mirrorWebhookUrl;
+
+    /**
+     * 此源 mirror 開關。
+     * 即使加了 webhook URL，這個 flag 沒設 true 不會送 — 避免設好 URL 還沒準備好就誤發。
+     */
+    @Column(name = "mirror_enabled", nullable = false)
+    @Builder.Default
+    private boolean mirrorEnabled = false;
+
     /** 模擬交易開關（僅 SHADOW 模式有效） */
     @Column(name = "paper_trading_enabled", nullable = false)
     @Builder.Default
