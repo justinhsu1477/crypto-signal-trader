@@ -85,6 +85,8 @@ mirror:
 
 # 關閉 gRPC server — 避免 port 9090 衝突導致 Spring context 起不來。
 # 此 test 只關心 Hibernate schema validation，不需要 gRPC。
+# net.devh:grpc-spring-boot-starter 約定：port -1 = 不啟動 server。
 grpc:
   server:
+    port: -1
     enabled: false
