@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -27,13 +28,17 @@ class DiscordRawMessageServiceTest {
 
     private DiscordRawMessageRepository repository;
     private SignalRepository signalRepository;
+    private com.trader.notification.service.MirrorWebhookService mirror;
+    private com.trader.trading.repository.SignalSourceConfigRepository sourceRepository;
     private DiscordRawMessageService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(DiscordRawMessageRepository.class);
         signalRepository = mock(SignalRepository.class);
-        service = new DiscordRawMessageService(repository, signalRepository);
+        mirror = mock(com.trader.notification.service.MirrorWebhookService.class);
+        sourceRepository = mock(com.trader.trading.repository.SignalSourceConfigRepository.class);
+        service = new DiscordRawMessageService(repository, signalRepository, mirror, sourceRepository);
 
         when(repository.save(any(DiscordRawMessage.class))).thenAnswer(inv -> inv.getArgument(0));
     }
@@ -144,6 +149,44 @@ class DiscordRawMessageServiceTest {
 
         assertThat(saved.getSignalId()).isNull();
         assertThat(saved.getParserAction()).isEqualTo("ENTRY");
+    }
+
+    @Test
+    @DisplayName("recordMessage_triggersMirror: 寫入後觸發 MirrorWebhookService（含 attachment_url）")
+    void recordMessage_triggersMirror() {
+        // arrange — source 存在
+        com.trader.trading.entity.SignalSourceConfig src = com.trader.trading.entity.SignalSourceConfig.builder()
+                .id(42L).name("chenge").displayName("陳哥")
+                .channelId("ch-1").guildId("g-1")
+                .build();
+        when(sourceRepository.findByChannelId("ch-1")).thenReturn(java.util.Optional.of(src));
+        when(repository.findByMessageId("msg-mirror")).thenReturn(java.util.Optional.empty());
+
+        DiscordRawMessageRequest req = baseRequest("msg-mirror");
+        req.setAttachmentUrl("https://cdn.discordapp.com/attachments/x/y/banner.png");
+
+        service.recordMessage(req);
+
+        // assert — mirror 被叫，且 attachmentUrl 透傳
+        verify(mirror).mirrorAsync(
+                eq(src),
+                any(DiscordRawMessage.class),
+                eq("https://cdn.discordapp.com/attachments/x/y/banner.png"));
+    }
+
+    @Test
+    @DisplayName("recordMessage_noSourceFound_skipsMirror: 找不到 source 不送（不該丟例外）")
+    void recordMessage_noSourceFound_skipsMirror() {
+        when(sourceRepository.findByChannelId("unknown-ch")).thenReturn(java.util.Optional.empty());
+        when(repository.findByMessageId("msg-no-source")).thenReturn(java.util.Optional.empty());
+
+        DiscordRawMessageRequest req = baseRequest("msg-no-source");
+        req.setChannelId("unknown-ch");
+
+        // 不該拋例外
+        service.recordMessage(req);
+
+        verify(mirror, org.mockito.Mockito.never()).mirrorAsync(any(), any(), any());
     }
 
     @Test

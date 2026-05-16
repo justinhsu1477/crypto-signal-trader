@@ -43,6 +43,12 @@ public class SignalSourceService {
     private final MonitorConfigStore monitorConfigStore;
     private final CustomPromptValidator customPromptValidator;
     private final AdminAuditService adminAuditService;
+    private final com.trader.shared.util.AesEncryptionUtil aes;
+
+    /** 合法 Discord webhook URL：discord.com 或 discordapp.com 都接受 */
+    private static final java.util.regex.Pattern DISCORD_WEBHOOK_PATTERN =
+            java.util.regex.Pattern.compile(
+                    "^https://(?:discord\\.com|discordapp\\.com)/api/webhooks/\\d+/[\\w-]+$");
 
     // ======================== 啟動同步 ========================
 
@@ -196,6 +202,73 @@ public class SignalSourceService {
                 afterHash, currentAdminId, sanitized.length());
 
         syncMonitorConfig(currentAdminId, "custom_prompt_updated:" + saved.getName());
+        return saved;
+    }
+
+    /**
+     * 更新 mirror webhook URL + enabled flag。
+     *
+     * <p>URL 以 AES-GCM 加密後存 DB（明碼不入庫）；audit log 只記 fingerprint 不存全文。
+     * 清除 URL（webhookUrl null/blank）會強制 enabled=false，避免「有 flag 沒 URL」的怪狀態。
+     *
+     * @return 更新後的 entity；無改動回原 entity 不 save
+     * @throws IllegalArgumentException 來源不存在 / URL 格式不合法
+     */
+    @Transactional
+    public SignalSourceConfig updateMirrorWebhook(Long id,
+                                                   com.trader.trading.dto.signalsource.UpdateMirrorWebhookRequest req,
+                                                   String currentAdminId,
+                                                   String ipAddress) {
+        SignalSourceConfig source = sourceRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("訊號來源不存在: id=" + id));
+
+        String rawUrl = req.getWebhookUrl();
+        boolean clearing = rawUrl == null || rawUrl.isBlank();
+
+        if (!clearing && !DISCORD_WEBHOOK_PATTERN.matcher(rawUrl.trim()).matches()) {
+            throw new IllegalArgumentException(
+                    "非合法 Discord webhook URL（須符合 https://discord.com/api/webhooks/<id>/<token>）");
+        }
+
+        // 解出當前明碼 URL 比對是否真有改動
+        String currentDecrypted = "";
+        if (source.getMirrorWebhookUrl() != null && !source.getMirrorWebhookUrl().isBlank()) {
+            try {
+                currentDecrypted = aes.decrypt(source.getMirrorWebhookUrl());
+            } catch (Exception e) {
+                log.warn("mirror: 現有加密 URL decrypt 失敗（視為空）: source={} err={}",
+                        source.getName(), e.getMessage());
+            }
+        }
+
+        String newUrl = clearing ? "" : rawUrl.trim();
+        boolean newEnabled = !clearing && req.isEnabled();
+
+        if (currentDecrypted.equals(newUrl) && source.isMirrorEnabled() == newEnabled) {
+            log.info("mirror: 無改動，跳過 sourceId={}", id);
+            return source;
+        }
+
+        String beforeFingerprint = currentDecrypted + "|enabled=" + source.isMirrorEnabled();
+        String afterFingerprint = newUrl + "|enabled=" + newEnabled;
+
+        source.setMirrorWebhookUrl(clearing ? null : aes.encrypt(newUrl));
+        source.setMirrorEnabled(newEnabled);
+        SignalSourceConfig saved = sourceRepository.save(source);
+
+        adminAuditService.record(
+                AdminAuditLog.Action.UPDATE_MIRROR_WEBHOOK,
+                AdminAuditLog.TargetType.SIGNAL_SOURCE,
+                String.valueOf(id),
+                beforeFingerprint,
+                afterFingerprint,
+                req.getReason(),
+                ipAddress
+        );
+
+        log.info("mirror: webhook 更新 sourceId={} enabled={} cleared={} by={}",
+                id, newEnabled, clearing, currentAdminId);
+
         return saved;
     }
 
@@ -572,6 +645,9 @@ public class SignalSourceService {
                 .customPromptSha256(source.getCustomPromptSha256())
                 .customPromptUpdatedAt(source.getCustomPromptUpdatedAt())
                 .customPromptUpdatedBy(source.getCustomPromptUpdatedBy())
+                .mirrorEnabled(source.isMirrorEnabled())
+                .hasMirrorWebhook(source.getMirrorWebhookUrl() != null
+                        && !source.getMirrorWebhookUrl().isBlank())
                 .createdAt(source.getCreatedAt())
                 .updatedAt(source.getUpdatedAt())
                 .build();
