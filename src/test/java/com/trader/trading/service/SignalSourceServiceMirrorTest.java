@@ -102,11 +102,11 @@ class SignalSourceServiceMirrorTest {
         when(sourceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.updateMirrorWebhook(42L,
-                req("https://discord.com/api/webhooks/123/abc-XYZ_def", true, "陳哥上線"),
+                req("https://discord.com/api/webhooks/123/abc-XYZ_def_long_enough_token_value", true, "陳哥上線"),
                 "admin-1", "10.0.0.1");
 
         assertThat(src.getMirrorWebhookUrl())
-                .isEqualTo("enc:https://discord.com/api/webhooks/123/abc-XYZ_def");
+                .isEqualTo("enc:https://discord.com/api/webhooks/123/abc-XYZ_def_long_enough_token_value");
         assertThat(src.isMirrorEnabled()).isTrue();
         verify(adminAuditService).record(
                 eq(AdminAuditLog.Action.UPDATE_MIRROR_WEBHOOK),
@@ -122,7 +122,7 @@ class SignalSourceServiceMirrorTest {
     @DisplayName("clear webhook URL (empty string) → enabled forced to false")
     void clearWebhook_forcesDisabled() {
         SignalSourceConfig src = sourceWith("enc:old-url", true);
-        when(aes.decrypt("enc:old-url")).thenReturn("https://discord.com/api/webhooks/1/old");
+        when(aes.decrypt("enc:old-url")).thenReturn("https://discord.com/api/webhooks/1/old-token-at-least-20chars");
         when(sourceRepository.findById(42L)).thenReturn(Optional.of(src));
         when(sourceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -138,7 +138,7 @@ class SignalSourceServiceMirrorTest {
     @Test
     @DisplayName("no actual change → skip save + skip audit (noise reduction)")
     void noChange_skipsAuditAndSave() {
-        String webhookUrl = "https://discord.com/api/webhooks/123/abc-XYZ_def";
+        String webhookUrl = "https://discord.com/api/webhooks/123/abc-XYZ_def_long_enough_token_value";
         SignalSourceConfig src = sourceWith("enc:" + webhookUrl, true);
         when(aes.decrypt("enc:" + webhookUrl)).thenReturn(webhookUrl);
         when(sourceRepository.findById(42L)).thenReturn(Optional.of(src));
@@ -165,12 +165,25 @@ class SignalSourceServiceMirrorTest {
     }
 
     @Test
+    @DisplayName("truncated URL (token < 20 chars) → rejected")
+    void truncatedToken_rejected() {
+        SignalSourceConfig src = sourceWith(null, false);
+        when(sourceRepository.findById(42L)).thenReturn(Optional.of(src));
+
+        assertThatThrownBy(() -> service.updateMirrorWebhook(42L,
+                req("https://discord.com/api/webhooks/123/short", true, "bad"),
+                "admin-1", "10.0.0.1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Discord webhook");
+    }
+
+    @Test
     @DisplayName("source not found → IllegalArgumentException")
     void missingSource_throws() {
         when(sourceRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.updateMirrorWebhook(99L,
-                req("https://discord.com/api/webhooks/123/abc-XYZ_def", true, "x"),
+                req("https://discord.com/api/webhooks/123/abc-XYZ_def_long_enough_token_value", true, "x"),
                 "admin-1", "10.0.0.1"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -178,7 +191,7 @@ class SignalSourceServiceMirrorTest {
     @Test
     @DisplayName("flip enabled flag only (URL same) → save + audit")
     void toggleEnabledOnly_persists() {
-        String webhookUrl = "https://discord.com/api/webhooks/123/abc-XYZ_def";
+        String webhookUrl = "https://discord.com/api/webhooks/123/abc-XYZ_def_long_enough_token_value";
         SignalSourceConfig src = sourceWith("enc:" + webhookUrl, false);
         when(aes.decrypt("enc:" + webhookUrl)).thenReturn(webhookUrl);
         when(sourceRepository.findById(42L)).thenReturn(Optional.of(src));

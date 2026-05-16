@@ -119,6 +119,15 @@ public class DiscordRawMessageService {
         }
     }
 
+    /**
+     * 註冊 AFTER_COMMIT hook（在 tx 內）或直接呼叫（不在 tx 內）。
+     *
+     * <p><strong>⚠️ Invariant</strong>：{@code source} 跟 {@code entity} 是 Hibernate-managed
+     * entities，session close 後 lazy-loaded 欄位會 throw。{@link MirrorWebhookService} 內目前**只用
+     * eager 欄位**（id / name / displayName / mirrorEnabled / mirrorWebhookUrl 跟 entity 的
+     * messageId / content / messageTimestamp）— 改動該 service 時若新增 lazy 欄位存取，須先在這裡
+     * detach 成 DTO 再排程。
+     */
     private void scheduleMirror(SignalSourceConfig source,
                                  DiscordRawMessage entity,
                                  String attachmentUrl) {
