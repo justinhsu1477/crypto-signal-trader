@@ -52,6 +52,14 @@ public class DiscordRawMessageRequest {
     @JsonProperty("attachment_sha256")
     private String attachmentSha256;
 
+    /**
+     * 第一張附件圖片的 Discord CDN URL（給 Java mirror webhook embed.image.url 用）。
+     * Discord 24h 後 URL 過期，僅供即時 mirror；Phase 2 會改成 Java multipart re-upload 永久保存。
+     * 純文字訊息為 null。
+     */
+    @JsonProperty("attachment_url")
+    private String attachmentUrl;
+
     @JsonProperty("has_embed_images")
     private Boolean hasEmbedImages;
 

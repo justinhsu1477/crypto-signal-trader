@@ -796,12 +796,16 @@ class SignalRouter:
             # 優先使用 image path 計算出的真實 sha256；fallback 才去 dict 撈
             # （非 image-first 路徑，attachments[0].sha256 通常為 None — Discord 不給）
             attachment_sha256 = image_sha_override
-            if attachment_sha256 is None:
-                for att in attachments:
-                    ctype = (att.get("content_type") or "").lower()
-                    if ctype.startswith("image/"):
+            attachment_url = None
+            for att in attachments:
+                ctype = (att.get("content_type") or "").lower()
+                if ctype.startswith("image/"):
+                    if attachment_sha256 is None:
                         attachment_sha256 = att.get("sha256")
-                        break
+                    # Discord CDN URL — 給 Java mirror webhook embed.image.url 用
+                    # 注意：URL 24h 後過期（Discord 強制簽章）
+                    attachment_url = att.get("url") or None
+                    break
 
             # MESSAGE_UPDATE 處理：
             # - parser_action 加 EDIT: 前綴
@@ -827,6 +831,7 @@ class SignalRouter:
                 "has_attachments": bool(attachments),
                 "attachment_count": len(attachments),
                 "attachment_sha256": attachment_sha256,
+                "attachment_url": attachment_url,
                 "has_embed_images": bool(embed_images),
                 "has_reference": bool(msg.get("has_reference", False)),
                 "parser_action": archive_action,
