@@ -1,0 +1,80 @@
+# Hibernate schema validation 專用 profile
+# 唯一目的：用真 Flyway migration 起 schema 後，Hibernate ddl-auto=validate
+# 嚴格比對 entity @Column vs DB column type，抓 CHAR vs VARCHAR 那類靜默 mismatch
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/test    # @DynamicPropertySource 覆蓋
+    username: test
+    password: test
+  jpa:
+    hibernate:
+      ddl-auto: validate                          # 關鍵：嚴格驗證
+    show-sql: false
+    properties:
+      hibernate.hbm2ddl.auto: validate
+  flyway:
+    enabled: true                                 # 跑真 migration
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cache:
+    type: none
+  rabbitmq:
+    host: localhost
+    port: 5672
+    listener:
+      simple:
+        auto-startup: false
+
+# JWT / encryption — placeholder 兜底（不真用，避免 @Value 解析失敗 startup fail）
+jwt:
+  secret: schema-validation-test-secret-minimum-256-bits-long-enough-for-hmac
+  expiration-ms: 1800000
+  refresh-expiration-ms: 259200000
+  cookie-secure: false
+
+encryption:
+  aes-key: 0123456789abcdef0123456789abcdef
+
+monitor:
+  api-key: test-monitor-key
+
+ai:
+  api-key: ""
+  default-model: gemini-2.5-flash-lite
+
+binance:
+  futures:
+    base-url: https://testnet.binancefuture.com
+    ws-base-url: wss://stream.binancefuture.com/private/ws
+    api-key: schema-test-fake-api-key
+    secret-key: schema-test-fake-secret-key
+  risk:
+    dedup-enabled: false
+
+# 全部外部服務關閉
+discord:
+  webhook:
+    enabled: false
+  bot:
+    enabled: false
+
+chatbot:
+  enabled: false
+
+advisor:
+  enabled: false
+
+line:
+  enabled: false
+
+email:
+  enabled: false
+  max-sends-per-hour: 10000
+  max-reset-per-quarter-hour: 10000
+
+mirror:
+  enabled: false
