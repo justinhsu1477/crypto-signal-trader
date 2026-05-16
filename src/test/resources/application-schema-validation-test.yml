@@ -82,3 +82,9 @@ email:
 
 mirror:
   enabled: false
+
+# 關閉 gRPC server — 避免 port 9090 衝突導致 Spring context 起不來。
+# 此 test 只關心 Hibernate schema validation，不需要 gRPC。
+grpc:
+  server:
+    enabled: false
