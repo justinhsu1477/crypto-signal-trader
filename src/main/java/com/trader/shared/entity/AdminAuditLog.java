@@ -48,8 +48,8 @@ public class AdminAuditLog {
     @Column(name = "target_id", length = 64, nullable = false)
     private String targetId;
 
-    /** 改動前的 SHA-256 前 16 hex（建立時可為 null） */
-    @Column(name = "before_hash", length = 16)
+    /** 改動前的 SHA-256 前 16 hex（建立時可為 null）— TEMPORARY: length 改 99 製造 schema mismatch，驗證 SchemaValidationIntegrationTest 真的會抓到 */
+    @Column(name = "before_hash", length = 99)
     private String beforeHash;
 
     /** 改動後的 SHA-256 前 16 hex（刪除時可為 null） */
