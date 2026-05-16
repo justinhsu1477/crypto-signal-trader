@@ -61,7 +61,11 @@ class SchemaValidationIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
 
-    // 全部外部服務 mock 掉 — 此 test 只關心 schema validation，不需要真實依賴
+    // 全部外部服務 mock 掉 — 此 test 只關心 schema validation，不需要真實依賴。
+    //
+    // !! IMPORTANT !! 這份清單必須跟 {@link BaseIntegrationTest} 同步。若主 application code 加入
+    // 新的 @PostConstruct hook 而 BaseIntegrationTest 需要 mock 它，這裡也要加 — 否則 Spring context
+    // 起不來，schema 驗證形同空殼（曾經發生：gRPC port 衝突讓 ddl-auto=validate 從沒跑到，靜默 pass）。
     @MockBean BinanceFuturesService binanceFuturesService;
     @MockBean GeminiService geminiService;
     @MockBean LineNotificationService lineNotificationService;
