@@ -174,6 +174,10 @@ public class HealthController {
             status.put("lastHeartbeat", lastHeartbeat);
             status.put("secondsSinceLastHeartbeat", elapsed);
             status.put("monitorStatus", hb.get("monitorStatus"));
+            // Python monitor commit hash（前 7 字 git HEAD）—— admin 可比對 main HEAD
+            // 看本地 Python 是否落後（5/13 silent capture failure 那種狀況的 visibility）；
+            // null = 舊版 Python 沒帶這個欄位（向後相容）。
+            status.put("monitorVersion", hb.get("monitorVersion"));
             if (!fresh) {
                 status.put("warning",
                         "Python heartbeat stale (> " + HEARTBEAT_FRESH_SECONDS + "s)");

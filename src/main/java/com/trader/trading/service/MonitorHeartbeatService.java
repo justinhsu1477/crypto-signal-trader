@@ -71,6 +71,9 @@ public class MonitorHeartbeatService {
      */
     private final AtomicReference<Double> secondsSinceAnyMessage = new AtomicReference<>(null);
 
+    /** 最後一次收到的 Python monitor commit hash（7 字）；null = 舊版 Python 未帶 */
+    private final AtomicReference<String> monitorVersion = new AtomicReference<>(null);
+
     public MonitorHeartbeatService(NotificationService webhookService) {
         this.webhookService = webhookService;
     }
@@ -107,11 +110,25 @@ public class MonitorHeartbeatService {
      * @param secondsSinceAnyMessageValue 自 CDP 上次送任何訊息以來的秒數；null = 啟動以來
      *                                    沒收過訊息或 Python 沒帶這個欄位（向後相容）。
      */
-    @SuppressWarnings("unchecked")
     public Map<String, Object> receiveHeartbeat(String status, String aiStatus,
                                                  Map<String, Object> aiTokenStats,
                                                  Map<String, Long> channelLastSeenData,
                                                  Double secondsSinceAnyMessageValue) {
+        return receiveHeartbeat(status, aiStatus, aiTokenStats, channelLastSeenData,
+                                 secondsSinceAnyMessageValue, null);
+    }
+
+    /**
+     * 接收 Python monitor 的心跳（含 Layer 1 capture watchdog + monitorVersion）。
+     *
+     * @param monitorVersionValue Python 啟動時讀的 git HEAD 前 7 字；null = 舊版 Python 沒帶
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> receiveHeartbeat(String status, String aiStatus,
+                                                 Map<String, Object> aiTokenStats,
+                                                 Map<String, Long> channelLastSeenData,
+                                                 Double secondsSinceAnyMessageValue,
+                                                 String monitorVersionValue) {
         Instant now = Instant.now();
         Instant previous = lastHeartbeat.getAndSet(now);
         String previousStatus = lastStatus;
@@ -136,6 +153,12 @@ public class MonitorHeartbeatService {
         // 注意：null 也直接覆蓋，因為 Python 重啟後第一筆 heartbeat 就會帶 null（還沒收訊息），
         // 此時不應該繼續沿用舊值，否則 health check 會永遠看到舊資料。
         secondsSinceAnyMessage.set(secondsSinceAnyMessageValue);
+
+        // ===== Python monitor commit hash =====
+        // 只在實際帶值時更新；舊版 Python（null）保留之前的值，避免新版升級後又被舊節點覆蓋掉。
+        if (monitorVersionValue != null && !monitorVersionValue.isBlank()) {
+            monitorVersion.set(monitorVersionValue);
+        }
 
         // ===== 情況 1: Discord 斷了，Python 在重連 =====
         if ("reconnecting".equals(status) && !alertSent) {
@@ -252,6 +275,8 @@ public class MonitorHeartbeatService {
         status.put("channelLastSeen", channelLastSeen.get());
         // Layer 1 watchdog 給 HealthController 用；null 代表還沒收過任何訊息
         status.put("secondsSinceAnyMessage", secondsSinceAnyMessage.get());
+        // Python monitor commit hash（前 7 字 git HEAD）；null 代表舊版 Python 沒帶
+        status.put("monitorVersion", monitorVersion.get());
         return status;
     }
 

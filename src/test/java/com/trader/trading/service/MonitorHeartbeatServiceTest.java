@@ -526,4 +526,32 @@ class MonitorHeartbeatServiceTest {
             assertThat(daily.get("callCount")).isEqualTo(5L); // 沒有重複累加
         }
     }
+
+    // ==================== monitorVersion (Gap 10) ====================
+
+    @Nested
+    @DisplayName("monitorVersion — Python git HEAD visibility")
+    class MonitorVersionTests {
+
+        @Test
+        @DisplayName("receiveHeartbeat 帶 monitorVersion → getStatus 暴露相同字串")
+        void receiveHeartbeat_storesMonitorVersion() {
+            service.receiveHeartbeat(
+                    "connected", "active", null, null, null, "abc1234"
+            );
+
+            Map<String, Object> status = service.getStatus();
+            assertThat(status).containsEntry("monitorVersion", "abc1234");
+        }
+
+        @Test
+        @DisplayName("舊 Python 沒帶 monitorVersion → getStatus 給 null（向下相容）")
+        void receiveHeartbeat_nullMonitorVersion_returnsNull() {
+            service.receiveHeartbeat("connected", "active", null, null, null);
+
+            Map<String, Object> status = service.getStatus();
+            assertThat(status).containsKey("monitorVersion");
+            assertThat(status.get("monitorVersion")).isNull();
+        }
+    }
 }
