@@ -48,13 +48,18 @@ public class AdminAuditLog {
     @Column(name = "target_id", length = 64, nullable = false)
     private String targetId;
 
-    /** 改動前的 SHA-256 前 16 hex（建立時可為 null）— TEMPORARY: length 改 99 製造 schema mismatch，驗證 SchemaValidationIntegrationTest 真的會抓到 */
-    @Column(name = "before_hash", length = 99)
+    /** 改動前的 SHA-256 前 16 hex（建立時可為 null） */
+    @Column(name = "before_hash", length = 16)
     private String beforeHash;
 
     /** 改動後的 SHA-256 前 16 hex（刪除時可為 null） */
     @Column(name = "after_hash", length = 16)
     private String afterHash;
+
+    /** TEMPORARY negative-test field — 故意對應 DB 不存在的欄位，驗證 schema test 會抓 missing column。
+     *  此欄位 PR 不會 merge，會被砍掉。*/
+    @Column(name = "totally_fake_column_for_schema_test", nullable = false)
+    private String totallyFakeColumnForSchemaTest;
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
