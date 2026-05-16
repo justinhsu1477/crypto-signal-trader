@@ -128,6 +128,20 @@ export default function AdminPromptsPage() {
     }
   }
 
+  async function handleRollback(id: number, version: number) {
+    if (!confirm(t("prompts.rollbackConfirm").replace("%v", String(version)))) return;
+    setActivating(id);
+    try {
+      await activateAdminPromptVersion(id);
+      toast.success(t("prompts.rollbackSuccess"));
+      fetchData();
+    } catch {
+      toast.error(t("common.loadFailed"));
+    } finally {
+      setActivating(null);
+    }
+  }
+
   // 開 Compare modal — 預設 from = active, to = 點擊的版本
   function openDiff(toId: number) {
     if (!activeVersion || activeVersion.id === toId) {
@@ -249,16 +263,22 @@ export default function AdminPromptsPage() {
                   </button>
                   {!v.active && (
                     <button
-                      onClick={() => handleActivate(v.id)}
+                      onClick={() =>
+                        activeVersion ? handleRollback(v.id, v.version) : handleActivate(v.id)
+                      }
                       disabled={activating === v.id}
-                      className="flex items-center gap-1 px-3 py-1 text-xs rounded-lg bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 transition-colors"
+                      className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg disabled:opacity-50 transition-colors text-white ${
+                        activeVersion
+                          ? "bg-amber-600 hover:bg-amber-700"
+                          : "bg-purple-600 hover:bg-purple-700"
+                      }`}
                     >
                       {activating === v.id ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
                         <Zap className="h-3 w-3" />
                       )}
-                      {t("prompts.activate")}
+                      {activeVersion ? t("prompts.rollback") : t("prompts.activate")}
                     </button>
                   )}
                 </div>

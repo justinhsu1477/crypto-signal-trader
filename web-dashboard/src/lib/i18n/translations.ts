@@ -2032,6 +2032,9 @@ const translations = {
     createSuccess: { en: "Prompt version created", "zh-TW": "Prompt 版本已建立", "zh-CN": "Prompt 版本已创建", ja: "プロンプトバージョン作成成功" },
     activateSuccess: { en: "Prompt version activated", "zh-TW": "Prompt 版本已啟用", "zh-CN": "Prompt 版本已启用", ja: "プロンプトバージョン有効化成功" },
     activateConfirm: { en: "Activate this version? It will be pushed to the monitor immediately.", "zh-TW": "確定啟用此版本？將立即推送到 Monitor。", "zh-CN": "确定启用此版本？将立即推送到 Monitor。", ja: "このバージョンを有効化しますか？モニターに即時プッシュされます。" },
+    rollback: { en: "Rollback", "zh-TW": "回滾", "zh-CN": "回滚", ja: "ロールバック" },
+    rollbackConfirm: { en: "Rollback to this version? It will be re-activated immediately and pushed to monitors.", "zh-TW": "回滾到此版本？將立即重啟用並推送到所有 monitor。", "zh-CN": "回滚到此版本？将立即重启用并推送到所有 monitor。", ja: "このバージョンへロールバック？即時有効化されモニターに配信されます。" },
+    rollbackSuccess: { en: "Rolled back successfully", "zh-TW": "已回滾", "zh-CN": "已回滚", ja: "ロールバック完了" },
     descriptionPlaceholder: { en: "e.g. Added new KOL examples", "zh-TW": "例：新增 KOL 範例", "zh-CN": "例：新增 KOL 示例", ja: "例：新しいKOLサンプル追加" },
     usingDefault: { en: "Using hardcoded default prompt", "zh-TW": "使用硬編碼預設 prompt", "zh-CN": "使用硬编码默认 prompt", ja: "ハードコードされたデフォルトプロンプトを使用中" },
     // Diff / Compare
