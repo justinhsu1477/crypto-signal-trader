@@ -8,6 +8,8 @@ import re
 import time
 from typing import Optional
 
+import aiohttp  # mirror_webhooks 用 — fire-and-forget POST 到個人 server channel
+
 from .api_client import ApiClient
 from .config import DiscordConfig, ImageSignalConfig
 from .image_utils import ImageFetchError, fetch_image
@@ -96,6 +98,9 @@ class SignalRouter:
         self.signal_queue = signal_queue
         self.ignore_keywords = discord_config.ignore_keywords or []
         self.image_signal_config = image_signal_config or ImageSignalConfig()
+        # 訊號源 channel_id → 個人 server channel 的 webhook URL（含 token）。
+        # 空 dict = mirror 功能停用。fire-and-forget，不影響主流程。
+        self.mirror_webhooks: dict[str, str] = dict(discord_config.mirror_webhooks or {})
         self.source_metadata_map: dict[str, dict] = {}
         self.channel_last_seen: dict[str, float] = {}
         # Layer 1: 任何頻道、任何訊息（連被 channel filter 擋下的都算）的最後 wall-clock 時間。
@@ -118,6 +123,65 @@ class SignalRouter:
         if self._last_message_time is None:
             return None
         return time.time() - self._last_message_time
+
+    async def _mirror_to_webhook(self, webhook_url: str, msg: dict) -> None:
+        """Fire-and-forget POST 原始訊息到個人 server channel 的 webhook。
+
+        設計要點：
+        - 失敗一律 silently swallow（log warning）— 不能因 mirror 失敗讓訊號漏處理
+        - 短 timeout（5s）— webhook 慢就放棄，不拖累其他訊號
+        - payload 用 content + username 雙保留來源辨識（陳哥/三馬哥）
+        - embed 圖片 URL 附在 content 後（Discord webhook 不支援轉發原 embed）
+
+        Args:
+            webhook_url: 目標 webhook URL（含 token）
+            msg: CDP hook 解析後的訊息 dict
+        """
+        try:
+            author_name = msg.get("author_name", "?")
+            content = msg.get("content", "") or ""
+            timestamp = msg.get("timestamp", "")
+
+            # 蒐集圖片 URL（attachments + embed images） — 附在 content 後讓 Discord 自動 unfurl
+            image_urls: list[str] = []
+            for att in msg.get("attachments", []) or []:
+                ctype = (att.get("content_type") or "").lower()
+                if ctype.startswith("image/") and att.get("url"):
+                    image_urls.append(att["url"])
+            for emb in msg.get("embed_images", []) or []:
+                url = emb.get("url", "")
+                if url:
+                    image_urls.append(url)
+
+            # 組 webhook payload —
+            # content 前置 timestamp 方便個人 server 對時，username 保留原作者名
+            header = f"[{timestamp}] " if timestamp else ""
+            body = content if content else "_(無文字內容)_"
+            full_content = header + body
+            if image_urls:
+                full_content += "\n" + "\n".join(image_urls)
+            # Discord webhook content 上限 2000 字，超過截斷
+            if len(full_content) > 2000:
+                full_content = full_content[:1997] + "..."
+
+            payload = {
+                "content": full_content,
+                "username": author_name[:80],  # Discord username 上限 80 字
+                "allowed_mentions": {"parse": []},  # 永不 @ 任何人，避免 mirror 訊息誤觸通知
+            }
+
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(webhook_url, json=payload) as resp:
+                    if resp.status >= 400:
+                        body_text = await resp.text()
+                        logger.warning(
+                            "mirror webhook POST 失敗 status=%s url=%s body=%s",
+                            resp.status, webhook_url[:60] + "...", body_text[:200],
+                        )
+        except Exception as e:
+            # 任何 exception 都吞掉 — mirror 不能拖累主流程
+            logger.warning("mirror webhook exception: %s", e)
 
     def _has_processable_image(self, msg: dict) -> bool:
         """訊息是否含可處理的圖片（attachment 或 embed image）。
@@ -351,6 +415,15 @@ class SignalRouter:
 
         # 記錄頻道活動時間（通過 channel filter 就算活躍，不管後續是否被過濾）
         self.channel_last_seen[channel_id] = time.time()
+
+        # === Mirror raw message to user 個人 server channel ===
+        # 這個步驟「故意」放在 channel filter 之後、guild/author filter 之前 — 我們只想 mirror
+        # 來自合法訊號源頻道的訊息，但不在乎 author 過濾結果（user 想看到原文，包含偶爾被 author
+        # filter 擋下的訊息）。Fire-and-forget：不 await，失敗也吞掉，絕不拖累主流程。
+        if self.mirror_webhooks:
+            mirror_url = self.mirror_webhooks.get(channel_id)
+            if mirror_url:
+                asyncio.create_task(self._mirror_to_webhook(mirror_url, msg))
 
         # Guild filter
         if self.guild_ids and guild_id not in self.guild_ids:
