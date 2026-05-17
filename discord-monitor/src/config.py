@@ -23,10 +23,6 @@ class DiscordConfig:
     guild_ids: list[str] = field(default_factory=list)
     author_ids: list[str] = field(default_factory=list)
     ignore_keywords: list[str] = field(default_factory=list)  # 內容黑名單（一對一等非交易訊號）
-    # 訊號源 channel_id → 用戶個人 Discord channel 的 webhook URL 映射。
-    # 收到該 channel 訊號時 fire-and-forget POST 原文到對應 webhook，方便個人 server 集中收信。
-    # webhook URL 含 token = secret，只存在 gitignored config.yml 不上 git。
-    mirror_webhooks: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -171,9 +167,6 @@ def load_config(path: str) -> AppConfig:
             guild_ids=_env_list("DISCORD_GUILD_IDS", discord_raw.get("guild_ids", [])),
             author_ids=_env_list("DISCORD_AUTHOR_IDS", discord_raw.get("author_ids", [])),
             ignore_keywords=_env_list("DISCORD_IGNORE_KEYWORDS", discord_raw.get("ignore_keywords", [])),
-            # mirror_webhooks 沒做 env 覆蓋 — webhook URL 含 token 不適合存環境變數，
-            # 統一從 gitignored config.yml 讀。預設空 dict = mirror 功能停用。
-            mirror_webhooks=discord_raw.get("mirror_webhooks", {}) or {},
         ),
         api=ApiConfig(
             base_url=api_raw.get("base_url", "http://localhost:8080"),
