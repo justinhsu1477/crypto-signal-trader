@@ -14,12 +14,16 @@ Usage:
     python3 encrypt_mirror_webhooks.py < mirror_webhooks_input.csv > mirror_updates.sql
 
 Input CSV format (pipe-separated, lines starting with # are comments):
-  channel_id|webhook_url|source_name
+  db_source_id|webhook_url|comment_for_humans
 
 Example input:
-  # source_name in comment for readability — script uses channel_id to match signal_sources row
-  1505168305185357956|https://discord.com/api/webhooks/.../...|陳哥
-  1505168385023934588|https://discord.com/api/webhooks/.../...|三馬哥
+  # Comment column is for readability — script uses db_source_id (signal_sources.id) to match
+  10|https://discord.com/api/webhooks/.../...|陳哥
+  6|https://discord.com/api/webhooks/.../...|三馬哥
+
+Note: db_source_id is the PRIMARY KEY of signal_sources table, **not** Discord channel_id.
+Get the right IDs via:
+  SELECT id, name, display_name, channel_id FROM signal_sources ORDER BY id;
 
 Output: SQL UPDATE statements ready for psql, plus a sanity SELECT at end.
 
@@ -79,17 +83,23 @@ def parse_input(lines: Iterable[str]) -> list[tuple[str, str, str]]:
         if len(parts) < 2:
             sys.stderr.write(f"WARN: skipping malformed line: {line!r}\n")
             continue
-        channel_id = parts[0].strip()
+        db_source_id = parts[0].strip()
         url = parts[1].strip()
         source_name = parts[2].strip() if len(parts) >= 3 else ""
-        if not channel_id or not url:
-            sys.stderr.write(f"WARN: skipping empty channel_id/url: {line!r}\n")
+        if not db_source_id or not url:
+            sys.stderr.write(f"WARN: skipping empty db_source_id/url: {line!r}\n")
             continue
+        # db_source_id must be a positive integer (signal_sources.id is BIGSERIAL)
+        if not db_source_id.isdigit():
+            sys.stderr.write(
+                f"WARN: db_source_id should be numeric (DB primary key, not channel_id): "
+                f"{db_source_id!r}. Run `SELECT id, name, channel_id FROM signal_sources;` first.\n"
+            )
         if not url.startswith("https://discord.com/api/webhooks/"):
             sys.stderr.write(
                 f"WARN: URL does not look like a Discord webhook: {url!r}\n"
             )
-        rows.append((channel_id, url, source_name))
+        rows.append((db_source_id, url, source_name))
     return rows
 
 
@@ -124,30 +134,30 @@ def main() -> int:
     print("BEGIN;")
     print()
 
-    for channel_id, url, source_name in rows:
+    for db_source_id, url, source_name in rows:
         encrypted = encrypt_aes_gcm(url, aes_key)
-        comment = f"-- {source_name} (channel {channel_id})" if source_name else f"-- channel {channel_id}"
+        comment = f"-- {source_name} (db id={db_source_id})" if source_name else f"-- db id={db_source_id}"
         print(comment)
-        # UPDATE by channel_id (more reliable than guessing source id).
-        # If signal_sources doesn't have a row with this channel_id, the UPDATE is a no-op (0 rows affected) — we'll spot that in the sanity SELECT.
+        # UPDATE by signal_sources.id (PK) — most reliable.
+        # If no row with this id exists, UPDATE is a no-op (0 rows affected) — sanity SELECT below will reveal it.
         print(
             "UPDATE signal_sources SET "
             f"mirror_webhook_url = '{encrypted}', "
             "mirror_enabled = TRUE, "
             "updated_at = NOW() "
-            f"WHERE channel_id = '{channel_id}';"
+            f"WHERE id = {db_source_id};"
         )
         print()
 
     # Sanity SELECT at the end
-    print("-- Sanity check: list all sources with mirror enabled. Should show the rows above.")
+    print("-- Sanity check: list all sources we just updated. Should show one row per UPDATE above.")
     print(
         "SELECT id, name, display_name, channel_id, mirror_enabled, "
         "LEFT(mirror_webhook_url, 24) || '...' AS mirror_url_preview "
         "FROM signal_sources "
-        "WHERE channel_id IN ("
-        + ", ".join(f"'{r[0]}'" for r in rows)
-        + ") ORDER BY name;"
+        "WHERE id IN ("
+        + ", ".join(r[0] for r in rows)
+        + ") ORDER BY id;"
     )
     print()
     print("-- After verifying the SELECT looks right, run: COMMIT;")
