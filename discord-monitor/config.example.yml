@@ -14,6 +14,11 @@ discord:
   guild_ids:
     - "YOUR_GUILD_ID"         # 填入伺服器 ID，或用環境變數 DISCORD_GUILD_IDS (選填)
   author_ids: []               # 只接收特定人的訊息 (選填, 空 = 所有人)
+  # 訊號源 channel_id → 個人 Discord channel 的 webhook URL 映射 (選填，空 = 功能停用)。
+  # 收到對應 channel 訊息時，fire-and-forget POST 原文到個人 server，方便集中收信。
+  # ⚠️ webhook URL 含 token，務必只填在 gitignored config.yml，這個 example 檔只放 placeholder。
+  mirror_webhooks: {}
+    # "1234567890123456789": "https://discord.com/api/webhooks/.../..."
 
 # Spring Boot API 設定
 api:
