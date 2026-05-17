@@ -37,6 +37,10 @@ discord-monitor/discord-monitor.log
 discord-monitor/probe_*.py
 discord-monitor/probe_*.js
 discord-monitor/data/
+# Mirror webhook scripts: input files may contain webhook URLs (secrets), generated SQL too
+discord-monitor/scripts/*_input.csv
+discord-monitor/scripts/*_input.txt
+discord-monitor/scripts/mirror_updates.sql
 
 # === H2 Database ===
 data/

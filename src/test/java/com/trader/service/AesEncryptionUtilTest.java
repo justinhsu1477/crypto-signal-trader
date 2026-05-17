@@ -70,6 +70,30 @@ class AesEncryptionUtilTest {
 
             assertThat(decrypted).isEqualTo(plaintext);
         }
+
+        @Test
+        @DisplayName("Python AES-GCM 加密 → Java decrypt — cross-platform 相容驗證")
+        void pythonGeneratedCiphertext_javaDecrypts() {
+            // 此測試保證 discord-monitor/scripts/encrypt_mirror_webhooks.py 的 Python AESGCM
+            // 輸出格式跟 Java AesEncryptionUtil 互通 — Python 加密的 ciphertext，Java 必須能解。
+            //
+            // 此 ciphertext 由以下 Python 命令產生（key = 32 chars "01234567890123456789012345678901"）：
+            //
+            //   ENCRYPTION_AES_KEY="01234567890123456789012345678901" python3 -c "
+            //   from encrypt_mirror_webhooks import encrypt_aes_gcm
+            //   print(encrypt_aes_gcm('https://discord.com/api/webhooks/123456789/test-token-AbCdEf',
+            //                          '01234567890123456789012345678901'))"
+            //
+            // 若此測試 fail，表示 Python script 跟 Java 格式跑掉了，user 跑 SQL 後資料會解不開。
+            String pythonEncrypted = "ZBh+KE5EE7fre8jca/wlpsYNxLMsScUizzjB4OyP0zZDnkY0JQV5gIDzUHDnISkejWDBParVi3X84zJ/8H0O8D4lxJy5MxbIpTNLExFmRN00dzWw9eLtBA==";
+            String expectedPlaintext = "https://discord.com/api/webhooks/123456789/test-token-AbCdEf";
+
+            String decrypted = aesEncryptionUtil.decrypt(pythonEncrypted);
+
+            assertThat(decrypted)
+                    .as("Python AESGCM ciphertext 應該能被 Java AES/GCM/NoPadding 解開")
+                    .isEqualTo(expectedPlaintext);
+        }
     }
 
     @Nested
