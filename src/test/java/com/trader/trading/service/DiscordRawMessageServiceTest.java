@@ -3,8 +3,10 @@ package com.trader.trading.service;
 import com.trader.shared.model.DiscordRawMessageRequest;
 import com.trader.trading.entity.DiscordRawMessage;
 import com.trader.trading.entity.Signal;
+import com.trader.trading.entity.SignalSourceMirrorTarget;
 import com.trader.trading.repository.DiscordRawMessageRepository;
 import com.trader.trading.repository.SignalRepository;
+import com.trader.trading.repository.SignalSourceMirrorTargetRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,6 +33,7 @@ class DiscordRawMessageServiceTest {
     private SignalRepository signalRepository;
     private com.trader.notification.service.MirrorWebhookService mirror;
     private com.trader.trading.repository.SignalSourceConfigRepository sourceRepository;
+    private SignalSourceMirrorTargetRepository mirrorTargetRepository;
     private DiscordRawMessageService service;
 
     @BeforeEach
@@ -38,9 +42,18 @@ class DiscordRawMessageServiceTest {
         signalRepository = mock(SignalRepository.class);
         mirror = mock(com.trader.notification.service.MirrorWebhookService.class);
         sourceRepository = mock(com.trader.trading.repository.SignalSourceConfigRepository.class);
-        service = new DiscordRawMessageService(repository, signalRepository, mirror, sourceRepository);
+        mirrorTargetRepository = mock(SignalSourceMirrorTargetRepository.class);
+        service = new DiscordRawMessageService(
+                repository,
+                signalRepository,
+                mirror,
+                sourceRepository,
+                mirrorTargetRepository);
 
         when(repository.save(any(DiscordRawMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(sourceRepository.findByChannelIdAndGuildId(any(), any())).thenReturn(Optional.empty());
+        when(sourceRepository.findByChannelId(any())).thenReturn(Optional.empty());
+        when(mirrorTargetRepository.findBySourceIdAndEnabledTrue(any())).thenReturn(List.of());
     }
 
     private DiscordRawMessageRequest baseRequest(String msgId) {
@@ -159,7 +172,7 @@ class DiscordRawMessageServiceTest {
                 .id(42L).name("chenge").displayName("陳哥")
                 .channelId("ch-1").guildId("g-1")
                 .build();
-        when(sourceRepository.findByChannelId("ch-1")).thenReturn(java.util.Optional.of(src));
+        when(sourceRepository.findByChannelIdAndGuildId("ch-1", "g-1")).thenReturn(java.util.Optional.of(src));
         when(repository.findByMessageId("msg-mirror")).thenReturn(java.util.Optional.empty());
 
         DiscordRawMessageRequest req = baseRequest("msg-mirror");
@@ -172,6 +185,49 @@ class DiscordRawMessageServiceTest {
                 eq(src),
                 any(DiscordRawMessage.class),
                 eq("https://cdn.discordapp.com/attachments/x/y/banner.png"));
+    }
+
+    @Test
+    @DisplayName("recordMessage_triggersMirrorTargets: 同一 source 會 fan-out 到多個 mirror target")
+    void recordMessage_triggersMirrorTargets() {
+        com.trader.trading.entity.SignalSourceConfig src = com.trader.trading.entity.SignalSourceConfig.builder()
+                .id(42L).name("chenge").displayName("陳哥")
+                .channelId("ch-1").guildId("g-1")
+                .mirrorEnabled(true)
+                .build();
+        SignalSourceMirrorTarget targetA = SignalSourceMirrorTarget.builder()
+                .source(src)
+                .sourceId(42L)
+                .targetChannelId("target-a")
+                .mirrorWebhookUrl("enc-a")
+                .enabled(true)
+                .build();
+        SignalSourceMirrorTarget targetB = SignalSourceMirrorTarget.builder()
+                .source(src)
+                .sourceId(42L)
+                .targetChannelId("target-b")
+                .mirrorWebhookUrl("enc-b")
+                .enabled(true)
+                .build();
+        when(sourceRepository.findByChannelIdAndGuildId("ch-1", "g-1")).thenReturn(java.util.Optional.of(src));
+        when(mirrorTargetRepository.findBySourceIdAndEnabledTrue(42L)).thenReturn(List.of(targetA, targetB));
+        when(repository.findByMessageId("msg-targets")).thenReturn(java.util.Optional.empty());
+
+        DiscordRawMessageRequest req = baseRequest("msg-targets");
+        service.recordMessage(req);
+
+        verify(mirror).mirrorAsync(
+                eq("enc-a"),
+                eq("陳哥"),
+                eq("chenge -> target-a"),
+                any(DiscordRawMessage.class),
+                isNull());
+        verify(mirror).mirrorAsync(
+                eq("enc-b"),
+                eq("陳哥"),
+                eq("chenge -> target-b"),
+                any(DiscordRawMessage.class),
+                isNull());
     }
 
     @Test

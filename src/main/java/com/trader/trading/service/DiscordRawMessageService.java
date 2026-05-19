@@ -5,9 +5,11 @@ import com.trader.shared.config.AppConstants;
 import com.trader.shared.model.DiscordRawMessageRequest;
 import com.trader.trading.entity.DiscordRawMessage;
 import com.trader.trading.entity.SignalSourceConfig;
+import com.trader.trading.entity.SignalSourceMirrorTarget;
 import com.trader.trading.repository.DiscordRawMessageRepository;
 import com.trader.trading.repository.SignalRepository;
 import com.trader.trading.repository.SignalSourceConfigRepository;
+import com.trader.trading.repository.SignalSourceMirrorTargetRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,6 +41,7 @@ public class DiscordRawMessageService {
     private final SignalRepository signalRepository;
     private final MirrorWebhookService mirrorWebhookService;
     private final SignalSourceConfigRepository signalSourceRepository;
+    private final SignalSourceMirrorTargetRepository mirrorTargetRepository;
 
     /**
      * 上報一則 Discord 訊息（UPSERT 語意）。
@@ -111,11 +114,39 @@ public class DiscordRawMessageService {
             if (req.getChannelId() == null || req.getChannelId().isBlank()) {
                 return;
             }
-            signalSourceRepository.findByChannelId(req.getChannelId())
-                    .ifPresent(source -> scheduleMirror(source, entity, req.getAttachmentUrl()));
+            SignalSourceConfig source = resolveSignalSource(req);
+            if (source == null) {
+                return;
+            }
+
+            scheduleMirror(source, entity, req.getAttachmentUrl());
+            scheduleMirrorTargets(source, entity, req.getAttachmentUrl());
         } catch (Exception e) {
             log.warn("mirror trigger failed (swallowed): msg={} err={}",
                     req.getMessageId(), e.getMessage());
+        }
+    }
+
+    private SignalSourceConfig resolveSignalSource(DiscordRawMessageRequest req) {
+        if (req.getGuildId() != null && !req.getGuildId().isBlank()) {
+            return signalSourceRepository.findByChannelIdAndGuildId(req.getChannelId(), req.getGuildId())
+                    .or(() -> signalSourceRepository.findByChannelId(req.getChannelId()))
+                    .orElse(null);
+        }
+        return signalSourceRepository.findByChannelId(req.getChannelId()).orElse(null);
+    }
+
+    private void scheduleMirrorTargets(SignalSourceConfig source,
+                                       DiscordRawMessage entity,
+                                       String attachmentUrl) {
+        if (source.getId() == null || !source.isMirrorEnabled()) {
+            return;
+        }
+
+        List<SignalSourceMirrorTarget> targets =
+                mirrorTargetRepository.findBySourceIdAndEnabledTrue(source.getId());
+        for (SignalSourceMirrorTarget target : targets) {
+            scheduleMirrorTarget(source, target, entity, attachmentUrl);
         }
     }
 
@@ -141,6 +172,35 @@ public class DiscordRawMessageService {
         } else {
             // 不在 tx 內（例如 unit test 直接呼叫）→ 直接送
             mirrorWebhookService.mirrorAsync(source, entity, attachmentUrl);
+        }
+    }
+
+    private void scheduleMirrorTarget(SignalSourceConfig source,
+                                      SignalSourceMirrorTarget target,
+                                      DiscordRawMessage entity,
+                                      String attachmentUrl) {
+        String displayName = source.getDisplayName() != null ? source.getDisplayName() : source.getName();
+        String logTarget = String.format("%s -> %s", source.getName(), target.getTargetChannelId());
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    mirrorWebhookService.mirrorAsync(
+                            target.getMirrorWebhookUrl(),
+                            displayName,
+                            logTarget,
+                            entity,
+                            attachmentUrl);
+                }
+            });
+        } else {
+            mirrorWebhookService.mirrorAsync(
+                    target.getMirrorWebhookUrl(),
+                    displayName,
+                    logTarget,
+                    entity,
+                    attachmentUrl);
         }
     }
 
