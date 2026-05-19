@@ -84,26 +84,8 @@ public class MirrorWebhookService {
                 return;
             }
 
-            String webhookUrl;
-            try {
-                webhookUrl = aes.decrypt(encrypted);
-            } catch (Exception e) {
-                log.warn("mirror: AES decrypt failed for source {}: {}", source.getName(), e.getMessage());
-                return;
-            }
-
-            String json = objectMapper.writeValueAsString(buildPayload(source, msg, attachmentUrl));
-            Request request = new Request.Builder()
-                    .url(webhookUrl)
-                    .post(RequestBody.create(json, JSON))
-                    .build();
-
-            try (Response response = httpClient.newCall(request).execute()) {
-                if (!response.isSuccessful()) {
-                    log.warn("mirror: webhook returned {} for source {} msg {}",
-                            response.code(), source.getName(), msg.getMessageId());
-                }
-            }
+            String displayName = displayName(source);
+            postToWebhook(encrypted, displayName, source.getName(), msg, attachmentUrl);
         } catch (IOException e) {
             log.warn("mirror: post failed for source {} msg {}: {}",
                     source.getName(), msg.getMessageId(), e.getMessage());
@@ -113,14 +95,66 @@ public class MirrorWebhookService {
         }
     }
 
-    private Map<String, Object> buildPayload(SignalSourceConfig source,
-                                              DiscordRawMessage msg,
-                                              String attachmentUrl) {
+    /**
+     * Async 觸發額外 mirror target。呼叫端已負責檢查 source.mirrorEnabled 與 target.enabled。
+     */
+    @Async("auditExecutor")
+    public void mirrorAsync(String encryptedWebhookUrl,
+                            String displayName,
+                            String logTarget,
+                            DiscordRawMessage msg,
+                            String attachmentUrl) {
+        try {
+            if (!config.isEnabled()) {
+                return;
+            }
+            if (encryptedWebhookUrl == null || encryptedWebhookUrl.isBlank()) {
+                return;
+            }
+
+            postToWebhook(encryptedWebhookUrl, displayName, logTarget, msg, attachmentUrl);
+        } catch (IOException e) {
+            log.warn("mirror: post failed for target {} msg {}: {}",
+                    logTarget, msg.getMessageId(), e.getMessage());
+        } catch (Exception e) {
+            log.warn("mirror: unexpected error for target {}: {}", logTarget, e.getMessage());
+        }
+    }
+
+    private void postToWebhook(String encryptedWebhookUrl,
+                               String displayName,
+                               String logTarget,
+                               DiscordRawMessage msg,
+                               String attachmentUrl) throws IOException {
+        String webhookUrl;
+        try {
+            webhookUrl = aes.decrypt(encryptedWebhookUrl);
+        } catch (Exception e) {
+            log.warn("mirror: AES decrypt failed for {}: {}", logTarget, e.getMessage());
+            return;
+        }
+
+        String json = objectMapper.writeValueAsString(buildPayload(displayName, msg, attachmentUrl));
+        Request request = new Request.Builder()
+                .url(webhookUrl)
+                .post(RequestBody.create(json, JSON))
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                log.warn("mirror: webhook returned {} for target {} msg {}",
+                        response.code(), logTarget, msg.getMessageId());
+            }
+        }
+    }
+
+    private Map<String, Object> buildPayload(String displayName,
+                                             DiscordRawMessage msg,
+                                             String attachmentUrl) {
         Map<String, Object> embed = new HashMap<>();
         embed.put("description", msg.getContent() != null ? msg.getContent() : "");
 
         Map<String, Object> footer = new HashMap<>();
-        String displayName = source.getDisplayName() != null ? source.getDisplayName() : source.getName();
         String ts = msg.getMessageTimestamp() != null
                 ? msg.getMessageTimestamp().format(TIME_FMT)
                 : "";
@@ -137,5 +171,9 @@ public class MirrorWebhookService {
         payload.put("username", displayName + " (mirror)");
         payload.put("embeds", List.of(embed));
         return payload;
+    }
+
+    private String displayName(SignalSourceConfig source) {
+        return source.getDisplayName() != null ? source.getDisplayName() : source.getName();
     }
 }

@@ -128,6 +128,19 @@ class MirrorWebhookServiceTest {
     }
 
     @Test
+    @DisplayName("mirror target overload → POST to decrypted target URL")
+    void mirrorTarget_postsToDecryptedUrl() throws IOException {
+        when(aes.decrypt("enc-target")).thenReturn("https://discord.com/api/webhooks/456/target");
+
+        build(true).mirrorAsync("enc-target", "歐陽", "ouyang -> target-c1", msg(), null);
+
+        ArgumentCaptor<Request> req = ArgumentCaptor.forClass(Request.class);
+        verify(httpClient).newCall(req.capture());
+        assertThat(req.getValue().url().toString())
+                .isEqualTo("https://discord.com/api/webhooks/456/target");
+    }
+
+    @Test
     @DisplayName("payload contains source display name as username + content as embed description")
     void payload_includesUsernameAndDescription() throws IOException {
         build(true).mirrorAsync(source(true, "enc-url"), msg(), null);
