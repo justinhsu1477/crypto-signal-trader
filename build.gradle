@@ -33,8 +33,11 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'com.h2database:h2'          // 保留給未來測試用
 
-    // Flyway DB Migration（9.x — PostgreSQL 支援已內建於 flyway-core）
+    // Flyway DB Migration
+    // 10.x（隨 Boot 3.4 帶入）把 PostgreSQL 支援從 flyway-core 拆出來，要顯式加
+    // 否則啟動會炸：FlywayException: No database found to handle jdbc:postgresql://...
     implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
 
     // JWT
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
