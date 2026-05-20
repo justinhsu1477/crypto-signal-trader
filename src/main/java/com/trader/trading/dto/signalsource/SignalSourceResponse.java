@@ -41,6 +41,19 @@ public class SignalSourceResponse {
     private LocalDateTime customPromptUpdatedAt;
     private String customPromptUpdatedBy;
 
+    /**
+     * 此源 mirror 是否啟用。
+     * false 可能是「per-source flag 關著」或「URL 未設」— 前端要看 {@link #hasMirrorWebhook} 區分。
+     */
+    private boolean mirrorEnabled;
+
+    /**
+     * webhook URL 是否已設定。
+     * **故意不回傳 URL 全文** — admin dashboard 多人場景避免敏感資訊外洩。
+     * 前端僅顯示「未設定 / 已設」狀態。
+     */
+    private boolean hasMirrorWebhook;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

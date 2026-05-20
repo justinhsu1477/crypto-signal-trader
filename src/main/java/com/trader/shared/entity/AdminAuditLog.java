@@ -73,6 +73,7 @@ public class AdminAuditLog {
     /** 高風險操作的標準動作字串。新增類別記得同步 docs/admin-permission-model.md。 */
     public static final class Action {
         public static final String UPDATE_CUSTOM_PROMPT = "UPDATE_CUSTOM_PROMPT";
+        public static final String UPDATE_MIRROR_WEBHOOK = "UPDATE_MIRROR_WEBHOOK";
         public static final String UPDATE_TRADE_MODE = "UPDATE_TRADE_MODE";
         public static final String DELETE_SIGNAL_SOURCE = "DELETE_SIGNAL_SOURCE";
         public static final String CREATE_SIGNAL_SOURCE = "CREATE_SIGNAL_SOURCE";

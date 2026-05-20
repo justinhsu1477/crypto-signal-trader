@@ -12,8 +12,20 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Prompt 版本管理 — 建立/啟用/列表/回滾
- * 啟用版本時透過 MonitorConfigStore gRPC 推送到 Python Monitor
+ * Prompt 版本管理服務。
+ *
+ * <p><strong>Append-only invariant</strong>：{@code prompt_versions} 是整套 prompt audit chain
+ * 的根節點。每個 {@code signals.custom_prompt_version} 跟 {@code admin_audit_log.before_hash /
+ * after_hash} 都依賴此表的 id 能查回當時的 prompt 全文。**禁止實作 DELETE 或物理覆寫**：
+ *
+ * <ul>
+ *     <li>本 service 只開 {@code createVersion / activateVersion / getActivePrompt / getAllVersions}</li>
+ *     <li>{@link com.trader.dashboard.controller.AdminPromptController} 對應只開 GET / POST，
+ *         由 {@code AdminPromptControllerImmutabilityTest} reflection 護欄擋住未來誤加 DELETE</li>
+ *     <li>需要「淘汰」舊版本 → 改用 {@code active=false} 軟去活，不可實刪</li>
+ * </ul>
+ *
+ * <p>違反此 invariant 會導致歷史 broadcast 對應的 prompt 全文無法回溯，影響法務 / 糾紛場景。
  */
 @Slf4j
 @Service

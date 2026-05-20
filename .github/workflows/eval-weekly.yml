@@ -1,0 +1,103 @@
+name: Eval Weekly
+
+on:
+  schedule:
+    # 每週一 01:00 UTC = 台北 09:00 — 早上開電腦剛好看到報告
+    - cron: '0 1 * * 1'
+  workflow_dispatch:        # 手動可觸發（首次部署測試 / ad-hoc 跑）
+
+# 最小權限：本 workflow 不寫任何 repo 內容，只讀 + 上傳 artifact + 對外 POST Discord
+permissions:
+  contents: read
+
+# 同時只跑一份（手動 + cron 重疊時取消舊的）
+concurrency:
+  group: eval-weekly
+  cancel-in-progress: false   # 不取消跑到一半的，等完
+
+jobs:
+  eval:
+    name: 📊 Weekly Eval Run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15        # 30 case × 7s delay + buffer ≈ 4 分鐘
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install eval dependencies
+        working-directory: discord-monitor
+        run: pip install -q -r requirements.txt
+
+      - name: Run eval against Gemini
+        id: run-eval
+        working-directory: discord-monitor
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EVAL_GEMINI_MODEL: gemini-2.5-flash
+        run: |
+          # --delay 7 給 free tier 15 RPM 留 buffer
+          # 即使 exit code 1（< 80% regression）也要送通知 → 用 `|| true`
+          # 但若 JSON 連產都沒產出（API key 缺 / runner 早早 crash）→ 後續 step gate 會擋
+          python3 -m eval.runner --delay 7 --json /tmp/eval-result.json || true
+          # 確認 JSON 真的有出來，且基本鍵存在；任何 schema 異常都 exit 1
+          # → outcome=failure → Format / Post 步驟 if: skip → 由 Summary 顯示異常
+          if [ ! -f /tmp/eval-result.json ]; then
+            echo "::error::eval runner 沒產出 JSON 檔（API key 缺？runner crash？）"
+            exit 1
+          fi
+          python3 -c "import json,sys; d=json.load(open('/tmp/eval-result.json')); \
+            assert 'overall_pct' in d, 'missing overall_pct'; \
+            assert 'results' in d, 'missing results'; \
+            print(f'eval JSON OK: overall_pct={d[\"overall_pct\"]}, n_results={len(d[\"results\"])}')" \
+            || { echo "::error::eval JSON 結構異常"; exit 1; }
+          cat /tmp/eval-result.json
+
+      - name: Format Discord payload
+        # 只在 run-eval 成功（JSON 有產且結構 OK）才跑 — 避免 malformed JSON 靜默漏通知
+        if: steps.run-eval.outcome == 'success'
+        working-directory: discord-monitor
+        run: |
+          python3 -m eval.format_report \
+            --input /tmp/eval-result.json \
+            --model gemini-2.5-flash \
+            > /tmp/discord-payload.json
+          echo "Payload size: $(wc -c < /tmp/discord-payload.json) bytes"
+
+      - name: Post to Discord webhook
+        # 只在 format 步驟跑過（不會 skip）且 WEBHOOK_URL 有設才 POST
+        env:
+          WEBHOOK_URL: ${{ secrets.CD_DISCORD_WEBHOOK }}
+        if: steps.run-eval.outcome == 'success' && env.WEBHOOK_URL != ''
+        run: |
+          # POST 到 admin Discord（重用 CD 部署通知 channel）
+          curl -sf -X POST \
+            -H "Content-Type: application/json" \
+            -d @/tmp/discord-payload.json \
+            "$WEBHOOK_URL" \
+            && echo "Discord webhook delivered" \
+            || echo "::warning::Discord 通知發送失敗"
+
+      - name: Upload eval result artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-result-${{ github.run_id }}
+          path: /tmp/eval-result.json
+          retention-days: 90    # 保留 90 天供歷史比對
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f /tmp/eval-result.json ]; then
+            OVERALL=$(python3 -c "import json; print(json.load(open('/tmp/eval-result.json'))['overall_pct'])")
+            echo "## 📊 Weekly Eval Result" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Overall**: ${OVERALL}%" >> $GITHUB_STEP_SUMMARY
+            echo "- **Model**: gemini-2.5-flash" >> $GITHUB_STEP_SUMMARY
+            echo "- **Artifact**: eval-result-${{ github.run_id }}.json (90 day retention)" >> $GITHUB_STEP_SUMMARY
+          fi

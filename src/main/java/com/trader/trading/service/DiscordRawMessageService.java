@@ -1,14 +1,19 @@
 package com.trader.trading.service;
 
+import com.trader.notification.service.MirrorWebhookService;
 import com.trader.shared.config.AppConstants;
 import com.trader.shared.model.DiscordRawMessageRequest;
 import com.trader.trading.entity.DiscordRawMessage;
+import com.trader.trading.entity.SignalSourceConfig;
 import com.trader.trading.repository.DiscordRawMessageRepository;
 import com.trader.trading.repository.SignalRepository;
+import com.trader.trading.repository.SignalSourceConfigRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,6 +37,8 @@ public class DiscordRawMessageService {
 
     private final DiscordRawMessageRepository repository;
     private final SignalRepository signalRepository;
+    private final MirrorWebhookService mirrorWebhookService;
+    private final SignalSourceConfigRepository signalSourceRepository;
 
     /**
      * 上報一則 Discord 訊息（UPSERT 語意）。
@@ -66,7 +73,7 @@ public class DiscordRawMessageService {
                 .sourceGuildId(req.getGuildId())
                 .sourceAuthorName(req.getAuthorName())
                 .messageTimestamp(req.getMessageTimestamp() != null
-                        ? req.getMessageTimestamp()
+                        ? req.getMessageTimestamp().atZoneSameInstant(AppConstants.ZONE_ID).toLocalDateTime()
                         : LocalDateTime.now(AppConstants.ZONE_ID))
                 .content(req.getContent())
                 .hasAttachments(Boolean.TRUE.equals(req.getHasAttachments()))
@@ -84,7 +91,57 @@ public class DiscordRawMessageService {
                     .ifPresent(s -> entity.setSignalId(s.getSignalId()));
         }
 
-        return repository.save(entity);
+        DiscordRawMessage saved = repository.save(entity);
+
+        // Mirror 觸發 — 失敗永遠 swallow（mirror 是觀測層，不擋 audit 主流程）
+        triggerMirror(req, saved);
+
+        return saved;
+    }
+
+    /**
+     * 觸發 mirror webhook（async）。AFTER_COMMIT hook：tx rollback 時不送，
+     * 與 AdminAuditService 同模式避免「audit 說送了但 DB 沒寫成」的偽陽性。
+     *
+     * <p>失敗永遠 swallow — 找不到 source / mirror service 內部 IOException
+     * 全部不能讓 audit 主流程崩。
+     */
+    private void triggerMirror(DiscordRawMessageRequest req, DiscordRawMessage entity) {
+        try {
+            if (req.getChannelId() == null || req.getChannelId().isBlank()) {
+                return;
+            }
+            signalSourceRepository.findByChannelId(req.getChannelId())
+                    .ifPresent(source -> scheduleMirror(source, entity, req.getAttachmentUrl()));
+        } catch (Exception e) {
+            log.warn("mirror trigger failed (swallowed): msg={} err={}",
+                    req.getMessageId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 註冊 AFTER_COMMIT hook（在 tx 內）或直接呼叫（不在 tx 內）。
+     *
+     * <p><strong>⚠️ Invariant</strong>：{@code source} 跟 {@code entity} 是 Hibernate-managed
+     * entities，session close 後 lazy-loaded 欄位會 throw。{@link MirrorWebhookService} 內目前**只用
+     * eager 欄位**（id / name / displayName / mirrorEnabled / mirrorWebhookUrl 跟 entity 的
+     * messageId / content / messageTimestamp）— 改動該 service 時若新增 lazy 欄位存取，須先在這裡
+     * detach 成 DTO 再排程。
+     */
+    private void scheduleMirror(SignalSourceConfig source,
+                                 DiscordRawMessage entity,
+                                 String attachmentUrl) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    mirrorWebhookService.mirrorAsync(source, entity, attachmentUrl);
+                }
+            });
+        } else {
+            // 不在 tx 內（例如 unit test 直接呼叫）→ 直接送
+            mirrorWebhookService.mirrorAsync(source, entity, attachmentUrl);
+        }
     }
 
     /**

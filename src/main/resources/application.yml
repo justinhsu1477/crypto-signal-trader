@@ -201,6 +201,12 @@ monitor:
   api-key: ${MONITOR_API_KEY:}
   default-channel-ids: ${DISCORD_CHANNEL_IDS:}
 
+# Mirror webhook — 把監聽到的訊息轉發到 admin 自己 Discord channel
+# 三層 kill switch：全域 enabled + per-source mirror_enabled + URL 是否設定
+# 預設 false → 不會有任何 outbound webhook 流量
+mirror:
+  enabled: ${MIRROR_ENABLED:false}
+
 # gRPC Server（Python Monitor 即時配置推送）
 grpc:
   server:

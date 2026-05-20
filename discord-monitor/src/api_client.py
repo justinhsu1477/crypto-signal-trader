@@ -237,6 +237,7 @@ class ApiClient:
         ai_token_stats: dict | None = None,
         channel_last_seen: dict[str, float] | None = None,
         seconds_since_any_message: float | None = None,
+        monitor_version: str | None = None,
     ) -> bool:
         """Send heartbeat to Spring Boot API.
 
@@ -247,6 +248,8 @@ class ApiClient:
             channel_last_seen: Optional per-channel last activity timestamps (epoch seconds).
             seconds_since_any_message: Layer 1 capture watchdog — 任何 CDP 訊息上次抵達後過了
                 幾秒。None 代表啟動以來還沒收過任何訊息（不告警，避免冷啟動誤報）。
+            monitor_version: Python 啟動時讀的 git HEAD 前 7 字。None / 空字串 → 不放入 payload
+                （向下相容：舊版 Python 沒帶 / version 偵測失敗都走這條路徑）。
 
         Returns:
             True if heartbeat was acknowledged, False otherwise.
@@ -264,6 +267,9 @@ class ApiClient:
             if seconds_since_any_message is not None:
                 # 直接送 float 秒數，Java 端用 Double 接
                 payload["secondsSinceAnyMessage"] = float(seconds_since_any_message)
+            if monitor_version:
+                # Java 端比對自己 main HEAD 看 Python 是否落後（silent failure visibility）
+                payload["monitorVersion"] = monitor_version
             async with self._session.post(
                 url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
             ) as resp:

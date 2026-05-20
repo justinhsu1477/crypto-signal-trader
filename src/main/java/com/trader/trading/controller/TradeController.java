@@ -500,8 +500,18 @@ public class TradeController {
             secondsSinceAnyMessage = ((Number) body.get("secondsSinceAnyMessage")).doubleValue();
         }
 
+        // Python 啟動時讀的 git HEAD（向後相容：舊版沒帶 → null）
+        String monitorVersion = null;
+        if (body != null && body.get("monitorVersion") instanceof String) {
+            String v = (String) body.get("monitorVersion");
+            if (!v.isBlank()) {
+                monitorVersion = v;
+            }
+        }
+
         return ResponseEntity.ok(heartbeatService.receiveHeartbeat(
-                status, aiStatus, aiTokenStats, channelLastSeenData, secondsSinceAnyMessage));
+                status, aiStatus, aiTokenStats, channelLastSeenData,
+                secondsSinceAnyMessage, monitorVersion));
     }
 
     /**

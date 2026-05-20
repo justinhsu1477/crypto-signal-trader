@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * /api/discord-messages 請求 DTO — 來自 Python discord-monitor 的 per-message archive。
@@ -33,9 +33,13 @@ public class DiscordRawMessageRequest {
     @JsonProperty("author_name")
     private String authorName;
 
-    /** Discord 端訊息發送時間（ISO 8601；Jackson 自動轉 LocalDateTime） */
+    /**
+     * Discord 端訊息發送時間（ISO 8601，須帶 timezone offset / Z）。
+     * 用 OffsetDateTime 是因為 Discord 給的格式是 `...+00:00`，LocalDateTime 不吃 offset。
+     * Service 端會轉成 AppConstants.ZONE_ID（Asia/Taipei）的 LocalDateTime 入庫。
+     */
     @JsonProperty("message_timestamp")
-    private LocalDateTime messageTimestamp;
+    private OffsetDateTime messageTimestamp;
 
     private String content;
 
@@ -47,6 +51,14 @@ public class DiscordRawMessageRequest {
 
     @JsonProperty("attachment_sha256")
     private String attachmentSha256;
+
+    /**
+     * 第一張附件圖片的 Discord CDN URL（給 Java mirror webhook embed.image.url 用）。
+     * Discord 24h 後 URL 過期，僅供即時 mirror；Phase 2 會改成 Java multipart re-upload 永久保存。
+     * 純文字訊息為 null。
+     */
+    @JsonProperty("attachment_url")
+    private String attachmentUrl;
 
     @JsonProperty("has_embed_images")
     private Boolean hasEmbedImages;
