@@ -59,7 +59,8 @@ class SignalSourceServiceCustomPromptTest {
 
         service = new SignalSourceService(
                 sourceRepository, userSourceRepository, tradeRepository,
-                userRepository, monitorConfigStore, customPromptValidator, adminAuditService);
+                userRepository, monitorConfigStore, customPromptValidator, adminAuditService,
+                mock(com.trader.shared.util.AesEncryptionUtil.class));
     }
 
     private SignalSourceConfig existingSource(String currentPrompt, int currentVersion) {

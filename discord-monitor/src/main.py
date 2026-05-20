@@ -15,6 +15,7 @@ from .cdp_client import CdpClient
 from .config import load_config
 from .signal_queue import SignalQueue
 from .signal_router import SignalRouter
+from .version import get_monitor_version
 
 logger = logging.getLogger("discord_monitor")
 
@@ -126,6 +127,10 @@ async def main() -> None:
     # AI parser 狀態：有初始化成功就是 active，否則 disabled
     ai_active = ai_parser is not None and ai_parser.client is not None
 
+    # 啟動時讀一次本機 git HEAD（永不變、不每次 heartbeat 重讀）
+    monitor_version = get_monitor_version()
+    logger.info("Monitor version: %s", monitor_version)
+
     async def heartbeat_loop(status_fn):
         """Send heartbeat to Spring Boot API every HEARTBEAT_INTERVAL seconds.
 
@@ -140,6 +145,7 @@ async def main() -> None:
                     ai_token_stats=token_stats,
                     channel_last_seen=router.channel_last_seen,
                     seconds_since_any_message=router.seconds_since_any_message(),
+                    monitor_version=monitor_version,
                 )
 
                 # Queue replay: API 恢復時自動重播暫存的訊號

@@ -19,6 +19,18 @@ logger = logging.getLogger(__name__)
 _QUOTED_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}")
 
 
+#: 圖片 path 允許觸發的 action 白名單。
+#:
+#: 設計理由：陳哥/三馬哥等訊號源的 CLOSE / MOVE_SL / CANCEL 訊號 **都是純文字**
+#: （✅止盈出局✅ / 止損上移至成本 / 限價取消），從未以圖片形式發布。但會員會在
+#: 同一頻道貼「盈利反饋」圖（含「止盈」「平倉」「全部出局」等字眼），Gemini multimodal
+#: 容易誤判為 CLOSE → 系統把實盤倉位提早平掉。
+#:
+#: 因此凡圖片解析結果不是 ENTRY，一律改 INFO + archive `IMAGE_NON_ENTRY_BLOCKED`，
+#: 不送 broadcast-trade。這不會誤殺任何已知合法訊號，但完全擋住盈利圖誤平倉。
+IMAGE_ALLOWED_ACTIONS = frozenset({"ENTRY"})
+
+
 def _attach_custom_prompt_audit(payload: dict, source: dict | None) -> None:
     """把 per-source custom_prompt 的 audit 識別碼塞進 trade payload。
 
@@ -222,26 +234,36 @@ class SignalRouter:
             logger.warning("image path: parse failed for msg=%s", message_id)
             return (None, "IMAGE_PARSE_FAILED", sha)
 
-        # Compound action（list）— 圖片回 [CLOSE, MOVE_SL]，與文字流相同處理
-        # 注意：白名單過濾在 _forward_compound 之前直接做（取第一筆 symbol 即可，
-        # 因為 _is_compound_close_movesl 保證同 symbol），確保非 BTC 不會偷渡
+        # === P0a: Image action gate ===
+        # 圖片 path 只允許 ENTRY 通過。CLOSE / MOVE_SL / CANCEL / COMPOUND 全擋
+        # （理由見模組頂部 IMAGE_ALLOWED_ACTIONS docstring）。
         if isinstance(parsed, list):
-            logger.info(
-                "Image compound action: %d sub-actions for msg=%s",
-                len(parsed), message_id,
+            # Compound action（CLOSE + MOVE_SL）— 圖片絕不允許，因為盈利圖含「止盈 X%
+            # 做成本保護」這類字眼會誤觸發兩個動作一起執行。
+            blocked_actions = [item.get("action") for item in parsed if item.get("action")]
+            logger.warning(
+                "image path: compound action blocked by gate msg=%s actions=%s",
+                message_id, blocked_actions,
             )
-            # 白名單檢查（list 中所有子動作 symbol 都一致，取第一筆即可）
-            compound_symbol = (parsed[0].get("symbol") or "").upper() if parsed else ""
-            if compound_symbol not in self.image_signal_config.allowed_symbols:
-                logger.info(
-                    "image path: compound symbol %s not in allowed_symbols %s, skipping msg=%s",
-                    compound_symbol, self.image_signal_config.allowed_symbols, message_id,
-                )
-                return (None, "FILTERED", sha)
-            await self._forward_compound(parsed, source)
-            return ("COMPOUND", None, sha)
+            return (None, "IMAGE_NON_ENTRY_BLOCKED", sha)
 
-        # BTC 白名單過濾
+        action = parsed.get("action")
+
+        # INFO action 直接 archive，不送下游（與 text path 行為一致）
+        if action == "INFO":
+            logger.info("image path: INFO action, not forwarding msg=%s", message_id)
+            return ("INFO", None, sha)
+
+        # 非 ENTRY → 一律改 INFO（archive 標 IMAGE_NON_ENTRY_BLOCKED 便於審計）
+        if action not in IMAGE_ALLOWED_ACTIONS:
+            logger.warning(
+                "image path: %s action blocked by gate msg=%s "
+                "(only ENTRY allowed from image source) text=%r",
+                action, message_id, text_content[:120],
+            )
+            return (None, "IMAGE_NON_ENTRY_BLOCKED", sha)
+
+        # BTC 白名單過濾（只對 ENTRY 做，CLOSE/MOVE_SL 已被前面 gate 擋）
         symbol = (parsed.get("symbol") or "").upper()
         if symbol not in cfg.allowed_symbols:
             logger.info(
@@ -249,11 +271,6 @@ class SignalRouter:
                 symbol, cfg.allowed_symbols, message_id,
             )
             return (None, "FILTERED", sha)
-
-        # INFO action 不送下游（與 text path 行為一致）
-        if parsed.get("action") == "INFO":
-            logger.info("image path: INFO action, not forwarding msg=%s", message_id)
-            return ("INFO", None, sha)
 
         # 附件 metadata 加入 source
         enriched_source = dict(source)
@@ -502,7 +519,10 @@ class SignalRouter:
                 content[:120].replace("\n", " | "),
             )
             resolved_action = await self._forward_signal(content, source=source)
-            self._archive_message_async(msg, parser_action=resolved_action, parser_skipped_reason=None)
+            # AI 失敗走 regex fallback 時 _forward_signal 回 None。明確標 skip_reason
+            # 才能跟「壓根沒進 parser」區分（後者 parser_action / skip_reason 都 null）。
+            skip_reason = None if resolved_action is not None else "AI_PARSE_FAILED"
+            self._archive_message_async(msg, parser_action=resolved_action, parser_skipped_reason=skip_reason)
         else:
             # Regex fallback 模式：保留 emoji/keyword 過濾，避免閒聊打 API
             signal_type = self._identify_type(content)
@@ -776,12 +796,16 @@ class SignalRouter:
             # 優先使用 image path 計算出的真實 sha256；fallback 才去 dict 撈
             # （非 image-first 路徑，attachments[0].sha256 通常為 None — Discord 不給）
             attachment_sha256 = image_sha_override
-            if attachment_sha256 is None:
-                for att in attachments:
-                    ctype = (att.get("content_type") or "").lower()
-                    if ctype.startswith("image/"):
+            attachment_url = None
+            for att in attachments:
+                ctype = (att.get("content_type") or "").lower()
+                if ctype.startswith("image/"):
+                    if attachment_sha256 is None:
                         attachment_sha256 = att.get("sha256")
-                        break
+                    # Discord CDN URL — 給 Java mirror webhook embed.image.url 用
+                    # 注意：URL 24h 後過期（Discord 強制簽章）
+                    attachment_url = att.get("url") or None
+                    break
 
             # MESSAGE_UPDATE 處理：
             # - parser_action 加 EDIT: 前綴
@@ -807,6 +831,7 @@ class SignalRouter:
                 "has_attachments": bool(attachments),
                 "attachment_count": len(attachments),
                 "attachment_sha256": attachment_sha256,
+                "attachment_url": attachment_url,
                 "has_embed_images": bool(embed_images),
                 "has_reference": bool(msg.get("has_reference", False)),
                 "parser_action": archive_action,

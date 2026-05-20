@@ -514,3 +514,148 @@ class TestImageEdgeCases:
         assert "first.png" in fetch_calls[0]
         # parse 被叫一次
         self.ai_parser.parse_with_image.assert_called_once()
+
+
+class TestImageActionGate:
+    """P0a action gate：圖片 path 只允許 ENTRY，其他 action 改 INFO + archive `IMAGE_NON_ENTRY_BLOCKED`。
+
+    背景：陳哥頻道會員會貼盈利反饋圖（含「止盈/平倉/開倉價格」字眼），Gemini multimodal
+    可能誤判為 CLOSE / ENTRY → 系統把實盤倉位提早平掉或反向開單。code-level action gate
+    比 prompt 反例更 robust（不依賴 AI 判對）。
+    """
+
+    def setup_method(self):
+        self.ai_parser = MagicMock()
+        self.ai_parser.parse = AsyncMock(return_value=None)
+        self.ai_parser.prompt_version = 0
+
+    def _make_image_msg(self) -> dict:
+        return _make_msg(
+            content="",
+            attachments=[{
+                "id": "a1", "filename": "screenshot.png",
+                "url": "https://cdn.discordapp.com/screenshot.png",
+                "content_type": "image/png", "size": 100000,
+            }],
+        )
+
+    @pytest.mark.asyncio
+    async def test_image_close_action_blocked_not_forwarded(self):
+        """盈利圖被 AI 誤判成 CLOSE → 不送 broadcast-trade（救平倉災難）。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "CLOSE",
+            "symbol": "BTCUSDT",
+            "close_ratio": 1.0,
+        })
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        router.api_client.send_discord_message = AsyncMock()
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_profit"),
+        )):
+            await router.handle_message(self._make_image_msg())
+
+        # parse 跑了但 send_trade 沒
+        self.ai_parser.parse_with_image.assert_called_once()
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_image_move_sl_action_blocked(self):
+        """圖片 MOVE_SL 一律擋 — 真實 MOVE_SL 訊號永遠是純文字。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "MOVE_SL",
+            "symbol": "BTCUSDT",
+            "new_stop_loss": 82000,
+        })
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_move"),
+        )):
+            await router.handle_message(self._make_image_msg())
+
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_image_cancel_action_blocked(self):
+        """圖片 CANCEL 一律擋 — 真實 CANCEL 訊號永遠是純文字。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "CANCEL",
+            "symbol": "BTCUSDT",
+        })
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_cancel"),
+        )):
+            await router.handle_message(self._make_image_msg())
+
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_image_compound_action_blocked(self):
+        """圖片 compound（CLOSE + MOVE_SL）一律擋 — 盈利圖常觸發這個誤判。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value=[
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
+            {"action": "MOVE_SL", "symbol": "BTCUSDT"},
+        ])
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        # _forward_compound 內部會用到 send_trade — 確認根本沒走到那
+        router._forward_compound = AsyncMock()
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_compound"),
+        )):
+            await router.handle_message(self._make_image_msg())
+
+        router._forward_compound.assert_not_called()
+        router.api_client.send_trade.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_image_entry_still_allowed(self):
+        """真實策略圖（ENTRY，含 SL）— action gate 不擋。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "ENTRY",
+            "symbol": "BTCUSDT",
+            "side": "SHORT",
+            "entry_price": 81800,
+            "stop_loss": 82900,
+        })
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        router.api_client.send_trade = AsyncMock(return_value=MagicMock(
+            success=True, status_code=200, summary="OK",
+        ))
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_strategy"),
+        )):
+            await router.handle_message(self._make_image_msg())
+
+        router.api_client.send_trade.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_blocked_action_still_archived(self):
+        """被 gate 擋的 image action 仍 archive，便於後續 audit 看誤判頻率。"""
+        self.ai_parser.parse_with_image = AsyncMock(return_value={
+            "action": "CLOSE",
+            "symbol": "BTCUSDT",
+        })
+        router = _make_router(image_enabled=True, image_dry_run=False, ai_parser=self.ai_parser)
+        router.api_client.send_discord_message = AsyncMock()
+
+        with patch("src.signal_router.fetch_image", new=AsyncMock(
+            return_value=(b"\x89PNG\r\n\x1a\n", "image/png", "sha_x"),
+        )):
+            await router.handle_message(self._make_image_msg())
+
+        # 等 fire-and-forget archive 跑完
+        current = asyncio.current_task()
+        tasks = [t for t in asyncio.all_tasks() if t is not current]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # archive 至少被叫一次，且 skip reason 是 IMAGE_NON_ENTRY_BLOCKED
+        assert router.api_client.send_discord_message.await_count >= 1
+        payload = router.api_client.send_discord_message.await_args.args[0]
+        assert payload["parser_skipped_reason"] == "IMAGE_NON_ENTRY_BLOCKED"
+        assert payload["parser_action"] is None

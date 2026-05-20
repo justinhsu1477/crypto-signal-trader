@@ -59,7 +59,8 @@ class SignalSourceServiceTest {
         service = new SignalSourceService(sourceRepository, userSourceRepository,
                 tradeRepository, userRepository, monitorConfigStore,
                 new com.trader.trading.validation.CustomPromptValidator(),
-                mock(com.trader.shared.service.AdminAuditService.class));
+                mock(com.trader.shared.service.AdminAuditService.class),
+                mock(com.trader.shared.util.AesEncryptionUtil.class));
     }
 
     // ==================== 來源 CRUD ====================

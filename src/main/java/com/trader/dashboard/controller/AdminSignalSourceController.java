@@ -108,6 +108,33 @@ public class AdminSignalSourceController {
         }
     }
 
+    /**
+     * 更新 mirror webhook URL + enabled flag — 獨立端點，強制 audit。
+     * URL 入庫前 AES 加密，回應不曝 URL 全文（只回 hasMirrorWebhook flag）。
+     */
+    @PutMapping("/{id}/mirror")
+    public ResponseEntity<?> updateMirrorWebhook(
+            @PathVariable Long id,
+            @RequestBody com.trader.trading.dto.signalsource.UpdateMirrorWebhookRequest body,
+            HttpServletRequest request) {
+        if (body.getReason() == null || body.getReason().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "reason 為必填"));
+        }
+        try {
+            String adminId = SecurityUtil.getCurrentUserId();
+            String ip = resolveClientIp(request);
+            signalSourceService.updateMirrorWebhook(id, body, adminId, ip);
+            List<SignalSourceResponse> all = signalSourceService.getAllSources();
+            SignalSourceResponse response = all.stream()
+                    .filter(s -> s.getId().equals(id))
+                    .findFirst()
+                    .orElseThrow();
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     private String resolveClientIp(HttpServletRequest request) {
         // 對齊 application.yml 設定的 ip-header（Cloudflare 環境用 CF-Connecting-IP）
         String header = request.getHeader("CF-Connecting-IP");
