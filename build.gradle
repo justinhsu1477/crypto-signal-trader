@@ -1,8 +1,8 @@
 plugins {
     id 'java'
     id 'jacoco'
-    id 'org.springframework.boot' version '3.2.5'
-    id 'io.spring.dependency-management' version '1.1.4'
+    id 'org.springframework.boot' version '3.4.5'
+    id 'io.spring.dependency-management' version '1.1.6'
     id 'com.google.protobuf' version '0.9.4'
 }
 
@@ -17,6 +17,14 @@ repositories {
     mavenCentral()
 }
 
+dependencyManagement {
+    imports {
+        // Spring AI BOM — 對齊 lndata/gen-bi 慣例（1.0.3 GA 穩定版）
+        // 鎖定 spring-ai-* 所有 module 版本，避免手動跨 module version mismatch
+        mavenBom 'org.springframework.ai:spring-ai-bom:1.0.3'
+    }
+}
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -25,8 +33,11 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'com.h2database:h2'          // 保留給未來測試用
 
-    // Flyway DB Migration（9.x — PostgreSQL 支援已內建於 flyway-core）
+    // Flyway DB Migration
+    // 10.x（隨 Boot 3.4 帶入）把 PostgreSQL 支援從 flyway-core 拆出來，要顯式加
+    // 否則啟動會炸：FlywayException: No database found to handle jdbc:postgresql://...
     implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
 
     // JWT
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
@@ -70,6 +81,19 @@ dependencies {
     implementation 'io.grpc:grpc-protobuf:1.62.2'
     implementation 'io.grpc:grpc-stub:1.62.2'
     compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
+
+    // ─── Spring AI（Phase 1 接線） ───
+    // 對齊 lndata/gen-bi 的 multi-provider pattern。
+    //
+    // 暫用 OpenAI starter 對 Gemini 的 OpenAI-compat endpoint
+    // (https://generativelanguage.googleapis.com/v1beta/openai/) — 因為：
+    //  - Spring AI 1.0.3 (GA) 還沒有原生 google-genai starter（1.1.x M 才加）
+    //  - Vertex AI 路徑需要 GCP project + service account，非 API key
+    //  - OpenAI-compat path 讓 API key 沿用既有 GEMINI_API_KEY
+    //
+    // 將來要切真 OpenAI / Anthropic：加對應 starter + 改 config，code 不變。
+    // 將來 Spring AI 1.1.x GA 後可改回 spring-ai-starter-model-google-genai 拿原生 Gemini 功能。
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.testcontainers:testcontainers'
