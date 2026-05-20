@@ -1,7 +1,11 @@
-# Curated eval cases — 30 hand-picked from real Discord signals
-# Categories: entry_text (10), compound (5), close_only (3), move_sl_only (2),
-#             info (5), eth_filter (3), messy (2)
+# Curated eval cases — 34 hand-picked from real Discord signals
+# Categories: entry_text (10), compound (5), close_only (4), move_sl_only (2),
+#             info (8), eth_filter (3), messy (2)
 # Format: one JSON object per line. Lines starting with '#' are comments.
+#
+# 2026-05-18: 加 info_006/007/008 + close_only_004 — 防「已经X / 均价X附近」事後報告
+#             被 Gemini 誤判 CLOSE。觸發 case：陳哥訊號「BTC剩余半仓限价已经出发，均价
+#             78000附近」現場 Gemini 判 CLOSE 50%，會把用戶現有空單平掉一半。
 {"id": "entry_text_001", "category": "entry_text", "input": "⚠️⚠️⚠️⚠️⚠️⚠️⚠️\n陈哥合约交易策略\nBTC，82200附近，做空\n止损预计: 83800\n止盈预计: 80600\n⚠️⚠️⚠️⚠️⚠️⚠️⚠️", "expected": {"action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT", "entry_price": 82200, "stop_loss": 83800}, "tolerance_pct": 1.0, "notes": "Standard chen-ge SHORT format"}
 {"id": "entry_text_002", "category": "entry_text", "input": "⚠️⚠️⚠️⚠️⚠️⚠️⚠️\n陈哥合约交易策略\nBTC，111000附近，做多\n止损预计: 109400\n止盈预计: 114500\n⚠️⚠️⚠️⚠️⚠️⚠️⚠️", "expected": {"action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG", "entry_price": 111000, "stop_loss": 109400}, "tolerance_pct": 1.0, "notes": "Chen-ge LONG format from 2025-10-11"}
 {"id": "entry_text_003", "category": "entry_text", "input": "BTC市价110900直接入场做多。", "expected": {"action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG", "entry_price": 110900}, "tolerance_pct": 1.0, "notes": "Chen-ge inline market entry"}
@@ -32,3 +36,7 @@
 {"id": "eth_filter_003", "category": "eth_filter", "input": "一对一指导SOL 193空单，市价188止盈50%做成本保护，止损修改193。继续持有。", "expected": {"action": "CLOSE", "symbol": "SOLUSDT", "close_ratio": 0.5, "new_stop_loss": 193}, "notes": "SOL with one-on-one prefix, partial close + new SL"}
 {"id": "messy_001", "category": "messy", "input": "BTC空单接针成交，浮盈超过1100美元，114288加仓的部分仓位移动保本损，不犹豫不墨迹。#BTC", "expected": {"action": "MOVE_SL", "symbol": "BTCUSDT"}, "notes": "Messy mixed content — actual action is move SL to breakeven on add-position"}
 {"id": "messy_002", "category": "messy", "input": "🎉🎉🎉🎉🎉🎉\n再次恭喜跟上BTC空单的朋友\n做短线的朋友可以止盈出局【收益1400点】\n中长线止盈60%做成本保护继续持有。\nBTC市价【111000】附近", "expected_list": [{"action": "CLOSE", "close_ratio": 0.6}, {"action": "MOVE_SL"}], "notes": "Chen-ge 60% partial close + breakeven (2025-10-12 actual)"}
+{"id": "info_006", "category": "info", "input": "BTC剩余半仓限价已经出发，均价78000附近。", "expected": {"action": "INFO"}, "notes": "2026-05-18 真實事件：陳哥事後報告「限價單已成交+均價」，無平倉動作詞，必須 INFO。先前 Gemini 誤判 CLOSE 50% 會誤平用戶現有空單"}
+{"id": "info_007", "category": "info", "input": "BTC前面挂的78000限价单刚刚触发，半仓已经成交。", "expected": {"action": "INFO"}, "notes": "限價單觸發成交事後報告，無「平/出局/手动平仓」動作詞 → INFO"}
+{"id": "info_008", "category": "info", "input": "昨晚挂的BTC空单已经吃饱了，目前均价80500，等止盈。", "expected": {"action": "INFO"}, "notes": "空單成交+等止盈的持倉狀態通知，無平倉指令 → INFO"}
+{"id": "close_only_004", "category": "close_only", "input": "BTC目前均价78000附近，先平50%锁利。", "expected": {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5}, "tolerance_pct": 1.0, "notes": "Regression：有均價描述但同時有明確動作詞「先平50%」，必須 CLOSE 0.5 而非 INFO。確保新 INFO 規則不會誤吞真平倉指令"}
