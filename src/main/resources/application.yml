@@ -84,6 +84,26 @@ spring:
     baseline-version: 1
     locations: classpath:db/migration
 
+  # ========== Spring AI（Phase 1：暫用 OpenAI starter 指向 Gemini OpenAI-compat endpoint）==========
+  # 對齊 lndata/gen-bi 的 Spring AI 慣例。引入後既有 GeminiService 仍可運行，
+  # 新 code 應注入 ChatClient / ChatModel，舊 code 漸進遷移。
+  #
+  # Google 的 OpenAI-compat endpoint:
+  #   https://generativelanguage.googleapis.com/v1beta/openai/
+  # 用既有 GEMINI_API_KEY 即可呼叫。
+  #
+  # 將來 Spring AI 1.1.x GA 後可改 spring-ai-starter-model-google-genai 拿原生功能；
+  # 想切真 OpenAI 只要把 base-url 拿掉、換 api-key + model 名即可。
+  ai:
+    openai:
+      api-key: ${GEMINI_API_KEY:}
+      base-url: https://generativelanguage.googleapis.com/v1beta/openai
+      chat:
+        options:
+          model: ${SPRING_AI_CHAT_MODEL:gemini-2.5-flash}
+          temperature: 0.3
+          max-tokens: 2048
+
 # ========== IP 解析 / 反向代理 ==========
 security:
   ip-header: ${SECURITY_IP_HEADER:}                                                  # prod: CF-Connecting-IP
@@ -189,6 +209,7 @@ grpc:
       enabled: false
 
 # ========== AI 模型共用設定 ==========
+# 既有 com.trader.shared.config.AiConfig 用此（手刻 OkHttp 呼叫 generativelanguage.googleapis.com）
 ai:
   api-key: ${GEMINI_API_KEY:}
   default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
