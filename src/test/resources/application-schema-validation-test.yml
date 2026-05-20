@@ -31,6 +31,13 @@ spring:
       simple:
         auto-startup: false
 
+  # Spring AI — 給假 OpenAI key 讓 OpenAiChatModel bean 能 init（測試不打外網）。
+  # 空字串會讓 Spring AI 1.0.3 OpenAI auto-config 的 Assert.notNull 拋例外，整個 context 起不來。
+  ai:
+    openai:
+      api-key: schema-validation-fake-openai-key
+      base-url: http://localhost:9999/openai-not-used
+
 # JWT / encryption — placeholder 兜底（不真用，避免 @Value 解析失敗 startup fail）
 jwt:
   secret: schema-validation-test-secret-minimum-256-bits-long-enough-for-hmac
