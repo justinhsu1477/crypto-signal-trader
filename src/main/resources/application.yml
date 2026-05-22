@@ -198,6 +198,10 @@ line:
     callback-url: ${LINE_LOGIN_CALLBACK_URL:https://hook-fi.com/api/auth/oauth/line/callback}
     enabled: ${LINE_LOGIN_ENABLED:false}
 
+# Stripe — 訂閱舊路徑，逐步被 crypto.payment (USDT TRC20) 取代。
+# PlanResponse.stripePaymentLinkUrl 已標 @Deprecated；Subscription / Plan entity 仍有
+# stripeCustomerId / stripePriceId 欄位，未來 Phase 清理時可一併拆掉。
+# 兩個值是 StripeInitializer / StripeConfig 必要的 placeholder（讓 Spring boot 啟動不炸）。
 stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder}
@@ -251,22 +255,16 @@ ai:
   default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
 
 # ========== AI 客服 Agent ==========
+# 純常數預設值（max-response-tokens / temperature / TTL / rate-limit）已搬到
+# com.trader.chatbot.config.ChatbotConfig 的 @DefaultValue —— 改值請動 Java。
 chatbot:
   enabled: ${CHATBOT_ENABLED:false}
-  max-response-tokens: 1024
-  temperature: 0.3
-  max-conversation-turns: 10
-  conversation-ttl-minutes: 30
-  rate-limit-per-minute: 5
-  rate-limit-per-day: 50
 
-# AI 交易顧問
+# ========== AI 交易顧問 ==========
+# cron-expression / max-tokens / temperature / recent-trades-count 預設值已搬到
+# com.trader.advisor.config.AdvisorConfig 的 @DefaultValue。
 advisor:
   enabled: ${ADVISOR_ENABLED:false}
-  cron-expression: "0 0 9,21 * * *"              # 每日 09:00 + 21:00（亞洲盤前 + 美盤開始）
-  max-response-tokens: 1024
-  recent-trades-count: 10
-  temperature-value: 0.7
   scoring-enabled: ${ADVISOR_SCORING_ENABLED:false}
 
 # ========== Email OTP 驗證 + 密碼重設 ==========
