@@ -1,6 +1,14 @@
 app:
   timezone: Asia/Taipei
 
+  # ========== LLM Provider 切換（Phase 2）==========
+  # gemini    = 全 7 個 LlmClient 方法走既有 OkHttp GeminiService（預設，0 行為改變）
+  # spring-ai = generateContent / generateContentWithHistory 走 Spring AI ChatClient；
+  #             tools / embedding 方法仍走 Gemini（Phase 3/5 才接通）
+  # 切換不需重編譯 — 改 env var 重啟即可。詳見 RoutingLlmClient javadoc。
+  llm:
+    provider: ${LLM_PROVIDER:gemini}
+
 # ========== 多用戶模式 ==========
 # false = 單用戶（全局 RiskConfig + 不分用戶查詢）
 # true  = 多用戶（per-user 交易參數 + userId 隔離查詢 + 多 WebSocket）
