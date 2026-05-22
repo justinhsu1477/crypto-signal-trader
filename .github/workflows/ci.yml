@@ -82,7 +82,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rhysd/actionlint@v1
+      # rhysd/actionlint 是 CLI 工具不是 GitHub Action，要用官方 install script。
+      # 鎖版本避免上游突然炸：v1.7.12（current latest 2026-05）
+      - name: Install actionlint
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+      - name: Run actionlint
+        run: ./actionlint -color
 
   # ============================================================
   # 1. 密鑰洩漏掃描 — 永遠跑（security gate，無論改什麼）
@@ -289,6 +294,9 @@ jobs:
 
       - name: Docker Compose config 驗證
         run: |
+          # compose 在 parse 階段就會讀 env_file 確認存在；CI 沒有 prod secrets，
+          # 給空檔頂著 — 純檢 YAML 結構 / image / volume 拼錯，env 內容不在這層管。
+          touch .env .env.dev .env.prod
           docker compose -f docker-compose.cloud.yml config --no-env-resolution --quiet
           docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db config --no-env-resolution --quiet
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config --no-env-resolution --quiet
