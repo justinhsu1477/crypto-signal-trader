@@ -9,16 +9,21 @@ app:
   llm:
     provider: ${LLM_PROVIDER:gemini}
 
-# ========== 多用戶模式 ==========
+# ========== 用戶模式 ==========
 # false = 單用戶（全局 RiskConfig + 不分用戶查詢）
-# true  = 多用戶（per-user 交易參數 + userId 隔離查詢 + 多 WebSocket）
+# true  = 多用戶 SaaS（per-user UserTradeSettings 為主 + RiskConfig 當 fallback default
+#         + userId 隔離查詢 + 多 WebSocket + 廣播跟單）
+# Prod 目前 = true。下面 trading.user-id 在 multi-user=true 時 *不會被讀*。
 multi-user:
   enabled: ${MULTI_USER_ENABLED:false}
 
-# ========== 多用戶支援配置 ==========
+# ========== 單用戶模式專屬 ==========
+# multi-user=true 時下面這段 dead config — SingleUserInitializer 會 early-return，
+# trading.user-id 從來不會被任何 service 注入。
+# 保留是給「切回 single-user」這個 escape hatch（如本機 dev / smoke test）。
 trading:
-  user-id: ${TRADING_USER_ID:system-trader}  # 單用戶模式的用戶 ID
-                                              # SingleUserInitializer 啟動時自動建立此用戶
+  user-id: ${TRADING_USER_ID:system-trader}  # 啟動時 SingleUserInitializer 自動建此用戶
+                                              # → trades 表 FK 不會炸（user_id → users.user_id）
 
 server:
   port: ${SERVER_PORT:8080}
@@ -102,13 +107,20 @@ spring:
   #
   # 將來 Spring AI 1.1.x GA 後可改 spring-ai-starter-model-google-genai 拿原生功能；
   # 想切真 OpenAI 只要把 base-url 拿掉、換 api-key + model 名即可。
+  #
+  # TODO(Phase 6): 刪除底下「# ========== AI 模型共用設定 ==========」整段 ai:* 後，
+  # 把 GEMINI_API_KEY 改名 LLM_API_KEY，這裡的 ${GEMINI_API_KEY:} 也跟著改。
+  # 目前 ai.api-key 跟 spring.ai.openai.api-key 共用同一個 env var — 不衝突，
+  # 純粹是兩條 LLM 客戶端共存階段的暫時狀態。
   ai:
     openai:
       api-key: ${GEMINI_API_KEY:}
       base-url: https://generativelanguage.googleapis.com/v1beta/openai
       chat:
         options:
-          model: ${SPRING_AI_CHAT_MODEL:gemini-2.5-flash}
+          # 跟下面 ai.default-model 對齊到同一個模型（避免 OkHttp 路徑跟 Spring AI 路徑
+          # 用不同模型，debugging 時困惑）
+          model: ${SPRING_AI_CHAT_MODEL:gemini-2.5-flash-lite}
           temperature: 0.3
           max-tokens: 2048
 
@@ -119,10 +131,15 @@ security:
 
 binance:
   futures:
+    # 全局 Binance API key — single-user 模式下整個系統用這把；
+    # multi-user=true 時 *不會被讀*（每個用戶用 user_api_keys 表自己的加密 key）。
     api-key: ${BINANCE_API_KEY:YOUR_API_KEY}
     secret-key: ${BINANCE_SECRET_KEY:YOUR_SECRET_KEY}
 
-  # 風控設定
+  # 風控設定 — multi-user=true 時這裡是 *全局 fallback default*：
+  # 每個用戶有 UserTradeSettings 可 override 個別欄位（null 就用這裡的值）。
+  # 改動這些等於改所有沒 override 用戶的預設值，請走 PR review 流程。
+  # 詳見 TradeConfigResolver.resolve()。
   risk:
     max-position-usdt: 50000      # 單筆最大名目價值 (USDT) — 防止窄止損產生超大倉位
     max-daily-loss-usdt: 2000     # 每日虧損絕對硬上限 (USDT)
@@ -134,7 +151,7 @@ binance:
     dca-risk-multiplier: 2.0      # 補倉風險倍數（2R = 首倉的 2 倍風險金額）
     fixed-leverage: 20            # 固定槓桿 (逐倉 ISOLATED)
     default-symbol: BTCUSDT        # 訊號無幣種時的預設交易對（Java 端會 fallback 查 OPEN trade）
-    allowed-symbols:              # 允許的交易對清單（可加多個）
+    allowed-symbols:              # 允許的交易對清單（可加多個）— multi-user 用戶可在 UserTradeSettings 自訂
       - BTCUSDT
 
 # ========== SHADOW 畢業門檻 ==========
@@ -222,8 +239,13 @@ grpc:
     security:
       enabled: false
 
-# ========== AI 模型共用設定 ==========
-# 既有 com.trader.shared.config.AiConfig 用此（手刻 OkHttp 呼叫 generativelanguage.googleapis.com）
+# ========== AI 模型共用設定（既有 OkHttp 路徑）==========
+# 既有 com.trader.shared.config.AiConfig 用此 — 手刻 OkHttp 呼叫
+#   https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+#
+# TODO(Phase 6): GeminiService 拆完搬到 Spring AI 後刪掉這整段。
+#   Caller 改注入 LlmClient（已透過 RoutingLlmClient @Primary 完成），
+#   AiConfig 退場後此區塊就 dead。
 ai:
   api-key: ${GEMINI_API_KEY:}
   default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
@@ -279,6 +301,8 @@ management:
       export:
         enabled: true
 
+# Prod 預設 INFO（DEBUG 在 prod 會把 disk / Loki / Cloudwatch 灌爆）。
+# Dev profile 在 application-dev.yml 會 override 回 DEBUG。
 logging:
   level:
-    com.trader: DEBUG
+    com.trader: INFO
