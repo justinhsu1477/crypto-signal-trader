@@ -16,7 +16,8 @@ public class AdvisorConfig {
 
     public AdvisorConfig(
             @DefaultValue("false") boolean enabled,
-            @DefaultValue("0 0 * * * *") String cronExpression,
+            // 每天台北 09:00 (亞洲盤前) + 21:00 (美盤開始) 跑一次
+            @DefaultValue("0 0 9,21 * * *") String cronExpression,
             @DefaultValue("1024") int maxResponseTokens,
             @DefaultValue("10") int recentTradesCount,
             @DefaultValue("0.7") double temperatureValue,
