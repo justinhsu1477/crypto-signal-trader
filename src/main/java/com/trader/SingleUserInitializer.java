@@ -1,12 +1,12 @@
 package com.trader;
 
-import com.trader.trading.config.MultiUserConfig;
 import com.trader.user.entity.User;
 import com.trader.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,25 +17,24 @@ import org.springframework.stereotype.Component;
  * 導致熔斷/DCA 層數/fallback/統計全部失效。
  *
  * 解法：啟動時確保 TRADING_USER_ID 的用戶存在於 users 表。
+ *
+ * <p>{@link ConditionalOnProperty} 限制：只有 {@code multi-user.enabled=false}
+ *（或 property 未設）時這個 bean 才存在。multi-user prod 模式下這個 class
+ * 完全不會被載入，避免 runtime if-check 散落各處。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "multi-user.enabled", havingValue = "false", matchIfMissing = true)
 public class SingleUserInitializer {
 
     private final UserRepository userRepository;
-    private final MultiUserConfig multiUserConfig;
 
     @Value("${trading.user-id:system-trader}")
     private String tradingUserId;
 
     @PostConstruct
     public void ensureSingleUserExists() {
-        if (multiUserConfig.isEnabled()) {
-            log.debug("多用戶模式，跳過單用戶初始化");
-            return;
-        }
-
         // 空字串 fallback 到預設值
         if (tradingUserId == null || tradingUserId.isBlank()) {
             tradingUserId = "system-trader";
