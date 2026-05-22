@@ -281,3 +281,5 @@
 - 洗錢防制法 VASP 規定: https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=G0380268
 - Crypto Trading Bot Legal Guide: https://vocal.media/journal/is-it-legal-to-automate-crypto-trading
 - Crypto.com Risk Warning: https://help.crypto.com/en/articles/6471398-trading-bots-risk-warning
+
+<!-- CI optimization verification: docs-only PR should skip 5/6 jobs -->
