@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -50,6 +52,15 @@ public class KnowledgeChunk {
     @Column(columnDefinition = "vector(768)", insertable = false, updatable = false)
     private String embedding;
 
+    /**
+     * 額外 metadata（tags、version 等）— 以 JSON 字串儲存。
+     *
+     * <p>{@link JdbcTypeCode} 告訴 Hibernate「這個欄位是 JSON，請走 PostgreSQL JSONB
+     * 而不是 character varying」。沒有這個 annotation，Hibernate 預設用 setString 送
+     * 到 JDBC，PostgreSQL 對 jsonb column 會拒收 character varying 直接 cast。
+     * 詳見：https://docs.jboss.org/hibernate/orm/6.6/userguide/html_single/Hibernate_User_Guide.html#basic-mapping-jdbc-type-json
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "JSONB")
     @Builder.Default
     private String metadata = "{}";
