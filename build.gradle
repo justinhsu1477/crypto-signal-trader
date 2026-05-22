@@ -4,10 +4,39 @@ plugins {
     id 'org.springframework.boot' version '3.4.5'
     id 'io.spring.dependency-management' version '1.1.6'
     id 'com.google.protobuf' version '0.9.4'
+    // 把 git commit / branch / build time 寫進 META-INF/git.properties
+    // → Spring Boot Actuator /api/actuator/info 自動暴露
+    id 'com.gorylenko.gradle-git-properties' version '2.4.2'
 }
 
 group = 'com.trader'
+// 基礎 semver，重要 milestone 才手動 bump。
+// 每次 deploy 的「真實版本」由 git commit SHA 標記（CD 用 SHA tag Docker image）+
+// /api/actuator/info 暴露的 git.commit.id 共同識別。
 version = '1.0.0'
+
+// Spring Boot 內建：把 group / artifact / version / time 寫進 META-INF/build-info.properties
+// → /api/actuator/info 暴露 "build" section
+springBoot {
+    buildInfo()
+}
+
+// gradle-git-properties 設定 — 控制要寫進 git.properties 的欄位
+gitProperties {
+    // Docker 多階段 build 的 builder 階段沒有 .git 目錄（沒 COPY 進去避免 layer
+    // cache 爆炸），plugin 預設會炸。設 false 讓 docker build 跳過；prod 的
+    // git SHA 改靠 CD 注入 IMAGE_TAG → application.yml info.deploy.commit。
+    failOnNoGitDirectory = false
+    keys = [
+            'git.branch',
+            'git.commit.id',
+            'git.commit.id.abbrev',
+            'git.commit.time',
+            'git.commit.message.short',
+    ]
+    dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXX"
+    dateFormatTimeZone = "UTC"
+}
 
 java {
     sourceCompatibility = '17'

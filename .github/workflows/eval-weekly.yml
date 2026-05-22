@@ -95,9 +95,11 @@ jobs:
         run: |
           if [ -f /tmp/eval-result.json ]; then
             OVERALL=$(python3 -c "import json; print(json.load(open('/tmp/eval-result.json'))['overall_pct'])")
-            echo "## 📊 Weekly Eval Result" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- **Overall**: ${OVERALL}%" >> $GITHUB_STEP_SUMMARY
-            echo "- **Model**: gemini-2.5-flash" >> $GITHUB_STEP_SUMMARY
-            echo "- **Artifact**: eval-result-${{ github.run_id }}.json (90 day retention)" >> $GITHUB_STEP_SUMMARY
+            {
+              echo "## 📊 Weekly Eval Result"
+              echo ""
+              echo "- **Overall**: ${OVERALL}%"
+              echo "- **Model**: gemini-2.5-flash"
+              echo "- **Artifact**: eval-result-${{ github.run_id }}.json (90 day retention)"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
