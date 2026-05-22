@@ -1,5 +1,7 @@
 package com.trader.chatbot.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.chatbot.dto.KnowledgeSection;
 import com.trader.chatbot.entity.KnowledgeChunk;
 import com.trader.chatbot.repository.KnowledgeChunkRepository;
@@ -11,7 +13,9 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -32,6 +36,7 @@ public class KnowledgeIndexService {
     private final KnowledgeBaseService knowledgeBaseService;
     private final KnowledgeChunkRepository chunkRepository;
     private final LlmClient geminiService;
+    private final ObjectMapper objectMapper;
 
     /**
      * 啟動時自動同步 knowledge_base.md → DB + embedding
@@ -67,7 +72,7 @@ public class KnowledgeIndexService {
                         .source("faq")
                         .title(section.getTitle())
                         .content(section.getContent())
-                        .metadata("{\"tags\": \"" + String.join(",", section.getTags()) + "\"}")
+                        .metadata(buildTagsMetadata(section.getTags()))
                         .enabled(true)
                         .build();
                 chunkRepository.save(chunk);
@@ -164,6 +169,24 @@ public class KnowledgeIndexService {
         }
 
         return chunk;
+    }
+
+    /**
+     * 拼 metadata JSON — 用 Jackson 安全 escape，取代既有字串串接。
+     *
+     * <p>既有寫法：{@code "{\"tags\": \"" + String.join(",", tags) + "\"}"} 在 tag 含
+     * 雙引號 / 反斜線 / 換行時會產生非法 JSON，搭配 {@link org.hibernate.annotations.JdbcTypeCode}
+     * 後 Hibernate 會 reject。改用 ObjectMapper 杜絕這層風險。
+     */
+    String buildTagsMetadata(Collection<String> tags) {
+        try {
+            return objectMapper.writeValueAsString(
+                    Map.of("tags", String.join(",", tags == null ? List.of() : tags)));
+        } catch (JsonProcessingException e) {
+            // 不會發生（Map.of String -> String 序列化必成功）
+            log.warn("metadata JSON 序列化失敗，退回空 object: {}", e.getMessage());
+            return "{}";
+        }
     }
 
     /**
