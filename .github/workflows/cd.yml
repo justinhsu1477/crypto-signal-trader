@@ -33,9 +33,22 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      deploy_sha: ${{ steps.meta.outputs.deploy_sha }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: 設定部署版本
+        id: meta
+        run: |
+          DEPLOY_SHA="${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
+          echo "deploy_sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
+          echo "Deploy SHA: $DEPLOY_SHA"
 
       - name: 登入 GHCR
         uses: docker/login-action@v3
@@ -56,7 +69,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/trading-api:latest
-            ${{ env.IMAGE_PREFIX }}/trading-api:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/trading-api:${{ steps.meta.outputs.image_tag }}
           cache-from: type=gha,scope=trading-api
           cache-to: type=gha,mode=max,scope=trading-api
 
@@ -69,7 +82,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/web-dashboard:latest
-            ${{ env.IMAGE_PREFIX }}/web-dashboard:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/web-dashboard:${{ steps.meta.outputs.image_tag }}
           build-args: |
             NEXT_PUBLIC_API_URL=http://trading-api:8080
           cache-from: type=gha,scope=web-dashboard
@@ -92,14 +105,17 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             cd /root/crypto-signal-trader
-            git pull origin main
+            git fetch origin main
+            git checkout --force ${{ needs.build-and-push.outputs.deploy_sha }}
 
             # 登入 GHCR（用 PAT 或 deploy token）
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # 拉取預建映像 & 啟動（不再 --build）
+            # 拉取 CI/CD 建好的固定 SHA 映像 & 啟動（不再 --build / 不靠 latest 部署）
+            export IMAGE_PREFIX="${{ env.IMAGE_PREFIX }}"
+            export IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
             docker compose -f docker-compose.cloud.yml pull
-            docker compose -f docker-compose.cloud.yml up -d
+            docker compose -f docker-compose.cloud.yml up -d --remove-orphans
 
             # 清理舊映像
             docker image prune -f
@@ -158,16 +174,18 @@ jobs:
         run: |
           curl -sf -H "Content-Type: application/json" \
             -d "{
-              \"content\": \"🚨 **CD 部署失敗**\n\n📦 Commit: \`${{ github.sha }}\`\n🔗 [查看 Workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n⏰ $(date -u '+%Y-%m-%d %H:%M UTC')\"
+              \"content\": \"🚨 **CD 部署失敗**\n\n📦 Commit: \`${{ needs.build-and-push.outputs.deploy_sha || github.sha }}\`\n🔗 [查看 Workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n⏰ $(date -u '+%Y-%m-%d %H:%M UTC')\"
             }" \
             "$WEBHOOK_URL" || echo "Discord 通知發送失敗"
 
       - name: 輸出失敗摘要
         run: |
-          echo "## ❌ CD 部署失敗" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **時間**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "- **觸發**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "請檢查 [Workflow 日誌](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## ❌ CD 部署失敗"
+            echo ""
+            echo "- **Commit**: \`${{ needs.build-and-push.outputs.deploy_sha || github.sha }}\`"
+            echo "- **時間**: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "- **觸發**: ${{ github.event_name }}"
+            echo ""
+            echo "請檢查 [Workflow 日誌]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          } >> "$GITHUB_STEP_SUMMARY"
