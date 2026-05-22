@@ -290,10 +290,19 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,prometheus
+        include: health,prometheus,info   # info: 暴露 git SHA / build time，免去登 VM 才知道跑哪版
   endpoint:
     health:
       show-details: when-authorized
+    info:
+      access: read_only
+  info:
+    # gradle-git-properties + springBoot buildInfo() 已寫進 META-INF
+    git:
+      mode: simple     # 簡潔模式：只顯示 branch / commit.id / commit.time
+                       # full 模式會多顯示 commit.message / committer，prod 不需要
+    build:
+      enabled: true    # 顯示 build.gradle 的 version / time / artifact
   prometheus:
     metrics:
       export:

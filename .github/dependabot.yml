@@ -1,0 +1,34 @@
+# Dependabot — 自動依賴更新
+#
+# 精簡版：只開 2 個 ecosystem，控制 PR 量到一個人 review 得完的程度。
+# 規模上去後可以再加 npm / pip / docker，每個 ecosystem 5 個 PR 上限。
+#
+# 觸發時間錯開避免同時湧 PR；週一早上一次解決。
+
+version: 2
+updates:
+  # GitHub Actions — workflow security patches（每週看，CVE 第一個來）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+
+  # Gradle (Spring Boot / Spring AI / 各 lib) — 安全更新最關鍵
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:15"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - backend
