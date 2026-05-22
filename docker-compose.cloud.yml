@@ -72,6 +72,7 @@ services:
       - .env.prod
     environment:
       - REDIS_HOST=redis              # Docker 內部 DNS（覆蓋 .env.prod 的預設值）
+      - IMAGE_TAG=${IMAGE_TAG:-unknown}  # CD 注入 commit SHA → application.yml info.deploy.commit
     depends_on:
       redis:
         condition: service_healthy

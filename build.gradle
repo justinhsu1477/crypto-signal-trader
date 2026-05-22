@@ -23,6 +23,10 @@ springBoot {
 
 // gradle-git-properties 設定 — 控制要寫進 git.properties 的欄位
 gitProperties {
+    // Docker 多階段 build 的 builder 階段沒有 .git 目錄（沒 COPY 進去避免 layer
+    // cache 爆炸），plugin 預設會炸。設 false 讓 docker build 跳過；prod 的
+    // git SHA 改靠 CD 注入 IMAGE_TAG → application.yml info.deploy.commit。
+    failOnNoGitDirectory = false
     keys = [
             'git.branch',
             'git.commit.id',

@@ -301,8 +301,17 @@ management:
     git:
       mode: simple     # 簡潔模式：只顯示 branch / commit.id / commit.time
                        # full 模式會多顯示 commit.message / committer，prod 不需要
+                       # 注意：Docker build 沒 .git 不會生成 git.properties，
+                       # prod 環境 git.* 會缺，靠下面 deploy.commit 補
     build:
       enabled: true    # 顯示 build.gradle 的 version / time / artifact
+
+# Spring Boot 看到 management.info.* 不會 auto-expose 自定義欄位，但同層級
+# 的 info.* 會被 EnvironmentInfoContributor 抓到放進 /info。
+# CD 部署時 docker-compose 注入 IMAGE_TAG=<commit SHA>，作 image tag 同步 = info.deploy.commit。
+info:
+  deploy:
+    commit: ${IMAGE_TAG:unknown}   # prod = CD 注入的 commit SHA；dev = unknown
   prometheus:
     metrics:
       export:
