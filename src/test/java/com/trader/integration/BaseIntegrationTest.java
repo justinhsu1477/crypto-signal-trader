@@ -61,6 +61,15 @@ public abstract class BaseIntegrationTest {
 
     static {
         POSTGRES.start();
+        // pgvector extension 必須先啟用，否則 Hibernate ddl-auto=create-drop 建到含 vector(768)
+        // 欄位的 entity 表會炸（type unknown）。idempotent，對既有 entity 0 影響。
+        try (java.sql.Connection conn = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             java.sql.Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE EXTENSION IF NOT EXISTS vector");
+        } catch (java.sql.SQLException e) {
+            throw new RuntimeException("Failed to enable pgvector extension in test container", e);
+        }
     }
 
     @DynamicPropertySource
