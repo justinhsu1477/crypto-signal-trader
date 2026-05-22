@@ -5,6 +5,7 @@
 #   docker compose -f docker-compose.cloud.yml up -d
 #
 # Image 由 GitHub Actions CD 自動建構推送到 GHCR，VM 只需 pull + restart
+# CD 會注入 IMAGE_TAG=<commit SHA> 做 immutable deploy；本機未設定時 fallback latest
 #
 # SSL: Cloudflare Full (Strict) + Origin Certificate
 #   - certs/ 目錄需放入 origin-cert.pem 和 origin-key.pem
@@ -62,7 +63,7 @@ services:
     restart: unless-stopped
 
   trading-api:
-    image: ghcr.io/justinhsu1477/crypto-signal-trader/trading-api:latest
+    image: ${IMAGE_PREFIX:-ghcr.io/justinhsu1477/crypto-signal-trader}/trading-api:${IMAGE_TAG:-latest}
     container_name: trading-api
     expose:
       - "8080"
@@ -71,6 +72,7 @@ services:
       - .env.prod
     environment:
       - REDIS_HOST=redis              # Docker 內部 DNS（覆蓋 .env.prod 的預設值）
+      - IMAGE_TAG=${IMAGE_TAG:-unknown}  # CD 注入 commit SHA → application.yml info.deploy.commit
     depends_on:
       redis:
         condition: service_healthy
@@ -85,7 +87,7 @@ services:
     restart: unless-stopped
 
   web-dashboard:
-    image: ghcr.io/justinhsu1477/crypto-signal-trader/web-dashboard:latest
+    image: ${IMAGE_PREFIX:-ghcr.io/justinhsu1477/crypto-signal-trader}/web-dashboard:${IMAGE_TAG:-latest}
     container_name: web-dashboard
     expose:
       - "3000"

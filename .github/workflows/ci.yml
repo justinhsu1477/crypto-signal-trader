@@ -33,6 +33,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       monitor: ${{ steps.filter.outputs.monitor }}
       docker: ${{ steps.filter.outputs.docker }}
+      deploy_config: ${{ steps.filter.outputs.deploy_config }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
@@ -62,8 +63,31 @@ jobs:
               - '.dockerignore'
               - 'web-dashboard/Dockerfile'
               - 'discord-monitor/Dockerfile'
+            deploy_config:
+              - 'docker-compose*.yml'
+              - 'Caddyfile'
             workflows:
               - '.github/workflows/**'
+              - '.github/dependabot.yml'
+              - 'release-please-config.json'
+              - '.release-please-manifest.json'
+
+  # ============================================================
+  # 0b. Workflow lint — GitHub Actions 語法 / expression / shellcheck
+  # ============================================================
+  workflow_lint:
+    name: 🧪 Workflow Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.workflows == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rhysd/actionlint 是 CLI 工具不是 GitHub Action，要用官方 install script。
+      # 鎖版本避免上游突然炸：v1.7.12（current latest 2026-05）
+      - name: Install actionlint
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+      - name: Run actionlint
+        run: ./actionlint -color
 
   # ============================================================
   # 1. 密鑰洩漏掃描 — 永遠跑（security gate，無論改什麼）
@@ -124,7 +148,7 @@ jobs:
         with:
           paths: build/reports/jacoco/test/jacocoTestReport.xml
           token: ${{ secrets.GITHUB_TOKEN }}
-          min-coverage-overall: 50
+          min-coverage-overall: 70
           title: "☂️ 測試覆蓋率"
           update-comment: true
 
@@ -257,13 +281,41 @@ jobs:
         run: docker build -t crypto-trader-monitor:ci ./discord-monitor
 
   # ============================================================
+  # 6. 部署設定驗證
+  # Compose / Caddy 只改設定也要有 gate，避免 CD 才炸
+  # ============================================================
+  deploy_config:
+    name: 🧭 部署設定驗證
+    needs: changes
+    if: ${{ needs.changes.outputs.deploy_config == 'true' || needs.changes.outputs.workflows == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker Compose config 驗證
+        run: |
+          # compose 在 parse 階段就會讀 env_file 確認存在；CI 沒有 prod secrets，
+          # 給空檔頂著 — 純檢 YAML 結構 / image / volume 拼錯，env 內容不在這層管。
+          touch .env .env.dev .env.prod
+          docker compose -f docker-compose.cloud.yml config --no-env-resolution --quiet
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile local-db config --no-env-resolution --quiet
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --no-env-resolution --quiet
+
+      - name: Caddyfile 語法驗證
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine \
+            caddy adapt --config /etc/caddy/Caddyfile --pretty > /tmp/caddy-adapted.json
+
+  # ============================================================
   # 🚦 CI Summary — 聚合所有 job 結果
   # 這是「唯一」branch protection 該 require 的 status check
   # success / skipped 都算過；failure / cancelled 才算沒過
   # ============================================================
   ci-summary:
     name: ✅ CI Summary
-    needs: [changes, gitleaks, backend, integration-test, frontend, monitor, docker]
+    needs: [changes, workflow_lint, gitleaks, backend, integration-test, frontend, monitor, docker, deploy_config]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -273,16 +325,18 @@ jobs:
           # 規則：success / skipped 算過；其他全算沒過
           all_ok=true
           declare -A jobs=(
+            [workflow-lint]="${{ needs.workflow_lint.result }}"
             [gitleaks]="${{ needs.gitleaks.result }}"
             [backend]="${{ needs.backend.result }}"
             [integration-test]="${{ needs.integration-test.result }}"
             [frontend]="${{ needs.frontend.result }}"
             [monitor]="${{ needs.monitor.result }}"
             [docker]="${{ needs.docker.result }}"
+            [deploy-config]="${{ needs.deploy_config.result }}"
           )
 
           echo "=== CI Job Results ==="
-          for name in gitleaks backend integration-test frontend monitor docker; do
+          for name in workflow-lint gitleaks backend integration-test frontend monitor docker deploy-config; do
             r="${jobs[$name]}"
             case "$r" in
               success) echo "  ✅ $name: $r" ;;
