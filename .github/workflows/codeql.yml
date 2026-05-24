@@ -1,0 +1,91 @@
+# CodeQL — GitHub 內建 SAST，免費掃 OWASP top 10 類弱點
+#
+# 涵蓋：SQL injection、XSS、CSRF、Path traversal、Insecure deserialization、
+#       Weak crypto、Hardcoded credentials、Command injection 等
+#
+# 三個 language 各跑一次（matrix）：
+#   java-kotlin：Spring Boot backend
+#   python：discord-monitor + eval harness
+#   javascript-typescript：web-dashboard
+#
+# 觸發：每次 push main / 開 PR 都跑；另外每週掃一次（即使沒新 push，新發現的 CVE 也會抓）
+# 結果：GitHub Security tab → Code scanning alerts 顯示，可直接點進去看 finding + 推薦 fix
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 每週日 02:00 UTC = 週日 10:00 台北。避開 weekly eval (Mon 09:00 TW) 不互搶資源
+    - cron: '0 2 * * 0'
+
+permissions:
+  # 寫入 Security 分頁的 alerts 需要這權限
+  security-events: write
+  # checkout
+  contents: read
+  # PR 標 review
+  actions: read
+
+# 同分支多次 push 只跑最新一次（節省 minutes）
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: 🔬 CodeQL ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45  # Java build + analyze 偶爾比較久
+
+    strategy:
+      fail-fast: false  # 一個 language fail 不擋其他兩個
+      matrix:
+        include:
+          - language: java-kotlin
+            build-mode: autobuild
+          - language: python
+            build-mode: none  # Python 不用 build
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Java 需 JDK + Gradle cache 才能 autobuild 成功
+      - name: Setup Java
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle
+        if: matrix.language == 'java-kotlin'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-codeql-${{ hashFiles('**/*.gradle*', 'gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-codeql-
+            ${{ runner.os }}-gradle-
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # 用 security-extended（比預設 security-only 多抓 ~30% 弱點）
+          # 想再嚴格可改 security-and-quality（會抓 code smell，但 noise 比較高）
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
