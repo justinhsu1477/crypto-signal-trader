@@ -4,7 +4,12 @@ on:
   schedule:
     # 每週一 01:00 UTC = 台北 09:00 — 早上開電腦剛好看到報告
     - cron: '0 1 * * 1'
-  workflow_dispatch:        # 手動可觸發（首次部署測試 / ad-hoc 跑）
+  workflow_dispatch:        # 手動可觸發（首次部署測試 / ad-hoc 跑、A/B 測新模型）
+    inputs:
+      model:
+        description: 'Gemini model to test (default gemini-2.5-flash; 可填 gemini-2.5-pro 做 A/B)'
+        required: false
+        default: 'gemini-2.5-flash'
 
 # 最小權限：本 workflow 不寫任何 repo 內容，只讀 + 上傳 artifact + 對外 POST Discord
 permissions:
@@ -38,8 +43,10 @@ jobs:
         working-directory: discord-monitor
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          EVAL_GEMINI_MODEL: gemini-2.5-flash
+          # workflow_dispatch input 優先；schedule 觸發時 fallback gemini-2.5-flash
+          EVAL_GEMINI_MODEL: ${{ inputs.model || 'gemini-2.5-flash' }}
         run: |
+          echo "Using model: $EVAL_GEMINI_MODEL"
           # --delay 7 給 free tier 15 RPM 留 buffer
           # 即使 exit code 1（< 80% regression）也要送通知 → 用 `|| true`
           # 但若 JSON 連產都沒產出（API key 缺 / runner 早早 crash）→ 後續 step gate 會擋
@@ -61,10 +68,12 @@ jobs:
         # 只在 run-eval 成功（JSON 有產且結構 OK）才跑 — 避免 malformed JSON 靜默漏通知
         if: steps.run-eval.outcome == 'success'
         working-directory: discord-monitor
+        env:
+          EVAL_GEMINI_MODEL: ${{ inputs.model || 'gemini-2.5-flash' }}
         run: |
           python3 -m eval.format_report \
             --input /tmp/eval-result.json \
-            --model gemini-2.5-flash \
+            --model "$EVAL_GEMINI_MODEL" \
             > /tmp/discord-payload.json
           echo "Payload size: $(wc -c < /tmp/discord-payload.json) bytes"
 

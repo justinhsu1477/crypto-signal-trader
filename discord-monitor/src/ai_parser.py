@@ -539,10 +539,23 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 輸出: [{"action": "CLOSE", "close_ratio": 0.5}, {"action": "MOVE_SL"}]
 （「一半」= 0.5；「保本损」沒給數字 → compound 不是單一 dict）
 
+範例 11（⚠️ **不對稱雙段：短線「全平」+ 中長線「只 SL」→ 單一 MOVE_SL，不是 compound**）:
+輸入: "各位会员朋友们: \n做短线可以全部止盈出局早点休息。\n中长线收益做成本保护继续持有。"
+輸出: {"action": "MOVE_SL"}
+（中長線段「做成本保護繼續持有」**沒有** 含「止盈X%」「平X%」「先平」等比例詞 → 只是 SL 調整。
+不要被短線段「全部止盈出局」的強動作詞帶走 — 跟單者只跟中長線那段，**中長線沒平倉指令 → 不平倉**）
+
+範例 12（同 11 變體，中長線含具體 SL 價）:
+輸入: "做短线的可以全部止盈出局\n中长线止损改入场价77150继续持有"
+輸出: {"action": "MOVE_SL", "new_stop_loss": 77150}
+（中長線只說「止損改 X」是 SL 調整、不平倉 → 單一 MOVE_SL；新止損價直接帶上）
+
 **錯誤模式（不要做）**：
 - ❌ 看到雙段就回單一 CLOSE 卻不抽 close_ratio
 - ❌ 看到「保本损」沒給數字就回單一 dict（應該是 compound）
-- ❌ 把短線段當主要指令（短線「全平」會誤觸 close_ratio=1.0）
+- ❌ 把短線段當主要指令（短線「全平」會誤觸 close_ratio=1.0 或 close_ratio=null = 全平）
+- ❌ 把不對稱雙段（短線全平 + 中長線只 SL）解成 compound [CLOSE, MOVE_SL]
+   正解：當中長線段沒提平倉比例 → 只輸出 MOVE_SL 單一 dict（範例 11、12）
 """
 
 DEFAULT_PROMPT_SECTIONS = SignalPromptSections.from_legacy_prompt(SYSTEM_PROMPT)
