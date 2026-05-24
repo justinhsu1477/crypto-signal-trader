@@ -54,7 +54,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Java 需 JDK + Gradle cache 才能 autobuild 成功
       - name: Setup Java
