@@ -260,6 +260,15 @@ ai:
 chatbot:
   enabled: ${CHATBOT_ENABLED:false}
 
+# ========== Signal Guards (防 Gemini 誤判) ==========
+# suspicious-close: 偵測「action=CLOSE + close_ratio=null + new_stop_loss != null」結構矛盾
+#                   payload（Gemini 把「做成本保護止損修改XX」這類 MOVE_SL 誤判 CLOSE 的 fingerprint），
+#                   自動轉成 MOVE_SL 保住倉位。預設開啟，可用 env var 一鍵 kill switch。
+signal:
+  guard:
+    suspicious-close:
+      enabled: ${SIGNAL_GUARD_SUSPICIOUS_CLOSE_ENABLED:true}
+
 # ========== AI 交易顧問 ==========
 # cron-expression / max-tokens / temperature / recent-trades-count 預設值已搬到
 # com.trader.advisor.config.AdvisorConfig 的 @DefaultValue。

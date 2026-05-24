@@ -42,6 +42,7 @@ class TradeControllerTest {
     private SymbolLockRegistry symbolLockRegistry;
     private com.trader.trading.config.MultiUserConfig multiUserConfig;
     private SignalMetrics signalMetrics;
+    private com.trader.trading.service.SuspiciousClosePayloadGuard suspiciousClosePayloadGuard;
 
     private TradeController controller;
 
@@ -60,14 +61,18 @@ class TradeControllerTest {
         symbolLockRegistry = new SymbolLockRegistry();
         multiUserConfig = mock(com.trader.trading.config.MultiUserConfig.class);
         signalMetrics = mock(SignalMetrics.class);
+        suspiciousClosePayloadGuard = mock(com.trader.trading.service.SuspiciousClosePayloadGuard.class);
         // 預設多用戶模式關閉 — 既有測試聚焦單用戶行為
         when(multiUserConfig.isEnabled()).thenReturn(false);
+        // 預設 guard pass-through，既有測試行為不變
+        when(suspiciousClosePayloadGuard.inspect(any()))
+                .thenReturn(com.trader.trading.service.SuspiciousClosePayloadGuard.Result.PASS_THROUGH);
 
         controller = new TradeController(
                 binanceFuturesService, broadcastTradeService, signalParserService,
                 riskConfig, tradeRecordService, deduplicationService,
                 webhookService, heartbeatService, userDataStreamService, signalRecordService,
-                symbolLockRegistry, multiUserConfig, signalMetrics);
+                symbolLockRegistry, multiUserConfig, signalMetrics, suspiciousClosePayloadGuard);
 
         // 預設白名單通過
         when(riskConfig.isSymbolAllowed(anyString())).thenReturn(true);
