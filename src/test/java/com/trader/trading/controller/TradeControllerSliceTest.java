@@ -99,6 +99,7 @@ class TradeControllerSliceTest {
     @MockBean private SymbolLockRegistry symbolLockRegistry;
     @MockBean private MultiUserConfig multiUserConfig;
     @MockBean private SignalMetrics signalMetrics;
+    @MockBean private com.trader.trading.service.SuspiciousClosePayloadGuard suspiciousClosePayloadGuard;
 
     // ===== Filter / Handler 依賴（AuthConfig & JwtAuthenticationFilter 需要） =====
     @MockBean private JwtService jwtService;

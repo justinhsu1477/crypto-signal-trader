@@ -14,6 +14,7 @@ import com.trader.notification.service.NotificationService;
 import com.trader.trading.service.MonitorHeartbeatService;
 import com.trader.trading.service.SignalDeduplicationService;
 import com.trader.trading.service.SignalMetrics;
+import com.trader.trading.service.SuspiciousClosePayloadGuard;
 import com.trader.trading.service.SignalParserService;
 import com.trader.trading.service.BinanceUserDataStreamService;
 import com.trader.trading.service.SignalRecordService;
@@ -56,6 +57,7 @@ public class TradeController {
     private final SymbolLockRegistry symbolLockRegistry;
     private final MultiUserConfig multiUserConfig;
     private final SignalMetrics signalMetrics;
+    private final SuspiciousClosePayloadGuard suspiciousClosePayloadGuard;
 
     /** 訊號最大容許延遲（毫秒）：5 分鐘 */
     private static final long SIGNAL_MAX_AGE_MS = 5 * 60 * 1000L;
@@ -282,6 +284,11 @@ public class TradeController {
                     "allowed", riskConfig.getAllowedSymbols().toString(),
                     "received", symbol != null ? symbol : "null"));
         }
+
+        // SuspiciousClosePayloadGuard：擋 Gemini 把 MOVE_SL 誤判 CLOSE
+        // 結構矛盾 payload (CLOSE + close_ratio=null + new_stop_loss!=null) 自動轉 MOVE_SL
+        // request 已 in-place 修正，switch case 拿到的就是正確 action
+        suspiciousClosePayloadGuard.inspect(request);
 
         String action = request.getAction();
         if (action == null) {
@@ -895,6 +902,11 @@ public class TradeController {
                     "allowed", riskConfig.getAllowedSymbols().toString(),
                     "received", symbol != null ? symbol : "null"));
         }
+
+        // SuspiciousClosePayloadGuard：擋 Gemini 把 MOVE_SL 誤判 CLOSE
+        // 結構矛盾 payload (CLOSE + close_ratio=null + new_stop_loss!=null) 自動轉 MOVE_SL
+        // → dedup / metrics / record / broadcast 拿到的就是修正後的 action
+        suspiciousClosePayloadGuard.inspect(request);
 
         // Prometheus 計數（觀察圖訊號 / 複合動作量）—— 一旦通過 action+symbol 驗證就算「收到」
         recordSignalMetrics(request);

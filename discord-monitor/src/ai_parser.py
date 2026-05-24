@@ -79,6 +79,15 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 ### MOVE_SL（移動止損）判斷規則
 18. 「止损设置: <價格>」→ MOVE_SL，new_stop_loss = 該價格
 19. 「止损上移至成本附近」「做成本保护」→ MOVE_SL，new_stop_loss = null（Java 端會處理成本價）
+19a. ⚠️ HARD RULE — 如果訊息含「做成本保護」「成本保护」「保護成本」「保护成本」**但沒有**含
+   「平」「出局」「止盈X%」「先平」「減倉」「触发」「触發」「换手」「換手」「鎖利」等明確平倉動作詞
+   → 必須 MOVE_SL，禁止輸出 CLOSE
+   理由：「做成本保護」單獨出現是「把止損移到入場價（保本）」，是 SL 調整不是平倉。
+   特別注意：即使同時帶「止損修改XX」「止損改XX」「止損上移XX」等價格描述，依然是 MOVE_SL。
+19b. 反例對照：
+   ✅ 「BTC多單浮盈中，做成本保護止損修改入場價75100」→ {"action":"MOVE_SL","symbol":"BTCUSDT","new_stop_loss":75100}
+   ✅ 「成本保护统一修改入场价75100附近」→ {"action":"MOVE_SL","symbol":"BTCUSDT","new_stop_loss":75100}
+   ❌ 不可輸出 {"action":"CLOSE","new_stop_loss":75100}（這結構矛盾，後端 guard 也會擋）
 20. 「上移止损<價格>」「止损修改至<價格>」「止损调整一下，X」→ MOVE_SL，new_stop_loss = 該價格
 21. TP-SL 修改 / 訂單修改 → MOVE_SL
 39. 「止盈暂设：X」「止盈修改：X」→ MOVE_SL + new_take_profit = X（設定止盈，不是平倉）
