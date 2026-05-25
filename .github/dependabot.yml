@@ -1,26 +1,41 @@
 # Dependabot — 自動依賴更新
 #
-# 精簡版：只開 2 個 ecosystem，控制 PR 量到一個人 review 得完的程度。
-# 規模上去後可以再加 npm / pip / docker，每個 ecosystem 5 個 PR 上限。
+# 設計原則：
+# 1. 保守 — 永遠不自動升 major (避免 breaking change 累積成 review queue)
+# 2. 分組 — Security patches 自動合一個 PR，降 review 負擔
+# 3. 全覆蓋 — Java / Python / JavaScript / GitHub Actions / Docker 五個 ecosystem
 #
-# 觸發時間錯開避免同時湧 PR；週一早上一次解決。
+# 觸發時間錯開（10/15/20/25/30 分各 5 分鐘）避免同時湧 PR；週一早上一次解決。
 
 version: 2
 updates:
-  # GitHub Actions — workflow security patches（每週看，CVE 第一個來）
+  # ============================================================
+  # 1. GitHub Actions — workflow security patches（CVE 第一個來）
+  # ============================================================
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       day: monday
-      time: "09:00"
+      time: "09:10"
       timezone: Asia/Taipei
     open-pull-requests-limit: 5
     labels:
       - dependencies
       - ci
+    groups:
+      # 把 minor/patch 升級分組合一個 PR — Action 升版通常多個一起來
+      actions-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # major 升版需要手動 review (GitHub Actions API breaking changes 偶有)
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
-  # Gradle (Spring Boot / Spring AI / 各 lib) — 安全更新最關鍵
+  # ============================================================
+  # 2. Gradle (Spring Boot / Spring AI / 各 lib) — 安全更新最關鍵
+  # ============================================================
   - package-ecosystem: gradle
     directory: /
     schedule:
@@ -32,3 +47,84 @@ updates:
     labels:
       - dependencies
       - backend
+    groups:
+      # 同 lib 家族升版往往一起來 — 分組降 review 量
+      spring-ecosystem:
+        patterns:
+          - "org.springframework*"
+          - "org.springframework.boot*"
+          - "org.springframework.security*"
+        update-types: ["minor", "patch"]
+      java-minor-patches:
+        patterns: ["*"]
+        update-types: ["patch"]
+    ignore:
+      # Gradle wrapper / Spring Boot / Java major bumps 需要手動 review
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ============================================================
+  # 3. Python (discord-monitor + eval harness)
+  # ============================================================
+  - package-ecosystem: pip
+    directory: /discord-monitor
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:20"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - python
+    groups:
+      python-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ============================================================
+  # 4. JavaScript / TypeScript (web-dashboard Next.js)
+  # ============================================================
+  - package-ecosystem: npm
+    directory: /web-dashboard
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:25"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Next.js / React major bumps 通常要 refactor，手動 review
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ============================================================
+  # 5. Docker (base image vulnerabilities)
+  # ============================================================
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /web-dashboard
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker
+    # Docker base image major bumps 通常是 OS / language runtime 升 — 嚴格 review
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
