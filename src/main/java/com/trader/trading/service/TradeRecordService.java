@@ -436,6 +436,12 @@ public class TradeRecordService {
         // 若 exitPrice > 0 才標 CLOSED 並計算盈虧；否則標 PENDING_CLOSE 等 WebSocket 修正
         if (closeOrder.getPrice() > 0) {
             trade.setStatus("CLOSED");
+            // 累計平倉量歸位 — 修前 bug：先前部分平倉留下的 remainingQuantity > 0
+            // 在這條全平分支不會被歸零，造成 status=CLOSED + remaining>0 的矛盾
+            double prevClosed = trade.getTotalClosedQuantity() != null ? trade.getTotalClosedQuantity() : 0;
+            trade.setTotalClosedQuantity(prevClosed + closeOrder.getQuantity());
+            trade.setRemainingQuantity(0.0);
+
             double realExitCommission = closeOrder.getCommission() > 0 ? closeOrder.getCommission() : 0;
             calculateProfit(trade, realExitCommission);
         } else {
@@ -1222,6 +1228,13 @@ public class TradeRecordService {
             trade.setExitReason(exitReason);
             trade.setStatus("CLOSED");
             trade.setCommission(round2(entryCommission + commission));
+
+            // 累計平倉量歸位 — 若先前有部分平倉，這次 fill 把剩餘吃完
+            // 修前 bug：status=CLOSED 但 remainingQuantity 還停在部分平倉後的值 →
+            // dashboard / repository 看起來像「半開倉位」與 status 矛盾（2026-05-26 prod 撞此 bug）
+            double prevClosed = trade.getTotalClosedQuantity() != null ? trade.getTotalClosedQuantity() : 0;
+            trade.setTotalClosedQuantity(prevClosed + exitQuantity);
+            trade.setRemainingQuantity(0.0);
 
             // 毛利用實際出場數量（不是 entryQuantity）
             double entry = trade.getEntryPrice() != null ? trade.getEntryPrice() : 0;
