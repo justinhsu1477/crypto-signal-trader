@@ -209,7 +209,9 @@ public class PaperPromotionEvaluator {
         body.append("→ 注意：升 AUTO 後該 source 訊號會在 23 用戶實際下單");
 
         try {
-            discordWebhookService.sendNotification(
+            // 走 admin-only fan-out（不發公頻道）— 升 AUTO 是內部策略決定，
+            // 含「23 用戶會實際下單」等敏感字眼，不該外洩到 user-facing channel
+            discordWebhookService.sendNotificationToAdmins(
                     "🚀 Paper Trading — Promotion Candidates",
                     body.toString(),
                     DiscordWebhookService.COLOR_GREEN);

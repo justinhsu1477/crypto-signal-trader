@@ -143,7 +143,7 @@ class PaperPromotionEvaluatorTest {
 
             evaluator.evaluateAndNotify();
 
-            verify(discordWebhookService, times(1)).sendNotification(
+            verify(discordWebhookService, times(1)).sendNotificationToAdmins(
                     contains("Promotion Candidates"), anyString(), anyInt());
         }
 
@@ -156,7 +156,7 @@ class PaperPromotionEvaluatorTest {
 
             evaluator.evaluateAndNotify();
 
-            verify(discordWebhookService, never()).sendNotification(anyString(), anyString(), anyInt());
+            verify(discordWebhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
 
         @Test
@@ -166,14 +166,14 @@ class PaperPromotionEvaluatorTest {
 
             evaluator.evaluateAndNotify();
 
-            verify(discordWebhookService, never()).sendNotification(anyString(), anyString(), anyInt());
+            verify(discordWebhookService, never()).sendNotificationToAdmins(anyString(), anyString(), anyInt());
         }
 
         @Test
         @DisplayName("Discord 通知失敗 → 不傳染 exception")
         void discordFailureSwallowed() {
             doThrow(new RuntimeException("Discord down"))
-                    .when(discordWebhookService).sendNotification(anyString(), anyString(), anyInt());
+                    .when(discordWebhookService).sendNotificationToAdmins(anyString(), anyString(), anyInt());
             when(performanceService.getAllSourceMetrics()).thenReturn(List.of(goodMetrics()));
 
             // 不該 throw
