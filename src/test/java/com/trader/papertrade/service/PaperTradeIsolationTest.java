@@ -267,7 +267,7 @@ class PaperTradeIsolationTest {
     void paperTrade_userId_isPaperTradeSystem() {
         TradeRepository realTradeRepo = mock(TradeRepository.class);
         BinancePriceClient priceClient = mock(BinancePriceClient.class);
-        PaperTradingConfig config = new PaperTradingConfig(1000, 10, 90000, 0.10);
+        PaperTradingConfig config = new PaperTradingConfig(1000, 10, 90000, 0.10, 0.0005);
         PaperTradeService paperService = new PaperTradeService(realTradeRepo, config, new ObjectMapper(), priceClient);
 
         when(priceClient.getMarkPrice("BTCUSDT")).thenReturn(50500.0);

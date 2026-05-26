@@ -517,4 +517,25 @@ public interface TradeRepository extends JpaRepository<Trade, String> {
     List<Trade> findRecentTradesBySource(@Param("channelId") String channelId,
                                          @Param("guildId") String guildId,
                                          Pageable pageable);
+
+    // ==================== Paper Trading 績效分析（read-only） ====================
+
+    /**
+     * 取所有「已平倉」+「simulated=true」的 paper trades，依 source_channel_id 分組 +
+     * 時間排序。給 {@code PaperPerformanceService} 計算 per-source Sharpe / DD / Profit Factor。
+     *
+     * <p>純 read-only，不會修改任何 trade。</p>
+     */
+    @Query("SELECT t FROM Trade t WHERE t.simulated = true AND t.status = 'CLOSED' " +
+           "AND t.sourceChannelId IS NOT NULL " +
+           "ORDER BY t.sourceChannelId, t.exitTime ASC")
+    List<Trade> findClosedPaperTradesGroupedBySource();
+
+    /**
+     * 取單一 source 的已平倉 paper trades，依時間排序（給 equity curve 計算）。
+     */
+    @Query("SELECT t FROM Trade t WHERE t.simulated = true AND t.status = 'CLOSED' " +
+           "AND t.sourceChannelId = :channelId " +
+           "ORDER BY t.exitTime ASC")
+    List<Trade> findClosedPaperTradesForSource(@Param("channelId") String channelId);
 }

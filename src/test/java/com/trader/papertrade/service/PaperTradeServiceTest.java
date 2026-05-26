@@ -32,7 +32,7 @@ class PaperTradeServiceTest {
     @BeforeEach
     void setUp() {
         tradeRepository = mock(TradeRepository.class);
-        config = new PaperTradingConfig(1000, 10, 90000, 0.10);
+        config = new PaperTradingConfig(1000, 10, 90000, 0.10, 0.0005);
         objectMapper = new ObjectMapper();
         binancePriceClient = mock(BinancePriceClient.class);
         service = new PaperTradeService(tradeRepository, config, objectMapper, binancePriceClient);
@@ -289,6 +289,142 @@ class PaperTradeServiceTest {
 
         assertThat(result).isEmpty();
         verify(tradeRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("STOP_LOSS 平倉 — LONG slippage 模擬 (fill 偏低)")
+    void closePaperTrade_long_stopLoss_appliesSlippage() {
+        // LONG entry 50000，SL trigger 49000；slippage 0.05% → effective exit 49000 * 0.9995 = 48975.5
+        Trade openTrade = Trade.builder()
+                .tradeId("t-sl-long")
+                .userId("PAPER_TRADE_SYSTEM")
+                .symbol("BTCUSDT")
+                .side("LONG")
+                .entryPrice(50000.0)
+                .entryQuantity(0.2)
+                .entryCommission(2.0)
+                .status("OPEN")
+                .simulated(true)
+                .build();
+
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch1"))
+                .thenReturn(List.of(openTrade));
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Optional<Trade> result = service.closePaperTrade("BTCUSDT", "ch1", 49000.0, "STOP_LOSS");
+
+        assertThat(result).isPresent();
+        Trade closed = result.get();
+
+        // effectiveExit = 49000 * (1 - 0.0005 * 1) = 48975.5
+        // grossProfit = (48975.5 - 50000) * 0.2 * 1 = -204.9
+        assertThat(closed.getGrossProfit())
+                .as("LONG SL slippage 0.05% 應該讓 fill 從 49000 變 48975.5，gross loss 更大")
+                .isCloseTo(-204.9, org.assertj.core.data.Offset.offset(0.01));
+        // 對照: 若沒 slippage，gross = (49000 - 50000) * 0.2 = -200
+        assertThat(closed.getGrossProfit())
+                .as("Slippage 後虧損比無 slippage 多")
+                .isLessThan(-200.0);
+    }
+
+    @Test
+    @DisplayName("STOP_LOSS 平倉 — SHORT slippage 模擬 (fill 偏高)")
+    void closePaperTrade_short_stopLoss_appliesSlippage() {
+        // SHORT entry 3500，SL trigger 3700；slippage 0.05% → effective exit 3700 * 1.0005 = 3701.85
+        Trade openTrade = Trade.builder()
+                .tradeId("t-sl-short")
+                .userId("PAPER_TRADE_SYSTEM")
+                .symbol("ETHUSDT")
+                .side("SHORT")
+                .entryPrice(3500.0)
+                .entryQuantity(2.0)
+                .entryCommission(2.0)
+                .status("OPEN")
+                .simulated(true)
+                .build();
+
+        when(tradeRepository.findOpenSimulatedTrades("ETHUSDT", "ch2"))
+                .thenReturn(List.of(openTrade));
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Optional<Trade> result = service.closePaperTrade("ETHUSDT", "ch2", 3700.0, "STOP_LOSS");
+
+        assertThat(result).isPresent();
+        Trade closed = result.get();
+
+        // effectiveExit = 3700 * (1 - 0.0005 * -1) = 3700 * 1.0005 = 3701.85
+        // grossProfit = (3701.85 - 3500) * 2 * -1 = -403.7
+        assertThat(closed.getGrossProfit())
+                .as("SHORT SL slippage 0.05% 應該讓 fill 從 3700 變 3701.85，gross loss 更大")
+                .isCloseTo(-403.7, org.assertj.core.data.Offset.offset(0.01));
+        // 對照: 若沒 slippage，gross = (3700 - 3500) * 2 * -1 = -400
+        assertThat(closed.getGrossProfit())
+                .as("Slippage 後虧損比無 slippage 多")
+                .isLessThan(-400.0);
+    }
+
+    @Test
+    @DisplayName("TAKE_PROFIT 平倉 — limit order 無 slippage（同先前 baseline）")
+    void closePaperTrade_takeProfit_noSlippage() {
+        // 跟 closePaperTrade_long_profit 結果一致，確認 TP 不套用 slippage
+        Trade openTrade = Trade.builder()
+                .tradeId("t-tp")
+                .userId("PAPER_TRADE_SYSTEM")
+                .symbol("BTCUSDT")
+                .side("LONG")
+                .entryPrice(50000.0)
+                .entryQuantity(0.2)
+                .entryCommission(2.0)
+                .status("OPEN")
+                .simulated(true)
+                .build();
+
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch-tp"))
+                .thenReturn(List.of(openTrade));
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Optional<Trade> result = service.closePaperTrade("BTCUSDT", "ch-tp", 52000.0, "TAKE_PROFIT");
+
+        assertThat(result).isPresent();
+        Trade closed = result.get();
+        // gross = (52000 - 50000) * 0.2 = 400.00（無 slippage）
+        assertThat(closed.getGrossProfit()).isEqualTo(400.0);
+        // commission 同既有 test: 2.0 + 52000 * 0.2 * 0.0004 = 6.16
+        assertThat(closed.getCommission()).isEqualTo(6.16);
+        assertThat(closed.getNetProfit()).isEqualTo(393.84);
+    }
+
+    @Test
+    @DisplayName("SIGNAL_CLOSE 平倉 — market order 套用 slippage")
+    void closePaperTrade_signalClose_appliesSlippage() {
+        Trade openTrade = Trade.builder()
+                .tradeId("t-sc")
+                .userId("PAPER_TRADE_SYSTEM")
+                .symbol("BTCUSDT")
+                .side("LONG")
+                .entryPrice(50000.0)
+                .entryQuantity(0.2)
+                .entryCommission(2.0)
+                .status("OPEN")
+                .simulated(true)
+                .build();
+
+        when(tradeRepository.findOpenSimulatedTrades("BTCUSDT", "ch-sc"))
+                .thenReturn(List.of(openTrade));
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // SIGNAL_CLOSE 在 51000，LONG 平倉 → effective 51000 * 0.9995 = 50974.5
+        Optional<Trade> result = service.closePaperTrade("BTCUSDT", "ch-sc", 51000.0, "SIGNAL_CLOSE");
+
+        assertThat(result).isPresent();
+        Trade closed = result.get();
+
+        // gross = (50974.5 - 50000) * 0.2 = 194.9（無 slippage 應為 200）
+        assertThat(closed.getGrossProfit())
+                .isCloseTo(194.9, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(closed.getGrossProfit())
+                .as("SIGNAL_CLOSE 是 market exit，slippage 讓 profit 少於 200")
+                .isLessThan(200.0);
     }
 
     // ==================== movePaperStopLoss ====================

@@ -269,6 +269,26 @@ signal:
     suspicious-close:
       enabled: ${SIGNAL_GUARD_SUSPICIOUS_CLOSE_ENABLED:true}
 
+# ========== Paper Trading（模擬交易）==========
+# 多數欄位用 @DefaultValue 處理；下面只列「新加」或「常 override」的。
+# 預設值（在 PaperTradingConfig.java）：
+#   notional-usdt:                1000          (模擬倉名目金額)
+#   leverage:                     10
+#   monitor-interval-ms:          90000
+#   max-price-deviation-percent:  0.10
+#   market-slippage-pct:          0.0005        (新 — 0.05% slippage for STOP_LOSS / SIGNAL_CLOSE)
+#
+# promotion: PaperPromotionEvaluator daily cron 用，符合所有門檻才建議升 AUTO。
+paper-trading:
+  promotion:
+    enabled: ${PAPER_PROMOTION_ENABLED:true}
+    cron: ${PAPER_PROMOTION_CRON:0 0 9 * * *}   # 每日 09:00 TW
+    min-trades: ${PAPER_PROMOTION_MIN_TRADES:30}
+    min-win-rate: ${PAPER_PROMOTION_MIN_WIN_RATE:0.55}
+    min-profit-factor: ${PAPER_PROMOTION_MIN_PF:1.5}
+    max-drawdown-pct: ${PAPER_PROMOTION_MAX_DD:0.20}
+    min-period-days: ${PAPER_PROMOTION_MIN_DAYS:30}
+
 # ========== AI 交易顧問 ==========
 # cron-expression / max-tokens / temperature / recent-trades-count 預設值已搬到
 # com.trader.advisor.config.AdvisorConfig 的 @DefaultValue。

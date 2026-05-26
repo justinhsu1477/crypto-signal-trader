@@ -189,8 +189,17 @@ public class PaperTradeService {
     }
 
     /**
-     * PnL 計算 — 複用 TradeRecordService 的公式
-     * netProfit = (exitPrice - entryPrice) * qty * direction - commission
+     * PnL 計算 — paper-only，跟 real trading 完全獨立邏輯。
+     *
+     * <p>三項成本模擬：
+     * <ol>
+     *     <li>Entry commission：maker 0.02%（限價單）</li>
+     *     <li>Exit commission：taker 0.04%（市價單常見）</li>
+     *     <li>Market slippage：套用於 {@link #isMarketExit STOP_LOSS / SIGNAL_CLOSE} 平倉，
+     *         TP 限價單免（fill 等於 limit price）</li>
+     * </ol>
+     *
+     * <p>Slippage 方向：LONG 平倉 SELL 滑點向下、SHORT 平倉 BUY 滑點向上，兩者都對持倉方不利。
      */
     private void calculateProfit(Trade trade) {
         if (trade.getSide() == null) {
@@ -206,11 +215,19 @@ public class PaperTradeService {
         double qty = trade.getEntryQuantity();
         int direction = "LONG".equals(trade.getSide()) ? 1 : -1;
 
-        double grossProfit = (exit - entry) * qty * direction;
+        // 市價平倉模擬 slippage（TP limit 不套用）
+        // LONG (direction=1)  SELL exit  → effective = exit × (1 - slip) (價偏低，對長部位不利)
+        // SHORT (direction=-1) BUY exit   → effective = exit × (1 + slip) (價偏高，對短部位不利)
+        double effectiveExit = exit;
+        if (isMarketExit(trade.getExitReason())) {
+            effectiveExit = exit * (1.0 - config.getMarketSlippagePct() * direction);
+        }
+
+        double grossProfit = (effectiveExit - entry) * qty * direction;
 
         // 手續費估算：入場 maker 0.02% + 出場 taker 0.04%
         double entryComm = trade.getEntryCommission() != null ? trade.getEntryCommission() : round2(entry * qty * 0.0002);
-        double exitComm = round2(exit * qty * 0.0004);
+        double exitComm = round2(effectiveExit * qty * 0.0004);
         double commission = entryComm + exitComm;
 
         double netProfit = grossProfit - commission;
@@ -218,6 +235,23 @@ public class PaperTradeService {
         trade.setGrossProfit(round2(grossProfit));
         trade.setCommission(round2(commission));
         trade.setNetProfit(round2(netProfit));
+    }
+
+    /**
+     * 判斷此 exit 是 market order (套 slippage) 還是 limit order (TP 命中, 不套)。
+     *
+     * <p>真實 Binance：
+     * <ul>
+     *   <li>TP 命中 → limit order fill at exact TP → 無 slippage</li>
+     *   <li>SL 命中 → stop-market triggered → 0.05% slippage 普遍</li>
+     *   <li>SIGNAL_CLOSE → market order → 0.05% slippage</li>
+     * </ul>
+     */
+    private boolean isMarketExit(String exitReason) {
+        if (exitReason == null) return false;
+        return exitReason.startsWith("STOP_LOSS")
+                || "SIGNAL_CLOSE".equals(exitReason)
+                || "MANUAL_CLOSE".equals(exitReason);
     }
 
     private double round2(double value) {
