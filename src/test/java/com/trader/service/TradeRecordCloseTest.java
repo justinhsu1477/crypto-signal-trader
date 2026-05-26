@@ -173,6 +173,42 @@ class TradeRecordCloseTest {
 
             verify(tradeRepository, never()).save(any(Trade.class));
         }
+
+        @Test
+        @DisplayName("recordClose 全平 — remainingQuantity 歸 0 / totalClosedQuantity = entryQuantity (2026-05-26 prod bug regression)")
+        void recordCloseResetsTrackingFields() {
+            // 模擬已經部分平倉過的 trade（陳哥訊號 partial close → 後續全平 MARKET 單）
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("SHORT")
+                    .entryPrice(77600.0).entryQuantity(0.638)
+                    .remainingQuantity(0.319)  // 之前已平 50%
+                    .totalClosedQuantity(0.319)
+                    .partialProfit(225.6)
+                    .entryCommission(4.96)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenTrade("BTCUSDT")).thenReturn(Optional.of(trade));
+
+            OrderResult closeOrder = OrderResult.builder()
+                    .success(true).orderId("C-FINAL").symbol("BTCUSDT")
+                    .side("BUY").type("MARKET")
+                    .price(76800).quantity(0.319)
+                    .commission(4.90)
+                    .build();
+
+            service.recordClose("BTCUSDT", closeOrder, "SIGNAL_CLOSE");
+
+            assertThat(trade.getStatus()).isEqualTo("CLOSED");
+            // 累計平倉量 = 之前 0.319 + 本次 0.319 = 0.638 = entryQuantity
+            assertThat(trade.getTotalClosedQuantity())
+                    .as("recordClose 全平也要把 totalClosed 累加到 entryQuantity")
+                    .isEqualTo(0.638);
+            // 剩餘 = 0（不能停在部分平倉時的 0.319）
+            assertThat(trade.getRemainingQuantity())
+                    .as("recordClose 全平後 remainingQuantity 必須歸 0")
+                    .isEqualTo(0.0);
+        }
     }
 
     // ==================== recordPartialClose ====================
@@ -341,6 +377,41 @@ class TradeRecordCloseTest {
             // 最終部分毛利 = (93000 - 95000) * 0.5 * 1 = -1000
             // 總毛利 = -1000 + 500 (partialProfit) = -500
             assertThat(trade.getGrossProfit()).isEqualTo(-500.0);
+            // 累計平倉量歸位（2026-05-26 prod bug regression）：
+            // remainingQuantity 必須歸 0，否則 dashboard 顯示「status=CLOSED 但仍有部分倉位」
+            assertThat(trade.getRemainingQuantity())
+                    .as("全平後 remainingQuantity 應該歸 0（不能留著部分平倉時的值）")
+                    .isEqualTo(0.0);
+            // totalClosedQuantity 應該累加本次 fill：0.5(prev) + 0.5(this) = 1.0 = entryQuantity
+            assertThat(trade.getTotalClosedQuantity())
+                    .as("全平後 totalClosedQuantity 應該累加到 entryQuantity")
+                    .isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("沒部分平倉過的直接全平 — remainingQuantity 也要正確設成 0 / totalClosed 設成 entryQuantity")
+        void directFullCloseResetsTracking() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("SHORT")
+                    .entryPrice(77600.0).entryQuantity(0.5)
+                    .entryCommission(7.76)
+                    .status("OPEN")
+                    // 沒設 remainingQuantity / totalClosedQuantity（null）
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // 出場 0.5 BTC = entryQuantity → 全平 @ 76000
+            service.recordCloseFromStream("BTCUSDT", 76000.0, 0.5,
+                    7.6, 800.0, "202", "SL_TRIGGERED", 1700000000000L);
+
+            assertThat(trade.getStatus()).isEqualTo("CLOSED");
+            assertThat(trade.getRemainingQuantity())
+                    .as("直接全平也應該寫 remainingQuantity=0，不能維持 null")
+                    .isEqualTo(0.0);
+            assertThat(trade.getTotalClosedQuantity())
+                    .as("直接全平應該記錄 totalClosed=entryQuantity")
+                    .isEqualTo(0.5);
         }
     }
 
