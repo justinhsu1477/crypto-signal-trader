@@ -604,6 +604,51 @@ public class BinanceFuturesService {
     }
 
     /**
+     * 安全閥版 cancelSLTPOrders — 取消前先確認 Binance 倉位真的是 0。
+     *
+     * 2026-05-26 prod bug 教訓：
+     *   STREAM_CLOSE 用「fill 量 >= 系統認知剩餘 × 0.999」判全平，但系統認知剩餘
+     *   可能 < Binance 實際剩餘（LIMIT close 沒 fill 滿、DCA 沒 sync 等）。
+     *   誤判全平 → cancel SL/TP → Binance 殘留變裸倉。
+     *
+     * 這層保護先 query Binance 真實倉位：
+     *   - 倉位 == 0  → 正常 cancel
+     *   - 倉位 != 0  → 拒絕 cancel + 通知 + log（保留 SL/TP 當安全網）
+     *
+     * 用在 OrderEventHandler.processStreamClose() 的 orderCleaner。
+     * 其他需強制取消的路徑（CANCEL 訊號、ENTRY 前清舊 SL）直接呼叫 {@link #cancelSLTPOrders} 即可。
+     */
+    public void cancelSLTPOrdersIfPositionClosed(String symbol) {
+        double currentPosition;
+        try {
+            currentPosition = getCurrentPositionAmount(symbol);
+        } catch (Exception e) {
+            log.error("查 Binance 倉位失敗，為安全起見不取消 SL/TP: {} - {}", symbol, e.getMessage());
+            notifyGlobal(
+                    "⚠️ 取消 SL/TP 前查倉位失敗 — 已保留掛單",
+                    String.format("%s\n查倉位失敗: %s\nSL/TP 保留以防裸倉，請手動確認",
+                            symbol, e.getMessage()),
+                    DiscordWebhookService.COLOR_YELLOW);
+            return;
+        }
+
+        // 容差 0.0001：避免 Binance 浮點誤差誤判
+        if (Math.abs(currentPosition) > 0.0001) {
+            log.warn("STREAM 判全平但 Binance {} 仍有持倉 {}，保留 SL/TP 避免裸倉",
+                    symbol, currentPosition);
+            notifyGlobal(
+                    "🚨 STREAM 判全平但 Binance 仍有持倉 — 已保留 SL/TP",
+                    String.format("%s\nBinance 殘留: %.4f\n已保留 SL/TP 避免裸倉，請手動 reconcile",
+                            symbol, currentPosition),
+                    DiscordWebhookService.COLOR_RED);
+            return;
+        }
+
+        // 倉位真的歸零 → 正常 cancel
+        cancelSLTPOrders(symbol);
+    }
+
+    /**
      * 查詢當前 Algo 掛單中的 SL/TP 價格
      * @return double[2]: [0]=STOP_MARKET triggerPrice, [1]=TAKE_PROFIT_MARKET triggerPrice; 0 表示不存在
      */

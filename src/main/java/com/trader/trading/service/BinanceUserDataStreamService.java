@@ -87,11 +87,13 @@ public class BinanceUserDataStreamService {
         this.multiUserManager = multiUserManager;
 
         // 共用事件處理器（單用戶版 — 全局通知，無 Admin 通知）
+        // 用 IfPositionClosed 版本：STREAM 判全平時，先 query Binance 確認真的清零才 cancel，
+        // 避免「系統認知剩餘 < Binance 實際剩餘」時誤 cancel → 裸倉
         this.orderEventHandler = new OrderEventHandler(
                 tradeRecordService, symbolLockRegistry,
                 discordWebhookService::sendNotification,
                 null,
-                binanceFuturesService::cancelSLTPOrders,
+                binanceFuturesService::cancelSLTPOrdersIfPositionClosed,
                 gson, "");
 
         // WebSocket 專用 client：無 read timeout + 每 20 秒 ping
