@@ -500,13 +500,15 @@ public class MultiUserDataStreamManager {
         PerUserWebSocketListener(UserStreamContext context) {
             this.context = context;
             // per-user 版：通知走 sendNotificationToUser + Admin
+            // 用 IfPositionClosed 版本：STREAM 判全平時，先 query Binance 確認真的清零才 cancel，
+            // 避免「系統認知剩餘 < Binance 實際剩餘」時誤 cancel → 裸倉
             this.orderEventHandler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry,
                     (title, msg, color) -> discordWebhookService.sendNotificationToUser(
                             context.getUserId(), title, msg, color),
                     (title, msg, color) -> discordWebhookService.sendNotificationToAdmins(
                             context.getDisplayName(), title, msg, color),
-                    binanceFuturesService::cancelSLTPOrders,
+                    binanceFuturesService::cancelSLTPOrdersIfPositionClosed,
                     gson, "用戶 " + context.getUserId() + " ");
         }
 

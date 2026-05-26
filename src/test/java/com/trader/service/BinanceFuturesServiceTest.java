@@ -650,6 +650,59 @@ class BinanceFuturesServiceTest {
         }
     }
 
+    // ==================== Safe Cancel SL/TP (2026-05-26 prod bug regression) ====================
+
+    @Nested
+    @DisplayName("cancelSLTPOrdersIfPositionClosed — 取消 SL/TP 前先查倉位")
+    class CancelSLTPIfPositionClosed {
+
+        @Test
+        @DisplayName("倉位為 0 → 正常呼叫 cancelSLTPOrders")
+        void positionZero_cancelsAsUsual() {
+            doReturn(0.0).when(service).getCurrentPositionAmount(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+
+            service.cancelSLTPOrdersIfPositionClosed("BTCUSDT");
+
+            verify(service).cancelSLTPOrders("BTCUSDT");
+        }
+
+        @Test
+        @DisplayName("倉位 != 0 → 不呼叫 cancelSLTPOrders（保留 SL/TP 避免裸倉）")
+        void positionNonZero_keepsSLTP() {
+            // 模擬 2026-05-26 prod bug：系統判全平但 Binance 實際還有殘留 0.159
+            doReturn(-0.159).when(service).getCurrentPositionAmount(anyString());
+
+            service.cancelSLTPOrdersIfPositionClosed("BTCUSDT");
+
+            // 關鍵斷言：絕對不能呼叫真正的 cancelSLTPOrders
+            verify(service, never()).cancelSLTPOrders(anyString());
+        }
+
+        @Test
+        @DisplayName("倉位查詢拋例外 → 不呼叫 cancel（fail-safe：寧可留 SL 也別裸倉）")
+        void positionQueryThrows_keepsSLTP() {
+            doThrow(new RuntimeException("Binance API timeout"))
+                    .when(service).getCurrentPositionAmount(anyString());
+
+            service.cancelSLTPOrdersIfPositionClosed("BTCUSDT");
+
+            verify(service, never()).cancelSLTPOrders(anyString());
+        }
+
+        @Test
+        @DisplayName("倉位接近 0 但有浮點誤差（< 0.0001）→ 視為 0，正常 cancel")
+        void positionTinyDust_treatedAsZero() {
+            // 0.00005 < 0.0001 容差 → 視為 0
+            doReturn(0.00005).when(service).getCurrentPositionAmount(anyString());
+            doReturn("[]").when(service).getOpenAlgoOrders(anyString());
+
+            service.cancelSLTPOrdersIfPositionClosed("BTCUSDT");
+
+            verify(service).cancelSLTPOrders("BTCUSDT");
+        }
+    }
+
     // ==================== Move SL ====================
 
     @Nested
