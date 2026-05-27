@@ -50,17 +50,17 @@
 - **per-user 隔離**：API Key（AES-256-GCM 加密）/ 風控參數 / 通知頻道 各自獨立
 - **per-user WebSocket**：SL/TP 觸發即時同步 PnL
 
-### 3. 10 層風控
+### 3. 風控管線（13 gates / 4 階段）
 
-訊號從進來到下單必須通過 10 個 gate，任一拒則整單拒 + 寫 audit log：
+訊號送進來必須通過 4 階段共 13 個 gate，任一拒則整單拒 + 寫 audit log：
 
 ```mermaid
 flowchart LR
-    S([Signal]) --> A[Whitelist] --> B[Balance] --> C[Daily-loss<br/>circuit] --> D[Position<br/>count] --> E[DCA<br/>depth] --> F[Dedup<br/>×4 layers] --> G[SL valid] --> H[Price<br/>deviation] --> I[Notional<br/>cap] --> J[Min<br/>order] --> K([Execute])
-    style F fill:#fee
+    S([Signal]) --> A[A. 進場資格<br/>3 gates] --> B[B. 訊號去重<br/>5 gates] --> C[C. 合理性<br/>2 gates] --> D[D. Sizing<br/>3 gates] --> E([Execute])
+    style B fill:#fee
 ```
 
-實作在 [BinanceFuturesService](src/main/java/com/trader/trading/service/BinanceFuturesService.java) + [SignalDeduplicationService](src/main/java/com/trader/trading/service/SignalDeduplicationService.java)。
+→ 完整 gate-by-gate 拆解 + 拒單條件 + 可調 config 見 [`RISK_PIPELINE.md`](RISK_PIPELINE.md)。
 
 ### 4. 即時 Admin Chatbot（Discord）
 DM bot 直接問：

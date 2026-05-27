@@ -47,17 +47,17 @@ The two halves run on different machines:
 - **Per-user isolation**: API keys (AES-256-GCM encrypted) / risk params / notification channels are independent
 - **Per-user WebSocket**: SL/TP fills trigger real-time PnL sync
 
-### 3. 10-Layer Risk Control
+### 3. Risk Pipeline (13 gates / 4 stages)
 
-Each signal passes through 10 gates; any rejection halts the trade and writes an audit log:
+Every signal passes through 4 stages totaling 13 gates; any rejection halts the trade and writes an audit log:
 
 ```mermaid
 flowchart LR
-    S([Signal]) --> A[Whitelist] --> B[Balance] --> C[Daily-loss<br/>circuit] --> D[Position<br/>count] --> E[DCA<br/>depth] --> F[Dedup<br/>×4 layers] --> G[SL valid] --> H[Price<br/>deviation] --> I[Notional<br/>cap] --> J[Min<br/>order] --> K([Execute])
-    style F fill:#fee
+    S([Signal]) --> A[A. Entry<br/>eligibility<br/>3 gates] --> B[B. Dedup<br/>5 gates] --> C[C. Sanity<br/>2 gates] --> D[D. Sizing<br/>3 gates] --> E([Execute])
+    style B fill:#fee
 ```
 
-Implementation in [BinanceFuturesService](src/main/java/com/trader/trading/service/BinanceFuturesService.java) + [SignalDeduplicationService](src/main/java/com/trader/trading/service/SignalDeduplicationService.java).
+→ Full gate-by-gate breakdown + reject conditions + tunable config in [`RISK_PIPELINE.md`](RISK_PIPELINE.md).
 
 ### 4. Real-Time Admin Chatbot (Discord)
 DM the bot directly:
