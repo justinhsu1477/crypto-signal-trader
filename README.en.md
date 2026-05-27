@@ -4,7 +4,7 @@
 [![English](https://img.shields.io/badge/lang-English-blue)](README.en.md)
 
 [![CI](https://github.com/justinhsu1477/crypto-signal-trader/actions/workflows/ci.yml/badge.svg)](https://github.com/justinhsu1477/crypto-signal-trader/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-2321%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-2757%20passed-brightgreen)
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-6DB33F)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
@@ -13,6 +13,48 @@
 > Discord signals → AI parsing → multi-user Binance Futures auto-trading
 
 Automatically converts messages from Discord signal channels into Binance Futures orders. **Multi-user SaaS support**: signal broadcasting, per-user risk controls, USDT subscription billing, and an admin Discord chatbot.
+
+- 📖 [Engineering Case Study](docs/CASE_STUDY.md) — design decisions, 5 real failure cases, testing strategy, deployment
+- 🛡️ [SECURITY.md](SECURITY.md) — threat model across 8 attack surfaces + responsible disclosure
+
+---
+
+## 🎯 Why This Exists
+
+Chinese-speaking crypto copy-trading lives almost entirely inside Discord signal groups. But **manual copy-trading** has 4 structural pain points:
+
+| Pain | What actually happens |
+|------|----------------------|
+| Reaction time | Group leader posts "BTC long 78000" → open Binance → size position → submit. At least 30 sec. Market is now 79000. |
+| Missed overnight signals | Leader posts on US west-coast time, Asian users sleep through it, signal expired by morning |
+| Compound actions done wrong | "Close BTC, enter ETH" — one sentence, two actions, beginners only do one |
+| Cross-group conflicts | Following 5 groups at once — conflicting signals require sub-second judgment |
+
+And existing auto-trading tools don't fit Chinese signal groups:
+
+- **3Commas / Cornix** — English-first, weak Chinese LLM parsing, can't recognize group-specific slang like "進多", "平掉", "TP-SL 修改"
+- **Discord bot copytrading** — requires the signal source's group owner to **actively install** a bot — owners usually refuse outright
+- **Telegram bots / MetaMask snap** — wrong UX surface for Chinese users, and decoupled from the Discord signal source itself
+
+→ This system uses **the user's own Discord desktop client + CDP injection + Gemini Chinese parsing + cloud execution**. Completely invisible to the signal source (the group owner never needs to know you're copy-trading), and Chinese slang / compound actions / image-based signals all work.
+
+---
+
+## 📊 Production Status
+
+> Self-hosted production · solo-developed over 3 months (2026-02 → 05) · snapshot 2026-05-23
+
+| Dimension | Scale |
+|-----------|-------|
+| **Uptime profile** | Production, daily-driven, real money on the line |
+| **Active users** | **21** running Binance Futures with real capital |
+| **Signal sources** | **151** Discord channels, parsing **5,800+** messages/month |
+| **Signal throughput** | 5,834 raw messages → **1,305** broadcasts → **900** trades executed |
+| **End-to-end latency** | < **3 sec** (signal posted → AI parsed → 13-gate risk → multi-user parallel execution) |
+| **Codebase size** | Java **44.3k** + Python **4.4k** + TypeScript **29.7k** LoC |
+| **Test coverage** | **2,428** Java unit + **329** Python + **30-case** AI eval (weekly cron, Mon 09:00) |
+| **Dev cadence** | **596** commits · **51** Flyway migrations · **11** modules |
+| **Infrastructure** | DigitalOcean 2GB VM (Singapore) + Neon Postgres serverless + Caddy + Cloudflare |
 
 ---
 
@@ -23,15 +65,12 @@ Automatically converts messages from Discord signal channels into Binance Future
    ↓ CDP injection
 [Python Monitor (local)] ── Gemini AI parsing (text / image / compound actions)
    ↓ HTTPS REST
-[Spring Boot backend (cloud VM)] ── 10-layer risk + broadcast dispatch
+[Spring Boot backend (cloud VM)] ── 13-gate risk + broadcast dispatch
    ↓
 [Binance Futures API] ── per-user API key + per-user WebSocket
 ```
 
-The two halves run on different machines:
-- **Python** (`discord-monitor/`) runs locally on a Mac — uses CDP to inject into the Discord desktop app and captures `MESSAGE_CREATE` events
-- **Java** (`src/main/java/`) runs on a cloud VM — Docker Compose + Caddy + multi-user dispatch
-- **gRPC streaming** lets Java push config (channel whitelist, prompt versions, etc.) to local Python in real time
+The upper half (CDP injection) must run next to local Chrome; the lower half runs on a cloud VM. gRPC streaming lets Java push config (channel whitelist, prompt versions, etc.) to local Python in real time.
 
 ---
 
@@ -47,8 +86,32 @@ The two halves run on different machines:
 - **Per-user isolation**: API keys (AES-256-GCM encrypted) / risk params / notification channels are independent
 - **Per-user WebSocket**: SL/TP fills trigger real-time PnL sync
 
-### 3. 10-Layer Risk Control
-Whitelist → Balance → Daily loss circuit breaker → Position count → DCA depth → Signal dedup (4 layers) → Stop-loss validation → Price deviation → Notional value cap → Min order size
+### 3. Multi-Gate Risk Pipeline (13 gates / 4 stages)
+
+Every signal entering [`BinanceFuturesService.executeSignalInternal`](src/main/java/com/trader/trading/service/BinanceFuturesService.java#L750) must pass through 4 stages totaling 13 gates. Any rejection halts the trade and writes an audit log.
+
+**A. Entry eligibility** (3)
+1. **Symbol whitelist** — rejects if symbol not in `allowedSymbols`
+2. **Daily-loss circuit breaker** — halts all trading if realized loss ≥ `min(SOD × 80%, 2000 USDT)`
+3. **Position state + DCA depth** — if position exists, only DCA allowed; max 3 layers; direction must match
+
+**B. Signal dedup** (5 — each layer blocks a different attack surface)
+4. **Binance open orders** — blocks duplicate LIMIT orders when a fill is still pending
+5. **In-memory 5 min** — process-local `ConcurrentMap`, O(1) check against same-batch replays
+6. **DB 5 min** — `trades.signal_hash + created_at` query, survives restarts
+7. **Per-user 5 min** — `userId` included in hash, so **same signal can fire for different users** but not twice for the same one
+8. **CANCEL 30 sec** — dedicated short window for CANCEL signals, blocks rapid user retries
+
+**C. Signal sanity** (2)
+9. **Stop-loss validation** — non-DCA entries must carry an SL with correct direction (LONG: SL < entry / SHORT: SL > entry)
+10. **Price deviation** — rejects if entry differs from Binance markPrice by > 10% (protects against stale signals)
+
+**D. Position sizing math** (3)
+11. **Notional cap** — single-trade notional ≤ `min(balance × maxPositionPercent, 50k USDT)`
+12. **Margin cap** — required margin ≤ 90% of available balance (liquidation safety)
+13. **Min notional** — rejects if computed notional < 5 USDT (Binance min order)
+
+Dedup logic lives in [`SignalDeduplicationService`](src/main/java/com/trader/trading/service/SignalDeduplicationService.java); sizing math and entry gates are in the main `BinanceFuturesService` flow. 8 knobs are env-tunable (`whitelist` / `daily-loss-percent` / `max-daily-loss-usdt` / `max-dca-per-symbol` / `dca-risk-multiplier` / `max-position-percent` / `max-position-usdt` / `dedup-enabled`); the rest are hardcoded safety floors.
 
 ### 4. Real-Time Admin Chatbot (Discord)
 DM the bot directly:
@@ -63,15 +126,8 @@ DM the bot directly:
 </p>
 
 ### 5. Full Audit Trail
-- DB: `trades` / `signals` / `broadcast_logs` (with AI confidence + per-user result JSON)
-- Image signal `sha256` persisted (traceable: which image triggered which trade)
-- Prometheus metrics: `signal_image_total`, `signal_compound_total`, `chatbot_llm_calls_total`, etc.
-
-<p align="center">
-  <img src="docs/images/dashboard.png" alt="Admin Web Dashboard — System Overview" width="900"/>
-  <br/>
-  <em>Web Dashboard — System Overview (DB / Binance / WebSocket health, user stats, Today/Week/Month PnL)</em>
-</p>
+- **DB**: `trades` / `signals` / `broadcast_logs` (with AI confidence + per-user result JSON) + image signals' `sha256` persisted, traceable from screenshot to trade
+- **Prometheus**: `signal_image_total` / `signal_compound_total` / `chatbot_llm_calls_total` and related business metrics
 
 ---
 
@@ -81,7 +137,7 @@ DM the bot directly:
 graph TD
     Discord["Discord Desktop<br/>(CDP injection)"]
     Monitor["Python Monitor<br/>Gemini AI parsing"]
-    API["Spring Boot API<br/>10-layer risk + Broadcast"]
+    API["Spring Boot API<br/>13-gate risk + Broadcast"]
     RMQ["RabbitMQ<br/>DLQ + Retries"]
     Redis["Redis<br/>7-region cache"]
     Binance["Binance Futures"]
@@ -118,32 +174,21 @@ graph TD
 | Comms | gRPC streaming + REST + AMQP + WebSocket |
 | Deployment | Docker Compose + Caddy + Cloudflare + GitHub Actions CI/CD |
 | Listener | Python 3.10+ + CDP (Chrome DevTools Protocol) |
-| Testing | **2321+ tests** (JUnit 5 + Mockito + pytest) |
+| Testing | **2,428 Java + 329 Python + 30 AI eval** (JUnit 5 + Mockito + pytest + Gemini eval harness) |
 
 ---
 
 ## Quick Start
 
+> For anyone evaluating a self-host — full env vars / VM provisioning / Caddy setup live in [`docs/雲端部署架構圖.md`](docs/雲端部署架構圖.md).
+
 ```bash
-# 1. Clone + env vars
-git clone https://github.com/justinhsu1477/crypto-signal-trader.git
-cd crypto-signal-trader
-cp .env.example .env       # fill in BINANCE / GEMINI / DB / MONITOR_API_KEY ...
+# Cloud backend
+cp .env.example .env && docker compose -f docker-compose.cloud.yml up -d --build
 
-# 2. Cloud backend (run on VM)
-docker compose -f docker-compose.cloud.yml up -d --build
-
-# 3. Local Python Monitor (run on your Mac / Windows / Linux)
-cd discord-monitor
-pip install -r requirements.txt
-./launch_discord.sh 9222   # launch Discord desktop with debug port
-python -m src.main --config config.yml
-
-# 4. Verify
-curl https://your-domain.com/api/health/deep
+# Local Python Monitor (CDP must run next to local Chrome)
+cd discord-monitor && pip install -r requirements.txt && python -m src.main --config config.yml
 ```
-
-See `.env.example` for required environment variables. Deployment details: `docs/architecture-roadmap.md`.
 
 ---
 
@@ -158,6 +203,7 @@ user          Account + encrypted API keys + trade settings + webhooks
 subscription  USDT TRC20 subscription billing (on-chain verification)
 dashboard     Performance analytics + broadcast logs + admin management
 advisor       AI trading advisor (Gemini hourly analysis + signal confidence scoring)
+papertrade    Paper-trading simulator (slippage / Sharpe / DD / auto-promote)
 referral      Referral system (invite codes + commission tracking)
 shared        Shared components (Config / DTO / Cache / Rate Limiter)
 ```
@@ -166,20 +212,8 @@ shared        Shared components (Config / DTO / Cache / Rate Limiter)
 
 ---
 
-## Recent Additions (2026-05)
-
-- 🖼️ **Image signal parsing**: Vision LLM auto-extracts trade params from images (feature-flagged)
-- 🔀 **Compound action recognition**: "TP X% + cost protection" → CLOSE + MOVE_SL (channel-agnostic)
-- 🤖 **Admin chatbot tools**: real-time balances / per-user PnL with time range / today's signal status
-- 📊 **Observability upgrade**: sha256 audit chain + Prometheus counters + deep health check (incl. heartbeat + Discord bot status)
-- 🛡️ **Multi-layer dedup**: Python message_id + content_hash + Java signal_hash (5min) + DB sourceMessageId (permanent)
-
----
-
 ## Monitoring
 
-- **Health**: `/api/health` (liveness) + `/api/health/deep` (DB + Binance + heartbeat + Discord bot)
-- **Prometheus**: `/actuator/prometheus` (chatbot LLM, signal image/compound, trade outcomes)
-- **Heartbeat**: Python Monitor reports every 30s, flagged DEGRADED after 90s
-- **DLQ**: RabbitMQ dead-letter queue polled regularly + admin alerts
-- **Weekly report**: Auto-pushed to Admin Discord every Monday 09:00 (last week's performance)
+- **Health probes** — `/api/health` liveness + `/api/health/deep` (DB / Binance / heartbeat / Discord bot)
+- **Weekly AI eval cron** — Mon 09:00 runs the 30-case eval → emoji-tier digest pushed to admin Discord
+- **Prometheus** — `/actuator/prometheus` exposes chatbot LLM / signal image+compound / trade outcomes
