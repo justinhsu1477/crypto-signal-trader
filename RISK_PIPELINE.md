@@ -36,7 +36,7 @@ flowchart TB
         D1 --> D2 --> D3
     end
     D --> Exec([Execute order])
-    style B fill:#fee
+    style B fill:#fee,stroke:#c00,color:#000
 ```
 
 ---

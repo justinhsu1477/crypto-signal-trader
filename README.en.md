@@ -54,7 +54,7 @@ Every signal passes through 4 stages totaling 13 gates; any rejection halts the 
 ```mermaid
 flowchart LR
     S([Signal]) --> A[A. Entry<br/>eligibility<br/>3 gates] --> B[B. Dedup<br/>5 gates] --> C[C. Sanity<br/>2 gates] --> D[D. Sizing<br/>3 gates] --> E([Execute])
-    style B fill:#fee
+    style B fill:#fee,stroke:#c00,color:#000
 ```
 
 → Full gate-by-gate breakdown + reject conditions + tunable config in [`RISK_PIPELINE.md`](RISK_PIPELINE.md).

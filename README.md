@@ -57,7 +57,7 @@
 ```mermaid
 flowchart LR
     S([Signal]) --> A[A. 進場資格<br/>3 gates] --> B[B. 訊號去重<br/>5 gates] --> C[C. 合理性<br/>2 gates] --> D[D. Sizing<br/>3 gates] --> E([Execute])
-    style B fill:#fee
+    style B fill:#fee,stroke:#c00,color:#000
 ```
 
 → 完整 gate-by-gate 拆解 + 拒單條件 + 可調 config 見 [`RISK_PIPELINE.md`](RISK_PIPELINE.md)。
