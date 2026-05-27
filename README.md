@@ -51,7 +51,16 @@
 - **per-user WebSocket**：SL/TP 觸發即時同步 PnL
 
 ### 3. 10 層風控
-白名單 → 餘額 → 每日虧損熔斷 → 持倉數 → DCA 層數 → 訊號去重（4 層）→ 止損驗證 → 價格偏離 → 名目價值 → 最低下單量
+
+訊號從進來到下單必須通過 10 個 gate，任一拒則整單拒 + 寫 audit log：
+
+```mermaid
+flowchart LR
+    S([Signal]) --> A[Whitelist] --> B[Balance] --> C[Daily-loss<br/>circuit] --> D[Position<br/>count] --> E[DCA<br/>depth] --> F[Dedup<br/>×4 layers] --> G[SL valid] --> H[Price<br/>deviation] --> I[Notional<br/>cap] --> J[Min<br/>order] --> K([Execute])
+    style F fill:#fee
+```
+
+實作在 [BinanceFuturesService](src/main/java/com/trader/trading/service/BinanceFuturesService.java) + [SignalDeduplicationService](src/main/java/com/trader/trading/service/SignalDeduplicationService.java)。
 
 ### 4. 即時 Admin Chatbot（Discord）
 DM bot 直接問：
@@ -165,24 +174,12 @@ referral      推薦系統（邀請碼 + 佣金追蹤）
 shared        共用元件（Config / DTO / Cache / Rate Limiter）
 ```
 
-**依賴規則**：禁止循環、禁止反向。詳見 `CLAUDE.md`。
-
----
-
-## 最近新增（2026-05）
-
-- 🖼️ **圖訊號解析**：Vision LLM 自動抽取圖片中的交易參數（feature-flagged）
-- 🔀 **複合動作識別**：「止盈X%做成本保護」→ CLOSE + MOVE_SL（跨頻道通用）
-- 🤖 **Admin Chatbot 工具**：即時餘額 / 全用戶 PnL（時間區間）/ 今日訊號狀況
-- 📊 **可觀測性升級**：sha256 audit chain + Prometheus 計量 + deep health check（含 heartbeat + Discord bot 狀態）
-- 🛡️ **多層去重**：Python message_id + content_hash + Java signal_hash（5min）+ DB sourceMessageId（永久）
+**模組劃分**：以業務領域為單位，每個模組獨立 entity / service / controller。
 
 ---
 
 ## 監控
 
-- **Health**：`/api/health`（探活）+ `/api/health/deep`（DB + Binance + heartbeat + Discord bot）
-- **Prometheus**：`/actuator/prometheus`（chatbot LLM、signal image/compound、trade outcomes）
-- **心跳**：Python Monitor 每 30s 回報，>90s 標記 DEGRADED
-- **DLQ**：RabbitMQ 死信佇列定期檢查 + Admin 告警
-- **每週報告**：每週一 09:00 自動推送上週績效到 Admin Discord
+- **Health probes** — `/api/health` 探活 + `/api/health/deep`（DB / Binance / heartbeat / Discord bot）
+- **Weekly AI eval cron** — 週一 09:00 跑 30-case eval → emoji-tier 摘要推到 admin Discord
+- **Prometheus** — `/actuator/prometheus` 暴露 chatbot LLM / signal image+compound / trade outcomes

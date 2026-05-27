@@ -48,7 +48,16 @@ The two halves run on different machines:
 - **Per-user WebSocket**: SL/TP fills trigger real-time PnL sync
 
 ### 3. 10-Layer Risk Control
-Whitelist → Balance → Daily loss circuit breaker → Position count → DCA depth → Signal dedup (4 layers) → Stop-loss validation → Price deviation → Notional value cap → Min order size
+
+Each signal passes through 10 gates; any rejection halts the trade and writes an audit log:
+
+```mermaid
+flowchart LR
+    S([Signal]) --> A[Whitelist] --> B[Balance] --> C[Daily-loss<br/>circuit] --> D[Position<br/>count] --> E[DCA<br/>depth] --> F[Dedup<br/>×4 layers] --> G[SL valid] --> H[Price<br/>deviation] --> I[Notional<br/>cap] --> J[Min<br/>order] --> K([Execute])
+    style F fill:#fee
+```
+
+Implementation in [BinanceFuturesService](src/main/java/com/trader/trading/service/BinanceFuturesService.java) + [SignalDeduplicationService](src/main/java/com/trader/trading/service/SignalDeduplicationService.java).
 
 ### 4. Real-Time Admin Chatbot (Discord)
 DM the bot directly:
@@ -162,24 +171,12 @@ referral      Referral system (invite codes + commission tracking)
 shared        Shared components (Config / DTO / Cache / Rate Limiter)
 ```
 
-**Dependency rules**: no cycles, no reverse dependencies. See `CLAUDE.md`.
-
----
-
-## Recent Additions (2026-05)
-
-- 🖼️ **Image signal parsing**: Vision LLM auto-extracts trade params from images (feature-flagged)
-- 🔀 **Compound action recognition**: "TP X% + cost protection" → CLOSE + MOVE_SL (channel-agnostic)
-- 🤖 **Admin chatbot tools**: real-time balances / per-user PnL with time range / today's signal status
-- 📊 **Observability upgrade**: sha256 audit chain + Prometheus counters + deep health check (incl. heartbeat + Discord bot status)
-- 🛡️ **Multi-layer dedup**: Python message_id + content_hash + Java signal_hash (5min) + DB sourceMessageId (permanent)
+**Module split**: organized by business domain — each module is self-contained (entity / service / controller).
 
 ---
 
 ## Monitoring
 
-- **Health**: `/api/health` (liveness) + `/api/health/deep` (DB + Binance + heartbeat + Discord bot)
-- **Prometheus**: `/actuator/prometheus` (chatbot LLM, signal image/compound, trade outcomes)
-- **Heartbeat**: Python Monitor reports every 30s, flagged DEGRADED after 90s
-- **DLQ**: RabbitMQ dead-letter queue polled regularly + admin alerts
-- **Weekly report**: Auto-pushed to Admin Discord every Monday 09:00 (last week's performance)
+- **Health probes** — `/api/health` liveness + `/api/health/deep` (DB / Binance / heartbeat / Discord bot)
+- **Weekly AI eval cron** — Mon 09:00 runs the 30-case eval → emoji-tier digest pushed to admin Discord
+- **Prometheus** — `/actuator/prometheus` exposes chatbot LLM / signal image+compound / trade outcomes
