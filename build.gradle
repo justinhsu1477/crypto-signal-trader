@@ -3,7 +3,7 @@ plugins {
     id 'jacoco'
     id 'org.springframework.boot' version '3.5.14'
     id 'io.spring.dependency-management' version '1.1.6'
-    id 'com.google.protobuf' version '0.9.4'
+    id 'com.google.protobuf' version '0.10.0'
     // 把 git commit / branch / build time 寫進 META-INF/git.properties
     // → Spring Boot Actuator /api/actuator/info 自動暴露
     id 'com.gorylenko.gradle-git-properties' version '2.4.2'
