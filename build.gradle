@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'jacoco'
-    id 'org.springframework.boot' version '3.4.5'
+    id 'org.springframework.boot' version '3.5.14'
     id 'io.spring.dependency-management' version '1.1.6'
     id 'com.google.protobuf' version '0.9.4'
     // 把 git commit / branch / build time 寫進 META-INF/git.properties
@@ -50,7 +50,7 @@ dependencyManagement {
     imports {
         // Spring AI BOM — 對齊 lndata/gen-bi 慣例（1.0.3 GA 穩定版）
         // 鎖定 spring-ai-* 所有 module 版本，避免手動跨 module version mismatch
-        mavenBom 'org.springframework.ai:spring-ai-bom:1.0.3'
+        mavenBom 'org.springframework.ai:spring-ai-bom:1.1.7'
     }
 }
 
