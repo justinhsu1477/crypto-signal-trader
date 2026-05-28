@@ -51,6 +51,10 @@ dependencyManagement {
         // Spring AI BOM — 對齊 lndata/gen-bi 慣例（1.0.3 GA 穩定版）
         // 鎖定 spring-ai-* 所有 module 版本，避免手動跨 module version mismatch
         mavenBom 'org.springframework.ai:spring-ai-bom:1.1.7'
+        // gRPC BOM — 把 grpc-api / grpc-core / grpc-protobuf / grpc-stub 全鎖同版
+        // 不加 BOM 的話 grpc-spring-boot-starter 會 transitively 帶舊 grpc-api，
+        // protoc-gen 1.81 產的 stub class 找不到 io.grpc.InternalGlobalInterceptors
+        mavenBom 'io.grpc:grpc-bom:1.81.0'
     }
 }
 
