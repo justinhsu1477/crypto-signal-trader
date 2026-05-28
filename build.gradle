@@ -2,7 +2,7 @@ plugins {
     id 'java'
     id 'jacoco'
     id 'org.springframework.boot' version '3.5.14'
-    id 'io.spring.dependency-management' version '1.1.6'
+    id 'io.spring.dependency-management' version '1.1.7'
     id 'com.google.protobuf' version '0.10.0'
     // 把 git commit / branch / build time 寫進 META-INF/git.properties
     // → Spring Boot Actuator /api/actuator/info 自動暴露
@@ -141,7 +141,7 @@ sourceSets {
 
 protobuf {
     protoc {
-        artifact = 'com.google.protobuf:protoc:3.25.3'
+        artifact = 'com.google.protobuf:protoc:3.25.9'
     }
     plugins {
         grpc {
