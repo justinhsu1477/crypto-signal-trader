@@ -1,0 +1,125 @@
+name: Eval on Prompt Change
+
+# 只有 prompt / parser / eval cases 改動才跑（避免每 PR 都燒 Gemini token）
+on:
+  pull_request:
+    paths:
+      - 'discord-monitor/src/ai_parser.py'
+      - 'discord-monitor/src/prompt_builder.py'
+      - 'discord-monitor/eval/cases.jsonl'
+      - 'discord-monitor/eval/runner.py'
+      - 'discord-monitor/eval/scorer.py'
+      - 'src/main/java/com/trader/trading/service/SignalSourceService.java'
+      - 'src/main/resources/db/migration/V*signal_source*.sql'
+  # 手動 trigger（ad-hoc 重跑 / fork 不能 access secret 時 admin 在 main 手動驗）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write    # 為了 post PR comment
+
+# 同 PR 新 push 進來 → 取消舊的（節省 API token）
+concurrency:
+  group: eval-prompt-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval-diff:
+    name: 📊 Eval Diff (HEAD vs BASE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20    # 2 × eval (~5 min) + setup + comment + buffer
+
+    # Fork PR 拿不到 secret → 跳過，admin 可手動 workflow_dispatch 在 main 上補跑
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout PR HEAD (full history for base ref)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: discord-monitor/requirements.txt
+
+      - name: Install eval deps
+        working-directory: discord-monitor
+        run: pip install -q -r requirements.txt
+
+      - name: Run eval on PR HEAD
+        id: eval-head
+        working-directory: discord-monitor
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EVAL_GEMINI_MODEL: gemini-2.5-flash
+        run: |
+          # --delay 7 給 free tier 15 RPM 留 buffer
+          # eval runner 在 overall < 80% 會 exit 1，但我們要 JSON 比對，所以 || true
+          python3 -m eval.runner --delay 7 --json /tmp/head.json || true
+          test -f /tmp/head.json || { echo "::error::HEAD eval 沒產出 JSON（API key 缺？runner crash？）"; exit 1; }
+
+      - name: Add git worktree at BASE sha
+        run: |
+          git worktree add /tmp/base-tree "${{ github.event.pull_request.base.sha }}"
+
+      - name: Run eval on BASE
+        id: eval-base
+        working-directory: /tmp/base-tree/discord-monitor
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EVAL_GEMINI_MODEL: gemini-2.5-flash
+        run: |
+          # base 可能比 head 還舊，requirements 可能略不同 — 重裝確保 import 不壞
+          pip install -q -r requirements.txt
+          python3 -m eval.runner --delay 7 --json /tmp/base.json || true
+          test -f /tmp/base.json || { echo "::error::BASE eval 沒產出 JSON"; exit 1; }
+
+      - name: Diff HEAD vs BASE → markdown
+        id: diff
+        working-directory: discord-monitor
+        run: |
+          # diff_report 在 regression 時 exit 1，但我們要 always post comment，所以分開記 exit code
+          set +e
+          python3 -m eval.diff_report /tmp/base.json /tmp/head.json \
+            --model gemini-2.5-flash \
+            --output /tmp/diff.md
+          DIFF_EXIT=$?
+          set -e
+          echo "exit_code=$DIFF_EXIT" >> "$GITHUB_OUTPUT"
+          echo "── Diff report ──────────────────────"
+          cat /tmp/diff.md
+          echo "─────────────────────────────────────"
+
+      - name: Post PR comment with diff
+        if: always() && github.event.pull_request.number
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/diff.md', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Upload both result JSONs (artifact)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-diff-pr-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            /tmp/head.json
+            /tmp/base.json
+            /tmp/diff.md
+          retention-days: 30
+
+      - name: Fail PR if regression
+        if: steps.diff.outputs.exit_code != '0'
+        run: |
+          echo "::error::Eval regression detected — see PR comment + artifact for details"
+          exit 1
