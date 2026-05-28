@@ -1,0 +1,182 @@
+name: Eval Promptfoo
+
+# Promptfoo 路徑跑 eval — 跟 Eval Weekly (runner.py) 並存。
+#
+# 對比 Eval Weekly：
+# - 跑同樣的 cases.jsonl + scorer.py（共用單一資料/邏輯來源）
+# - 但透過 Promptfoo CLI 走，有：HTML 視覺化報告（artifact） + per-call cost + A/B mode
+# - Discord 通知格式有 token / cost 統計、A/B 時自動 per-provider 比較
+#
+# 排程錯峰跟 Eval Weekly（Monday 01:00）避開：Wednesday 01:00 UTC = 台北 09:00。
+# 兩條都跑的話有「Mon flash 結果 → Wed flash+pro A/B 結果」交叉確認 prompt 穩定。
+
+on:
+  schedule:
+    # 週三早上跑 — 跟週一 Eval Weekly 錯峰
+    - cron: '0 1 * * 3'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'single (gemini-2.5-flash only) or ab (flash vs pro side-by-side)'
+        required: false
+        default: 'single'
+        type: choice
+        options:
+          - single
+          - ab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-promptfoo
+  cancel-in-progress: false   # 跑到一半不取消，等完
+
+jobs:
+  eval:
+    name: 📊 Promptfoo Eval Run
+    runs-on: ubuntu-latest
+    # ab 模式跑兩個 model，38 case × 2 ≈ 慢一倍，給 30 min buffer
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: discord-monitor/eval/promptfoo/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: discord-monitor/requirements.txt
+
+      - name: Install Python deps（給 AiSignalParser import）
+        working-directory: discord-monitor
+        run: pip install -q -r requirements.txt
+
+      - name: Install Promptfoo
+        working-directory: discord-monitor/eval/promptfoo
+        run: npm ci
+
+      - name: Resolve mode → config + label
+        id: mode
+        run: |
+          MODE="${{ inputs.mode || 'single' }}"
+          if [ "$MODE" = "ab" ]; then
+            echo "config=promptfooconfig.ab.yaml"  >> "$GITHUB_OUTPUT"
+            echo "result=result-ab.json"           >> "$GITHUB_OUTPUT"
+            echo "label=A/B (flash vs pro)"        >> "$GITHUB_OUTPUT"
+          else
+            echo "config=promptfooconfig.yaml"     >> "$GITHUB_OUTPUT"
+            echo "result=result.json"              >> "$GITHUB_OUTPUT"
+            echo "label=single (flash)"            >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Promptfoo eval
+        id: run-eval
+        working-directory: discord-monitor/eval/promptfoo
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # single mode 預設 flash（跟既有 weekly 一致）；ab mode 從 config 帶 model
+          EVAL_GEMINI_MODEL: gemini-2.5-flash
+          PROMPTFOO_PYTHON: python3
+          # CI 別 share 統計到 promptfoo.app（隱私 + 速度）
+          PROMPTFOO_DISABLE_TELEMETRY: 'true'
+          # 跑慢一點留 RPM buffer，concurrency=2（避免 free tier 14 RPM 卡死）
+          PROMPTFOO_REQUEST_CONCURRENCY: '2'
+        run: |
+          echo "Config: ${{ steps.mode.outputs.config }}"
+          # 不用 promptfoo 自己的 cache（CI 每次 fresh，不省 token；保證真實量到）
+          npx promptfoo eval \
+              -c "${{ steps.mode.outputs.config }}" \
+              --no-cache \
+              || echo "::warning::promptfoo exit code 非 0（看下面結構驗證）"
+          # 驗 JSON 至少出來且結構像樣
+          RESULT_FILE="${{ steps.mode.outputs.result }}"
+          if [ ! -f "$RESULT_FILE" ]; then
+            echo "::error::Promptfoo 沒產出 $RESULT_FILE（key 缺？network？）"
+            exit 1
+          fi
+          python3 -c "
+          import json, sys
+          d = json.load(open('$RESULT_FILE'))
+          r = d.get('results', {})
+          rows = r.get('results', [])
+          stats = r.get('stats', {})
+          assert rows, 'no results rows'
+          print(f\"eval JSON OK: rows={len(rows)}, pass={stats.get('successes')}, fail={stats.get('failures')}\")"
+
+      - name: Format Discord payload
+        id: format
+        if: steps.run-eval.outcome == 'success'
+        working-directory: discord-monitor/eval/promptfoo
+        run: |
+          python3 format_promptfoo_report.py \
+              --input "${{ steps.mode.outputs.result }}" \
+              > /tmp/discord-payload.json
+          echo "Payload size: $(wc -c < /tmp/discord-payload.json) bytes"
+          # 印出來幫 debug
+          cat /tmp/discord-payload.json | python3 -m json.tool | head -20
+
+      - name: Post to Discord webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.CD_DISCORD_WEBHOOK }}
+        if: steps.format.outcome == 'success' && env.WEBHOOK_URL != ''
+        run: |
+          # 重用 CD 部署通知 channel（跟 weekly 一樣）
+          curl -sf -X POST \
+              -H "Content-Type: application/json" \
+              -d @/tmp/discord-payload.json \
+              "$WEBHOOK_URL" \
+              && echo "Discord webhook delivered" \
+              || echo "::warning::Discord 通知發送失敗"
+
+      - name: Upload eval JSON artifact
+        # Promptfoo 沒有 static HTML export CLI（只有 view server）。把 result.json
+        # 當 artifact 存著，本機跑 `npx promptfoo view <path>` 就能開瀏覽器看完整 UI。
+        if: always() && steps.run-eval.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptfoo-result-${{ github.run_id }}
+          path: discord-monitor/eval/promptfoo/${{ steps.mode.outputs.result }}
+          retention-days: 90    # 對齊 weekly 的 retention
+
+      - name: Step summary
+        if: always()
+        working-directory: discord-monitor/eval/promptfoo
+        run: |
+          RESULT_FILE="${{ steps.mode.outputs.result }}"
+          {
+            echo "## 📊 Promptfoo Eval Result"
+            echo ""
+            echo "- **Mode**: ${{ steps.mode.outputs.label }}"
+            echo "- **Config**: \`${{ steps.mode.outputs.config }}\`"
+            if [ -f "$RESULT_FILE" ]; then
+              python3 -c "
+          import json
+          d = json.load(open('$RESULT_FILE'))
+          r = d.get('results', {})
+          rows = r.get('results', [])
+          stats = r.get('stats', {})
+          score_sum = sum(float(x.get('score') or 0) for x in rows)
+          pct = (score_sum / len(rows) * 100) if rows else 0
+          total_cost = sum(float(x.get('cost') or 0) for x in rows)
+          total_tokens = sum(((x.get('response') or {}).get('tokenUsage') or {}).get('total', 0) or 0 for x in rows)
+          print(f'- **Overall**: {pct:.1f}%')
+          print(f'- **Pass / Fail**: {stats.get(\"successes\", 0)} / {stats.get(\"failures\", 0)}')
+          print(f'- **Tokens**: {total_tokens:,}')
+          print(f'- **Cost**: \${total_cost:.4f} USD')
+              "
+            fi
+            echo "- **JSON artifact**: promptfoo-result-${{ github.run_id }} (90d retention)"
+            echo ""
+            echo "**本機看 HTML 報告**："
+            echo "  1. 從 Actions UI 下載 \`promptfoo-result-${{ github.run_id }}\`"
+            echo "  2. 解壓 → 在 \`discord-monitor/eval/promptfoo/\` 下跑 \`npx promptfoo view <path-to-result.json>\`"
+          } >> "$GITHUB_STEP_SUMMARY"
