@@ -107,8 +107,8 @@ dependencies {
 
     // gRPC（Python Monitor 即時配置推送）
     implementation 'net.devh:grpc-spring-boot-starter:3.1.0.RELEASE'
-    implementation 'io.grpc:grpc-protobuf:1.62.2'
-    implementation 'io.grpc:grpc-stub:1.62.2'
+    implementation 'io.grpc:grpc-protobuf:1.81.0'
+    implementation 'io.grpc:grpc-stub:1.81.0'
     compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
 
     // ─── Spring AI（Phase 1 接線） ───
@@ -145,7 +145,7 @@ protobuf {
     }
     plugins {
         grpc {
-            artifact = 'io.grpc:protoc-gen-grpc-java:1.62.2'
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.81.0'
         }
     }
     generateProtoTasks {
