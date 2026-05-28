@@ -178,5 +178,11 @@ shared        Shared components (Config / DTO / Cache / Rate Limiter)
 ## Monitoring
 
 - **Health probes** — `/api/health` liveness + `/api/health/deep` (DB / Binance / heartbeat / Discord bot)
-- **Weekly AI eval cron** — Mon 09:00 runs the 30-case eval → emoji-tier digest pushed to admin Discord
+- **Weekly AI eval cron** — Mon 09:00 runs the 30+ case eval → emoji-tier digest pushed to admin Discord
 - **Prometheus** — `/actuator/prometheus` exposes chatbot LLM / signal image+compound / trade outcomes
+
+<p align="center">
+  <img src="docs/images/eval-discord-weekly.png" alt="Weekly AI eval — 38/38 cases pass" width="600"/>
+  <br/>
+  <em>Live cron run on 2026-05-25 — 38 cases all green across 7 categories (gemini-2.5-flash)</em>
+</p>

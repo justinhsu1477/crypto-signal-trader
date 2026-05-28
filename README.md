@@ -181,5 +181,11 @@ shared        共用元件（Config / DTO / Cache / Rate Limiter）
 ## 監控
 
 - **Health probes** — `/api/health` 探活 + `/api/health/deep`（DB / Binance / heartbeat / Discord bot）
-- **Weekly AI eval cron** — 週一 09:00 跑 30-case eval → emoji-tier 摘要推到 admin Discord
+- **Weekly AI eval cron** — 週一 09:00 跑 30+ case eval → emoji-tier 摘要推到 admin Discord
 - **Prometheus** — `/actuator/prometheus` 暴露 chatbot LLM / signal image+compound / trade outcomes
+
+<p align="center">
+  <img src="docs/images/eval-discord-weekly.png" alt="Weekly AI eval — 38/38 cases pass" width="600"/>
+  <br/>
+  <em>2026-05-25 週一 cron 實例 — 38 個 case 全綠、7 個 category 都 100%（gemini-2.5-flash）</em>
+</p>
