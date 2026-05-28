@@ -68,14 +68,19 @@ jobs:
         id: mode
         run: |
           MODE="${{ inputs.mode || 'single' }}"
+          # 多個 redirect 合成 block（避免 SC2129 抱怨重複 >> 同檔）
           if [ "$MODE" = "ab" ]; then
-            echo "config=promptfooconfig.ab.yaml"  >> "$GITHUB_OUTPUT"
-            echo "result=result-ab.json"           >> "$GITHUB_OUTPUT"
-            echo "label=A/B (flash vs pro)"        >> "$GITHUB_OUTPUT"
+            {
+              echo "config=promptfooconfig.ab.yaml"
+              echo "result=result-ab.json"
+              echo "label=A/B (flash vs pro)"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "config=promptfooconfig.yaml"     >> "$GITHUB_OUTPUT"
-            echo "result=result.json"              >> "$GITHUB_OUTPUT"
-            echo "label=single (flash)"            >> "$GITHUB_OUTPUT"
+            {
+              echo "config=promptfooconfig.yaml"
+              echo "result=result.json"
+              echo "label=single (flash)"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Promptfoo eval
@@ -121,8 +126,8 @@ jobs:
               --input "${{ steps.mode.outputs.result }}" \
               > /tmp/discord-payload.json
           echo "Payload size: $(wc -c < /tmp/discord-payload.json) bytes"
-          # 印出來幫 debug
-          cat /tmp/discord-payload.json | python3 -m json.tool | head -20
+          # 印出來幫 debug — 直接 redirect 入 python（避免 SC2002 useless cat）
+          python3 -m json.tool < /tmp/discord-payload.json | head -20
 
       - name: Post to Discord webhook
         env:
