@@ -1,0 +1,14 @@
+{
+  "name": "discord-monitor-eval-promptfoo",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Promptfoo eval PoC for AI signal parser - reuses cases.jsonl + scorer.py",
+  "scripts": {
+    "eval": "promptfoo eval -c promptfoo.yaml",
+    "eval:view": "promptfoo view",
+    "eval:full": "promptfoo eval -c promptfoo.yaml --output result.json"
+  },
+  "devDependencies": {
+    "promptfoo": "0.121.12"
+  }
+}
