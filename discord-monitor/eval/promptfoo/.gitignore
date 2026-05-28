@@ -1,0 +1,6 @@
+# Promptfoo run artifacts
+node_modules/
+.promptfoo/
+promptfoo-output/
+result.json
+*.local.yaml
