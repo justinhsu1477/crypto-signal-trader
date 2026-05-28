@@ -181,23 +181,24 @@ shared        共用元件（Config / DTO / Cache / Rate Limiter）
 ## 監控
 
 - **Health probes** — `/api/health` 探活 + `/api/health/deep`（DB / Binance / heartbeat / Discord bot）
-- **AI eval pipeline** — 兩條並存：
-  - **Weekly cron** (週一) — `runner.py` 跑 39 case eval → emoji-tier 摘要推到 admin Discord
-  - **Promptfoo CI** (週三 + PR-time) — 同份 case 跑 Promptfoo HTML view，含 token / cost / A/B model 比較
-- **Prometheus** — `/actuator/prometheus` 暴露 chatbot LLM / signal image+compound / trade outcomes
+- **AI eval** — 39 case 自動跑 + Discord 通知 + HTML 報告（細節 ↓）
+- **Prometheus** — `/actuator/prometheus` 暴露 chatbot / signal / trade 指標
 
-### Promptfoo HTML view（每個 case 的 input/output/cost 都看得到）
+---
+
+## AI Eval
+
+防 prompt regression — 兩條 pipeline 並存，共用同一份 `cases.jsonl` + `scorer.py`：
+
+| Pipeline | 觸發 | 報告管道 |
+|---|---|---|
+| Weekly cron | 週一 09:00 (Asia/Taipei) | Discord embed 摘要 |
+| Promptfoo | 週三 09:00 + PR-time | HTML view + token / cost + A/B model 比較 |
+
+Single run ≈ $0.13 / gemini-2.5-flash（39 case）。
 
 <p align="center">
-  <img src="docs/images/eval-promptfoo-html.png" alt="Promptfoo HTML view — 39/39 cases pass with per-case token + cost" width="900"/>
+  <img src="docs/images/eval-promptfoo-html.png" alt="Promptfoo HTML view — per-case expected/actual/token/cost" width="900"/>
   <br/>
-  <em>Promptfoo CLI 包既有 <code>AiSignalParser</code> + <code>scorer.py</code>，每個 case 顯示 expected / actual / token / latency / cost；100% pass = 39/39，single run ≈ $0.13 / gemini-2.5-flash</em>
-</p>
-
-### Discord 即時通知
-
-<p align="center">
-  <img src="docs/images/eval-discord-weekly.png" alt="Weekly AI eval — Discord embed summary" width="500"/>
-  <br/>
-  <em>每次 eval 完成自動推 Discord，含 score + by-category + 失敗 top 5 + token/cost — 不用登 GitHub 就看得到</em>
+  <em>Promptfoo HTML view — 每個 case 的 expected / actual / token / latency / cost 一覽</em>
 </p>
