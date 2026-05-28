@@ -1,0 +1,40 @@
+# Promptfoo A/B config — flash vs pro side-by-side
+#
+# 跟 promptfooconfig.yaml 同樣的 cases / assertion，差別在跑兩個 provider。
+# Promptfoo 自動 side-by-side report 顯示每個 case 在兩個 model 的分數 + token + cost。
+#
+# Usage:
+#   GEMINI_API_KEY=... PROMPTFOO_PYTHON=$(which python) \
+#       npx promptfoo eval -c promptfooconfig.ab.yaml
+#
+# 在 HTML view 點開能看到每個 case 在 flash vs pro 的具體輸出差異。
+# 對於「該不該升 pro」這個決策，用這份 config 跑一輪有客觀數據（acc + cost）。
+description: A/B model eval — gemini-2.5-flash vs gemini-2.5-pro
+
+prompts:
+  - '{{ input }}'
+
+# 兩個 provider 跑同一份 cases，per-provider config.model 由 provider.py
+# _resolve_model() 讀出來決定 AiSignalParser 用哪個 model
+providers:
+  - id: file://provider.py
+    label: flash-2.5
+    config:
+      model: gemini-2.5-flash
+
+  - id: file://provider.py
+    label: pro-2.5
+    config:
+      model: gemini-2.5-pro
+
+tests: file://tests_loader.py:generate_tests
+
+defaultTest:
+  assert:
+    - type: python
+      value: file://assertion.py
+
+outputPath: result-ab.json
+
+cache:
+  enabled: true
