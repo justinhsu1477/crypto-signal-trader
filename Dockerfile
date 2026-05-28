@@ -1,5 +1,5 @@
 # === Stage 1: Build ===
-FROM gradle:8.13-jdk17 AS builder
+FROM gradle:8.14-jdk17 AS builder
 WORKDIR /app
 
 # 限制 Gradle JVM 記憶體，避免在小機器 OOM
