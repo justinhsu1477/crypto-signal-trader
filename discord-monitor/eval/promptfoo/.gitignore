@@ -3,4 +3,5 @@ node_modules/
 .promptfoo/
 promptfoo-output/
 result.json
+result-*.json
 *.local.yaml

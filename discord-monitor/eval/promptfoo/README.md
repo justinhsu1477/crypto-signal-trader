@@ -64,6 +64,32 @@ EVAL_FILTER=compound npx promptfoo eval
 npx promptfoo view
 ```
 
+## A/B model 比較（flash vs pro）
+
+```bash
+# 同 cases 兩個 model 各跑一次，產 result-ab.json
+npx promptfoo eval -c promptfooconfig.ab.yaml
+npx promptfoo view  # 看 side-by-side HTML 報告
+
+# 真實 cost 對比範例（3 case）：
+#   flash-2.5:  100% — 30,086 tok / $0.0097
+#   pro-2.5:    100% — 30,175 tok / $0.0410  ← 4.2x 貴
+```
+
+## Discord 通知
+
+```bash
+# 把 result.json 轉成 Discord webhook payload
+python3 format_promptfoo_report.py --input result.json | jq
+
+# 直接 POST：
+python3 format_promptfoo_report.py --input result.json | \
+  curl -X POST -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK_URL"
+```
+
+Payload 內容：score + emoji + 各 category 通過率 + 失敗清單（最多 5 個）+
+token / cost 統計 + A/B mode 時自動加 per-provider 比較表。
+
 ## 環境變數
 
 | Var | 必須？ | 預設 | 說明 |
@@ -78,15 +104,15 @@ npx promptfoo view
 
 - ✅ 功能驗證：38 case 都能跑、scorer 結果一致
 - ✅ HTML 報告：點開能看每個 case 的 input/output/expected/pass
+- ✅ A/B model 比較（`promptfooconfig.ab.yaml`）
+- ✅ Discord webhook payload（`format_promptfoo_report.py` + unit test）
+- ✅ Token / cost tracking（per-call from Gemini usage_metadata）
 - ❌ CI 整合：未 wire 進 GitHub Actions（既有 `eval-weekly.yml` 仍跑舊 runner）
-- ❌ Discord 通知：未串 `format_report.py`
-- ❌ A/B model 在 CI 跑：可手動本地跑，未自動化
 
 ## 後續步驟（如果 PoC 結果接受）
 
 1. 在 `.github/workflows/` 加 `eval-promptfoo.yml`（並存）
-2. 寫 `format_promptfoo_report.py` 把 result.json 轉 Discord embed
-3. 確認穩定後 retire `runner.py`，保留 scorer.py + cases.jsonl
+2. 確認穩定後 retire `runner.py`，保留 scorer.py + cases.jsonl
 
 ## 已知 issue
 
