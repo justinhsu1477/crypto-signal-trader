@@ -65,6 +65,17 @@ public class UserStreamContext {
         this.secretKey = secretKey;
     }
 
+    /**
+     * 取得 API key — 給 TradeContext.forWebSocket 帶進 ThreadLocal（Issue #52 Phase 1）
+     */
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public String getSecretKey() {
+        return secretKey;
+    }
+
     // ==================== listenKey & WebSocket ====================
 
     public String getListenKey() {

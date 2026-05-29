@@ -534,8 +534,12 @@ public class MultiUserDataStreamManager {
         public void onMessage(WebSocket ws, String text) {
             context.updateLastMessageTime();
 
-            // 使用 TradeContext bridge 設入 userId，讓 TradeRecordService 走 per-user 查詢
-            TradeContext ctx = TradeContext.forWebSocket(context.getUserId());
+            // Issue #52 Phase 1: 帶 per-user Binance keys —
+            // 否則 cancelSLTPOrdersIfPositionClosed 之類用 fallback 全域 key 查倉位 → 看到錯帳戶 → 誤判
+            TradeContext ctx = TradeContext.forWebSocket(
+                    context.getUserId(),
+                    context.getApiKey(),
+                    context.getSecretKey());
             ctx.installThreadLocals();
             try {
                 JsonObject json = gson.fromJson(text, JsonObject.class);
