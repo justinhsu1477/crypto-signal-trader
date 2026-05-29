@@ -1160,12 +1160,40 @@ public class TradeRecordService {
      */
     /**
      * @return true = 全平倉（caller 應取消對向 SL/TP），false = 部分平倉或找不到交易
+     *
+     * 8-arg 舊簽名 — 不帶 Binance 倉位 hint（不做 Phase 2 雙重檢查）。
+     * 既有 caller / 多數測試仍可用此版；OrderEventHandler 已切換至下面 9-arg 版本。
      */
     @CacheEvict(value = TODAY_LOSS, allEntries = true)
     @Transactional
     public boolean recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
                                        double commission, double realizedProfit,
                                        String orderId, String exitReason, long transactionTime) {
+        return recordCloseFromStream(symbol, exitPrice, exitQuantity, commission,
+                realizedProfit, orderId, exitReason, transactionTime, OptionalDouble.empty());
+    }
+
+    /**
+     * Issue #52 Phase 2 — 帶 Binance 倉位 hint 的版本。
+     *
+     * <p>當「我們認知」判全平但 hint 顯示 Binance 仍有倉位 → 降級成 partial，
+     * 避免樂觀 accounting + WebSocket 過早判全平把 trade 誤標 CLOSED（5/29 chen-ge 裸倉 root cause）。
+     *
+     * <p>降級時 Binance 倉位視為權威來源：
+     * <ul>
+     *   <li>remainingQuantity = |binance_position|
+     *   <li>totalClosedQuantity = entryQuantity - remainingQuantity
+     * </ul>
+     *
+     * @param binancePositionHint 來自 Binance 的當前倉位（絕對值或帶號），empty = caller 沒查到 → 走 legacy 邏輯
+     * @return true = 全平倉（caller 應取消對向 SL/TP），false = 部分平倉 / 已降級 / 找不到交易
+     */
+    @CacheEvict(value = TODAY_LOSS, allEntries = true)
+    @Transactional
+    public boolean recordCloseFromStream(String symbol, double exitPrice, double exitQuantity,
+                                       double commission, double realizedProfit,
+                                       String orderId, String exitReason, long transactionTime,
+                                       OptionalDouble binancePositionHint) {
         // 查找 OPEN 或 PENDING_CLOSE 的交易（PENDING_CLOSE = MARKET 單 exitPrice=0 等 WebSocket 更新）
         Optional<Trade> openTradeOpt = resolveOpenOrPendingCloseTrade(symbol);
         if (openTradeOpt.isEmpty()) {
@@ -1184,6 +1212,22 @@ public class TradeRecordService {
         // 容差 0.1%：Binance 數量可能有精度差異
         boolean isPartialClose = effectiveQty > 0 && exitQuantity < effectiveQty * 0.999;
 
+        // Issue #52 Phase 2: 判全平前先用 Binance 真實倉位 double-check
+        // 避免「樂觀 accounting 已扣 effectiveQty + 同筆 fill 再來」造成的誤判全平
+        boolean phase2Downgraded = false;
+        double phase2BinanceRemaining = 0;
+        if (!isPartialClose && binancePositionHint.isPresent()) {
+            double absBinancePos = Math.abs(binancePositionHint.getAsDouble());
+            if (absBinancePos > 0.0001) {
+                log.warn("[Phase 2] 判全平但 Binance {} 仍有 {} 倉位 (effective={} exit={}) → 降級 partial，"
+                                + "用 Binance 倉位作為 remaining 權威",
+                        symbol, absBinancePos, effectiveQty, exitQuantity);
+                isPartialClose = true;
+                phase2Downgraded = true;
+                phase2BinanceRemaining = absBinancePos;
+            }
+        }
+
         // 用真實數據更新
         trade.setExitPrice(exitPrice);
         trade.setExitQuantity(exitQuantity);
@@ -1199,10 +1243,17 @@ public class TradeRecordService {
             trade.setExitReason(exitReason + "_PARTIAL");
             // 不設 CLOSED，維持 OPEN
 
-            // 累加已平倉數量
-            double prevClosed = trade.getTotalClosedQuantity() != null ? trade.getTotalClosedQuantity() : 0;
-            trade.setTotalClosedQuantity(prevClosed + exitQuantity);
-            trade.setRemainingQuantity(effectiveQty - exitQuantity);
+            if (phase2Downgraded) {
+                // Phase 2 路徑：Binance 倉位是權威，覆蓋樂觀 accounting 可能算錯的 remaining/total_closed
+                double entryQty = trade.getEntryQuantity() != null ? trade.getEntryQuantity() : 0;
+                trade.setRemainingQuantity(phase2BinanceRemaining);
+                trade.setTotalClosedQuantity(Math.max(0, entryQty - phase2BinanceRemaining));
+            } else {
+                // 既有邏輯：累加 + 扣減
+                double prevClosed = trade.getTotalClosedQuantity() != null ? trade.getTotalClosedQuantity() : 0;
+                trade.setTotalClosedQuantity(prevClosed + exitQuantity);
+                trade.setRemainingQuantity(effectiveQty - exitQuantity);
+            }
 
             // 記錄出場手續費的累加
             trade.setCommission(round2(entryCommission + commission));

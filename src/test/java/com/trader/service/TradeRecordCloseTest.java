@@ -12,6 +12,7 @@ import org.junit.jupiter.api.*;
 import org.mockito.*;
 
 import java.util.Optional;
+import java.util.OptionalDouble;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -412,6 +413,190 @@ class TradeRecordCloseTest {
             assertThat(trade.getTotalClosedQuantity())
                     .as("直接全平應該記錄 totalClosed=entryQuantity")
                     .isEqualTo(0.5);
+        }
+    }
+
+    // ==================== Issue #52 Phase 2：Binance 倉位 double-check ====================
+
+    @Nested
+    @DisplayName("recordCloseFromStream Phase 2 — Binance 倉位 double-check")
+    class Phase2BinancePositionDoubleCheck {
+
+        /**
+         * 重現 5/29 chen-ge bug：
+         * 已部分平倉 entry=1.0 / remaining=0.5（樂觀 accounting 已寫入），
+         * 同一筆 fill 的 STREAM event 進來 (exitQty=0.5 == effectiveQty 0.5) → 判 FULL。
+         * Binance 卻還有 0.5 倉位 → Phase 2 應降級成 partial，避免誤標 CLOSED。
+         */
+        @Test
+        @DisplayName("Binance 仍有倉位 + 判全平 → 降級 partial，用 Binance 倉位為權威")
+        void binanceStillHasPosition_judgedFull_downgradeToPartial() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(1.0)
+                    .remainingQuantity(0.5)         // 樂觀 accounting 已扣
+                    .totalClosedQuantity(0.5)
+                    .partialProfit(500.0)
+                    .entryCommission(19.0)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // exitQty 0.5 == remaining 0.5 → 既有邏輯會判 FULL
+            // 但 Binance 顯示還有 0.5 倉位（即此 STREAM event 是樂觀 accounting 已算過的同筆 fill）
+            boolean fullClose = service.recordCloseFromStream("BTCUSDT", 96000.0, 0.5,
+                    9.6, 500.0, "456", "SIGNAL_CLOSE", 1700000000000L,
+                    OptionalDouble.of(0.5));
+
+            assertThat(fullClose)
+                    .as("Phase 2 降級後不算全平 → caller 不該 cancel SL/TP")
+                    .isFalse();
+            assertThat(trade.getStatus())
+                    .as("status 應維持 OPEN，不能被誤標 CLOSED")
+                    .isEqualTo("OPEN");
+            assertThat(trade.getExitReason())
+                    .as("應標為 PARTIAL")
+                    .isEqualTo("SIGNAL_CLOSE_PARTIAL");
+            assertThat(trade.getRemainingQuantity())
+                    .as("用 Binance 倉位為權威 (0.5)，不能用 effectiveQty-exitQty=0")
+                    .isEqualTo(0.5);
+            assertThat(trade.getTotalClosedQuantity())
+                    .as("用 entry - binance = 1.0 - 0.5 = 0.5 為權威")
+                    .isEqualTo(0.5);
+        }
+
+        @Test
+        @DisplayName("Binance 倉位 = 0 + 判全平 → 不降級，走 FULL 分支標 CLOSED")
+        void binanceZeroPosition_judgedFull_stayFull() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(0.5)
+                    .entryCommission(9.5)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // 完美 case：判全平 + Binance 也確認 0 → 真正全平
+            boolean fullClose = service.recordCloseFromStream("BTCUSDT", 96000.0, 0.5,
+                    9.6, 500.0, "789", "SIGNAL_CLOSE", 1700000000000L,
+                    OptionalDouble.of(0.0));
+
+            assertThat(fullClose).isTrue();
+            assertThat(trade.getStatus()).isEqualTo("CLOSED");
+            assertThat(trade.getRemainingQuantity()).isEqualTo(0.0);
+        }
+
+        @Test
+        @DisplayName("Binance 倉位 < 0.0001 容差 + 判全平 → 不降級（避免浮點誤差誤觸發）")
+        void binancePositionWithinTolerance_judgedFull_stayFull() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(0.5)
+                    .entryCommission(9.5)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // 0.00005 < 0.0001 容差 → 視為 0
+            boolean fullClose = service.recordCloseFromStream("BTCUSDT", 96000.0, 0.5,
+                    9.6, 500.0, "789", "TP_TRIGGERED", 1700000000000L,
+                    OptionalDouble.of(0.00005));
+
+            assertThat(fullClose).isTrue();
+            assertThat(trade.getStatus()).isEqualTo("CLOSED");
+        }
+
+        @Test
+        @DisplayName("OptionalDouble.empty() → 走 legacy 判定，等同 8-arg 版本")
+        void emptyHint_fallbackToLegacy() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(0.5)
+                    .entryCommission(9.5)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // hint 不存在 → 完全走原邏輯
+            boolean fullClose = service.recordCloseFromStream("BTCUSDT", 96000.0, 0.5,
+                    9.6, 500.0, "abc", "SIGNAL_CLOSE", 1700000000000L,
+                    OptionalDouble.empty());
+
+            assertThat(fullClose).isTrue();
+            assertThat(trade.getStatus()).isEqualTo("CLOSED");
+        }
+
+        @Test
+        @DisplayName("已經判 partial 的 case + hint 有值 → 不做額外動作（hint 只在判 FULL 時生效）")
+        void alreadyPartial_hintIgnored() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(1.0)
+                    .entryCommission(19.0)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // exitQty 0.5 < effective 1.0 * 0.999 → 已是 partial
+            boolean fullClose = service.recordCloseFromStream("BTCUSDT", 96000.0, 0.5,
+                    9.6, 500.0, "xyz", "TP_TRIGGERED", 1700000000000L,
+                    OptionalDouble.of(0.5));
+
+            assertThat(fullClose).isFalse();
+            assertThat(trade.getStatus()).isEqualTo("OPEN");
+            // 走 legacy partial 分支 — total_closed=0+0.5=0.5, remaining=1.0-0.5=0.5
+            assertThat(trade.getTotalClosedQuantity()).isEqualTo(0.5);
+            assertThat(trade.getRemainingQuantity()).isEqualTo(0.5);
+        }
+
+        @Test
+        @DisplayName("SHORT 倉位 hint 為負數 → 取絕對值判斷")
+        void shortPositionNegativeHint_useAbsoluteValue() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("SHORT")
+                    .entryPrice(95000.0).entryQuantity(1.0)
+                    .remainingQuantity(0.5)
+                    .totalClosedQuantity(0.5)
+                    .entryCommission(19.0)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // SHORT 倉位 Binance 回 -0.5 → 取 abs 後判斷
+            boolean fullClose = service.recordCloseFromStream("BTCUSDT", 94000.0, 0.5,
+                    9.4, 500.0, "456", "SIGNAL_CLOSE", 1700000000000L,
+                    OptionalDouble.of(-0.5));
+
+            assertThat(fullClose).isFalse();
+            assertThat(trade.getStatus()).isEqualTo("OPEN");
+            assertThat(trade.getRemainingQuantity()).isEqualTo(0.5);
+            assertThat(trade.getTotalClosedQuantity()).isEqualTo(0.5);
+        }
+
+        @Test
+        @DisplayName("8-arg 舊簽名應委派至 9-arg 版本 (empty hint) — 行為一致")
+        void oldSignatureDelegatesToNewWithEmpty() {
+            Trade trade = Trade.builder()
+                    .tradeId("t1").symbol("BTCUSDT").side("LONG")
+                    .entryPrice(95000.0).entryQuantity(0.5)
+                    .entryCommission(9.5)
+                    .status("OPEN")
+                    .build();
+
+            when(tradeRepository.findOpenOrPendingCloseTrade("BTCUSDT")).thenReturn(java.util.List.of(trade));
+
+            // 8-arg 版（既有測試也走這條）
+            boolean fullClose = service.recordCloseFromStream("BTCUSDT", 96000.0, 0.5,
+                    9.6, 500.0, "abc", "SIGNAL_CLOSE", 1700000000000L);
+
+            assertThat(fullClose).isTrue();
+            assertThat(trade.getStatus()).isEqualTo("CLOSED");
         }
     }
 

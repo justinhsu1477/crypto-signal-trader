@@ -502,6 +502,8 @@ public class MultiUserDataStreamManager {
             // per-user 版：通知走 sendNotificationToUser + Admin
             // 用 IfPositionClosed 版本：STREAM 判全平時，先 query Binance 確認真的清零才 cancel，
             // 避免「系統認知剩餘 < Binance 實際剩餘」時誤 cancel → 裸倉
+            // Issue #52 Phase 2：positionLookup 傳給 recordCloseFromStream 作 double-check，
+            // multi-user 下 CURRENT_USER_KEYS（Phase 1）已正確 install，會查到正確 user 的倉位。
             this.orderEventHandler = new OrderEventHandler(
                     tradeRecordService, symbolLockRegistry,
                     (title, msg, color) -> discordWebhookService.sendNotificationToUser(
@@ -509,6 +511,7 @@ public class MultiUserDataStreamManager {
                     (title, msg, color) -> discordWebhookService.sendNotificationToAdmins(
                             context.getDisplayName(), title, msg, color),
                     binanceFuturesService::cancelSLTPOrdersIfPositionClosed,
+                    binanceFuturesService::getCurrentPositionAmount,
                     gson, "用戶 " + context.getUserId() + " ");
         }
 
