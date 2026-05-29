@@ -22,7 +22,7 @@ def score_case(case: dict, actual: Any) -> tuple[float, list[str]]:
     if "expected_list" in case:
         if not isinstance(actual, list):
             return 0.0, [f"expected list, got {type(actual).__name__}: {actual}"]
-        return _score_compound(case["expected_list"], actual)
+        return _score_compound(case["expected_list"], actual, case.get("tolerance_pct", 1.0))
 
     expected = case["expected"]
 
@@ -79,8 +79,16 @@ def score_case(case: dict, actual: Any) -> tuple[float, list[str]]:
     return max(score, 0.0), failures
 
 
-def _score_compound(expected_list: list, actual_list: list) -> tuple[float, list[str]]:
-    """Score compound action (CLOSE + MOVE_SL)."""
+def _score_compound(expected_list: list, actual_list: list, tolerance_pct: float = 1.0) -> tuple[float, list[str]]:
+    """Score compound action (CLOSE + MOVE_SL, or CLOSE + ENTRY for 換手/反手).
+
+    Per index: action mismatch -0.5. Then, only when the expected item carries
+    the field (guarded by `is not None`), also check:
+      - close_ratio (-0.2)            — CLOSE legs
+      - side (-0.3)                   — ENTRY legs (換手 反向開倉方向必須對)
+      - entry_price / stop_loss (-0.2)— ENTRY legs (tolerance_pct %)
+    Guarding keeps existing CLOSE+MOVE_SL cases (no entry fields) unaffected.
+    """
     failures: list[str] = []
     if len(actual_list) != len(expected_list):
         return 0.0, [f"compound length: expected {len(expected_list)}, got {len(actual_list)}"]
@@ -100,6 +108,28 @@ def _score_compound(expected_list: list, actual_list: list) -> tuple[float, list
                 failures.append(
                     f"compound[{i}].close_ratio: expected {exp['close_ratio']}, "
                     f"got {act.get('close_ratio')}"
+                )
+
+        # ENTRY-leg checks — only when expected provides them (CLOSE/MOVE_SL legs skip)
+        if exp.get("side") is not None and act.get("side") != exp.get("side"):
+            score -= 0.3
+            failures.append(
+                f"compound[{i}].side: expected {exp.get('side')}, got {act.get('side')}"
+            )
+        for field in ("entry_price", "stop_loss"):
+            exp_val = exp.get(field)
+            if exp_val is None:
+                continue
+            act_val = act.get(field)
+            if act_val is None:
+                score -= 0.2
+                failures.append(f"compound[{i}].{field}: expected {exp_val}, got null")
+                continue
+            diff_pct = abs(act_val - exp_val) / exp_val * 100
+            if diff_pct > tolerance_pct:
+                score -= 0.2
+                failures.append(
+                    f"compound[{i}].{field}: expected {exp_val}, got {act_val} ({diff_pct:.1f}% off)"
                 )
 
     return max(score, 0.0), failures
