@@ -45,7 +45,11 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 ### ENTRY（開倉）判斷規則
 6. 出現「附近，做多/做空/做🈳」→ ENTRY
 7. 「市价做多/做空」→ ENTRY，用「实时价格」或「市价」後面的數字當 entry_price
-8. 「换手做多/做空」→ CLOSE（先平原倉，新開倉會是下一條獨立訊息）
+8. 「换手做多/做空」「反手做多/做空」（平掉原倉 + 反向開新倉）：
+   - 若**同一條訊息**已含新倉進場資訊（方向 + 入場價，通常還帶止損）
+     → 複合動作 **[CLOSE 全平, ENTRY 反向]**（見下方「## 複合動作識別」的 CLOSE+ENTRY pattern）
+   - 若只講「換手/反手」**但沒有**新倉進場資訊（沒入場價也沒止損）
+     → 只輸出 CLOSE（新開倉會是下一條獨立訊息，屆時再解析成 ENTRY）
 9. 📢 交易訊號發布 → ENTRY
 10. 止盈如有多個用 / 或 - 分隔（如 87400/86800 或 105000-104500-104000），取第一個作為 take_profit
 11. 倉位修飾語解析（position_size_modifier）：
@@ -420,6 +424,14 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 
 ## 複合動作識別（Compound Actions） — 重要 ⚠️
 
+有兩種複合 pattern，命中任一就回傳 **JSON array**：
+- **Pattern A：CLOSE + MOVE_SL**（部分平倉 + 保本）
+- **Pattern B：CLOSE + ENTRY**（換手/反手：平掉原倉 + 反向開新倉，且新倉資訊在同一條訊息）
+
+---
+
+### Pattern A：CLOSE + MOVE_SL
+
 當訊息同時滿足以下兩個條件，必須回傳 **JSON array** 包含兩個動作（CLOSE + MOVE_SL）：
 
 **條件 1（部分平倉指令）**：訊息含明確的部分平倉用語，例如：
@@ -441,6 +453,34 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
 ```
 
 **重要**：MOVE_SL 不要帶 `new_stop_loss` 欄位（後端自動算成本價 + 手續費補償）。
+
+---
+
+### Pattern B：CLOSE + ENTRY（換手 / 反手）
+
+當訊息同時滿足以下兩個條件，必須回傳 **JSON array** 包含兩個動作（CLOSE + ENTRY）：
+
+**條件 1（平掉原倉指令）**：訊息含明確的平倉/換倉用語，例如：
+- 「換手做多/做空」「反手做多/做空」
+- 「（剩餘倉位）全部止盈出局，換手…」「多單全部出局，反手…」
+- 「先平多再做空」「先平空再做多」
+
+**條件 2（同一條訊息已給新倉進場資訊）**：訊息含反向新倉的方向 + 入場價
+（通常還帶止損/止盈），例如「做空 73300 附近，止損 74500，止盈 72000」。
+
+兩個條件都命中 → 回傳 JSON array（**CLOSE 在前、ENTRY 在後**）：
+```
+[
+  {"action": "CLOSE", "symbol": "<SYMBOL>", "close_ratio": null},
+  {"action": "ENTRY", "symbol": "<SYMBOL>", "side": "<反向>",
+   "entry_price": <X>, "stop_loss": <X>, "take_profit": <X>}
+]
+```
+
+**重要**：
+- CLOSE 的 `close_ratio` 用 `null`（全平原倉；「剩餘倉位全部出局」「全部止盈」皆為全平）。
+- ENTRY 用新倉的方向（換手做空 → side=SHORT），照一般 ENTRY 規則填 entry_price / stop_loss / take_profit。
+- 只有「換手/反手」字眼**但沒給**新倉入場價/止損 → 不是 Pattern B，只輸出單一 CLOSE（規則 8）。
 
 ### 複合動作範例（few-shot — 跨頻道風格）
 
@@ -478,6 +518,34 @@ SYSTEM_PROMPT = """你是一個加密貨幣交易訊號解析器。
   {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 0.5},
   {"action": "MOVE_SL", "symbol": "BTCUSDT"}
 ]
+
+### Pattern B 範例（CLOSE + ENTRY — 換手 / 反手）
+
+範例 B1（陳哥風格 — 換手做空 + 同訊息完整進場模板）:
+輸入: "多单剩余仓位全部止盈出局，换手做空73300附近。\n⚠️⚠️⚠️\n陈哥合约交易策略\nBTC，73300附近，做空\n止损预计: 74500\n止盈预计: 72000/70500\n⚠️⚠️⚠️"
+輸出: [
+  {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": null},
+  {"action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT", "entry_price": 73300, "stop_loss": 74500, "take_profit": 72000}
+]
+
+範例 B2（反手做空 — 簡短一句帶進場資訊）:
+輸入: "ETH多单全部止盈，反手做空2950附近，止损3050，止盈2800/2700"
+輸出: [
+  {"action": "CLOSE", "symbol": "ETHUSDT", "close_ratio": null},
+  {"action": "ENTRY", "symbol": "ETHUSDT", "side": "SHORT", "entry_price": 2950, "stop_loss": 3050, "take_profit": 2800}
+]
+
+範例 B3（先平多再做多 — 換手回原方向）:
+輸入: "BTC空单先平掉，换多 95000附近，止损93500，止盈98000"
+輸出: [
+  {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": null},
+  {"action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG", "entry_price": 95000, "stop_loss": 93500, "take_profit": 98000}
+]
+
+範例 B4（⚠️ 只有「換手」字眼、沒給新倉進場價/止損 → 不是 Pattern B，只 CLOSE）:
+輸入: "BTC多单先全部止盈出局，准备换手，稍后发新单"
+輸出: {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": null}
+（沒有新倉入場價/止損 → 新單會是下一條獨立訊息，這條只平倉）
 
 ### 反例 — 不該觸發複合動作
 
@@ -758,6 +826,16 @@ class AiSignalParser:
                             ordered[0].get("symbol"),
                         )
                         return ordered  # 回傳 list，上游 signal_router 會 iterate
+                    # CLOSE + ENTRY 換手/反手複合動作（平掉原倉 + 反向開新倉）
+                    if self._is_compound_close_entry(parsed):
+                        # CLOSE 必須先送（平掉原倉），ENTRY 後送，否則反向開倉會被「已有持倉」擋下
+                        ordered = sorted(parsed, key=lambda x: 0 if x.get("action") == "CLOSE" else 1)
+                        entry = next((it for it in ordered if it.get("action") == "ENTRY"), {})
+                        logger.info(
+                            "AI parser: compound action detected (CLOSE + ENTRY 換手) symbol=%s new_side=%s entry=%s",
+                            ordered[0].get("symbol"), entry.get("side"), entry.get("entry_price"),
+                        )
+                        return ordered  # 回傳 list，上游 signal_router 會 iterate（CLOSE→ENTRY）
                     # 不是 compound → 退回原 pick best 行為
                     logger.warning(
                         "AI parser: got list (%d items), extracting best signal: %s",
@@ -980,6 +1058,49 @@ class AiSignalParser:
         # 例如不允許 [{CLOSE BTCUSDT}, {MOVE_SL ETHUSDT}]
         symbols = {it.get("symbol") for it in items}
         if len(symbols) != 1:
+            return False
+
+        return True
+
+    def _is_compound_close_entry(self, items: list) -> bool:
+        """判斷 list 是否為合法的 CLOSE + ENTRY 複合動作（換手 / 反手）。
+
+        對應訊息：「（剩餘倉位）全部止盈出局，換手做空 73300，止損 74500」
+        — 平掉原倉 + 同一條訊息反向開新倉。
+
+        條件（全部要滿足）：
+        - 恰好 2 個 dict
+        - 一個 action=CLOSE，一個 action=ENTRY
+        - 兩個都通過 _validate（ENTRY 因此必有 side ∈ LONG/SHORT + entry_price）
+        - 同一個 symbol（防 AI 跨幣腦補）
+
+        Returns:
+            True 表示是合法 CLOSE+ENTRY compound，回傳 list（CLOSE 先、ENTRY 後）給下游
+            False 表示不是 → 下游用 _pick_best_from_list 退回單一動作
+        """
+        if not isinstance(items, list) or len(items) != 2:
+            return False
+
+        # 全部要是 dict 且有 action
+        if not all(isinstance(it, dict) and it.get("action") for it in items):
+            return False
+
+        actions = sorted([it.get("action") for it in items])
+        if actions != ["CLOSE", "ENTRY"]:
+            return False
+
+        # 兩個都要過 validate（ENTRY 的 side + entry_price 由 _validate 保證）
+        if not all(self._validate(it) for it in items):
+            return False
+
+        # 兩個 sub-action 必須是同一個 symbol（換手是同一幣種平→反開）
+        symbols = {it.get("symbol") for it in items}
+        if len(symbols) != 1:
+            return False
+
+        # 換手反向：ENTRY 必須明確帶方向 + 入場價（_validate 已驗，這裡再保險）
+        entry_item = next(it for it in items if it.get("action") == "ENTRY")
+        if entry_item.get("side") not in ("LONG", "SHORT") or entry_item.get("entry_price") is None:
             return False
 
         return True

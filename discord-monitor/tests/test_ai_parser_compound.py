@@ -54,8 +54,12 @@ class TestCompoundActionParsing:
         assert actions == ["CLOSE", "MOVE_SL"]
 
     @pytest.mark.asyncio
-    async def test_compound_must_be_close_plus_movesl(self):
-        """[CLOSE, ENTRY] 這種非 compound pattern → 退回 pick best 拿單一動作"""
+    async def test_cross_symbol_close_entry_falls_back(self):
+        """跨幣 [ENTRY BTC, CLOSE ETH] → 不是換手 compound（不同幣）→ 退回 pick best 拿單一動作。
+
+        注意：同幣 [CLOSE, ENTRY] 現在是合法換手 compound（見 TestCompoundCloseEntry），
+        這個 case 之所以 fallback 純粹因為跨幣。
+        """
         parser = _make_parser([
             {"action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT", "entry_price": 82000},
             {"action": "CLOSE", "symbol": "ETHUSDT", "close_ratio": 1.0},
@@ -63,7 +67,7 @@ class TestCompoundActionParsing:
 
         result = await parser.parse("某混亂訊息")
 
-        # _pick_best_from_list 應該挑 ENTRY（priority 5 > CLOSE 4）
+        # 跨幣 → 不算 compound → _pick_best_from_list 挑 ENTRY（priority 5 > CLOSE 4）
         assert isinstance(result, dict), f"expected dict, got {type(result)}"
         assert result["action"] == "ENTRY"
 
@@ -147,3 +151,102 @@ class TestCompoundDefenseInDepth:
 
         # close_ratio > 1 → 不是 compound
         assert not isinstance(result, list)
+
+
+class TestCompoundCloseEntry:
+    """換手 / 反手複合動作（CLOSE + ENTRY）— Issue: 2026-05-29 換手做空裸倉事件。
+
+    舊行為：[CLOSE, ENTRY] 不被當 compound → _pick_best_from_list 只挑 ENTRY → 丟掉 CLOSE
+    → 用戶原倉沒平就被「已有持倉拒絕開倉」擋下。
+    新行為：同幣 [CLOSE, ENTRY] → 合法 compound，回 ordered list（CLOSE 先送、ENTRY 後送）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_close_entry_returns_ordered_list(self):
+        """同幣 [ENTRY, CLOSE]（順序顛倒）→ 回 ordered list，CLOSE 必排在 ENTRY 前。"""
+        parser = _make_parser([
+            {"action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT", "entry_price": 73300, "stop_loss": 74500},
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": None},
+        ])
+
+        result = await parser.parse("多单全部止盈出局，换手做空73300，止损74500")
+
+        assert isinstance(result, list), f"expected list, got {type(result)}"
+        assert len(result) == 2
+        assert result[0]["action"] == "CLOSE", "CLOSE 必須先送（先平原倉），否則反向開倉被擋"
+        assert result[1]["action"] == "ENTRY"
+        assert result[1]["side"] == "SHORT"
+        assert result[1]["entry_price"] == 73300
+
+    @pytest.mark.asyncio
+    async def test_close_entry_long_switch(self):
+        """換多：[CLOSE, ENTRY LONG] 同幣 → compound list。"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": None},
+            {"action": "ENTRY", "symbol": "BTCUSDT", "side": "LONG", "entry_price": 95000, "stop_loss": 93500},
+        ])
+
+        result = await parser.parse("空单先平掉，换多95000，止损93500")
+
+        assert isinstance(result, list)
+        assert [a["action"] for a in result] == ["CLOSE", "ENTRY"]
+        assert result[1]["side"] == "LONG"
+
+    @pytest.mark.asyncio
+    async def test_close_entry_cross_symbol_falls_back(self):
+        """跨幣 [CLOSE BTC, ENTRY ETH] → 不是換手（不同幣）→ 退回 pick best。"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": None},
+            {"action": "ENTRY", "symbol": "ETHUSDT", "side": "SHORT", "entry_price": 2950, "stop_loss": 3050},
+        ])
+
+        result = await parser.parse("BTC平掉 ETH做空2950")
+
+        assert not isinstance(result, list), f"cross-symbol must not be compound: {result}"
+
+    @pytest.mark.asyncio
+    async def test_close_entry_missing_entry_price_falls_back(self):
+        """ENTRY 缺 entry_price → _validate fail → 不是合法 compound → 退回 pick best。"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": None},
+            {"action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT"},  # 缺 entry_price
+        ])
+
+        result = await parser.parse("平掉换手做空")
+
+        assert not isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_close_entry_missing_side_falls_back(self):
+        """ENTRY 缺 side → _validate fail → 不是合法 compound → 退回 pick best。"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": None},
+            {"action": "ENTRY", "symbol": "BTCUSDT", "entry_price": 73300},  # 缺 side
+        ])
+
+        result = await parser.parse("平掉换手 73300")
+
+        assert not isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_close_entry_with_full_close_ratio(self):
+        """換手 CLOSE 帶 close_ratio=1.0（全平）也是合法 compound（null 與 1.0 皆全平）。"""
+        parser = _make_parser([
+            {"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": 1.0},
+            {"action": "ENTRY", "symbol": "BTCUSDT", "side": "SHORT", "entry_price": 73300, "stop_loss": 74500},
+        ])
+
+        result = await parser.parse("多单全部止盈，换手做空73300，止损74500")
+
+        assert isinstance(result, list)
+        assert [a["action"] for a in result] == ["CLOSE", "ENTRY"]
+
+    @pytest.mark.asyncio
+    async def test_switch_without_entry_info_stays_single_close(self):
+        """只講『換手』沒給新倉進場價 → Gemini 回單一 CLOSE dict → 維持單一（新單下條訊息再進）。"""
+        parser = _make_parser({"action": "CLOSE", "symbol": "BTCUSDT", "close_ratio": None})
+
+        result = await parser.parse("多单先全部止盈出局，准备换手，稍后发新单")
+
+        assert isinstance(result, dict)
+        assert result["action"] == "CLOSE"
