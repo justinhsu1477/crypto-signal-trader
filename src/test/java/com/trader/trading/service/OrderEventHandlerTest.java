@@ -7,8 +7,10 @@ import com.trader.trading.entity.Trade;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
+import java.util.OptionalDouble;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -1700,6 +1702,101 @@ class OrderEventHandlerTest {
             event.add("a", account);
 
             return event;
+        }
+    }
+
+    // ==================== Issue #52 Phase 2：positionLookup wiring ====================
+
+    @Nested
+    @DisplayName("Phase 2 — positionLookup 連線至 recordCloseFromStream")
+    class Phase2PositionLookup {
+
+        /**
+         * 8-arg 新建構子（帶 positionLookup）— processStreamClose 應把查到的倉位塞進 OptionalDouble。
+         */
+        @Test
+        @DisplayName("positionLookup 回傳 0.5 → recordCloseFromStream 9-arg 收到 OptionalDouble.of(0.5)")
+        void positionLookupValue_passedAsHint() {
+            Function<String, Double> positionLookup = symbol -> 0.5;
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null,
+                    null, positionLookup, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 111L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // 9-arg 版被呼叫，hint = of(0.5)
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(93000.0), eq(0.5),
+                    eq(18.6), eq(-1000.0), eq("111"), eq("SL_TRIGGERED"),
+                    eq(1700000000000L), eq(OptionalDouble.of(0.5)));
+        }
+
+        @Test
+        @DisplayName("positionLookup 拋例外 → 退回 hint=empty 仍呼叫 9-arg（不爆）")
+        void positionLookupThrows_passesEmptyHint() {
+            Function<String, Double> positionLookup = symbol -> {
+                throw new RuntimeException("Binance API down");
+            };
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null,
+                    null, positionLookup, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "TAKE_PROFIT_MARKET", "FILLED", "SELL",
+                    98000.0, 0.5, 19.6, "USDT", 1500.0, 222L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // hint = empty，但仍走 9-arg 路徑
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(98000.0), eq(0.5),
+                    eq(19.6), eq(1500.0), eq("222"), eq("TP_TRIGGERED"),
+                    eq(1700000000000L), eq(OptionalDouble.empty()));
+        }
+
+        @Test
+        @DisplayName("positionLookup 回傳 null → hint=empty 仍呼叫 9-arg")
+        void positionLookupNull_passesEmptyHint() {
+            Function<String, Double> positionLookup = symbol -> null;
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null,
+                    null, positionLookup, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 333L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(93000.0), eq(0.5),
+                    eq(18.6), eq(-1000.0), eq("333"), eq("SL_TRIGGERED"),
+                    eq(1700000000000L), eq(OptionalDouble.empty()));
+        }
+
+        @Test
+        @DisplayName("7-arg 舊建構子 (positionLookup=null) → 走 8-arg legacy 路徑")
+        void noPositionLookup_legacy8ArgPath() {
+            // 用既有 7-arg 建構子 — positionLookup 為 null
+            OrderEventHandler handler = new OrderEventHandler(
+                    tradeRecordService, symbolLockRegistry, notificationSender, null,
+                    null, gson, "");
+
+            JsonObject event = buildOrderTradeUpdate(
+                    "BTCUSDT", "STOP_MARKET", "FILLED", "SELL",
+                    93000.0, 0.5, 18.6, "USDT", -1000.0, 444L, 1700000000000L);
+
+            handler.handleOrderTradeUpdate(event);
+
+            // 應呼叫 8-arg 版本（兼容既有 60+ 個 verify 8-arg 的測試）
+            verify(tradeRecordService).recordCloseFromStream(
+                    eq("BTCUSDT"), eq(93000.0), eq(0.5),
+                    eq(18.6), eq(-1000.0), eq("444"), eq("SL_TRIGGERED"),
+                    eq(1700000000000L));
         }
     }
 }

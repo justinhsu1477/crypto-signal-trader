@@ -7,12 +7,14 @@ import com.trader.trading.entity.Trade;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * 共用的 ORDER_TRADE_UPDATE / ALGO_UPDATE 事件處理邏輯
@@ -37,6 +39,8 @@ public class OrderEventHandler {
     private final NotificationSender notificationSender;
     private final NotificationSender adminNotifier;  // nullable — 單用戶模式為 null
     private final Consumer<String> orderCleaner;     // nullable — 全平倉後取消對向 SL/TP
+    /** Issue #52 Phase 2：查 Binance 當前倉位（絕對值/帶號皆可）。nullable — 無則跳過 double-check（退回 Phase 1 行為）*/
+    private final Function<String, Double> positionLookup;
     private final Gson gson;
     private final String logPrefix;  // 日誌前綴：空字串 or "用戶 {userId} "
 
@@ -81,6 +85,10 @@ public class OrderEventHandler {
         void send(String title, String message, int color);
     }
 
+    /**
+     * 7-arg 舊建構子 — 不帶 Phase 2 positionLookup。
+     * 既有測試使用此版（positionLookup=null → processStreamClose 走 legacy 判定）。
+     */
     public OrderEventHandler(TradeRecordService tradeRecordService,
                               SymbolLockRegistry symbolLockRegistry,
                               NotificationSender notificationSender,
@@ -88,11 +96,30 @@ public class OrderEventHandler {
                               Consumer<String> orderCleaner,
                               Gson gson,
                               String logPrefix) {
+        this(tradeRecordService, symbolLockRegistry, notificationSender, adminNotifier,
+                orderCleaner, null, gson, logPrefix);
+    }
+
+    /**
+     * 8-arg 建構子（Issue #52 Phase 2）— 加 positionLookup 給 recordCloseFromStream 查 Binance 真實倉位用。
+     *
+     * <p>{@code positionLookup}：通常傳 {@code binanceFuturesService::getCurrentPositionAmount}；
+     * 拋例外時會自動退回 Phase 1 行為（不做 double-check）。
+     */
+    public OrderEventHandler(TradeRecordService tradeRecordService,
+                              SymbolLockRegistry symbolLockRegistry,
+                              NotificationSender notificationSender,
+                              NotificationSender adminNotifier,
+                              Consumer<String> orderCleaner,
+                              Function<String, Double> positionLookup,
+                              Gson gson,
+                              String logPrefix) {
         this.tradeRecordService = tradeRecordService;
         this.symbolLockRegistry = symbolLockRegistry;
         this.notificationSender = notificationSender;
         this.adminNotifier = adminNotifier;
         this.orderCleaner = orderCleaner;
+        this.positionLookup = positionLookup;
         this.gson = gson;
         this.logPrefix = logPrefix != null ? logPrefix : "";
     }
@@ -459,9 +486,29 @@ public class OrderEventHandler {
         ReentrantLock lock = symbolLockRegistry.getLock(symbol);
         lock.lock();
         try {
-            boolean fullClose = tradeRecordService.recordCloseFromStream(
-                    symbol, exitPrice, exitQty, commission,
-                    realizedProfit, orderId, exitReason, transactionTime);
+            // Issue #52 Phase 2：positionLookup 有設才查 Binance 當前倉位作 double-check
+            // null（既有 7-arg 建構子 / 多數測試）→ 直接呼叫 8-arg legacy 路徑
+            boolean fullClose;
+            if (positionLookup == null) {
+                fullClose = tradeRecordService.recordCloseFromStream(
+                        symbol, exitPrice, exitQty, commission,
+                        realizedProfit, orderId, exitReason, transactionTime);
+            } else {
+                OptionalDouble positionHint = OptionalDouble.empty();
+                try {
+                    Double pos = positionLookup.apply(symbol);
+                    if (pos != null) {
+                        positionHint = OptionalDouble.of(pos);
+                    }
+                } catch (Exception e) {
+                    log.warn("{}[Phase 2] 查 Binance 倉位失敗，recordCloseFromStream 走 legacy 判定: {}",
+                            logPrefix, e.getMessage());
+                }
+
+                fullClose = tradeRecordService.recordCloseFromStream(
+                        symbol, exitPrice, exitQty, commission,
+                        realizedProfit, orderId, exitReason, transactionTime, positionHint);
+            }
 
             // 全平倉後取消對向掛單（SL 觸發 → 取消 TP，TP 觸發 → 取消 SL）
             if (fullClose && orderCleaner != null) {
