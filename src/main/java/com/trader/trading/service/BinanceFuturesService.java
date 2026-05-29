@@ -1737,6 +1737,17 @@ public class BinanceFuturesService {
     }
 
     /**
+     * String 重載版 — 給 TradeContext 用，避免 trading.model 直接 import
+     * user.service 內的 BinanceKeys record（Issue #52 Phase 1）。
+     * 兩個 key 任一為 null/blank 直接 noop，呼叫端不用自己防呆。
+     */
+    public static void setCurrentUserKeys(String apiKey, String secretKey) {
+        if (apiKey != null && !apiKey.isBlank() && secretKey != null && !secretKey.isBlank()) {
+            CURRENT_USER_KEYS.set(new BinanceKeys(apiKey, secretKey));
+        }
+    }
+
+    /**
      * 清除當前線程的 per-user API Key
      */
     public static void clearCurrentUserKeys() {
