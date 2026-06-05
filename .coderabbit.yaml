@@ -1,11 +1,11 @@
 # CodeRabbit 設定 — https://docs.coderabbit.ai/reference/configuration
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 
-# Review 留言語言：繁體中文
-language: "zh-TW"
+# 語言設定走 LanguageTool locale 清單，沒有 zh-TW；用 zh 後靠 tone_instructions 強制繁體輸出
+language: "zh"
 
-# 語氣偏好：直接、技術導向，少客套
-tone_instructions: "用繁體中文、精簡技術風格回覆。先講問題與風險，再給建議；避免冗長客套。"
+# 語氣 + 強制繁體中文（language 無法指定繁中，由此補上）
+tone_instructions: "一律用『繁體中文（台灣用語）』回覆，不要用簡體字。風格精簡、技術導向：先講問題與風險，再給建議；避免冗長客套。"
 
 reviews:
   # assertive = 嚴格模式，會逐行揪出 nitpick（== vs ===、var、邊界條件等）
