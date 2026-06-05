@@ -1,0 +1,69 @@
+# CodeRabbit 設定 — https://docs.coderabbit.ai/reference/configuration
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# 語言設定走 LanguageTool locale 清單，沒有 zh-TW；用 zh 後靠 tone_instructions 強制繁體輸出
+language: "zh"
+
+# 語氣 + 強制繁體中文（language 無法指定繁中，由此補上）
+tone_instructions: "一律用『繁體中文（台灣用語）』回覆，不要用簡體字。風格精簡、技術導向：先講問題與風險，再給建議；避免冗長客套。"
+
+reviews:
+  # assertive = 嚴格模式，會逐行揪出 nitpick（== vs ===、var、邊界條件等）
+  # 想少話可改回 "chill"
+  profile: "assertive"
+
+  # 高層級摘要 + walkthrough
+  high_level_summary: true
+  # 關掉打油詩，保持精簡
+  poem: false
+  # 顯示 review 狀態訊息（含 skip 原因），方便除錯
+  review_status: true
+  # 不要自動把 PR 標成 request changes，只留建議
+  request_changes_workflow: false
+
+  auto_review:
+    enabled: true
+    # 明確指定觸發分支，避免「預設分支未同步」導致第一個 PR 被跳過
+    base_branches:
+      - "main"
+    # 草稿 PR 不 review，省額度
+    drafts: false
+
+  # 排除產物 / 鎖檔 / 大型靜態檔，避免雜訊與浪費 review
+  path_filters:
+    - "!**/package-lock.json"
+    - "!**/*.lock"
+    - "!web-dashboard/.next/**"
+    - "!web-dashboard/out/**"
+    - "!web-dashboard/node_modules/**"
+    - "!**/build/**"
+    - "!**/dist/**"
+    - "!landing-preview.html"      # 205KB 行銷靜態頁，非邏輯程式碼
+    - "!**/*.min.js"
+    - "!gradlew"
+    - "!gradlew.bat"
+
+  # 針對高風險模組下強化審查指示（path-specific）
+  path_instructions:
+    - path: "src/main/java/com/trader/trading/**"
+      instructions: >
+        這是金融交易核心模組。請特別嚴格檢查：
+        (1) 開平倉 / SL/TP 取消的數量是否正確歸位（remainingQuantity / totalClosedQuantity）；
+        (2) 全平倉與部分平倉分支是否都有覆蓋，避免裸倉；
+        (3) 與 Binance 倉位狀態的同步時序（先查倉位再取消掛單）；
+        (4) BigDecimal 金額計算是否有除以零、精度遺失、四捨五入方向問題。
+    - path: "discord-monitor/**"
+      instructions: >
+        訊號解析模組。檢查 custom_prompt / trade_mode / routing_mode 的安全約束是否被繞過，
+        以及 Gemini API 呼叫的 RPM 限制與錯誤重試處理。
+    - path: "**/*.{test.ts,test.tsx,spec.ts}"
+      instructions: "測試檔可放寬風格檢查，聚焦斷言是否真的驗證到行為、有無遺漏邊界案例。"
+
+  # 啟用既有靜態分析工具（決定性規則層，非 LLM）
+  tools:
+    gitleaks:
+      enabled: true
+
+chat:
+  # 在 PR 中 @coderabbitai 提問時自動回覆
+  auto_reply: true
