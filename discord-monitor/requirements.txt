@@ -3,4 +3,4 @@ aiohttp>=3.13.5
 pyyaml>=6.0.3
 google-genai>=1.75.0
 grpcio>=1.80.0
-grpcio-tools>=1.80.0
+grpcio-tools>=1.81.0
