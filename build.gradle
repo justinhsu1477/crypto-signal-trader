@@ -78,7 +78,7 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
     // Stripe 訂閱計費
-    implementation 'com.stripe:stripe-java:28.2.0'
+    implementation 'com.stripe:stripe-java:28.4.0'
 
     // Actuator + Micrometer（Observability — 系統指標 + Prometheus）
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
