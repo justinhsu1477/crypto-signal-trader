@@ -331,3 +331,12 @@ class TestModelHotUpdate:
         config = FakeConfig(channel_ids=["ch-1"], active_model="gemini-2.5-flash")
         # Should not raise
         self.client._apply_config(config, "test")
+
+    def test_model_applies_without_channel_ids(self):
+        """只推 active_model（channel_ids 空）— 仍套用 model 且不清空既有頻道（迴歸 PR#74 閘門 bug）。"""
+        self.router.channel_ids = {"keep-1"}
+        config = FakeConfig(channel_ids=[], active_model="gemini-2.5-flash")
+        self.client._apply_config(config, "model_only")
+
+        assert self.router.channel_ids == {"keep-1"}
+        assert self.router.ai_parser.model == "gemini-2.5-flash"

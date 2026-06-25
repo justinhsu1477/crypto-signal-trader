@@ -79,12 +79,11 @@ class GrpcConfigClient:
                     timeout=10,
                 )
                 config = response.config
+                self._apply_config(config, "initial_sync")
                 if config.channel_ids:
-                    self._apply_config(config, "initial_sync")
                     return True
-                else:
-                    logger.info("gRPC 初始設定為空，使用 config.yml 的設定")
-                    return False
+                logger.info("gRPC 初始設定無 channel_ids，channel 沿用 config.yml")
+                return False
         except Exception as e:
             logger.warning("gRPC GetConfig 失敗: %s (將使用 config.yml 的設定)", e)
             return False
@@ -106,15 +105,14 @@ class GrpcConfigClient:
                     retry_delay = 5  # 連線成功，重置退避
 
                     async for update in stream:
-                        if update.config.channel_ids:
-                            self._apply_config(update.config, update.update_reason)
-                            logger.info(
-                                "📡 收到設定更新 (v%d): channels=%s, by=%s, reason=%s",
-                                update.config.version,
-                                list(update.config.channel_ids),
-                                update.updated_by,
-                                update.update_reason,
-                            )
+                        self._apply_config(update.config, update.update_reason)
+                        logger.info(
+                            "📡 收到設定更新 (v%d): channels=%s, by=%s, reason=%s",
+                            update.config.version,
+                            list(update.config.channel_ids),
+                            update.updated_by,
+                            update.update_reason,
+                        )
 
             except grpc.aio.AioRpcError as e:
                 if e.code() == grpc.StatusCode.UNAUTHENTICATED:
@@ -138,18 +136,18 @@ class GrpcConfigClient:
         logger.info("gRPC config watch loop 結束")
 
     def _apply_config(self, config, reason: str):
-        """熱更新 SignalRouter 的過濾條件."""
-        new_channel_ids = set(config.channel_ids)
-        old_channel_ids = self.signal_router.channel_ids
-
-        if new_channel_ids != old_channel_ids:
-            added = new_channel_ids - old_channel_ids
-            removed = old_channel_ids - new_channel_ids
-            self.signal_router.channel_ids = new_channel_ids
-            logger.info(
-                "🔄 channel_ids 已更新: added=%s, removed=%s (reason=%s)",
-                added or "無", removed or "無", reason,
-            )
+        """熱更新 SignalRouter: 各欄位獨立判斷, 空值一律不覆蓋."""
+        if config.channel_ids:
+            new_channel_ids = set(config.channel_ids)
+            old_channel_ids = self.signal_router.channel_ids
+            if new_channel_ids != old_channel_ids:
+                added = new_channel_ids - old_channel_ids
+                removed = old_channel_ids - new_channel_ids
+                self.signal_router.channel_ids = new_channel_ids
+                logger.info(
+                    "🔄 channel_ids 已更新: added=%s, removed=%s (reason=%s)",
+                    added or "無", removed or "無", reason,
+                )
 
         # 同步更新其他過濾條件（如果有帶值）
         if config.guild_ids:
@@ -202,8 +200,7 @@ class GrpcConfigClient:
                     current_ver, config.active_prompt_version,
                 )
 
-        # AI model 熱更新（gRPC 中央推送；空字串=不覆蓋，沿用本地 config.yml 的 ai.model）
-        # getattr 向下相容：舊版 proto stub 沒有 active_model 欄位時不報錯
+        # AI model 熱更新: 空=不覆蓋, getattr 兼容舊 stub
         active_model = getattr(config, "active_model", "")
         if active_model and self.signal_router.ai_parser:
             if active_model != self.signal_router.ai_parser.model:
