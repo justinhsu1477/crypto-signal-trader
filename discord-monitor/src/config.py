@@ -39,7 +39,7 @@ class ApiConfig:
 @dataclass
 class AiConfig:
     enabled: bool = False
-    model: str = "gemini-2.0-flash"
+    model: str = "gemini-2.5-flash"  # 注意：gemini-2.0-flash 已被 Google 下架(404)。server 可經 gRPC 中央覆蓋。
     api_key_env: str = "GEMINI_API_KEY"
     timeout: int = 15
     max_retries: int = 3

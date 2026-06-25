@@ -43,7 +43,7 @@ class FakeConfig:
 
     def __init__(self, channel_ids=None, guild_ids=None, author_ids=None,
                  ignore_keywords=None, sources=None, version=1,
-                 active_prompt="", active_prompt_version=0):
+                 active_prompt="", active_prompt_version=0, active_model=""):
         self.channel_ids = channel_ids or []
         self.guild_ids = guild_ids or []
         self.author_ids = author_ids or []
@@ -52,6 +52,7 @@ class FakeConfig:
         self.version = version
         self.active_prompt = active_prompt
         self.active_prompt_version = active_prompt_version
+        self.active_model = active_model
 
 
 class TestApplyConfig:
@@ -205,14 +206,22 @@ class TestSourceMetadata:
 
 
 class FakeAiParser:
-    """模擬 AiParser，追蹤 prompt 更新。"""
+    """模擬 AiParser，追蹤 prompt / model 更新。"""
 
-    def __init__(self, prompt_version=0):
+    def __init__(self, prompt_version=0, model="gemini-2.0-flash"):
         self._prompt_version = prompt_version
+        self._model = model
 
     @property
     def prompt_version(self):
         return self._prompt_version
+
+    @property
+    def model(self):
+        return self._model
+
+    def update_model(self, new_model):
+        self._model = new_model
 
     def update_system_prompt(self, new_prompt, version):
         self._system_prompt = new_prompt
@@ -278,3 +287,47 @@ class TestPromptHotUpdate:
         self.client._apply_config(config, "test")
 
         assert self.router.ai_parser.prompt_version == 0
+
+
+class TestModelHotUpdate:
+    """_apply_config — AI model 中央熱更新（gRPC 推送）。
+
+    用途：Google 下架某 model 時，server 改 MONITOR_AI_MODEL 即可全體切換，免動每台 monitor。
+    """
+
+    def setup_method(self):
+        self.router = FakeSignalRouter()
+        self.router.ai_parser = FakeAiParser(model="gemini-2.0-flash")
+        self.client = GrpcConfigClient(
+            grpc_target="localhost:9090",
+            api_key="test-key",
+            signal_router=self.router,
+        )
+
+    def test_model_update_applied(self):
+        """帶 active_model — 覆蓋 ai_parser 的 model。"""
+        config = FakeConfig(channel_ids=["ch-1"], active_model="gemini-2.5-flash")
+        self.client._apply_config(config, "test")
+
+        assert self.router.ai_parser.model == "gemini-2.5-flash"
+
+    def test_empty_model_no_overwrite(self):
+        """active_model 為空 — 沿用本地 config.yml 的 model 不覆蓋。"""
+        config = FakeConfig(channel_ids=["ch-1"], active_model="")
+        self.client._apply_config(config, "test")
+
+        assert self.router.ai_parser.model == "gemini-2.0-flash"
+
+    def test_same_model_no_error(self):
+        """相同 model — 不報錯，維持原值。"""
+        config = FakeConfig(channel_ids=["ch-1"], active_model="gemini-2.0-flash")
+        self.client._apply_config(config, "test")
+
+        assert self.router.ai_parser.model == "gemini-2.0-flash"
+
+    def test_no_ai_parser_no_error(self):
+        """ai_parser 為 None — 不報錯。"""
+        self.router.ai_parser = None
+        config = FakeConfig(channel_ids=["ch-1"], active_model="gemini-2.5-flash")
+        # Should not raise
+        self.client._apply_config(config, "test")

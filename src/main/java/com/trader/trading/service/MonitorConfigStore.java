@@ -34,12 +34,15 @@ public class MonitorConfigStore {
     private final AtomicLong version = new AtomicLong(0);
 
     private final String defaultChannelIds;
+    private final String aiModel;
     @Getter
     private List<String> defaultChannelIdList = List.of();
 
     public MonitorConfigStore(
-            @Value("${monitor.default-channel-ids:}") String defaultChannelIds) {
+            @Value("${monitor.default-channel-ids:}") String defaultChannelIds,
+            @Value("${monitor.ai-model:}") String aiModel) {
         this.defaultChannelIds = defaultChannelIds;
+        this.aiModel = aiModel;
         this.currentConfig = MonitorConfig.newBuilder().build();
     }
 
@@ -48,6 +51,9 @@ public class MonitorConfigStore {
      */
     @PostConstruct
     void initFromDefaults() {
+        MonitorConfig.Builder builder = MonitorConfig.newBuilder();
+        boolean changed = false;
+
         if (defaultChannelIds != null && !defaultChannelIds.isBlank()) {
             List<String> channelIds = Arrays.stream(defaultChannelIds.split(","))
                     .map(String::trim)
@@ -56,12 +62,20 @@ public class MonitorConfigStore {
 
             if (!channelIds.isEmpty()) {
                 this.defaultChannelIdList = channelIds;
-                this.currentConfig = MonitorConfig.newBuilder()
-                        .addAllChannelIds(channelIds)
-                        .setVersion(version.incrementAndGet())
-                        .build();
+                builder.addAllChannelIds(channelIds);
+                changed = true;
                 log.info("Monitor 預設頻道已載入: {}", channelIds);
             }
+        }
+
+        if (aiModel != null && !aiModel.isBlank()) {
+            builder.setActiveModel(aiModel.trim());
+            changed = true;
+            log.info("Monitor AI model 已設定（gRPC 推送）: {}", aiModel.trim());
+        }
+
+        if (changed) {
+            this.currentConfig = builder.setVersion(version.incrementAndGet()).build();
         }
     }
 
@@ -87,6 +101,10 @@ public class MonitorConfigStore {
         if (!currentConfig.getActivePrompt().isEmpty()) {
             builder.setActivePrompt(currentConfig.getActivePrompt());
             builder.setActivePromptVersion(currentConfig.getActivePromptVersion());
+        }
+        // 保留 model 設定（同理，source CRUD 不應清空中央推送的 model）
+        if (!currentConfig.getActiveModel().isEmpty()) {
+            builder.setActiveModel(currentConfig.getActiveModel());
         }
 
         this.currentConfig = builder.build();

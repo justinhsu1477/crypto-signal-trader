@@ -736,6 +736,21 @@ class AiSignalParser:
         self._prompt_version = version
         logger.info("System prompt 已更新: v%d (%d chars)", version, len(new_prompt))
 
+    @property
+    def model(self) -> str:
+        """當前使用的 Gemini model 名稱。"""
+        return self.config.model
+
+    def update_model(self, new_model: str) -> None:
+        """熱更新 Gemini model（由 gRPC config push 觸發）。
+
+        model 名稱非機密，故可由 server 端中央切換（例：Google 下架舊 model 時免動每台 monitor）。
+        generate_content 在呼叫時即時讀 self.config.model，更新後下一次解析立即生效。
+        """
+        old = self.config.model
+        self.config.model = new_model
+        logger.info("Gemini model 已更新（gRPC 推送）: %s → %s", old, new_model)
+
     def build_system_prompt(
         self,
         source_prompt: str | None = None,

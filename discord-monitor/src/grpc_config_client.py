@@ -201,3 +201,10 @@ class GrpcConfigClient:
                     "🔄 AI prompt 已更新: v%d → v%d",
                     current_ver, config.active_prompt_version,
                 )
+
+        # AI model 熱更新（gRPC 中央推送；空字串=不覆蓋，沿用本地 config.yml 的 ai.model）
+        # getattr 向下相容：舊版 proto stub 沒有 active_model 欄位時不報錯
+        active_model = getattr(config, "active_model", "")
+        if active_model and self.signal_router.ai_parser:
+            if active_model != self.signal_router.ai_parser.model:
+                self.signal_router.ai_parser.update_model(active_model)
