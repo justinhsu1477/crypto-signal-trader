@@ -32,8 +32,7 @@ message MonitorConfig {
   repeated SourceConfig sources = 6;    // 每個來源的完整元資料
   string active_prompt = 7;             // AI system prompt 全文（gRPC 推送）
   int32 active_prompt_version = 8;      // prompt 版本號（交易追溯用）
-  // Gemini model 名稱（gRPC 中央推送）。空字串 = 不覆蓋，monitor 沿用本地 config.yml 的 ai.model。
-  // 用途：Google 下架某 model 時，server 端改 MONITOR_AI_MODEL 即可全體切換，免動每台 monitor。
+  // Gemini model id（gRPC 中央推送）；空 = 不覆蓋本地 ai.model。須為有效 model 名稱，如 gemini-2.5-flash。
   string active_model = 9;
 }
 
