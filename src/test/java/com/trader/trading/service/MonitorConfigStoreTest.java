@@ -22,7 +22,7 @@ class MonitorConfigStoreTest {
 
     @BeforeEach
     void setUp() {
-        store = new MonitorConfigStore("");
+        store = new MonitorConfigStore("", "");
     }
 
     // ==================== initFromDefaults ====================
@@ -42,7 +42,7 @@ class MonitorConfigStoreTest {
         @Test
         @DisplayName("有值 — 載入頻道清單")
         void withDefaults() {
-            var storeWithDefaults = new MonitorConfigStore("ch1, ch2, ch3");
+            var storeWithDefaults = new MonitorConfigStore("ch1, ch2, ch3", "");
             storeWithDefaults.initFromDefaults();
 
             MonitorConfig config = storeWithDefaults.getCurrentConfig();
@@ -53,11 +53,27 @@ class MonitorConfigStoreTest {
         @Test
         @DisplayName("空白和空項目被過濾")
         void filtersBlanks() {
-            var storeWithBlanks = new MonitorConfigStore("ch1, , ch2, ");
+            var storeWithBlanks = new MonitorConfigStore("ch1, , ch2, ", "");
             storeWithBlanks.initFromDefaults();
 
             assertThat(storeWithBlanks.getCurrentConfig().getChannelIdsList())
                     .containsExactly("ch1", "ch2");
+        }
+
+        @Test
+        @DisplayName("aiModel 非空 — 寫進 activeModel")
+        void withAiModel() {
+            var storeWithModel = new MonitorConfigStore("ch1", "gemini-2.5-flash");
+            storeWithModel.initFromDefaults();
+            assertThat(storeWithModel.getCurrentConfig().getActiveModel())
+                    .isEqualTo("gemini-2.5-flash");
+        }
+
+        @Test
+        @DisplayName("aiModel 空 — activeModel 留空")
+        void emptyAiModel() {
+            store.initFromDefaults();
+            assertThat(store.getCurrentConfig().getActiveModel()).isEmpty();
         }
     }
 
@@ -106,6 +122,15 @@ class MonitorConfigStoreTest {
             assertThat(config.getGuildIdsList()).containsExactly("guild1");
             assertThat(config.getAuthorIdsList()).containsExactly("author1");
             assertThat(config.getIgnoreKeywordsList()).containsExactly("keyword1");
+        }
+
+        @Test
+        @DisplayName("updateConfig 保留 activeModel（source CRUD 不清空）")
+        void preservesActiveModel() {
+            var s = new MonitorConfigStore("", "gemini-2.5-flash");
+            s.initFromDefaults();
+            s.updateConfig(List.of("ch1"), null, null, null, null, "admin", "test");
+            assertThat(s.getCurrentConfig().getActiveModel()).isEqualTo("gemini-2.5-flash");
         }
     }
 

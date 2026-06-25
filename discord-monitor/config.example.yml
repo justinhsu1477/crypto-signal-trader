@@ -27,7 +27,7 @@ api:
 # AI 解析設定 (Gemini)
 ai:
   enabled: false                 # true = 啟用 AI 解析, false = 純 regex
-  model: "gemini-2.0-flash"     # Gemini 模型
+  model: "gemini-2.5-flash"     # Gemini 模型
   api_key_env: "GEMINI_API_KEY" # 環境變數名稱
   timeout: 15                   # AI 回應逾時 (秒)
   max_retries: 3                # Gemini 429 限流重試次數

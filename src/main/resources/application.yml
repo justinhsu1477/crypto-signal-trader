@@ -229,6 +229,8 @@ encryption:
 monitor:
   api-key: ${MONITOR_API_KEY:}
   default-channel-ids: ${DISCORD_CHANNEL_IDS:}
+  # gRPC 推送給 Python monitor 的 Gemini model。空 = 不覆蓋，monitor 用自己 config.yml 的 ai.model。
+  ai-model: ${MONITOR_AI_MODEL:}
 
 # Mirror webhook — 把監聽到的訊息轉發到 admin 自己 Discord channel
 # 三層 kill switch：全域 enabled + per-source mirror_enabled + URL 是否設定
