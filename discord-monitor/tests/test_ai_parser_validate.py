@@ -2,6 +2,38 @@
 
 import pytest
 from src.ai_parser import AiSignalParser
+from src.config import AiConfig
+
+
+class TestUpdateModel:
+    """update_model — 中央推送 model 的格式驗證與回退（拒絕無效、維持現值）。"""
+
+    def _parser(self):
+        # api_key_env 指向不存在的環境變數 → client=None，不打網路
+        return AiSignalParser(AiConfig(api_key_env="__NO_KEY_FOR_TEST__"))
+
+    def test_valid_model_applied(self):
+        p = self._parser()
+        p.update_model("gemini-2.5-pro")
+        assert p.model == "gemini-2.5-pro"
+
+    def test_empty_rejected_keeps_current(self):
+        p = self._parser()
+        before = p.model
+        p.update_model("")
+        assert p.model == before
+
+    def test_malformed_rejected(self):
+        p = self._parser()
+        before = p.model
+        for bad in ["BAD MODEL", "gemini flash", "../evil", "GEMINI-2.5"]:
+            p.update_model(bad)
+            assert p.model == before
+
+    def test_new_genai_model_allowed(self):
+        p = self._parser()
+        p.update_model("gemini-3-flash-preview")
+        assert p.model == "gemini-3-flash-preview"
 
 
 class TestValidateEntry:
