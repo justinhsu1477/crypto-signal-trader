@@ -1,4 +1,4 @@
-websockets>=12.0
+websockets>=16.1
 aiohttp>=3.13.5
 pyyaml>=6.0.3
 google-genai>=1.75.0
