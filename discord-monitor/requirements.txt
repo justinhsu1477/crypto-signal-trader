@@ -1,5 +1,5 @@
 websockets>=12.0
-aiohttp>=3.13.5
+aiohttp>=3.14.3
 pyyaml>=6.0.3
 google-genai>=1.75.0
 grpcio>=1.80.0
